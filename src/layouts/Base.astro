@@ -7,6 +7,8 @@
 
 import { ClientRouter } from 'astro:transitions';
 import ThemeToggle from '~/components/ThemeToggle.astro';
+import BottomNav from '~/components/BottomNav.astro';
+import Sidebar from '~/components/Sidebar.astro';
 import '~/styles/global.css';
 
 interface Props {
@@ -49,9 +51,13 @@ const { title = 'News Digest', description = 'Your personalised daily news diges
         <ThemeToggle />
       </nav>
     </header>
-    <main class="site-main safe-x">
-      <slot />
-    </main>
+    <div class="site-shell">
+      <Sidebar />
+      <main class="site-main safe-x">
+        <slot />
+      </main>
+    </div>
+    <BottomNav />
 
     <style>
       .site-header {
@@ -82,6 +88,13 @@ const { title = 'News Digest', description = 'Your personalised daily news diges
 
       .site-main {
         padding: 16px;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .site-shell {
+        display: flex;
+        min-height: 0;
       }
     </style>
   </body>
