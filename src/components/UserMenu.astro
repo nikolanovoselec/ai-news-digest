@@ -170,6 +170,18 @@ const avatarUrl = `https://www.gravatar.com/avatar/${emailHash}?s=80&d=mp`;
 </style>
 
 <script>
+  // Wire every [data-theme-toggle] on the page so the theme toggle inside
+  // UserMenu works even though ThemeToggle.astro is not rendered on
+  // authenticated pages. (Astro component-level scripts are only bundled
+  // when their component renders, so without this the click was a no-op.)
+  import { initThemeToggle } from '~/scripts/theme-toggle';
+
+  function wireThemeButtons(): void {
+    document
+      .querySelectorAll<HTMLButtonElement>('[data-theme-toggle]')
+      .forEach((b) => initThemeToggle(b));
+  }
+
   // Close the <details> menu when clicking outside or pressing Escape.
   // Also keep the "Theme: light/dark" label in sync with the current theme
   // so the user sees the active state without a second click.
@@ -183,6 +195,7 @@ const avatarUrl = `https://www.gravatar.com/avatar/${emailHash}?s=80&d=mp`;
   }
 
   function init(): void {
+    wireThemeButtons();
     syncThemeLabel();
 
     // Bind the outside-click / Escape handlers exactly ONCE per page,

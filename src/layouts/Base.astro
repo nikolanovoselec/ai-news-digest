@@ -75,7 +75,12 @@ const initialTheme = cookieTheme ?? 'light';
   </head>
   <body>
     <header class="site-header safe-top safe-x">
-      <a href="/" class="site-header__brand focus-ring">News Digest</a>
+      <a href="/" class="site-header__brand focus-ring" aria-label="News Digest home">
+        <span class="site-header__mark" aria-hidden="true"></span>
+        <span class="site-header__wordmark">
+          <span class="site-header__word site-header__word--one">news</span><span class="site-header__word site-header__word--two">digest</span>
+        </span>
+      </a>
       <nav class="site-header__nav" aria-label="Primary">
         {/* Anonymous pages (landing, logged-out error pages) keep the
             standalone toggle so signed-out users can still flip themes.
@@ -116,24 +121,58 @@ const initialTheme = cookieTheme ?? 'light';
     </main>
 
     <style>
+      /* Sticky header with a tasteful backdrop blur on scroll — no solid
+         rule across the page. The horizontal line is implied by a tight
+         wordmark on the left and the icon trio on the right. */
       .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 30;
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--border);
-        background-color: var(--bg);
+        padding: 14px 20px;
+        background-color: color-mix(in oklab, var(--bg) 88%, transparent);
+        backdrop-filter: saturate(160%) blur(12px);
+        -webkit-backdrop-filter: saturate(160%) blur(12px);
       }
 
       .site-header__brand {
         display: inline-flex;
         align-items: center;
+        gap: 10px;
         min-height: 44px;
-        font-size: var(--text-lg);
-        font-weight: 600;
         color: var(--text);
         text-decoration: none;
+      }
+
+      /* Logomark: tiny accent-coloured dot. Keeps the brand Swiss-
+         minimal but gives the header a deliberate visual anchor. */
+      .site-header__mark {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+        flex-shrink: 0;
+      }
+
+      .site-header__wordmark {
+        display: inline-flex;
+        align-items: baseline;
+        font-size: var(--text-lg);
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        line-height: 1;
+      }
+      /* "news" in muted, "digest" in full text — kerned together without
+         whitespace. Gives the brand character without adding chrome. */
+      .site-header__word--one {
+        color: var(--text-muted);
+      }
+      .site-header__word--two {
+        color: var(--text);
       }
 
       .site-header__nav {
