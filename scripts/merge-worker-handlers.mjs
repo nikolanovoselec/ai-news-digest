@@ -1,3 +1,6 @@
+// Implements: build tooling supporting REQ-GEN-001 (cron dispatch) and
+// REQ-GEN-007 (stuck-digest sweeper + queue consumer).
+//
 // Post-build shim: merges scheduled + queue handlers from src/worker.ts
 // into the Astro-built Cloudflare Worker entry at dist/_worker.js.
 //
@@ -19,7 +22,7 @@ import * as esbuild from 'esbuild';
 import { writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -33,21 +36,39 @@ if (!existsSync(astroEntry)) {
   process.exit(1);
 }
 
+// Sanity-check Astro's default export shape so a future adapter change
+// that removes `fetch` fails loudly at build time rather than at runtime.
+const astroMod = await import(pathToFileURL(astroEntry).href);
+if (!astroMod.default || typeof astroMod.default.fetch !== 'function') {
+  console.error(
+    '[merge-worker-handlers] dist/_worker.js/index.js does not export a default object with a fetch function — adapter output shape changed?',
+  );
+  process.exit(1);
+}
+
 // Bundle src/worker.ts to a single ESM file alongside Astro's entry.
-// Shares the `~/*` alias convention from tsconfig.json so imports like
-// `~/lib/discovery` resolve to src/lib/discovery.
+// - `~/*` alias mirrors tsconfig.json
+// - `conditions: ['workerd','worker','browser']` so packages that ship
+//   separate Workers builds (e.g. fast-xml-parser → @nodable/entities)
+//   resolve correctly. Without these, esbuild falls back to Node's main
+//   field and produces unresolved peer-dep errors.
+// - `mainFields: ['module','main']` picks ESM first, CJS second
+// - externals:
+//     `cloudflare:*` — runtime-provided built-ins
+//     `node:*`       — polyfilled by the `nodejs_compat` flag at runtime
 await esbuild.build({
   entryPoints: [path.join(root, 'src/worker.ts')],
   bundle: true,
   format: 'esm',
   platform: 'neutral',
   target: 'es2022',
+  conditions: ['workerd', 'worker', 'browser'],
+  mainFields: ['module', 'main'],
   outfile: path.join(distWorkerDir, 'handlers-bundle.mjs'),
   alias: {
     '~': path.join(root, 'src'),
   },
-  // Runtime-provided built-ins stay external.
-  external: ['cloudflare:*'],
+  external: ['cloudflare:*', 'node:*'],
   logLevel: 'warning',
 });
 
