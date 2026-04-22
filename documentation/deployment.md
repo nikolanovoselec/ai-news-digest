@@ -50,7 +50,10 @@ Or via GitHub Actions (`.github/workflows/deploy.yml`), which:
 2. Applies D1 migrations against the production database.
 3. Pushes Worker secrets (Resend credentials, etc.) via `wrangler secret put`.
 4. Deploys the Worker.
-5. Smoke-tests `GET /` against the `*.workers.dev` URL parsed from wrangler deploy output (falls back to `APP_URL` secret if the parse fails). Accepts `200` or `303` as passing.
+5. Binds the custom domain: extracts the hostname from the `APP_URL` secret, walks parent domains to find the matching Cloudflare zone in the account, then calls the Workers Custom Domains API (`PUT /accounts/{id}/workers/domains`) to attach the hostname to the Worker. The call is idempotent — safe to re-run on every deploy. Skipped if `APP_URL` is not set.
+6. Smoke-tests `GET /` against `APP_URL` first (the hostname users actually reach); falls back to the `*.workers.dev` URL if the custom domain has not propagated yet. Accepts `200` or `303` as passing. Uses `--max-time 15` to avoid hung connections.
+
+> **Fork-friendly:** set `APP_URL` to any hostname whose apex domain is a Cloudflare zone in the same account — the deploy step binds it automatically. No edits to `wrangler.toml` are required.
 
 ### Environment-specific configuration
 
