@@ -182,21 +182,25 @@ if (isReadyToday && articles.length < 3) {
       input on click.
     */}
     <div class="tag-strip" data-tag-strip>
-      {userTags.map((tag) => (
-        <span class="tag-chip" data-tag-chip data-tag={tag}>
-          <span class="tag-chip__label">#{tag}</span>
-          <button
-            type="button"
-            class="tag-chip__remove"
-            data-tag-remove
-            aria-label={`Remove ${tag}`}
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
-              <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
-            </svg>
-          </button>
-        </span>
-      ))}
+      {userTags.map((tag) => {
+        const removeLabel = 'Remove ' + tag;
+        const display = '#' + tag;
+        return (
+          <span class="tag-chip" data-tag-chip data-tag={tag}>
+            <span class="tag-chip__label">{display}</span>
+            <button
+              type="button"
+              class="tag-chip__remove"
+              data-tag-remove
+              aria-label={removeLabel}
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+                <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
+              </svg>
+            </button>
+          </span>
+        );
+      })}
       <button type="button" class="tag-add" data-tag-add aria-label="Add a hashtag">
         <span class="tag-add__plus" aria-hidden="true">+</span>
         <span class="tag-add__label">add</span>
