@@ -134,7 +134,7 @@ const heroBody = isFirstRun
 const primaryCta = isFirstRun ? 'Generate my first digest' : 'Save';
 ---
 
-<Base title={isFirstRun ? 'Welcome to News Digest' : 'Settings'}>
+<Base title={isFirstRun ? 'Welcome to News Digest' : 'Settings'} firstRun={isFirstRun}>
   <section class="settings" data-settings data-first-run={isFirstRun ? '1' : '0'}>
     <header class="settings__hero">
       <h1 class="settings__title">{heroTitle}</h1>

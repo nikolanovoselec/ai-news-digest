@@ -12,15 +12,21 @@
 interface Props {
   /** Current pathname used to mark the active tab. */
   pathname?: string;
+  /**
+   * First-run onboarding: only Settings is reachable until the form is
+   * completed, so hide Digest/History to avoid dead-end taps.
+   */
+  firstRun?: boolean;
 }
 
-const { pathname = Astro.url.pathname } = Astro.props;
+const { pathname = Astro.url.pathname, firstRun = false } = Astro.props;
 
-const tabs: ReadonlyArray<{ href: string; label: string; match: (p: string) => boolean }> = [
+const allTabs: ReadonlyArray<{ href: string; label: string; match: (p: string) => boolean }> = [
   { href: '/digest', label: 'Digest', match: (p) => p === '/digest' || p.startsWith('/digest/') },
   { href: '/history', label: 'History', match: (p) => p === '/history' || p.startsWith('/history/') },
   { href: '/settings', label: 'Settings', match: (p) => p === '/settings' || p.startsWith('/settings/') }
 ];
+const tabs = firstRun ? allTabs.filter((t) => t.href === '/settings') : allTabs;
 ---
 
 <nav class="bottom-nav" aria-label="Primary">

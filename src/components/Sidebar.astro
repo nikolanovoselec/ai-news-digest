@@ -10,15 +10,25 @@ interface Props {
   pathname?: string;
   /** Href for the logout control. */
   logoutHref?: string;
+  /**
+   * First-run onboarding: only Settings is reachable until the form is
+   * completed, so hide Digest/History to avoid dead-end clicks.
+   */
+  firstRun?: boolean;
 }
 
-const { pathname = Astro.url.pathname, logoutHref = '/api/auth/github/logout' } = Astro.props;
+const {
+  pathname = Astro.url.pathname,
+  logoutHref = '/api/auth/github/logout',
+  firstRun = false,
+} = Astro.props;
 
-const entries: ReadonlyArray<{ href: string; label: string; match: (p: string) => boolean }> = [
+const allEntries: ReadonlyArray<{ href: string; label: string; match: (p: string) => boolean }> = [
   { href: '/digest', label: 'Digest', match: (p) => p === '/digest' || p.startsWith('/digest/') },
   { href: '/history', label: 'History', match: (p) => p === '/history' || p.startsWith('/history/') },
   { href: '/settings', label: 'Settings', match: (p) => p === '/settings' || p.startsWith('/settings/') }
 ];
+const entries = firstRun ? allEntries.filter((e) => e.href === '/settings') : allEntries;
 ---
 
 <aside class="sidebar" aria-label="Primary">

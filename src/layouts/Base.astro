@@ -14,14 +14,44 @@ import '~/styles/global.css';
 interface Props {
   title?: string;
   description?: string;
+  /**
+   * When true, the side/bottom navigation only exposes the Settings
+   * entry. Used during first-run onboarding: the settings-gate
+   * middleware already 303s every other route back to /settings, so
+   * showing Digest / History tabs as clickable is a UX dead-end.
+   */
+  firstRun?: boolean;
 }
 
-const { title = 'News Digest', description = 'Your personalised daily news digest.' } =
-  Astro.props;
+const {
+  title = 'News Digest',
+  description = 'Your personalised daily news digest.',
+  firstRun = false,
+} = Astro.props;
+
+// Server-side theme resolution (REQ-DES-002).
+// Reading the `theme` cookie lets us set `data-theme` on <html> in the FIRST
+// byte we emit, eliminating the flash where CSS applies the :root (light)
+// tokens before the deferred theme-init.js script runs. The cookie is written
+// by theme-toggle.ts alongside localStorage. Falls back to `light` when the
+// cookie is absent — prefers-color-scheme is only visible client-side.
+function readThemeCookie(cookieHeader: string | null): 'light' | 'dark' | null {
+  if (cookieHeader === null || cookieHeader === '') return null;
+  for (const pair of cookieHeader.split(';')) {
+    const idx = pair.indexOf('=');
+    if (idx < 0) continue;
+    const name = pair.slice(0, idx).trim();
+    const value = pair.slice(idx + 1).trim();
+    if (name === 'theme' && (value === 'light' || value === 'dark')) return value;
+  }
+  return null;
+}
+const cookieTheme = readThemeCookie(Astro.request.headers.get('Cookie'));
+const initialTheme = cookieTheme ?? 'light';
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme={initialTheme}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -38,8 +68,8 @@ const { title = 'News Digest', description = 'Your personalised daily news diges
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     {/* pwa:apple-tags:end */}
 
-    {/* REQ-DES-002: external /theme-init.js loaded with defer BEFORE any stylesheet
-        to resolve the theme on first paint and avoid FOUC. */}
+    {/* REQ-DES-002: /theme-init.js reconciles the server-rendered data-theme
+        with prefers-color-scheme on a first visit where no cookie is set. */}
     <script defer src="/theme-init.js"></script>
 
     <ClientRouter />
@@ -52,12 +82,12 @@ const { title = 'News Digest', description = 'Your personalised daily news diges
       </nav>
     </header>
     <div class="site-shell">
-      <Sidebar />
+      <Sidebar firstRun={firstRun} />
       <main class="site-main safe-x">
         <slot />
       </main>
     </div>
-    <BottomNav />
+    <BottomNav firstRun={firstRun} />
 
     <style>
       .site-header {
@@ -88,13 +118,38 @@ const { title = 'News Digest', description = 'Your personalised daily news diges
 
       .site-main {
         padding: 16px;
+        /* Extra bottom padding on mobile so the fixed BottomNav (~56px
+           plus safe-area) doesn't hide the last form field or button. */
+        padding-bottom: calc(5rem + env(safe-area-inset-bottom));
         flex: 1;
         min-width: 0;
+      }
+      @media (min-width: 1024px) {
+        .site-main {
+          /* Desktop has a sidebar instead of bottom nav — revert padding. */
+          padding-bottom: 16px;
+        }
       }
 
       .site-shell {
         display: flex;
+        flex: 1 1 auto;
         min-height: 0;
+      }
+    </style>
+
+    <style is:global>
+      /* Fill the viewport so the background colour (var(--bg)) covers the
+         whole screen rather than collapsing to the content height. Without
+         this, short pages like onboarding can leave white or black bands
+         below the footer on mobile. */
+      html,
+      body {
+        min-height: 100svh;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
       }
     </style>
   </body>
