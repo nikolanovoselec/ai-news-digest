@@ -185,23 +185,28 @@ const avatarUrl = `https://www.gravatar.com/avatar/${emailHash}?s=80&d=mp`;
   function init(): void {
     syncThemeLabel();
 
-    const menus = document.querySelectorAll<HTMLDetailsElement>('[data-user-menu]');
-    menus.forEach((menu) => {
-      if (menu.dataset['bound'] === '1') return;
-      menu.dataset['bound'] = '1';
-
+    // Bind the outside-click / Escape handlers exactly ONCE per page,
+    // regardless of how many UserMenu components are on it. They close
+    // every open <details data-user-menu> in a single pass.
+    if (!document.documentElement.dataset['userMenuGlobalBound']) {
+      document.documentElement.dataset['userMenuGlobalBound'] = '1';
       document.addEventListener('click', (e) => {
-        if (!menu.open) return;
-        if (e.target instanceof Node && menu.contains(e.target)) return;
-        menu.open = false;
+        document
+          .querySelectorAll<HTMLDetailsElement>('[data-user-menu][open]')
+          .forEach((menu) => {
+            if (e.target instanceof Node && menu.contains(e.target)) return;
+            menu.open = false;
+          });
       });
-
       document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && menu.open) {
-          menu.open = false;
-        }
+        if (e.key !== 'Escape') return;
+        document
+          .querySelectorAll<HTMLDetailsElement>('[data-user-menu][open]')
+          .forEach((menu) => {
+            menu.open = false;
+          });
       });
-    });
+    }
 
     // Update the label whenever data-theme changes on <html>.
     if (!document.documentElement.dataset['userMenuObserverBound']) {

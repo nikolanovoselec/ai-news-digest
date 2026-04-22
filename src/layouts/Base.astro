@@ -101,6 +101,11 @@ const initialTheme = cookieTheme ?? 'light';
             </svg>
           </a>
         )}
+        {/* UserMenu is NOT hidden during firstRun — the user still needs
+            a way to log out if they change their mind about onboarding,
+            and the Settings link inside the menu points at the page
+            they're already on (harmless). REQ-SET-006 gates navigation
+            to other destinations; user identity controls are exempt. */}
         {Astro.locals.user && (
           <UserMenu email={Astro.locals.user.email} login={Astro.locals.user.gh_login} />
         )}

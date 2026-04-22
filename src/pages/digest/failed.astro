@@ -12,6 +12,18 @@
 // underlying error ever reaches the DOM; only the sanitized code.
 
 import Base from '~/layouts/Base.astro';
+import { loadSession } from '~/middleware/auth';
+
+// Load the authenticated user onto locals so the header (UserMenu +
+// History icon) renders. Route unauth visitors through the OAuth flow.
+const env = Astro.locals.runtime.env;
+if (typeof env.OAUTH_JWT_SECRET === 'string' && env.OAUTH_JWT_SECRET !== '') {
+  const session = await loadSession(Astro.request, env.DB, env.OAUTH_JWT_SECRET);
+  if (session === null) {
+    return Astro.redirect('/api/auth/github/login', 303);
+  }
+  Astro.locals.user = session.user;
+}
 
 const url = new URL(Astro.request.url);
 const rawCode = url.searchParams.get('code');
