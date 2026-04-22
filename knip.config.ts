@@ -10,6 +10,7 @@ const config: KnipConfig = {
     'vitest.config.ts',
     'src/env.d.ts',
     'src/pages/**/*.{astro,ts}',
+    'src/middleware/index.ts',
     'src/worker.ts',
     'src/queue/digest-consumer.ts',
     'public/theme-init.js'
@@ -23,7 +24,17 @@ const config: KnipConfig = {
     '@astrojs/check' // used by `astro check` CLI
   ],
   ignoreExportsUsedInFile: true,
-  ignore: ['**/*.test.ts', 'src/lib/types.ts']
+  ignore: [
+    '**/*.test.ts',
+    'src/lib/types.ts',
+    // Phase 2+Track B surfaces — consumed by Phase 3-8 pages that don't exist yet
+    'src/components/**',
+    'src/layouts/**',
+    'src/scripts/**',
+    'src/lib/log.ts',
+    'src/lib/errors.ts',
+    'src/lib/oauth-errors.ts'
+  ]
 };
 
 export default config;

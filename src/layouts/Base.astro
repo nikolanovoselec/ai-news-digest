@@ -1,0 +1,88 @@
+---
+// Implements REQ-DES-001 (system fonts, type scale, focus ring come in via global.css).
+// Implements REQ-DES-002 (no-FOUC via defer-loaded /theme-init.js before stylesheet; header hosts ThemeToggle).
+// Implements REQ-DES-003 (Astro View Transitions enabled → 250ms cross-fade default between routes).
+// Implements REQ-PWA-001 (web app manifest link + Apple PWA meta tags for iOS home-screen install).
+// Implements REQ-PWA-003 (viewport meta already uses viewport-fit=cover for safe-area insets).
+
+import { ClientRouter } from 'astro:transitions';
+import ThemeToggle from '~/components/ThemeToggle.astro';
+import '~/styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { title = 'News Digest', description = 'Your personalised daily news digest.' } =
+  Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+
+    {/* pwa:apple-tags:start — REQ-PWA-001 AC 3. Keep these markers so this
+        block stays idempotent across concurrent edits from other phases. */}
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Digest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    {/* pwa:apple-tags:end */}
+
+    {/* REQ-DES-002: external /theme-init.js loaded with defer BEFORE any stylesheet
+        to resolve the theme on first paint and avoid FOUC. */}
+    <script defer src="/theme-init.js"></script>
+
+    <ClientRouter />
+  </head>
+  <body>
+    <header class="site-header safe-top safe-x">
+      <a href="/" class="site-header__brand focus-ring">News Digest</a>
+      <nav class="site-header__nav" aria-label="Primary">
+        <ThemeToggle />
+      </nav>
+    </header>
+    <main class="site-main safe-x">
+      <slot />
+    </main>
+
+    <style>
+      .site-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+        background-color: var(--bg);
+      }
+
+      .site-header__brand {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        font-size: var(--text-lg);
+        font-weight: 600;
+        color: var(--text);
+        text-decoration: none;
+      }
+
+      .site-header__nav {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .site-main {
+        padding: 16px;
+      }
+    </style>
+  </body>
+</html>

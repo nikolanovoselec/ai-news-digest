@@ -1,0 +1,106 @@
+---
+// Implements REQ-DES-002: single toggle button with sun/moon icons that
+// swaps `data-theme` on <html> and persists to localStorage.theme.
+// The actual click handler lives in src/scripts/theme-toggle.ts and is loaded
+// as a client-side module via the <script> tag below; Astro hoists and bundles
+// component-level scripts automatically.
+---
+
+<button
+  type="button"
+  class="theme-toggle focus-ring"
+  aria-label="Toggle color theme"
+  data-theme-toggle
+>
+  <span class="theme-toggle__icon theme-toggle__icon--sun" aria-hidden="true">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <circle cx="12" cy="12" r="4"></circle>
+      <path d="M12 2v2"></path>
+      <path d="M12 20v2"></path>
+      <path d="m4.93 4.93 1.41 1.41"></path>
+      <path d="m17.66 17.66 1.41 1.41"></path>
+      <path d="M2 12h2"></path>
+      <path d="M20 12h2"></path>
+      <path d="m6.34 17.66-1.41 1.41"></path>
+      <path d="m19.07 4.93-1.41 1.41"></path>
+    </svg>
+  </span>
+  <span class="theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+    </svg>
+  </span>
+</button>
+
+<style>
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 1px solid var(--border);
+    background-color: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  .theme-toggle__icon {
+    display: none;
+    line-height: 0;
+  }
+
+  /* Show the sun in dark mode (click to go light), moon in light mode. */
+  :global([data-theme='light']) .theme-toggle__icon--moon {
+    display: inline-flex;
+  }
+  :global([data-theme='dark']) .theme-toggle__icon--sun {
+    display: inline-flex;
+  }
+
+  /* 150ms cross-fade on color/background-color per REQ-DES-002. */
+  @media (prefers-reduced-motion: no-preference) {
+    .theme-toggle {
+      transition:
+        background-color var(--duration-fast) var(--ease),
+        color var(--duration-fast) var(--ease),
+        border-color var(--duration-fast) var(--ease);
+    }
+  }
+</style>
+
+<script>
+  // Implements REQ-DES-002 click handler wiring. Runs once per page load.
+  import { initThemeToggle } from '~/scripts/theme-toggle';
+
+  function wire(): void {
+    const buttons = document.querySelectorAll<HTMLButtonElement>('[data-theme-toggle]');
+    buttons.forEach((b) => initThemeToggle(b));
+  }
+
+  wire();
+  // Re-wire after Astro View Transitions swap the DOM.
+  document.addEventListener('astro:page-load', wire);
+</script>
