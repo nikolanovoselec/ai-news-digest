@@ -349,11 +349,11 @@ const primaryCta = isFirstRun ? 'Generate my first digest' : 'Save';
     status: HTMLElement,
     submitButton: HTMLButtonElement,
   ): Promise<void> {
-    const timeInput = form.querySelector<HTMLInputElement>('[data-time-input]');
-    const tzSelect = form.querySelector<HTMLSelectElement>('[data-tz-select]');
-    const tzDisplay = form.querySelector<HTMLElement>('[data-tz-display]');
-    const emailToggle = form.querySelector<HTMLInputElement>('[data-email-toggle]');
-    const modelSelect = form.querySelector<HTMLSelectElement>('select[name="model_id"]');
+    const timeInput = form.querySelector('[data-time-input]') as HTMLInputElement | null;
+    const tzSelect = form.querySelector('[data-tz-select]') as HTMLSelectElement | null;
+    const tzDisplay = form.querySelector('[data-tz-display]') as HTMLElement | null;
+    const emailToggle = form.querySelector('[data-email-toggle]') as HTMLInputElement | null;
+    const modelSelect = form.querySelector('select[name="model_id"]') as HTMLSelectElement | null;
 
     const timeValue = timeInput?.value ?? '';
     const [hourStr, minuteStr] = timeValue.split(':');
@@ -456,9 +456,9 @@ const primaryCta = isFirstRun ? 'Generate my first digest' : 'Save';
     const customInput = form.querySelector<HTMLInputElement>('[data-custom-tag-input]');
     const customAdd = form.querySelector<HTMLButtonElement>('[data-custom-tag-add]');
     const grid = form.querySelector<HTMLElement>('[data-chip-grid]');
-    const tzToggle = form.querySelector<HTMLButtonElement>('[data-tz-toggle]');
-    const tzSelect = form.querySelector<HTMLSelectElement>('[data-tz-select]');
-    const tzDisplay = form.querySelector<HTMLElement>('[data-tz-display]');
+    const tzToggle = form.querySelector('[data-tz-toggle]') as HTMLButtonElement | null;
+    const tzSelect = form.querySelector('[data-tz-select]') as HTMLSelectElement | null;
+    const tzDisplay = form.querySelector('[data-tz-display]') as HTMLElement | null;
 
     if (customInput !== null && customAdd !== null && grid !== null) {
       customAdd.addEventListener('click', () => addCustomTag(customInput, grid));

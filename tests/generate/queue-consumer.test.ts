@@ -2,9 +2,9 @@
 //
 // The consumer loads the user from D1, invokes a pluggable
 // generateDigest function, and acks/retries per the Queue retry
-// contract. We inject a `vi.fn()` stub in place of the real
-// pipeline so we can assert on arguments and force failure paths
-// without touching the module system.
+// contract. We inject a `vi.fn()` stub in place of the real pipeline
+// so we can assert on arguments and force failure paths without
+// touching the module system.
 
 import { describe, it, expect, vi } from 'vitest';
 import { handleQueueBatch, processDigestJob } from '~/queue/digest-consumer';
@@ -83,27 +83,30 @@ function makeMessage(body: unknown): {
   };
 }
 
+/** Build a mock generate fn + keep a typed reference to the underlying
+ * vi.fn so we can assert on .mock.calls without casting. */
+function makeGenerate(): {
+  fn: GenerateDigestFn;
+  mock: ReturnType<typeof vi.fn>;
+} {
+  const mock = vi.fn();
+  return { fn: mock as unknown as GenerateDigestFn, mock };
+}
+
 describe('processDigestJob', () => {
   it('REQ-GEN-001: calls generateDigest with the user loaded from D1 and the trigger', async () => {
-    const gen = vi.fn().mockResolvedValue({
-      digestId: 'd1',
-      status: 'ready',
-    }) as unknown as GenerateDigestFn;
-    const db = makeDb(baseRow());
-    const env = makeEnv(db);
+    const { fn, mock } = makeGenerate();
+    mock.mockResolvedValue({ digestId: 'd1', status: 'ready' });
+    const env = makeEnv(makeDb(baseRow()));
 
     await processDigestJob(
       env,
-      {
-        trigger: 'scheduled',
-        user_id: 'user-1',
-        local_date: '2026-04-22',
-      },
-      gen,
+      { trigger: 'scheduled', user_id: 'user-1', local_date: '2026-04-22' },
+      fn,
     );
 
-    expect(gen).toHaveBeenCalledTimes(1);
-    const args = (gen as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(mock).toHaveBeenCalledTimes(1);
+    const args = mock.mock.calls[0]!;
     expect(args[0]).toBe(env);
     expect(args[1]).toMatchObject({ id: 'user-1', tz: 'UTC' });
     expect(args[2]).toBe('scheduled');
@@ -111,12 +114,9 @@ describe('processDigestJob', () => {
   });
 
   it('REQ-GEN-002: manual trigger passes digest_id to generateDigest', async () => {
-    const gen = vi.fn().mockResolvedValue({
-      digestId: 'd2',
-      status: 'ready',
-    }) as unknown as GenerateDigestFn;
-    const db = makeDb(baseRow());
-    const env = makeEnv(db);
+    const { fn, mock } = makeGenerate();
+    mock.mockResolvedValue({ digestId: 'd2', status: 'ready' });
+    const env = makeEnv(makeDb(baseRow()));
 
     await processDigestJob(
       env,
@@ -126,52 +126,46 @@ describe('processDigestJob', () => {
         local_date: '2026-04-22',
         digest_id: 'd2',
       },
-      gen,
+      fn,
     );
 
-    const args = (gen as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const args = mock.mock.calls[0]!;
     expect(args[2]).toBe('manual');
     expect(args[3]).toBe('d2');
   });
 
   it('REQ-GEN-001: malformed payload swallowed (no throw, no generate call)', async () => {
-    const gen = vi.fn() as unknown as GenerateDigestFn;
-    const db = makeDb(baseRow());
-    const env = makeEnv(db);
+    const { fn, mock } = makeGenerate();
+    const env = makeEnv(makeDb(baseRow()));
 
     await expect(
-      processDigestJob(env, { trigger: 'whatever' }, gen),
+      processDigestJob(env, { trigger: 'whatever' }, fn),
     ).resolves.toBeUndefined();
-    expect(gen).not.toHaveBeenCalled();
+    expect(mock).not.toHaveBeenCalled();
   });
 
   it('REQ-GEN-001: user not found → no generate call, no throw', async () => {
-    const gen = vi.fn() as unknown as GenerateDigestFn;
-    const db = makeDb(null);
-    const env = makeEnv(db);
+    const { fn, mock } = makeGenerate();
+    const env = makeEnv(makeDb(null));
 
     await expect(
       processDigestJob(
         env,
-        {
-          trigger: 'scheduled',
-          user_id: 'ghost',
-          local_date: '2026-04-22',
-        },
-        gen,
+        { trigger: 'scheduled', user_id: 'ghost', local_date: '2026-04-22' },
+        fn,
       ),
     ).resolves.toBeUndefined();
-    expect(gen).not.toHaveBeenCalled();
+    expect(mock).not.toHaveBeenCalled();
   });
 
   it('REQ-GEN-002: processDigestJob returns normally on failed digest (status=failed is terminal)', async () => {
-    const gen = vi.fn().mockResolvedValue({
+    const { fn, mock } = makeGenerate();
+    mock.mockResolvedValue({
       digestId: 'd3',
       status: 'failed',
       error_code: 'llm_failed',
-    }) as unknown as GenerateDigestFn;
-    const db = makeDb(baseRow());
-    const env = makeEnv(db);
+    });
+    const env = makeEnv(makeDb(baseRow()));
 
     await expect(
       processDigestJob(
@@ -182,28 +176,22 @@ describe('processDigestJob', () => {
           local_date: '2026-04-22',
           digest_id: 'd3',
         },
-        gen,
+        fn,
       ),
     ).resolves.toBeUndefined();
-    expect(gen).toHaveBeenCalledTimes(1);
+    expect(mock).toHaveBeenCalledTimes(1);
   });
 
   it('REQ-GEN-001/002: generateDigest throwing propagates so Queue retries', async () => {
-    const gen = vi
-      .fn()
-      .mockRejectedValue(new Error('deep boom')) as unknown as GenerateDigestFn;
-    const db = makeDb(baseRow());
-    const env = makeEnv(db);
+    const { fn, mock } = makeGenerate();
+    mock.mockRejectedValue(new Error('deep boom'));
+    const env = makeEnv(makeDb(baseRow()));
 
     await expect(
       processDigestJob(
         env,
-        {
-          trigger: 'scheduled',
-          user_id: 'user-1',
-          local_date: '2026-04-22',
-        },
-        gen,
+        { trigger: 'scheduled', user_id: 'user-1', local_date: '2026-04-22' },
+        fn,
       ),
     ).rejects.toThrow(/deep boom/);
   });
@@ -211,12 +199,9 @@ describe('processDigestJob', () => {
 
 describe('handleQueueBatch', () => {
   it('REQ-GEN-001: each successful message is acked', async () => {
-    const gen = vi.fn().mockResolvedValue({
-      digestId: 'd1',
-      status: 'ready',
-    }) as unknown as GenerateDigestFn;
-    const db = makeDb(baseRow());
-    const env = makeEnv(db);
+    const { fn, mock } = makeGenerate();
+    mock.mockResolvedValue({ digestId: 'd1', status: 'ready' });
+    const env = makeEnv(makeDb(baseRow()));
     const msg = makeMessage({
       trigger: 'scheduled',
       user_id: 'user-1',
@@ -224,20 +209,18 @@ describe('handleQueueBatch', () => {
     });
 
     await handleQueueBatch(
-      { messages: [msg] } as unknown as MessageBatch<unknown>,
+      { messages: [msg] } as unknown as Parameters<typeof handleQueueBatch>[0],
       env,
-      gen,
+      fn,
     );
     expect(msg.ack).toHaveBeenCalledTimes(1);
     expect(msg.retry).not.toHaveBeenCalled();
   });
 
   it('REQ-GEN-001: a throwing generateDigest results in retry(), not ack()', async () => {
-    const gen = vi
-      .fn()
-      .mockRejectedValue(new Error('boom')) as unknown as GenerateDigestFn;
-    const db = makeDb(baseRow());
-    const env = makeEnv(db);
+    const { fn, mock } = makeGenerate();
+    mock.mockRejectedValue(new Error('boom'));
+    const env = makeEnv(makeDb(baseRow()));
     const msg = makeMessage({
       trigger: 'scheduled',
       user_id: 'user-1',
@@ -245,21 +228,20 @@ describe('handleQueueBatch', () => {
     });
 
     await handleQueueBatch(
-      { messages: [msg] } as unknown as MessageBatch<unknown>,
+      { messages: [msg] } as unknown as Parameters<typeof handleQueueBatch>[0],
       env,
-      gen,
+      fn,
     );
     expect(msg.ack).not.toHaveBeenCalled();
     expect(msg.retry).toHaveBeenCalledTimes(1);
   });
 
   it('REQ-GEN-001: one failing message does not block other messages in the batch', async () => {
-    const gen = vi
-      .fn()
+    const { fn, mock } = makeGenerate();
+    mock
       .mockRejectedValueOnce(new Error('first boom'))
-      .mockResolvedValueOnce({ digestId: 'd2', status: 'ready' }) as unknown as GenerateDigestFn;
-    const db = makeDb(baseRow());
-    const env = makeEnv(db);
+      .mockResolvedValueOnce({ digestId: 'd2', status: 'ready' });
+    const env = makeEnv(makeDb(baseRow()));
     const msg1 = makeMessage({
       trigger: 'scheduled',
       user_id: 'user-1',
@@ -272,9 +254,9 @@ describe('handleQueueBatch', () => {
     });
 
     await handleQueueBatch(
-      { messages: [msg1, msg2] } as unknown as MessageBatch<unknown>,
+      { messages: [msg1, msg2] } as unknown as Parameters<typeof handleQueueBatch>[0],
       env,
-      gen,
+      fn,
     );
     expect(msg1.retry).toHaveBeenCalledTimes(1);
     expect(msg2.ack).toHaveBeenCalledTimes(1);

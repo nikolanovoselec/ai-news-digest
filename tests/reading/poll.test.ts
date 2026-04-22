@@ -57,7 +57,7 @@ describe('pollOnce', () => {
   });
 
   it('REQ-READ-004: treats network throw as in_progress', async () => {
-    const fetchImpl = makeFetch([{ throws: true }]);
+    const fetchImpl = makeFetch([{ ok: false, throws: true }]);
     const result = await pollOnce('d1', fetchImpl);
     expect(result.status).toBe('in_progress');
   });

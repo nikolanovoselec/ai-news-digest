@@ -177,7 +177,7 @@ async function dispatchScheduledDigests(env: Env, nowSec: number): Promise<void>
 export async function scheduled(
   _controller: ScheduledController,
   env: Env,
-  ctx: ExecutionContext,
+  _ctx: ExecutionContext,
 ): Promise<void> {
   const nowSec = Math.floor(Date.now() / 1000);
 
@@ -204,18 +204,17 @@ export async function scheduled(
     });
   }
 
-  // 3. Scheduling pass — enqueue due users. We use ctx.waitUntil so a
-  // slow queue send does not block cron from returning under its 1s
-  // target (REQ-GEN-001 AC 4), but still completes before the cron
-  // invocation is considered done.
-  const dispatchPromise = dispatchScheduledDigests(env, nowSec).catch((err) => {
+  // 3. Scheduling pass — enqueue due users. Failures log and continue
+  // so one bad tz does not abort the whole cron invocation; per-tz
+  // errors are also caught inside the function.
+  try {
+    await dispatchScheduledDigests(env, nowSec);
+  } catch (err) {
     log('error', 'digest.generation', {
       status: 'dispatch_failed',
       detail: String(err).slice(0, 500),
     });
-  });
-  ctx.waitUntil(dispatchPromise);
-  await dispatchPromise;
+  }
 }
 
 /**
