@@ -24,6 +24,7 @@ Every digest shows execution time, token count, and estimated cost, so you can s
 | LLM | Workers AI (user-selectable model) |
 | Scheduling | Cloudflare Cron Trigger (scans every 15 min) |
 | Styling | Tailwind CSS 4 |
+| PWA | `@vite-pwa/astro` — manifest, service worker, install prompt |
 
 ## Content sources
 
@@ -73,6 +74,92 @@ The result is cached in KV for one hour. The dropdown displays each model's name
 | `/digest` | Today's digest — card grid with one-line summaries, "Refresh now" button, execution/cost footer |
 | `/digest/:id/:slug` | Article detail — longer summary with critical points and source link |
 | `/history` | Past digests, each with its own execution/cost metrics |
+
+## Design system
+
+Swiss-minimal aesthetic. Generous whitespace, restricted palette, no gradients, no drop shadows, one accent color. Content is the UI — chrome fades away.
+
+- **Typography**: system font stack (`-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif`). Five sizes only: `12, 14, 16, 20, 32px`. Two weights: 400 (body) and 600 (headings, labels).
+- **Palette**: neutral grays + one accent. Defined as CSS custom properties on `:root` and `[data-theme="dark"]`. Tokens: `--bg`, `--surface`, `--text`, `--text-muted`, `--border`, `--accent`.
+- **Light theme**: `--bg: #ffffff`, `--surface: #fafafa`, `--text: #111111`, `--text-muted: #666666`, `--border: #e5e5e5`, `--accent: #0066ff`.
+- **Dark theme**: `--bg: #0a0a0a`, `--surface: #141414`, `--text: #f5f5f5`, `--text-muted: #999999`, `--border: #262626`, `--accent: #4d94ff`.
+- **Base font size**: 16px on all inputs to prevent iOS zoom-on-focus.
+- **Reduced motion**: all transitions wrapped in `@media (prefers-reduced-motion: no-preference)`.
+- **Accessibility**: WCAG 2.1 AA floor. Full keyboard navigation, visible focus rings, semantic landmarks, skip-to-content link.
+
+### Dark mode toggle
+
+Single button in the header (sun icon in light, moon in dark). One click toggles the `data-theme` attribute on `<html>` and persists to `localStorage.theme`. Default follows `prefers-color-scheme`. No flash of wrong theme on load — the choice is read and applied in an inline `<script>` before the first paint.
+
+## PWA & offline
+
+Installable on iOS, Android, and desktop. Offline-readable for the last viewed digest.
+
+### Manifest (`/manifest.webmanifest`)
+
+```json
+{
+  "name": "News Digest",
+  "short_name": "Digest",
+  "description": "Your daily AI-curated tech news digest",
+  "start_url": "/digest",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
+```
+
+`theme_color` is updated live via JavaScript when the user toggles dark mode so the OS chrome matches.
+
+### Service worker
+
+Provided by `@vite-pwa/astro` (Workbox under the hood). Caching strategies:
+
+| Asset type | Strategy |
+|---|---|
+| Static (JS, CSS, fonts, icons) | Cache-first, hashed filenames |
+| `/digest/*` HTML | Stale-while-revalidate |
+| `/api/*` | Network-first, 3s timeout, fall back to cache |
+| `/manifest.webmanifest`, `/icons/*` | Cache-first |
+
+The last viewed digest and its article detail pages remain readable offline. `/settings` and the refresh button show an "offline" banner when `navigator.onLine === false`.
+
+### iOS / Apple meta tags
+
+In the root layout:
+
+```html
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Digest">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+```
+
+### Install prompt
+
+- **Android / desktop Chrome**: listen for `beforeinstallprompt`, stash the event, surface an "Install app" button in the header of `/settings`. Dismissible; not shown again for 30 days if dismissed.
+- **iOS Safari**: no programmatic prompt — surface a one-time instructional tooltip ("Tap the share icon, then Add to Home Screen") detected via `/iPad|iPhone|iPod/.test(navigator.userAgent)` and `!navigator.standalone`.
+
+## Mobile & responsive
+
+Mobile-first layout. Looks native on iOS, Android, and desktop without compromise.
+
+- **Viewport**: `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">` on every page.
+- **Breakpoints**: base (<640px) single-column, `md` (≥768px) two-column digest grid, `lg` (≥1024px) three-column grid with sidebar.
+- **Safe-area insets**: sticky header and bottom nav use `padding-top: env(safe-area-inset-top)` / `padding-bottom: env(safe-area-inset-bottom)` for iPhone notches and Android gesture bars.
+- **Touch targets**: minimum 44x44px (iOS HIG) / 48x48dp (Android Material) on all interactive elements.
+- **Navigation**:
+  - Mobile: bottom tab bar (Digest, History, Settings) with safe-area padding. Header shows logo + dark-mode toggle only.
+  - Desktop: left sidebar with same three entries plus logout at the bottom.
+- **Pull-to-refresh**: native browser behavior on `/digest` (mobile). The "Refresh now" button handles desktop.
+- **Input zoom prevention**: all `<input>` and `<textarea>` have `font-size: 16px` minimum on iOS.
+- **Tap highlights**: disabled via `-webkit-tap-highlight-color: transparent`; focus and active states handled by CSS.
+- **Haptic feedback**: on the refresh button and theme toggle via `navigator.vibrate(10)` where supported (Android); iOS ignores gracefully.
 
 ## Onboarding flow
 
@@ -164,10 +251,11 @@ Custom implementation, no third-party auth library. Pattern lifted from the code
   3. POST code to github.com/login/oauth/access_token → access token
   4. GET api.github.com/user and /user/emails in parallel → extract primary
      verified email, numeric id, login
-  5. INSERT OR IGNORE into users (github_id, email, ...) for JIT provisioning
+  5. INSERT OR IGNORE into users (github_id, email, tz, ...) for JIT provisioning
+     (tz comes from a query param posted by /, captured via Intl API)
   6. Sign HMAC-SHA256 JWT with { sub: github_id, email, ghLogin, iat, exp }
   7. Set news_digest_session cookie (HttpOnly, Secure, SameSite=Lax, 1h TTL)
-  8. Redirect to /digest
+  8. Redirect to /onboarding (if hashtags or digest_hour null) else /digest
 
 /api/auth/github/logout
   1. Clear news_digest_session cookie (Max-Age=0)
@@ -181,6 +269,21 @@ Every protected Astro route and API endpoint calls a shared helper that reads `n
 ### Session auto-refresh
 
 A middleware runs on every response. If the JWT has less than 15 minutes remaining, it issues a fresh 1-hour JWT and updates the cookie. Users stay signed in as long as they visit at least once per hour.
+
+### OAuth error contract
+
+Failures redirect to `/?error={code}` with one of these allowlisted codes; the landing page renders a human-readable message based on the code.
+
+| Code | Meaning |
+|---|---|
+| `access_denied` | User clicked "Cancel" on GitHub's consent screen |
+| `no_verified_email` | User has no primary + verified email on GitHub |
+| `invalid_state` | CSRF state mismatch (possible forgery or expired flow) |
+| `oauth_error` | Any other GitHub error — details logged server-side, user sees generic message |
+
+### Account deletion
+
+`/settings` has a "Delete account" button (confirmation dialog required). Endpoint `DELETE /api/auth/account` deletes the users row and cascades to all digests and articles. Session cookie is cleared, user is redirected to `/` with a one-time confirmation banner.
 
 ### Secrets
 
@@ -214,7 +317,16 @@ Deployed via `wrangler secret put`:
    d. Insert digest + articles rows, capturing execution_ms and token usage
    e. Update users.next_due_at to next local digest_hour
 4. Manual refresh: same pipeline, rate-limited to once per 5 min per user
+   AND capped at 10 refreshes per rolling 24h window per user to bound cost
 ```
+
+### Empty and loading states
+
+- **Brand-new user** (never had a digest): `/digest` shows a centered "Generating your first digest…" block with a cascading skeleton grid, then swaps to real cards when ready.
+- **Generation in progress** (manual refresh): refresh button morphs into an indeterminate progress bar; existing cards dim to 60% opacity and a subtle shimmer runs across them. On completion, new cards fade in while old ones fade out.
+- **All sources returned nothing**: "No matching stories today — try broader hashtags" with a link to `/settings`.
+- **LLM or source failure**: digest row marked `status='failed'`, UI shows "Something went wrong generating your digest" with a retry button that re-triggers the pipeline.
+- **Offline**: banner at top of page; refresh button disabled with a tooltip "You're offline".
 
 ## Cost and time transparency
 
@@ -225,6 +337,53 @@ Generated 07:59 CET  ·  2.4s  ·  3,847 tokens  ·  ~$0.0012  ·  llama-3.1-8b-
 ```
 
 Values come from the `execution_ms`, `tokens_in + tokens_out`, and `model_id` columns on the digest row. Cost is computed from the model's published per-token price.
+
+## Motion & polish
+
+High-class polish is part of the MVP, not a later pass. Every transition has a purpose — orient the user, mask latency, or reward an action. All motion respects `prefers-reduced-motion: reduce` and collapses to instant state changes.
+
+### Foundations
+
+- **Easing**: one curve everywhere, `cubic-bezier(0.22, 1, 0.36, 1)` (sharp start, soft finish). Durations: 150ms (micro), 250ms (component), 400ms (page).
+- **Astro View Transitions API**: enabled globally. Route changes cross-fade by default; specific elements use `transition:name` for shared-element morphs (digest card → article detail view).
+- **No motion library**: pure CSS + Astro's built-in transitions. If a specific interaction needs more (spring physics, FLIP), add `motion` (Motion One, ~3KB) — not Framer Motion.
+
+### Cascading content reveals
+
+- **Digest grid entrance**: each card fades in + rises 8px, staggered by 40ms (`animation-delay: calc(var(--i) * 40ms)`). Stops at 10 cards so the last one lands within 400ms.
+- **Article detail**: title, then summary paragraph, then bullet list, each staggered 80ms. Source link draws in last with a subtle underline-expand.
+- **History list**: rows stagger-fade at 30ms intervals.
+- **Settings form**: each section (interests, schedule, model) slides up 12px with 100ms stagger on first paint.
+
+### Skeleton loaders (LLM generation)
+
+- **Card skeletons** match real card dimensions exactly so there's no layout shift. Shimmer runs as a 1.4s linear-gradient sweep (disabled under reduced-motion).
+- **Token counter**: during generation, the footer shows a ticking tokens-in estimate that counts up in real-time (animated via `requestAnimationFrame`), then snaps to the final value when the call returns.
+- **Progress choreography** on manual refresh: button → progress bar → checkmark draw on success (SVG stroke-dasharray animation) → bar fades out.
+
+### Micro-interactions
+
+- **Buttons**: `transform: scale(0.97)` on `:active`, 100ms. Haptic tap (Android) on primary actions.
+- **Hashtag chips**: selecting scales from 1 → 1.1 → 1, with accent color fill sweeping in from left to right (150ms).
+- **Theme toggle**: uses the View Transitions API to do a circular wipe from the toggle button's position — the new theme reveals as a growing circle. Falls back to instant swap on unsupported browsers.
+- **Cost/token numbers** on the digest footer: count-up animation from 0 over 600ms when the card enters view (IntersectionObserver-triggered).
+- **Card hover (desktop)**: lift 2px + border shifts to accent color, 200ms. No shadow change (stays flat).
+- **Link underlines**: animate stroke from 0 to 100% width on hover, 200ms.
+
+### Onboarding choreography
+
+- **Step entrance**: each of the three sections (Interests → Schedule → Model) fades in sequentially as the user scrolls or completes the prior step. A subtle left-side rail visualizes progress.
+- **Hashtag chip burst**: when the user taps a chip, it pops (scale 1 → 1.15 → 1) and a thin accent-colored particle (a single dot) drifts up-and-out over 400ms before fading. Celebratory but not distracting.
+- **Timezone detection reveal**: "Detected: Europe/Zurich" types in character-by-character (20ms per char) when the section appears, reinforcing that the system noticed something specific about the user.
+- **Submit button transformation**: on click, "Generate my first digest" collapses into a progress bar that fills as the first digest generates, then morphs into a checkmark that expands to fill the screen before the route transitions to `/digest`.
+
+### Page transitions
+
+- **Landing → OAuth**: button expands and fades to white as the redirect fires, giving a sense of "handing off".
+- **OAuth callback → Onboarding**: soft fade-in with the first onboarding section sliding up from below.
+- **Onboarding → Digest**: curtain wipe from top (400ms) then the first-digest loading state appears.
+- **Digest card → Article detail**: shared-element morph — the card expands into the detail view's hero block using View Transitions' `transition:name`. Back button reverses it.
+- **Route failures**: if a route throws, the app shows a full-screen fade to a minimal error state with a "return home" action.
 
 ## What is explicitly out of scope for MVP
 
