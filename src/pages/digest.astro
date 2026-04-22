@@ -1,0 +1,526 @@
+---
+// Implements REQ-READ-001, REQ-READ-004, REQ-READ-005, REQ-READ-006
+//
+// Today's digest view. Three possible render states keyed off the
+// `/api/digest/today` response:
+//
+//   1. `digest === null` or `digest.local_date !== today` and
+//      `next_scheduled_at !== null` → pending-today banner variant.
+//   2. `live === true` (digest.status === 'in_progress') → indeterminate
+//      progress bar + 10 skeleton cards + footer elapsed clock; starts
+//      the 5-second poll loop on mount.
+//   3. `digest.status === 'ready'` → full card grid + cost footer.
+//   4. `digest.status === 'failed'` → 303-redirect to /digest/failed.
+//
+// The page also handles the offline case (REQ-READ-006 AC 4) by
+// rendering a `data-offline-banner` slot that the small inline script
+// toggles based on `navigator.onLine`.
+
+import type { APIContext } from 'astro';
+import Base from '~/layouts/Base.astro';
+import DigestCard from '~/components/DigestCard.astro';
+import LoadingSkeleton from '~/components/LoadingSkeleton.astro';
+import CostFooter from '~/components/CostFooter.astro';
+import PendingBanner from '~/components/PendingBanner.astro';
+import { loadSession } from '~/middleware/auth';
+import { requireSettingsComplete } from '~/middleware/settings-gate';
+import { localDateInTz } from '~/lib/tz';
+import { GET as getToday } from '~/pages/api/digest/today';
+
+interface DigestRow {
+  id: string;
+  user_id: string;
+  local_date: string;
+  generated_at: number;
+  execution_ms: number | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  estimated_cost_usd: number | null;
+  model_id: string;
+  status: 'in_progress' | 'ready' | 'failed';
+  error_code: string | null;
+  trigger: string;
+}
+
+interface ArticleRow {
+  id: string;
+  digest_id: string;
+  slug: string;
+  source_url: string;
+  title: string;
+  one_liner: string;
+  details_json: string;
+  source_name: string | null;
+  published_at: number | null;
+  rank: number;
+  read_at: number | null;
+}
+
+interface TodayResponse {
+  digest: DigestRow | null;
+  articles: ArticleRow[];
+  live: boolean;
+  next_scheduled_at: number | null;
+}
+
+const env = Astro.locals.runtime.env;
+if (typeof env.OAUTH_JWT_SECRET !== 'string' || env.OAUTH_JWT_SECRET === '') {
+  return new Response('Application not configured', { status: 500 });
+}
+
+const session = await loadSession(Astro.request, env.DB, env.OAUTH_JWT_SECRET);
+if (session === null) {
+  return Astro.redirect('/api/auth/github/login', 303);
+}
+Astro.locals.user = session.user;
+
+const gated = requireSettingsComplete({
+  request: Astro.request,
+  locals: Astro.locals,
+} as unknown as APIContext);
+if (gated !== null) {
+  return gated;
+}
+
+const user = session.user;
+
+// Fetch today's digest + articles by invoking the /api/digest/today
+// GET handler in-process. Calling the handler directly (rather than
+// making a fetch to our own origin) avoids a subrequest roundtrip and
+// keeps the auth scoping identical to browser navigation because the
+// handler reads its own session from context.request.
+let today: TodayResponse = {
+  digest: null,
+  articles: [],
+  live: false,
+  next_scheduled_at: null,
+};
+try {
+  const res = await getToday({
+    request: Astro.request,
+    locals: Astro.locals,
+    url: new URL(Astro.request.url),
+  } as unknown as APIContext);
+  if (res.ok) {
+    today = (await res.json()) as TodayResponse;
+  }
+} catch {
+  // Treat handler failures as "no digest yet" — the page still renders
+  // with the pending banner so the user sees something useful.
+}
+
+// Determine "today" in the user's tz so we can compare against
+// digest.local_date. REQ-READ-005 AC 2 — if the most recent digest's
+// local_date is NOT today, the banner wins over any stale card grid.
+const nowSec = Math.floor(Date.now() / 1000);
+const todayLocal = localDateInTz(nowSec, user.tz);
+
+// If TODAY's digest failed (REQ-READ-004 AC 5 + REQ-READ-006 AC 2),
+// redirect to the dedicated failure page. A failed digest from a prior
+// day is treated as "no digest for today" — the pending banner for the
+// next scheduled run takes over.
+if (
+  today.digest !== null &&
+  today.digest.status === 'failed' &&
+  today.digest.local_date === todayLocal
+) {
+  const code = today.digest.error_code ?? 'llm_failed';
+  return Astro.redirect(`/digest/failed?code=${encodeURIComponent(code)}`, 303);
+}
+
+const digest = today.digest;
+const articles = today.articles;
+
+const isLive = digest !== null && digest.status === 'in_progress';
+const isReadyToday =
+  digest !== null &&
+  digest.status === 'ready' &&
+  digest.local_date === todayLocal;
+
+// Banner is shown when there is no digest at all or the most recent
+// one is from a prior day (REQ-READ-005 AC 2 / AC 4).
+const showBanner = !isLive && !isReadyToday && today.next_scheduled_at !== null;
+const firstEver = digest === null;
+
+// Empty-result page per REQ-READ-006 AC 1: a ready digest with fewer
+// than 3 articles redirects to the no-stories page.
+if (isReadyToday && articles.length < 3) {
+  return Astro.redirect('/digest/no-stories', 303);
+}
+---
+
+<Base title="Today's digest">
+  <section class="digest-page" data-digest-page>
+    <div
+      class="digest-page__offline"
+      data-offline-banner
+      role="status"
+      hidden
+    >
+      You're offline — showing the last digest you viewed.
+    </div>
+
+    <header class="digest-page__header">
+      <h1 class="digest-page__title">Today's digest</h1>
+      <form
+        class="digest-page__refresh"
+        data-refresh-form
+        action="/api/digest/refresh"
+        method="post"
+      >
+        <button
+          type="submit"
+          class="digest-page__refresh-button"
+          data-refresh-button
+          disabled={isLive}
+        >
+          Refresh now
+        </button>
+      </form>
+    </header>
+
+    {
+      isLive && digest !== null && (
+        <div class="digest-page__progress" data-progress aria-label="Generating digest">
+          <div class="digest-page__progress-bar" role="progressbar" aria-valuetext="generating"></div>
+        </div>
+      )
+    }
+
+    {
+      showBanner && today.next_scheduled_at !== null && (
+        <PendingBanner
+          nextScheduledAt={today.next_scheduled_at}
+          tz={user.tz}
+          firstEver={firstEver}
+        />
+      )
+    }
+
+    {
+      isLive && digest !== null && (
+        <div
+          class="digest-page__grid"
+          data-digest-grid
+          data-digest-poll
+          data-digest-id={digest.id}
+          data-state="live"
+        >
+          {Array.from({ length: 10 }).map(() => <LoadingSkeleton />)}
+        </div>
+      )
+    }
+
+    {
+      isReadyToday && digest !== null && (
+        <div class="digest-page__grid" data-digest-grid data-state="ready">
+          {articles.map((a, i) => (
+            <DigestCard
+              digestId={digest.id}
+              slug={a.slug}
+              title={a.title}
+              oneLiner={a.one_liner}
+              sourceName={a.source_name}
+              index={i}
+            />
+          ))}
+        </div>
+      )
+    }
+
+    {
+      isLive && digest !== null && (
+        <div class="digest-page__live-footer" data-live-footer>
+          <span data-elapsed-clock data-started-at={String(digest.generated_at)}>
+            Generating… 0s elapsed
+          </span>
+        </div>
+      )
+    }
+
+    {
+      isReadyToday && digest !== null && (
+        <CostFooter
+          generatedAt={digest.generated_at}
+          tz={user.tz}
+          executionMs={digest.execution_ms}
+          tokensIn={digest.tokens_in}
+          tokensOut={digest.tokens_out}
+          estimatedCostUsd={digest.estimated_cost_usd}
+          modelId={digest.model_id}
+        />
+      )
+    }
+  </section>
+</Base>
+
+<script>
+  // Implements REQ-READ-001 AC 4, REQ-READ-004, REQ-READ-006 AC 4
+  //
+  // Three responsibilities:
+  //   1. Wire the Refresh form to POST /api/digest/refresh (JSON), then
+  //      morph the button into a progress bar on 202 and reload to pick
+  //      up the in-progress digest.
+  //   2. Start the 5-second poll loop via digest-poll.ts when the page
+  //      renders the live state (reload on ready, redirect on failed).
+  //   3. Toggle the offline banner based on navigator.onLine.
+
+  import { bindDigestPoll } from '~/scripts/digest-poll';
+
+  interface RefreshResponse {
+    digest_id?: string;
+    status?: string;
+    error?: string;
+    code?: string;
+    retry_after_seconds?: number;
+  }
+
+  async function handleRefresh(
+    form: HTMLFormElement,
+    button: HTMLButtonElement,
+  ): Promise<void> {
+    button.disabled = true;
+    let res: Response;
+    try {
+      res = await fetch('/api/digest/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+      });
+    } catch {
+      button.disabled = false;
+      return;
+    }
+
+    if (res.status === 429) {
+      // REQ-READ-006 AC 3 — rate-limited response sends the user to the
+      // dedicated countdown page.
+      let body: RefreshResponse = {};
+      try {
+        body = (await res.json()) as RefreshResponse;
+      } catch {
+        /* ignore */
+      }
+      const seconds =
+        typeof body.retry_after_seconds === 'number' ? body.retry_after_seconds : 300;
+      window.location.assign(`/rate-limited?seconds=${encodeURIComponent(seconds)}`);
+      return;
+    }
+
+    if (res.status === 202 || res.status === 409) {
+      // Reload — the server-rendered page picks up the in-progress
+      // digest and starts the poll loop on the next render.
+      window.location.reload();
+      return;
+    }
+
+    // Other failures — re-enable the button so the user can retry.
+    button.disabled = false;
+  }
+
+  function wireRefresh(): void {
+    const form = document.querySelector<HTMLFormElement>('[data-refresh-form]');
+    const button = document.querySelector<HTMLButtonElement>('[data-refresh-button]');
+    if (form === null || button === null) return;
+    if (form.dataset['bound'] === '1') return;
+    form.dataset['bound'] = '1';
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      void handleRefresh(form, button);
+    });
+  }
+
+  function wireOfflineBanner(): void {
+    const banner = document.querySelector<HTMLElement>('[data-offline-banner]');
+    const refreshButton = document.querySelector<HTMLButtonElement>(
+      '[data-refresh-button]',
+    );
+    if (banner === null) return;
+    const update = (): void => {
+      const offline = !window.navigator.onLine;
+      banner.hidden = !offline;
+      if (refreshButton !== null) {
+        if (offline) {
+          refreshButton.disabled = true;
+          refreshButton.title = 'You are offline';
+        } else if (refreshButton.title === 'You are offline') {
+          refreshButton.disabled = false;
+          refreshButton.removeAttribute('title');
+        }
+      }
+    };
+    update();
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+  }
+
+  let pollCancel: (() => void) | null = null;
+
+  function wireElapsedClock(): void {
+    const el = document.querySelector<HTMLElement>('[data-elapsed-clock]');
+    if (el === null) return;
+    const startRaw = el.dataset['startedAt'];
+    if (startRaw === undefined || startRaw === '') return;
+    const startSec = Number.parseInt(startRaw, 10);
+    if (Number.isNaN(startSec)) return;
+    const update = (): void => {
+      const diff = Math.max(0, Math.floor(Date.now() / 1000) - startSec);
+      el.textContent = `Generating… ${diff}s elapsed`;
+    };
+    update();
+    const handle = window.setInterval(update, 1000);
+    el.dataset['elapsedHandle'] = String(handle);
+  }
+
+  function teardown(): void {
+    if (pollCancel !== null) {
+      pollCancel();
+      pollCancel = null;
+    }
+    const el = document.querySelector<HTMLElement>('[data-elapsed-clock]');
+    if (el !== null) {
+      const raw = el.dataset['elapsedHandle'];
+      if (raw !== undefined && raw !== '') {
+        const handle = Number.parseInt(raw, 10);
+        if (!Number.isNaN(handle)) window.clearInterval(handle);
+      }
+      el.dataset['elapsedHandle'] = '';
+    }
+  }
+
+  function init(): void {
+    wireRefresh();
+    wireOfflineBanner();
+    wireElapsedClock();
+    const grid = document.querySelector<HTMLElement>('[data-digest-poll]');
+    if (grid !== null) {
+      pollCancel = bindDigestPoll();
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    init();
+  }
+  document.addEventListener('astro:page-load', init);
+  document.addEventListener('astro:before-swap', teardown);
+</script>
+
+<style>
+  .digest-page {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 1rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .digest-page__offline {
+    padding: 0.6rem 1rem;
+    background-color: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    font-size: var(--text-sm);
+  }
+
+  .digest-page__offline[hidden] {
+    display: none;
+  }
+
+  .digest-page__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .digest-page__title {
+    margin: 0;
+    font-size: var(--text-2xl);
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .digest-page__refresh {
+    margin: 0;
+  }
+
+  .digest-page__refresh-button {
+    min-height: 44px;
+    padding: 0.5rem 1rem;
+    background-color: var(--accent);
+    color: #ffffff;
+    border: none;
+    border-radius: 0.375rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .digest-page__refresh-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .digest-page__progress {
+    position: relative;
+    height: 4px;
+    background-color: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .digest-page__progress-bar {
+    position: absolute;
+    inset: 0;
+    background-color: var(--accent);
+    width: 35%;
+    animation: progress-slide 1.8s ease-in-out infinite;
+  }
+
+  @keyframes progress-slide {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(400%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .digest-page__progress-bar {
+      animation: none;
+      width: 100%;
+    }
+  }
+
+  /* REQ-READ-001 AC 1 — responsive grid. */
+  .digest-page__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  @media (min-width: 768px) {
+    .digest-page__grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .digest-page__grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  .digest-page__live-footer {
+    padding: 0.75rem 1rem;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    text-align: center;
+    border-top: 1px solid var(--border);
+  }
+</style>

@@ -1,0 +1,96 @@
+---
+// Implements REQ-READ-004
+//
+// Single skeleton card matching DigestCard dimensions. Used during the
+// in_progress state to occupy the same grid slots the real cards will
+// fill, preventing layout shift when the polled response swaps them in.
+//
+// Shimmer is a 1.4s linear-gradient sweep (REQ-READ-004 AC 2). The
+// gradient is applied to a pseudo-element so the card geometry and
+// border radius remain consistent with DigestCard. Under
+// `prefers-reduced-motion: reduce` the sweep is disabled — the skeleton
+// collapses to a static grey block.
+---
+
+<div class="skeleton-card" aria-hidden="true">
+  <div class="skeleton-card__title"></div>
+  <div class="skeleton-card__line"></div>
+  <div class="skeleton-card__line skeleton-card__line--short"></div>
+  <div class="skeleton-card__badge"></div>
+</div>
+
+<style>
+  .skeleton-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 1rem 1.25rem;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    min-height: 140px;
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  .skeleton-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.06) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.4s linear infinite;
+    pointer-events: none;
+  }
+
+  .skeleton-card__title,
+  .skeleton-card__line,
+  .skeleton-card__badge {
+    background-color: var(--border);
+    border-radius: 0.25rem;
+  }
+
+  .skeleton-card__title {
+    height: 1.25rem;
+    width: 75%;
+  }
+
+  .skeleton-card__line {
+    height: 0.9rem;
+    width: 100%;
+  }
+
+  .skeleton-card__line--short {
+    width: 60%;
+  }
+
+  .skeleton-card__badge {
+    margin-top: auto;
+    height: 1.1rem;
+    width: 5rem;
+    border-radius: 999px;
+  }
+
+  @keyframes skeleton-shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  /* REQ-READ-004 AC 2 — shimmer disabled under reduce motion. */
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-card::after {
+      animation: none;
+      display: none;
+    }
+  }
+</style>

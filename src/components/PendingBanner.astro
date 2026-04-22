@@ -1,0 +1,167 @@
+---
+// Implements REQ-READ-005
+//
+// Subtle banner that shows when today's digest has not yet been
+// generated. The message is "Next digest scheduled at HH:MM — in Xh Ym.
+// Or refresh now." (REQ-READ-005 AC 2). If the user has never generated
+// a digest, the copy shifts to "Your first digest is scheduled for
+// HH:MM." (AC 4).
+//
+// The countdown is updated live by a small client-side script that ticks
+// every minute — the timestamps are rendered into `data-next-at` (unix
+// seconds) so the script re-derives the HH:MM and "Xh Ym" labels from
+// the user's clock. Timezone comes from a `data-tz` attribute on the
+// banner root.
+
+import { localHourMinuteInTz } from '~/lib/tz';
+
+interface Props {
+  /** Unix seconds of the user's next scheduled digest. */
+  nextScheduledAt: number;
+  /** IANA tz used for the HH:MM render (REQ-READ-005 AC 3). */
+  tz: string;
+  /** True if the user has never generated a digest (AC 4 copy variant). */
+  firstEver?: boolean;
+}
+
+const { nextScheduledAt, tz, firstEver = false } = Astro.props;
+
+const hm = localHourMinuteInTz(nextScheduledAt, tz);
+const hhmm = `${String(hm.hour).padStart(2, '0')}:${String(hm.minute).padStart(2, '0')}`;
+
+// Render an initial "Xh Ym" so the banner is meaningful even before JS
+// boots. The client script overwrites this every minute.
+const nowSec = Math.floor(Date.now() / 1000);
+const diffSec = Math.max(0, nextScheduledAt - nowSec);
+const hours = Math.floor(diffSec / 3600);
+const minutes = Math.floor((diffSec % 3600) / 60);
+const initialDelta = `${hours}h ${minutes}m`;
+---
+
+<aside
+  class="pending-banner"
+  role="status"
+  data-pending-banner
+  data-next-at={String(nextScheduledAt)}
+  data-tz={tz}
+  data-first-ever={firstEver ? '1' : '0'}
+>
+  {
+    firstEver ? (
+      <p class="pending-banner__text">
+        Your first digest is scheduled for <strong data-banner-time>{hhmm}</strong>.
+      </p>
+    ) : (
+      <p class="pending-banner__text">
+        Next digest scheduled at <strong data-banner-time>{hhmm}</strong> — in{' '}
+        <strong data-banner-delta>{initialDelta}</strong>.
+      </p>
+    )
+  }
+</aside>
+
+<script>
+  // Implements REQ-READ-005 AC 3 — live countdown.
+  //
+  // Recomputes the "in Xh Ym" delta every 60 seconds from the stored
+  // unix ts on `data-next-at`. The HH:MM label only changes across DST
+  // transitions; we still re-derive it each tick using the user's
+  // browser-local Intl for robustness.
+
+  function formatDelta(nowSec: number, targetSec: number): string {
+    const diff = Math.max(0, targetSec - nowSec);
+    const hours = Math.floor(diff / 3600);
+    const minutes = Math.floor((diff % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+  }
+
+  function formatClock(targetSec: number, tz: string): string {
+    try {
+      const fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+      const parts = fmt.formatToParts(new Date(targetSec * 1000));
+      let hh = '';
+      let mm = '';
+      for (const part of parts) {
+        if (part.type === 'hour') hh = part.value;
+        else if (part.type === 'minute') mm = part.value;
+      }
+      return `${hh}:${mm}`;
+    } catch {
+      return '';
+    }
+  }
+
+  function tick(banner: HTMLElement): void {
+    const rawTs = banner.dataset['nextAt'];
+    const tz = banner.dataset['tz'] ?? 'UTC';
+    if (rawTs === undefined || rawTs === '') return;
+    const target = Number.parseInt(rawTs, 10);
+    if (Number.isNaN(target)) return;
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    const deltaEl = banner.querySelector<HTMLElement>('[data-banner-delta]');
+    if (deltaEl !== null) {
+      deltaEl.textContent = formatDelta(nowSec, target);
+    }
+
+    const clockEl = banner.querySelector<HTMLElement>('[data-banner-time]');
+    if (clockEl !== null) {
+      const label = formatClock(target, tz);
+      if (label !== '') clockEl.textContent = label;
+    }
+  }
+
+  function initBanners(): void {
+    const banners = document.querySelectorAll<HTMLElement>('[data-pending-banner]');
+    banners.forEach((banner) => {
+      if (banner.dataset['bound'] === '1') return;
+      banner.dataset['bound'] = '1';
+      tick(banner);
+      const handle = window.setInterval(() => tick(banner), 60_000);
+      banner.dataset['intervalHandle'] = String(handle);
+    });
+  }
+
+  function teardownBanners(): void {
+    const banners = document.querySelectorAll<HTMLElement>('[data-pending-banner]');
+    banners.forEach((banner) => {
+      const raw = banner.dataset['intervalHandle'];
+      if (raw !== undefined && raw !== '') {
+        const handle = Number.parseInt(raw, 10);
+        if (!Number.isNaN(handle)) window.clearInterval(handle);
+      }
+      banner.dataset['bound'] = '0';
+      banner.dataset['intervalHandle'] = '';
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initBanners, { once: true });
+  } else {
+    initBanners();
+  }
+  document.addEventListener('astro:page-load', initBanners);
+  document.addEventListener('astro:before-swap', teardownBanners);
+</script>
+
+<style>
+  .pending-banner {
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text);
+    font-size: var(--text-sm);
+  }
+
+  .pending-banner__text {
+    margin: 0;
+    line-height: 1.5;
+  }
+</style>

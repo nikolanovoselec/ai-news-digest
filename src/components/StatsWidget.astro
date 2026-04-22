@@ -1,0 +1,154 @@
+---
+// Implements REQ-HIST-002
+//
+// Four-tile stats widget rendered inside /settings (REQ-HIST-002 AC 1).
+// Tiles:
+//   1. Digests generated      — count of rows in `digests` for the user
+//   2. Articles read / total  — `{read} of {total}` from articles joined
+//                               through digests, filtered by user_id
+//   3. Tokens consumed        — sum of tokens_in + tokens_out per user
+//   4. Cost to date           — sum of estimated_cost_usd, USD with 2-4
+//                               significant figures (AC 4)
+//
+// Data source: GET /api/stats (owned by Phase 5C). The widget performs a
+// same-origin fetch at SSR time — there is no cache layer (AC 5), so
+// every page load shows fresh numbers. Failures render tiles with an
+// "—" placeholder rather than 500ing the enclosing page.
+//
+// Placement: not self-mounted. /settings (Phase 3) is expected to add
+//   <StatsWidget /> inside its secondary section. Until that wiring
+// happens the component is orphaned but still unit-tested.
+
+interface StatsResponse {
+  digests_generated: number;
+  articles_read: number;
+  articles_total: number;
+  tokens_consumed: number;
+  cost_usd: number;
+}
+
+const defaultStats: StatsResponse = {
+  digests_generated: 0,
+  articles_read: 0,
+  articles_total: 0,
+  tokens_consumed: 0,
+  cost_usd: 0,
+};
+
+// AC 5 — refresh on every page load; no cache layer.
+const statsUrl = new URL('/api/stats', Astro.request.url);
+const cookieHeader = Astro.request.headers.get('Cookie');
+const headers: Record<string, string> = {};
+if (cookieHeader !== null) {
+  headers['Cookie'] = cookieHeader;
+}
+
+let stats: StatsResponse = defaultStats;
+let loadFailed = false;
+try {
+  const res = await fetch(statsUrl.toString(), { headers });
+  if (res.ok) {
+    stats = (await res.json()) as StatsResponse;
+  } else {
+    loadFailed = true;
+  }
+} catch {
+  loadFailed = true;
+}
+
+/**
+ * Comma-group an integer for display (e.g. `1,234,567`). Non-finite
+ * values render as "—" so the tile never shows `NaN`.
+ */
+function formatInt(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '—';
+  return Math.max(0, Math.round(n)).toLocaleString('en-US');
+}
+
+/**
+ * Format a USD cost with 2-4 significant figures, always prefixed with
+ * `$` (REQ-HIST-002 AC 4). Examples:
+ *   0       -> "$0.00"
+ *   0.14    -> "$0.14"
+ *   2.37    -> "$2.37"
+ *   42.1    -> "$42.10"
+ *   0.003   -> "$0.0030"
+ */
+function formatCostUsd(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  if (value === 0) return '$0.00';
+  const precise = Math.abs(value).toPrecision(value < 0.01 ? 2 : 3);
+  const asNum = Number(precise);
+  const fixed = asNum < 0.01 ? asNum.toFixed(4) : asNum.toFixed(2);
+  return `$${fixed}`;
+}
+
+/** "{read} of {total}" (REQ-HIST-002 AC 3). */
+function formatReadOfTotal(read: number, total: number): string {
+  return `${formatInt(read)} of ${formatInt(total)}`;
+}
+---
+
+<section
+  class="stats-widget"
+  data-stats-widget
+  data-load-failed={loadFailed ? '1' : '0'}
+  aria-label="Your digest statistics"
+>
+  <div class="stats-widget__tile">
+    <span class="stats-widget__label">Digests generated</span>
+    <span class="stats-widget__value" data-stats-digests>
+      {formatInt(stats.digests_generated)}
+    </span>
+  </div>
+  <div class="stats-widget__tile">
+    <span class="stats-widget__label">Articles read</span>
+    <span class="stats-widget__value" data-stats-articles>
+      {formatReadOfTotal(stats.articles_read, stats.articles_total)}
+    </span>
+  </div>
+  <div class="stats-widget__tile">
+    <span class="stats-widget__label">Tokens consumed</span>
+    <span class="stats-widget__value" data-stats-tokens>
+      {formatInt(stats.tokens_consumed)}
+    </span>
+  </div>
+  <div class="stats-widget__tile">
+    <span class="stats-widget__label">Cost to date</span>
+    <span class="stats-widget__value" data-stats-cost>
+      {formatCostUsd(stats.cost_usd)}
+    </span>
+  </div>
+</section>
+
+<style>
+  .stats-widget {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background-color: var(--surface);
+  }
+
+  .stats-widget__tile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    text-align: left;
+  }
+
+  .stats-widget__label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+
+  .stats-widget__value {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+</style>

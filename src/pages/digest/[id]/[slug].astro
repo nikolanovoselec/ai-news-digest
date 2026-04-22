@@ -1,0 +1,232 @@
+---
+// Implements REQ-READ-002, REQ-READ-003
+//
+// Article detail view. Renders the article's title, the three `details`
+// bullets as an unordered list, and a prominent "Read at source" link.
+// All text is rendered with Astro's default `{expression}` escaping —
+// the component NEVER sets raw HTML, never runs a markdown parser,
+// and never loads a sanitizer (REQ-READ-002 AC 2).
+//
+// Read-tracking (REQ-READ-003) runs inline in this page loader rather
+// than through a separate API endpoint: a single atomic UPDATE
+// user-scoped via a subquery flips `articles.read_at` from NULL to
+// now() on the first view. Repeat views do nothing because the WHERE
+// clause requires `read_at IS NULL`.
+
+import type { APIContext } from 'astro';
+import Base from '~/layouts/Base.astro';
+import { loadSession } from '~/middleware/auth';
+import { requireSettingsComplete } from '~/middleware/settings-gate';
+
+interface DigestRow {
+  id: string;
+  user_id: string;
+  local_date: string;
+  generated_at: number;
+  status: 'in_progress' | 'ready' | 'failed';
+  error_code: string | null;
+}
+
+interface ArticleRow {
+  id: string;
+  digest_id: string;
+  slug: string;
+  source_url: string;
+  title: string;
+  one_liner: string;
+  details_json: string;
+  source_name: string | null;
+  published_at: number | null;
+  rank: number;
+  read_at: number | null;
+}
+
+const env = Astro.locals.runtime.env;
+if (typeof env.OAUTH_JWT_SECRET !== 'string' || env.OAUTH_JWT_SECRET === '') {
+  return new Response('Application not configured', { status: 500 });
+}
+
+const session = await loadSession(Astro.request, env.DB, env.OAUTH_JWT_SECRET);
+if (session === null) {
+  return Astro.redirect('/api/auth/github/login', 303);
+}
+Astro.locals.user = session.user;
+
+const gated = requireSettingsComplete({
+  request: Astro.request,
+  locals: Astro.locals,
+} as unknown as APIContext);
+if (gated !== null) {
+  return gated;
+}
+
+const user = session.user;
+const digestId = Astro.params['id'];
+const slug = Astro.params['slug'];
+if (typeof digestId !== 'string' || digestId === '') {
+  return new Response('Not found', { status: 404 });
+}
+if (typeof slug !== 'string' || slug === '') {
+  return new Response('Not found', { status: 404 });
+}
+
+// Enforce ownership: the digest must belong to the session user.
+const digestRow = await env.DB.prepare(
+  'SELECT id, user_id, local_date, generated_at, status, error_code FROM digests WHERE id = ?1 AND user_id = ?2',
+)
+  .bind(digestId, user.id)
+  .first<DigestRow>();
+
+if (digestRow === null) {
+  return new Response('Not found', { status: 404 });
+}
+
+const articleRow = await env.DB.prepare(
+  'SELECT id, digest_id, slug, source_url, title, one_liner, details_json, source_name, published_at, rank, read_at FROM articles WHERE digest_id = ?1 AND slug = ?2',
+)
+  .bind(digestId, slug)
+  .first<ArticleRow>();
+
+if (articleRow === null) {
+  return new Response('Not found', { status: 404 });
+}
+
+// REQ-READ-003 AC 1+2+4 — atomic user-scoped UPDATE. The subquery
+// prevents cross-user marking; `read_at IS NULL` makes the statement
+// idempotent for re-visits.
+if (articleRow.read_at === null) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  try {
+    await env.DB.prepare(
+      'UPDATE articles SET read_at = ?1 WHERE id = ?2 AND digest_id IN (SELECT id FROM digests WHERE user_id = ?3) AND read_at IS NULL',
+    )
+      .bind(nowSec, articleRow.id, user.id)
+      .run();
+  } catch {
+    // Read-tracking is best-effort; a failure here must not block the
+    // detail view from rendering.
+  }
+}
+
+// Parse the stored `details_json` array. The write path sanitizes and
+// guarantees an array-of-3, but be defensive against malformed rows so
+// a corrupt entry doesn't crash the render.
+let details: string[] = [];
+try {
+  const parsed = JSON.parse(articleRow.details_json) as unknown;
+  if (Array.isArray(parsed)) {
+    details = parsed.filter((v): v is string => typeof v === 'string');
+  }
+} catch {
+  details = [];
+}
+
+const transitionName = `card-${articleRow.slug}`;
+---
+
+<Base title={articleRow.title}>
+  <article class="article-detail" data-article-detail>
+    <nav class="article-detail__back" aria-label="Back navigation">
+      <a href="/digest" class="article-detail__back-link">&larr; Back to digest</a>
+    </nav>
+
+    <header class="article-detail__header" transition:name={transitionName}>
+      <h1 class="article-detail__title">{articleRow.title}</h1>
+      {
+        articleRow.source_name !== null && articleRow.source_name !== '' && (
+          <span class="article-detail__source">{articleRow.source_name}</span>
+        )
+      }
+    </header>
+
+    <ul class="article-detail__bullets">
+      {details.map((bullet) => <li class="article-detail__bullet">{bullet}</li>)}
+    </ul>
+
+    <a
+      class="article-detail__source-link"
+      href={articleRow.source_url}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      Read at source &rarr;
+    </a>
+  </article>
+</Base>
+
+<style>
+  .article-detail {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 1.5rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .article-detail__back-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: var(--text-sm);
+  }
+
+  .article-detail__back-link:hover {
+    color: var(--text);
+  }
+
+  .article-detail__header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .article-detail__title {
+    margin: 0;
+    font-size: var(--text-2xl);
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--text);
+  }
+
+  .article-detail__source {
+    align-self: flex-start;
+    padding: 0.2rem 0.6rem;
+    background-color: var(--surface);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: var(--text-sm);
+  }
+
+  .article-detail__bullets {
+    margin: 0;
+    padding-left: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    color: var(--text);
+    line-height: 1.55;
+  }
+
+  .article-detail__bullet {
+    font-size: var(--text-base);
+  }
+
+  .article-detail__source-link {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    min-height: 44px;
+    padding: 0.75rem 1.25rem;
+    background-color: var(--accent);
+    color: #ffffff;
+    border-radius: 0.375rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .article-detail__source-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+</style>

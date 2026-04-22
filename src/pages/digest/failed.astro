@@ -1,0 +1,190 @@
+---
+// Implements REQ-READ-006
+//
+// Failure page for digest generation. Shown when the most recent digest
+// has `status='failed'` (digest.astro server-side redirects here) OR
+// when the client-side poll loop observes a 'failed' status.
+//
+// Layout: calm headline + short explanation + primary "Try again"
+// action + secondary "Go to settings" link. The raw `error_code` is
+// shown in a muted monospace footer so advanced users can quote it in
+// support requests — per REQ-READ-006 AC 2, NO prose from the
+// underlying error ever reaches the DOM; only the sanitized code.
+
+import Base from '~/layouts/Base.astro';
+
+const url = new URL(Astro.request.url);
+const rawCode = url.searchParams.get('code');
+
+// Allowlist the sanitized error codes we are willing to show. Anything
+// outside this list falls back to the generic `llm_failed` label — we
+// never echo an arbitrary query parameter into the DOM (CON-SEC-001).
+const ALLOWED_CODES = new Set<string>([
+  'llm_invalid_json',
+  'llm_failed',
+  'all_sources_failed',
+  'generation_stalled',
+  'user_cancelled',
+]);
+const errorCode =
+  rawCode !== null && ALLOWED_CODES.has(rawCode) ? rawCode : 'llm_failed';
+---
+
+<Base title="Digest failed">
+  <section class="failure-page">
+    <h1 class="failure-page__title">We couldn't build your digest</h1>
+    <p class="failure-page__message">
+      Something went wrong while generating today's digest. You can try again,
+      or adjust your sources and schedule in settings.
+    </p>
+    <div class="failure-page__actions">
+      <form
+        class="failure-page__retry"
+        data-retry-form
+        action="/api/digest/refresh"
+        method="post"
+      >
+        <button type="submit" class="failure-page__retry-button">Try again</button>
+      </form>
+      <a class="failure-page__settings-link" href="/settings">Go to settings</a>
+    </div>
+    <footer class="failure-page__code">
+      <code>{errorCode}</code>
+    </footer>
+  </section>
+</Base>
+
+<script>
+  // Wire the Try-again button to POST /api/digest/refresh; on 202 we
+  // reload the main /digest view so the poll loop resumes.
+
+  interface RefreshResponse {
+    retry_after_seconds?: number;
+  }
+
+  async function handleRetry(
+    form: HTMLFormElement,
+    button: HTMLButtonElement,
+  ): Promise<void> {
+    button.disabled = true;
+    let res: Response;
+    try {
+      res = await fetch('/api/digest/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+      });
+    } catch {
+      button.disabled = false;
+      return;
+    }
+    if (res.status === 429) {
+      let body: RefreshResponse = {};
+      try {
+        body = (await res.json()) as RefreshResponse;
+      } catch {
+        /* ignore */
+      }
+      const seconds =
+        typeof body.retry_after_seconds === 'number' ? body.retry_after_seconds : 300;
+      window.location.assign(`/rate-limited?seconds=${encodeURIComponent(seconds)}`);
+      return;
+    }
+    if (res.status === 202 || res.status === 409) {
+      window.location.assign('/digest');
+      return;
+    }
+    button.disabled = false;
+  }
+
+  function init(): void {
+    const form = document.querySelector<HTMLFormElement>('[data-retry-form]');
+    if (form === null) return;
+    if (form.dataset['bound'] === '1') return;
+    form.dataset['bound'] = '1';
+    const button = form.querySelector<HTMLButtonElement>('button');
+    if (button === null) return;
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      void handleRetry(form, button);
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    init();
+  }
+  document.addEventListener('astro:page-load', init);
+</script>
+
+<style>
+  .failure-page {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 3rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    text-align: center;
+  }
+
+  .failure-page__title {
+    margin: 0;
+    font-size: var(--text-2xl);
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .failure-page__message {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-base);
+    line-height: 1.5;
+  }
+
+  .failure-page__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+
+  .failure-page__retry {
+    margin: 0;
+  }
+
+  .failure-page__retry-button {
+    min-height: 44px;
+    padding: 0.75rem 1.5rem;
+    background-color: var(--accent);
+    color: #ffffff;
+    border: none;
+    border-radius: 0.375rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .failure-page__retry-button:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+
+  .failure-page__settings-link {
+    color: var(--text-muted);
+    text-decoration: underline;
+    font-size: var(--text-sm);
+  }
+
+  .failure-page__settings-link:hover {
+    color: var(--text);
+  }
+
+  .failure-page__code {
+    margin-top: 1.5rem;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+</style>
