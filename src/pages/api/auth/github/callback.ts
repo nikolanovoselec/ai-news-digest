@@ -102,11 +102,28 @@ function invalidStateResponse(origin: string, extraHeaders: Headers): Response {
   // preserved: the CSRF failure remains visible in server logs and to
   // any programmatic caller, and the browser does not treat this as a
   // successful redirect.
+  const safeTarget = htmlAttrEscape(target);
   const body = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Sign-in incomplete</title>
-<meta http-equiv="refresh" content="0;url=${target}"></head>
-<body><p>Sign-in did not complete. <a href="${target}">Return to the landing page</a> and try again.</p></body></html>`;
+<meta http-equiv="refresh" content="0;url=${safeTarget}"></head>
+<body><p>Sign-in did not complete. <a href="${safeTarget}">Return to the landing page</a> and try again.</p></body></html>`;
   return new Response(body, { status: 403, headers });
+}
+
+/**
+ * Escape a string for safe interpolation inside an HTML attribute value.
+ * The origin used here is derived from the APP_URL env secret so it is
+ * currently trusted, but defense-in-depth: if any caller in the future
+ * forwards user input through this helper, an unencoded `"` would break
+ * out of the attribute and allow XSS.
+ */
+function htmlAttrEscape(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 /**
