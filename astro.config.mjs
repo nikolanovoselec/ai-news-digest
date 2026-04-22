@@ -1,7 +1,7 @@
 import { defineConfig } from 'astro/config';
 import cloudflare from '@astrojs/cloudflare';
 import tailwind from '@astrojs/tailwind';
-import { VitePWA } from '@vite-pwa/astro';
+import AstroPWA from '@vite-pwa/astro';
 
 // https://astro.build/config
 export default defineConfig({
@@ -13,7 +13,7 @@ export default defineConfig({
   }),
   integrations: [
     tailwind(),
-    VitePWA({
+    AstroPWA({
       registerType: 'autoUpdate',
       manifest: false, // we ship our own /manifest.webmanifest
       workbox: {
