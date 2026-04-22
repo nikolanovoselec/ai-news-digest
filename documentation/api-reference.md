@@ -35,7 +35,9 @@ Handles GitHub's OAuth redirect. Validates `state`, exchanges code for access to
 
 **Implements:** [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-github), [REQ-AUTH-004](../sdd/authentication.md#req-auth-004-oauth-error-surfacing)
 
-**Error responses** (redirect to `/?error={code}`): `access_denied`, `no_verified_email`, `invalid_state`, `oauth_error`.
+**Error responses:**
+- `access_denied`, `no_verified_email`, `oauth_error` — 3xx redirect to `/?error={code}`.
+- `invalid_state` (CSRF state mismatch) — HTTP 403 with an HTML body that meta-refreshes to `/?error=invalid_state`. Browsers do not auto-follow `Location` on 4xx responses, so the redirect is delivered via `<meta http-equiv="refresh">` in the body. The origin value interpolated into the body is HTML-escaped.
 
 ### POST /api/auth/github/logout
 
