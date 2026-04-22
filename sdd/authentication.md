@@ -20,7 +20,7 @@ GitHub OAuth as the only sign-in method. Stateless HMAC-SHA256 JWT sessions with
 **Priority:** P0
 **Dependencies:** None
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -40,7 +40,7 @@ GitHub OAuth as the only sign-in method. Stateless HMAC-SHA256 JWT sessions with
 **Priority:** P0
 **Dependencies:** REQ-AUTH-001
 **Verification:** Automated test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -59,7 +59,7 @@ GitHub OAuth as the only sign-in method. Stateless HMAC-SHA256 JWT sessions with
 **Priority:** P0
 **Dependencies:** REQ-AUTH-001
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -79,7 +79,7 @@ GitHub OAuth as the only sign-in method. Stateless HMAC-SHA256 JWT sessions with
 **Priority:** P0
 **Dependencies:** REQ-AUTH-001
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -99,7 +99,7 @@ GitHub OAuth as the only sign-in method. Stateless HMAC-SHA256 JWT sessions with
 **Priority:** P1
 **Dependencies:** REQ-AUTH-001
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
