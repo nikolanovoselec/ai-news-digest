@@ -291,6 +291,9 @@ export async function generateDigest(
       const rawResponse =
         typeof aiResult.response === 'string' ? aiResult.response : '';
       const sample = rawResponse.slice(0, 300);
+      // Also capture the tail so we can tell a truncated (hit max_tokens)
+      // response from one that finished but drifted off-schema.
+      const tail = rawResponse.length > 600 ? rawResponse.slice(-300) : '';
       log('warn', 'digest.generation', {
         user_id: user.id,
         digest_id: resolvedDigestId,
@@ -298,6 +301,7 @@ export async function generateDigest(
         status: 'llm_invalid_json',
         raw_length: rawResponse.length,
         raw_sample: sample,
+        raw_tail: tail,
       });
       return {
         digestId: resolvedDigestId,
