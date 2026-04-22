@@ -21,7 +21,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Priority:** P0
 **Dependencies:** REQ-SET-002
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -40,7 +40,8 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Priority:** P1
 **Dependencies:** REQ-DISC-001
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Partial
+**Notes:** `GET /api/discovery/status` endpoint ships and returns the pending-tags list; the in-app banner wiring and UI is not yet verified by a dedicated test.
 
 ---
 
@@ -61,7 +62,8 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Priority:** P2
 **Dependencies:** REQ-DISC-001
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Partial
+**Notes:** Eviction logic is live and tests cover discovery-time failure counting and tag re-queue behaviour; end-to-end feed-level health tracking during normal digest fetches is not yet exercised by a dedicated test.
 
 ---
 
@@ -81,7 +83,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Priority:** P2
 **Dependencies:** REQ-DISC-001
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -101,4 +103,4 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Priority:** P0
 **Dependencies:** REQ-DISC-001
 **Verification:** Automated test
-**Status:** Planned
+**Status:** Implemented
