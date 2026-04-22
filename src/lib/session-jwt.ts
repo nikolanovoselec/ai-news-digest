@@ -126,8 +126,8 @@ export async function verifySession(
     valid = await crypto.subtle.verify(
       'HMAC',
       key,
-      signatureBytes,
-      new TextEncoder().encode(signingInput),
+      signatureBytes as BufferSource,
+      new TextEncoder().encode(signingInput) as BufferSource,
     );
   } catch {
     return null;
