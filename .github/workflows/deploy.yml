@@ -56,14 +56,25 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.RESEND_FROM }}
           APP_URL: ${{ secrets.APP_URL }}
+          DEV_BYPASS_TOKEN: ${{ secrets.DEV_BYPASS_TOKEN }}
         run: |
           set -e
+          # Required secrets — fail the deploy if any are missing.
           for name in OAUTH_CLIENT_ID OAUTH_CLIENT_SECRET OAUTH_JWT_SECRET RESEND_API_KEY RESEND_FROM APP_URL; do
             TMP=$(mktemp)
             printf '%s' "${!name}" > "$TMP"
             npx --yes wrangler secret put "$name" < "$TMP"
             rm "$TMP"
           done
+          # Optional: DEV_BYPASS_TOKEN enables the /api/dev/login endpoint
+          # used by scripts/e2e-test.sh. If the repo secret is unset,
+          # skip — the endpoint will return 404 at runtime.
+          if [ -n "${DEV_BYPASS_TOKEN:-}" ]; then
+            TMP=$(mktemp)
+            printf '%s' "$DEV_BYPASS_TOKEN" > "$TMP"
+            npx --yes wrangler secret put DEV_BYPASS_TOKEN < "$TMP"
+            rm "$TMP"
+          fi
 
       - name: Deploy
         id: deploy
