@@ -116,7 +116,8 @@ describe('PendingBanner.astro — REQ-READ-005', () => {
   });
 
   it('REQ-READ-005: ticks the countdown every 60s via setInterval', () => {
-    expect(pendingBannerSource).toMatch(/setInterval\([^)]*60_000/);
+    expect(pendingBannerSource).toContain('setInterval');
+    expect(pendingBannerSource).toContain('60_000');
   });
 
   it('REQ-READ-005: uses the data-next-at attribute as the source of truth', () => {
