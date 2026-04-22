@@ -46,28 +46,31 @@ When a user selects a tag (default or custom), the system discovers authoritativ
 
 ### Discovery flow
 
-Discovery is **fully asynchronous and cron-driven**. Settings save is instant; discovery happens over subsequent cron invocations. Avoids HTTP-request timeouts, `ctx.waitUntil` limits, and need for Queues.
+Discovery is **fully asynchronous and cron-driven**. Settings save is instant; discovery happens over subsequent cron invocations via D1-queued work. Avoids HTTP-request timeouts.
 
 ```
 On settings save (onboarding or edit):
   1. Validate + UPDATE users row with new hashtags_json (instant).
-  2. For any submitted tag that doesn't yet have a `sources:{tag}` KV entry,
-     INSERT a row into pending_discoveries (tag PRIMARY KEY — transactional,
-     idempotent; duplicate INSERT silently no-ops via INSERT OR IGNORE).
+  2. For any submitted tag that doesn't yet have a `sources:{tag}` KV entry:
+     INSERT OR IGNORE INTO pending_discoveries (user_id, tag, added_at)
+     VALUES (?, ?, ?). Composite PK (user_id, tag) makes duplicates silent.
   3. Return 200 { ok: true, discovering: [tag1, tag2, ...] }.
 
 On every 5-min cron invocation (before generation scheduling):
-  1. SELECT tag, user_id FROM pending_discoveries ORDER BY added_at LIMIT 3.
+  1. SELECT DISTINCT tag FROM pending_discoveries ORDER BY MIN(added_at)
+     GROUP BY tag LIMIT 3. This picks the 3 oldest tags needing discovery
+     across all users (shared work — each tag discovered once globally).
   2. For each: run LLM + validation, write to `sources:{tag}` KV (no TTL).
-     DELETE FROM pending_discoveries WHERE tag = ?.
+     DELETE FROM pending_discoveries WHERE tag = ? (removes from ALL users'
+     pending lists at once since discovery is global).
   3. A stubborn tag (3 consecutive discovery failures — tracked in
      `discovery_failures:{tag}` KV) is stored with an empty sources array
-     and deleted from pending; user can manually re-discover from /settings.
+     `{ feeds: [], discovered_at: now }` and removed from all pending rows.
 ```
 
-**State machine**: presence in the `pending_discoveries` table means "not discovered yet". Presence of `sources:{tag}` KV key means "discovered (possibly empty if stubborn)". Both are strongly consistent — no race windows.
+**State machine**: presence of a `(user_id, tag)` row in `pending_discoveries` means "this user is waiting for discovery on this tag". Presence of `sources:{tag}` KV key means "discovered" (the value shape is always `{ feeds: [{name, url, kind}], discovered_at: int }` — empty `feeds` means discovery tried but found nothing). Both stores are strongly consistent.
 
-**UI indicator**: `/digest` fetches `/api/discovery/status` which returns `{ pending: [tag, ...] }` from the user's KV entry. While non-empty, a subtle banner shows "Discovering sources for #{tag1}, #{tag2}… Your next digest will include them." No schema columns needed.
+**UI indicator**: `/digest` fetches `/api/discovery/status` which returns `{ pending: [tag, ...] }` — scoped by user via `WHERE user_id = :session_user_id`. While non-empty, a subtle banner shows "Discovering sources for #{tag1}, #{tag2}… Your next digest will include them."
 
 ### New API
 
@@ -95,10 +98,11 @@ Discovery procedure:
      - ≥1 item with a title and URL
      URLs failing any check are discarded.
   3. Store validated feeds as `sources:{tag}` in KV with no TTL
-     (persist until evidence of staleness). Shape: [{ name, url, kind }].
-  4. If all suggestions fail, store an empty array with `discovered_at`
-     timestamp; a manual "re-discover" button in /settings lets the user
-     retry for a stubborn tag.
+     (persist until evidence of staleness). Shape:
+     `{ feeds: [{ name, url, kind }], discovered_at: unix_ts }`.
+  4. If all suggestions fail, store `{ feeds: [], discovered_at: unix_ts }`;
+     a manual "re-discover" button in /settings lets the user retry for a
+     stubborn tag.
 ```
 
 ### Cache invalidation — validate on failure, not on a timer
@@ -128,7 +132,7 @@ Per-hashtag item cap 30 per source (generics) and 20 per source (tag-specific), 
 
 | Key | Value | TTL |
 |---|---|---|
-| `sources:{tag}` | `[{ name, url, kind }]` validated feeds | No TTL (evicted on repeated feed failures) |
+| `sources:{tag}` | `{ feeds: [{ name, url, kind }], discovered_at: int }` — empty `feeds` array means discovered-but-no-results | No TTL (evicted on repeated feed failures) |
 | `source_health:{url}` | `{ consecutive_failures, last_fail_at }` counter per feed URL | 7 days |
 | `discovery_failures:{tag}` | `{ count, last_attempt_at }` | 7 days |
 | `headlines:{source_name}:{tag}` | Cached fetch results from a source for a tag, shared across users | 10 minutes |
@@ -137,7 +141,7 @@ Per-hashtag item cap 30 per source (generics) and 20 per source (tag-specific), 
 
 The same canonicalization rules apply to discovered feed URLs as to article URLs: HTTPS only, reject IP literals / private ranges / localhost during validation. The LLM cannot coerce us to fetch internal addresses because the validation runs before any URL is stored.
 
-Results are canonicalized and deduplicated (see URL canonicalization below), then a single LLM call ranks the top 10 across all hashtags and writes the one-line + longer summary for each. The LLM is also asked to return which hashtag(s) matched each article — stored on the article row and shown subtly in the card for transparency.
+Results are canonicalized and deduplicated (see URL canonicalization below), then a single LLM call ranks the top 10 across all hashtags and writes the one-line + longer summary for each.
 
 ### URL canonicalization
 
@@ -344,7 +348,7 @@ No dedicated `/onboarding` route. `/settings` IS the onboarding — the same for
    d. Email notifications — a single toggle "Email me when my daily digest
       is ready" (default on), collapsible "Advanced" section along with Model.
 6. On submit: server validates every field (tz in IANA list, model_id in
-   cached catalog, hashtags against regex). UPDATE users. For first-run,
+   MODELS list from src/lib/models.ts, hashtags against regex). UPDATE users. For first-run,
    trigger the digest pipeline immediately (out-of-band) and redirect to
    /digest with a loading state. For edit-mode, flash "Saved" and stay.
 ```
@@ -412,7 +416,7 @@ CREATE TABLE articles (
   title           TEXT NOT NULL,
   one_liner       TEXT NOT NULL,                      -- <=120 chars, sanitized
   details_json    TEXT NOT NULL,                      -- JSON array of plaintext bullet strings (typically 3 bullets)
-  source_name     TEXT,                               -- 'Google News' | 'Hacker News' | 'Reddit' | 'arXiv'
+  source_name     TEXT,                               -- 'Google News' | 'Hacker News' | 'Reddit' | tag-specific feed name
   published_at    INTEGER,
   rank            INTEGER NOT NULL,
   read_at         INTEGER                             -- unix ts when user first opened the detail view; NULL if unread
@@ -421,13 +425,17 @@ CREATE UNIQUE INDEX idx_articles_digest_slug ON articles(digest_id, slug);
 CREATE INDEX idx_articles_digest_rank ON articles(digest_id, rank);
 CREATE INDEX idx_articles_read ON articles(digest_id, read_at);  -- supports "articles read" stats
 
--- Pending tag discoveries (queue-like; cron processes a few per invocation)
+-- Pending tag discoveries (queue-like; cron processes a few per invocation).
+-- Composite PK so each user sees their own pending list while the global
+-- `sources:{tag}` cache still dedupes the actual discovery work.
 CREATE TABLE pending_discoveries (
-  tag         TEXT PRIMARY KEY,                       -- global (one discovery per tag shared across users)
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  added_at    INTEGER NOT NULL
+  tag         TEXT NOT NULL,
+  added_at    INTEGER NOT NULL,
+  PRIMARY KEY (user_id, tag)
 );
 CREATE INDEX idx_pending_discoveries_added ON pending_discoveries(added_at);
+CREATE INDEX idx_pending_discoveries_tag ON pending_discoveries(tag);
 
 -- no sessions table: sessions are stateless JWTs in HttpOnly cookies
 -- no resolved-URL cache: we never fetch article pages, so no resolution needed
@@ -465,7 +473,10 @@ Custom implementation, no third-party auth library. Pattern lifted from the code
   3. GET api.github.com/user and /user/emails in parallel → extract primary
      verified email, numeric id (stringified), login
   4. INSERT OR IGNORE into users (id, email, gh_login, tz, created_at) with
-     tz='UTC' placeholder. users.id IS the GitHub numeric id as TEXT.
+     tz='UTC' placeholder. Other columns (digest_minute, email_enabled,
+     refresh_window_start, refresh_count_24h, session_version) take their
+     NOT NULL DEFAULT values from the schema. users.id IS the GitHub numeric
+     id as TEXT.
   5. Sign HMAC-SHA256 JWT with claims
      { sub: users.id, ghl: gh_login, sv: users.session_version, iat, exp }.
      sv is the session_version at issue time — validation rejects JWTs whose
@@ -609,8 +620,17 @@ Handler enqueues and returns immediately. Same consumer handles it.
 
 ```
 1. Rate-limit check via atomic conditional UPDATE (see rate limits below).
-2. INSERT a new digest row: id=ULID, status='in_progress', trigger='manual',
-   local_date=today's local date in user.tz, model_id from user row.
+2. Conditional INSERT prevents double-click duplicates:
+   INSERT INTO digests (id, user_id, local_date, generated_at, model_id,
+                        status, trigger)
+   SELECT ?, ?, ?, ?, model_id, 'in_progress', 'manual'
+   FROM users
+   WHERE id = ?
+     AND NOT EXISTS (
+       SELECT 1 FROM digests
+       WHERE user_id = ? AND local_date = ? AND status = 'in_progress'
+     );
+   If 0 rows inserted → return 409 already_in_progress.
 3. Enqueue { trigger: 'manual', user_id, local_date, digest_id }
    to `digest-jobs` with no delay.
 4. Return 202 { digest_id, status: 'in_progress' }.
@@ -623,7 +643,7 @@ Client polls /api/digest/:id as before.
 1. If called from cron (no digestId passed):
    First check: SELECT 1 FROM digests WHERE user_id=? AND local_date=?
    AND status IN ('in_progress', 'ready'). If a row exists → exit (a manual
-   refresh may be mid-flight via ctx.waitUntil, or today's digest already
+   refresh may be mid-flight via queue consumer, or today's digest already
    completed; either way, do not start a concurrent generation).
    Otherwise INSERT a new digest row: status='in_progress', trigger='scheduled'.
 2. For each hashtag in user.hashtags_json, fan out in parallel:
@@ -675,7 +695,7 @@ WHERE id = :user_id
 RETURNING refresh_count_24h;
 ```
 
-Zero rows returned → rate-limited (return 429 with `retry_after_seconds`). One row returned → accepted, INSERT the digest row, return 202, fire `ctx.waitUntil(generateDigest(...))`. No read-then-write race.
+Zero rows returned → rate-limited (return 429 with `retry_after_seconds`). One row returned → accepted, INSERT the digest row, enqueue `digest-jobs`, return 202. No read-then-write race.
 
 ### Rate-limit UX
 
@@ -689,7 +709,7 @@ When rejected, the API returns `429` with a JSON body `{ error, retry_after_seco
 
 ### Stuck `in_progress` sweeper
 
-If a Worker isolate is evicted mid-generation (rare but possible on `ctx.waitUntil`), the digest row stays `status='in_progress'` forever and polling hangs. Prevention: the 5-min cron runs a sweep before its scheduling work:
+If a Queue consumer crashes mid-generation (rare, but Queue retry + isolate eviction can leave rows stuck), the digest row stays `status='in_progress'` and polling hangs. Prevention: the 5-min cron runs a sweep before its scheduling work:
 
 ```sql
 UPDATE digests
@@ -699,9 +719,9 @@ WHERE status = 'in_progress' AND generated_at < :now - 600;
 
 10-minute staleness threshold — longer than any legitimate generation, short enough that users see a failure and can retry within 10 minutes of the crash.
 
-### Cron/waitUntil race prevention
+### Cron/queue race prevention
 
-If a manual refresh's `waitUntil` is still generating when the user's scheduled HH:MM window hits, cron would otherwise start a second concurrent generation. Prevention: step 1 of `generateDigest` (scheduled path) checks for ANY existing digest for this user with today's local_date, not just 'ready':
+If a manual refresh's queue consumer is still generating when the user's scheduled HH:MM window hits, cron would otherwise enqueue a second concurrent job. Prevention: the cron scheduling query skips any user who has an in-progress or ready digest for today's local_date (not just 'ready'):
 
 ```sql
 -- scheduled path: skip if any non-failed digest exists for today
@@ -1025,14 +1045,14 @@ All mutating endpoints require an authenticated session (valid `__Host-news_dige
 |---|---|---|---|---|
 | GET | `/api/settings` | — | `{ hashtags: string[], digest_hour: int, digest_minute: int, tz: string, model_id: string, email_enabled: bool, first_run: bool }` | 401 |
 | PUT | `/api/settings` | `{ hashtags, digest_hour, digest_minute, model_id, email_enabled }` | `{ ok: true, discovering: string[] }` — `discovering` lists any newly-added tags awaiting discovery | 400 `invalid_hashtags` \| `invalid_time` \| `invalid_model_id` \| `invalid_email_enabled`; 401 |
-| GET | `/api/discovery/status` | — | `{ pending: string[] }` — tags still awaiting discovery for this user | 401 |
-| POST | `/api/discovery/retry` | `{ tag: string }` | `{ ok: true }` — re-queues a stubborn tag | 400 `unknown_tag`; 401 |
+| GET | `/api/discovery/status` | — | `{ pending: string[] }` — `SELECT tag FROM pending_discoveries WHERE user_id = :session_user_id` | 401 |
+| POST | `/api/discovery/retry` | `{ tag: string }` | `{ ok: true }` — verifies tag is in the user's hashtags_json, DELETEs `discovery_failures:{tag}` and `sources:{tag}` KV entries, INSERTs a fresh `pending_discoveries` row. Next cron picks it up. | 400 `unknown_tag` (tag not in user's hashtags_json); 401 |
 
 ### Digest and refresh
 
 | Method | Path | Request | Response | Errors |
 |---|---|---|---|---|
-| GET | `/api/digest/today` | — | `{ digest: {...} \| null, articles: [...], live: bool, next_scheduled_at: int \| null }` — returns the newest digest for today's local_date (or yesterday's if today hasn't generated yet); `live=true` when a digest is currently in_progress; `next_scheduled_at` is the unix ts of the next scheduled run when today's has not yet happened | 401 |
+| GET | `/api/digest/today` | — | `{ digest: {...} \| null, articles: [...], live: bool, next_scheduled_at: int \| null }`. Query: `SELECT * FROM digests WHERE user_id = :session_user_id ORDER BY generated_at DESC LIMIT 1`. `live=true` if that row has `status='in_progress'`. If `local_date != today_in_user_tz`, compute `next_scheduled_at` from user's `digest_hour:digest_minute` in their tz. | 401 |
 | GET | `/api/digest/:id` | — | Same shape as `/today`, for a specific digest | 401; 403 `not_yours` (shouldn't happen — filtered by query); 404 |
 | POST | `/api/digest/refresh` | — | `202 { digest_id, status: 'in_progress' }` — handler inserts the digest row, returns 202, then fires `ctx.waitUntil(generateDigest(...))` for background generation | 401; 429 `rate_limited` `{ retry_after_seconds, reason: 'cooldown' \| 'daily_cap' }`; 409 `already_in_progress` — returned if `SELECT 1 FROM digests WHERE user_id=? AND local_date=? AND status='in_progress'` finds a row (prevents duplicate concurrent generation even if rate-limit window was bypassed) |
 
@@ -1117,7 +1137,7 @@ Internal error details (exception messages, response bodies) are logged at `leve
 
 ## Deployment
 
-Cloudflare Workers. Cron Trigger every 5 minutes in `wrangler.toml` (`crons = ["*/5 * * * *"]`). D1 and KV (discovered sources cache + source_health counters) bindings provisioned via `wrangler`. No Queues. GitHub OAuth client ID/secret, `OAUTH_JWT_SECRET`, `RESEND_API_KEY`, `RESEND_FROM`, and `APP_URL` configured as Worker secrets. Schema migrations applied with `wrangler d1 migrations apply`.
+Cloudflare Workers. Cron Trigger every 5 minutes in `wrangler.toml` (`crons = ["*/5 * * * *"]`). D1, KV (discovered sources cache + source_health + headline cache), and a single Queue `digest-jobs` (default 3-retry, no DLQ) bindings provisioned via `wrangler`. GitHub OAuth client ID/secret, `OAUTH_JWT_SECRET`, `RESEND_API_KEY`, `RESEND_FROM`, and `APP_URL` configured as Worker secrets. Schema migrations applied with `wrangler d1 migrations apply`.
 
 ## Scale and tradeoffs
 
@@ -1157,11 +1177,12 @@ When implementation starts, build in this order — each layer unblocks the next
 8. `src/pages/settings.astro` + `PUT /api/settings` — form component that handles both onboarding and edit
 9. `src/lib/sources.ts` — generic sources + discovery logic
 10. `src/lib/generate.ts` — `generateDigest(user, trigger, digestId?)`
-11. `src/pages/api/digest/refresh.ts` — POST handler with rate limit + ctx.waitUntil
+11. `src/pages/api/digest/refresh.ts` — POST handler with rate limit + enqueue to `digest-jobs`
+11b. `src/queue/digest-consumer.ts` — Queue consumer that calls `generateDigest(message)`
 12. `src/pages/digest.astro` — overview grid with polling
 13. `src/pages/digest/[id]/[slug].astro` — detail view (marks read)
 14. `src/pages/history.astro` + `GET /api/history`
-15. `src/worker.ts` cron handler — sweeper + scheduled generation
+15. `src/worker.ts` cron handler — sweeper + discovery processor + dispatcher (enqueues to `digest-jobs`; does NOT generate inline)
 16. `src/lib/email.ts` + Resend integration
 17. PWA manifest + service worker + icons
 18. Polish (animations, stats widget, install prompt)
