@@ -87,17 +87,13 @@ async function setTzRequest(
   if (options.cookie !== null && options.cookie !== undefined) {
     headers.set('Cookie', options.cookie);
   }
-  const body =
-    options.rawBody !== undefined
-      ? options.rawBody
-      : options.body !== undefined
-      ? JSON.stringify(options.body)
-      : undefined;
-  return new Request(`${APP_URL}/api/auth/set-tz`, {
-    method: 'POST',
-    headers,
-    body,
-  });
+  const init: RequestInit = { method: 'POST', headers };
+  if (options.rawBody !== undefined) {
+    init.body = options.rawBody;
+  } else if (options.body !== undefined) {
+    init.body = JSON.stringify(options.body);
+  }
+  return new Request(`${APP_URL}/api/auth/set-tz`, init);
 }
 
 describe('POST /api/auth/set-tz', () => {

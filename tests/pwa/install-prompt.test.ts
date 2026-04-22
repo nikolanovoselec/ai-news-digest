@@ -96,7 +96,7 @@ describe('beforeinstallprompt handler semantics (REQ-PWA-001 AC 5)', () => {
     let userChoiceResolved = false;
     const fake: DeferredPromptEvent = {
       prompt: async () => {},
-      userChoice: Promise.resolve({ outcome: 'accepted', platform: 'web' }).then((v) => {
+      userChoice: Promise.resolve({ outcome: 'accepted' as const, platform: 'web' }).then((v) => {
         userChoiceResolved = true;
         return v;
       })

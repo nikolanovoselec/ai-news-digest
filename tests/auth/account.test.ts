@@ -108,11 +108,11 @@ async function deleteRequest(
   if (options.cookie !== null && options.cookie !== undefined) {
     headers.set('Cookie', options.cookie);
   }
-  return new Request(`${APP_URL}/api/auth/account`, {
-    method: 'DELETE',
-    headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  });
+  const init: RequestInit = { method: 'DELETE', headers };
+  if (options.body !== undefined) {
+    init.body = JSON.stringify(options.body);
+  }
+  return new Request(`${APP_URL}/api/auth/account`, init);
 }
 
 function makeContext(request: Request, e: Partial<Env>): unknown {
