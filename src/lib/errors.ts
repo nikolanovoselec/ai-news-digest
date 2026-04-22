@@ -174,6 +174,6 @@ export function errorResponse(
   };
   return new Response(JSON.stringify(body), {
     status: status ?? DEFAULT_STATUS[code],
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    headers: { 'Content-Type': 'application/json' },
   });
 }
