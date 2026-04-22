@@ -45,37 +45,53 @@ When a user selects a tag (default or custom), the system discovers authoritativ
 
 ### Discovery flow
 
-```
-When users.hashtags_json changes (onboarding submit, settings save):
-  For each tag that doesn't exist in KV key `sources:{tag}`:
-    Enqueue a discovery job to the 'source-discovery' Queue with { tag }.
+Discovery runs **synchronously** inside the `PUT /api/settings` handler (and the onboarding first-save). The user waits a few seconds on save but lands on a first digest that already includes the discovered sources.
 
-Discovery consumer:
-  1. Ask an LLM (same model pool as digest generation, default
-     llama-3.1-8b-instruct-fp8-fast for cost):
+```
+On settings save (onboarding or edit):
+  For each tag in the submitted hashtags that does NOT have a KV entry
+  `sources:{tag}`:
+    Run discovery inline (with a 10s budget per tag, hard-capped).
+    If the budget blows: fall back to enqueuing a 'source-discovery' Queue
+    job so discovery completes asynchronously, and the tag proceeds with
+    generic sources only for the next digest.
+
+Discovery procedure:
+  1. Ask an LLM (default llama-3.1-8b-instruct-fp8-fast for cost):
      System: "You suggest authoritative, stable, publicly accessible
               RSS/Atom/JSON feed URLs for a given technology or topic.
               Only real feeds you are confident exist. Return strict JSON."
      User:   "Topic: '#{tag}'. Return up to 5 feeds as
               [{ name, url, kind: 'rss'|'atom'|'json' }].
               Prefer official blogs, release notes, changelogs over news sites."
-  2. For each suggested URL: validate with a GET (5s timeout, 1MB cap):
+  2. For each suggested URL, validate with a GET (5s timeout, 1MB cap):
+     - URL passes SSRF filter (HTTPS only, no private/localhost IPs)
      - HTTP 200
      - Content-Type matches kind (xml/atom for rss/atom, json for json)
      - Parse succeeds (fast-xml-parser or JSON.parse)
      - ≥1 item with a title and URL
      URLs failing any check are discarded.
-  3. Store validated feeds as `sources:{tag}` in KV, 30-day TTL.
-     Shape: [{ name, url, kind }, ...].
-  4. If all suggestions fail: store an empty array with 7-day TTL (don't
-     hammer the LLM for a stubborn tag; retry after a week).
+  3. Store validated feeds as `sources:{tag}` in KV with no TTL
+     (persist until evidence of staleness). Shape: [{ name, url, kind }].
+  4. If all suggestions fail, store an empty array with `discovered_at`
+     timestamp; a manual "re-discover" button in /settings lets the user
+     retry for a stubborn tag.
 ```
 
-Discovery is **eventual**. A brand-new tag's first digest uses generic sources only; by the next digest (next day for scheduled, or within minutes for an immediate discovery run), tag-specific feeds are included. This avoids delaying the first-run UX.
+### Cache invalidation — validate on failure, not on a timer
+
+Feed URLs don't rot on a schedule. A blog's RSS feed stays at the same URL for years, then breaks when the site is redesigned or shut down. Time-based TTLs either expire still-working feeds (wasting LLM calls) or keep broken ones too long.
+
+Instead: the digest consumer tracks feed failures inline. If a feed in `sources:{tag}` returns a fetch error or parse error during digest generation, increment an in-memory counter. After 2 consecutive failures across digest runs (tracked in KV `source_health:{url}` with a counter + last_fail_at), the feed is evicted from `sources:{tag}` and the tag is flagged for re-discovery on the next settings save (or via the manual re-discover button).
+
+This approach:
+- Cached sources live as long as they work — zero needless LLM calls
+- Dead feeds get pruned automatically within a few days
+- No time-based cache management code
 
 ### Seed at deploy time (optional)
 
-To avoid cold-start latency on the 20 default tags, a one-time `npm run seed-sources` script enqueues discovery jobs for them at deploy time. Fully optional — the system works without seeding.
+A one-time `npm run seed-sources` script runs discovery for the 20 default tags so new users land with rich sources on their first digest. Optional — the system works without seeding.
 
 ### Generation pipeline consumes both
 
@@ -89,7 +105,8 @@ Per-hashtag item cap 30 per source (generics) and 20 per source (tag-specific), 
 
 | Key | Value | TTL |
 |---|---|---|
-| `sources:{tag}` | `[{ name, url, kind }]` validated feeds | 30 days (7 days if empty) |
+| `sources:{tag}` | `[{ name, url, kind }]` validated feeds | No TTL (evicted on repeated feed failures, not on time) |
+| `source_health:{url}` | `{ consecutive_failures, last_fail_at }` counter per feed URL | 7 days (rolls over) |
 
 ### Security note on discovered URLs
 
