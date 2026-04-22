@@ -37,5 +37,8 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      - name: Build (populates dist/ for Workers test pool)
+        run: npm run build
+
       - name: Tests
         run: npm test

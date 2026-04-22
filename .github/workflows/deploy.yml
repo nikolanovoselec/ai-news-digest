@@ -1,9 +1,7 @@
 name: Deploy
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  workflow_dispatch:  # gated to manual until Phase 13
 
 concurrency:
   group: deploy-${{ github.ref }}
