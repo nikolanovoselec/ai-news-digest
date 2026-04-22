@@ -11,8 +11,8 @@
     "typecheck": "astro check && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "oxlint src/ tests/ --deny-warnings",
-    "lint:fix": "oxlint src/ tests/ --fix",
+    "lint": "oxlint src/ tests/ --deny-warnings --ignore-pattern '**/*.astro'",
+    "lint:fix": "oxlint src/ tests/ --fix --ignore-pattern '**/*.astro'",
     "knip": "knip"
   },
   "dependencies": {

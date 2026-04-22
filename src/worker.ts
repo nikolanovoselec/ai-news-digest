@@ -82,8 +82,15 @@ async function dispatchScheduledDigests(env: Env, nowSec: number): Promise<void>
   // Collect the distinct set of tzs currently configured on users. An
   // empty result means no users — early return keeps cron fast
   // (REQ-GEN-001 AC 4: <1s for the scheduling pass).
+  // A user with no tags has nothing to summarise. Skip them entirely
+  // rather than wasting a generate pass that would fail with
+  // `all_sources_failed`. `hashtags_json IS NOT NULL` alone is
+  // insufficient because `POST /api/tags` writes `'[]'` briefly during
+  // edit flows — guard on both NULL and the literal empty-array JSON.
   const tzRows = await env.DB
-    .prepare('SELECT DISTINCT tz FROM users WHERE hashtags_json IS NOT NULL')
+    .prepare(
+      "SELECT DISTINCT tz FROM users WHERE hashtags_json IS NOT NULL AND hashtags_json != '[]'",
+    )
     .all<{ tz: string }>();
   const tzs = (tzRows.results ?? [])
     .map((r) => r.tz)
@@ -120,6 +127,7 @@ async function dispatchScheduledDigests(env: Env, nowSec: number): Promise<void>
       .prepare(
         `SELECT id FROM users
          WHERE hashtags_json IS NOT NULL
+           AND hashtags_json != '[]'
            AND tz = ?1
            AND digest_hour = ?2
            AND digest_minute >= ?3

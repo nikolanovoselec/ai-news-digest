@@ -501,6 +501,30 @@ if (isReadyToday && articles.length < 3) {
     return chip;
   }
 
+  /**
+   * Show a tiny live-region message next to the tag strip. Auto-clears
+   * after 3s. Used for over-cap and save-failure feedback so failed
+   * optimistic adds don't disappear silently.
+   */
+  function showTagError(strip: HTMLElement, message: string): void {
+    let region = strip.querySelector<HTMLElement>('[data-tag-error]');
+    if (region === null) {
+      region = document.createElement('span');
+      region.className = 'tag-strip__error';
+      region.setAttribute('role', 'status');
+      region.setAttribute('aria-live', 'polite');
+      region.dataset['tagError'] = '';
+      strip.appendChild(region);
+    }
+    region.textContent = message;
+    const clearId = window.setTimeout(() => {
+      if (region !== null && region.textContent === message) {
+        region.textContent = '';
+      }
+    }, 3000);
+    region.dataset['clearTimeout'] = String(clearId);
+  }
+
   function wireTagStrip(): void {
     const strip = document.querySelector<HTMLElement>('[data-tag-strip]');
     if (strip === null || strip.dataset['bound'] === '1') return;
@@ -520,6 +544,7 @@ if (isReadyToday && articles.length < 3) {
       input.hidden = true;
       addButton.hidden = false;
     };
+    const MAX_TAGS = 20; // matches server MAX_HASHTAGS in api/settings.ts
     const commit = async (): Promise<void> => {
       const tag = normaliseTag(input.value);
       if (tag.length < 2 || tag.length > 32) {
@@ -531,10 +556,18 @@ if (isReadyToday && articles.length < 3) {
         hide();
         return;
       }
+      if (existing.length >= MAX_TAGS) {
+        showTagError(strip, `Max ${MAX_TAGS} tags. Remove one first.`);
+        hide();
+        return;
+      }
       const chip = renderTagChip(strip, tag);
       hide();
       const ok = await saveTags(strip, [...existing, tag]);
-      if (!ok) chip.remove();
+      if (!ok) {
+        chip.remove();
+        showTagError(strip, 'Could not save. Please try again.');
+      }
     };
 
     addButton.addEventListener('click', reveal);
@@ -789,5 +822,12 @@ if (isReadyToday && articles.length < 3) {
     font-weight: 500;
     outline: none;
     min-width: 140px;
+  }
+
+  .tag-strip__error {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    margin-left: 0.5rem;
+    transition: opacity 0.2s ease;
   }
 </style>
