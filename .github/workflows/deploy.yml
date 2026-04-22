@@ -60,16 +60,35 @@ jobs:
           done
 
       - name: Deploy
+        id: deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler deploy
+        run: |
+          set -o pipefail
+          npx --yes wrangler deploy 2>&1 | tee deploy.log
+          # Extract the workers.dev URL wrangler prints on success.
+          WORKER_URL=$(grep -oE 'https://[^ ]+\.workers\.dev' deploy.log | head -n1 || true)
+          echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed to: $WORKER_URL"
 
       - name: Smoke test
+        env:
+          WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
         run: |
-          URL="${{ secrets.APP_URL }}"
+          # Prefer the workers.dev URL from wrangler deploy output — it's
+          # always resolvable regardless of custom-domain DNS state. Fall
+          # back to APP_URL only if the parse failed.
+          URL="${WORKER_URL:-${{ secrets.APP_URL }}}"
           if [ -z "$URL" ]; then
-            echo "APP_URL secret not set; skipping smoke test"
+            echo "No smoke-test URL available; skipping"
             exit 0
           fi
-          curl -fsS -o /dev/null -w "HTTP %{http_code}\n" "$URL/" || exit 1
+          # Expect 200 (authenticated user → /digest) or 303 (anonymous → login)
+          # on /, both indicate a live worker. The landing page itself returns 200.
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL/")
+          echo "GET $URL/ → HTTP $CODE"
+          case "$CODE" in
+            200|303) exit 0 ;;
+            *) echo "Unexpected status"; exit 1 ;;
+          esac
