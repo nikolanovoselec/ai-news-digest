@@ -1,6 +1,6 @@
 import { defineConfig } from 'astro/config';
 import cloudflare from '@astrojs/cloudflare';
-import tailwind from '@astrojs/tailwind';
+import tailwindcss from '@tailwindcss/vite';
 import AstroPWA from '@vite-pwa/astro';
 
 // https://astro.build/config
@@ -12,7 +12,6 @@ export default defineConfig({
     }
   }),
   integrations: [
-    tailwind(),
     AstroPWA({
       registerType: 'autoUpdate',
       manifest: false, // we ship our own /manifest.webmanifest
@@ -36,6 +35,7 @@ export default defineConfig({
     })
   ],
   vite: {
+    plugins: [tailwindcss()],
     resolve: {
       alias: {
         '~': '/src'
