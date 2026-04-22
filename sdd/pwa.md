@@ -21,7 +21,7 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 **Priority:** P1
 **Dependencies:** REQ-DES-001
 **Verification:** Manual check
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -63,4 +63,5 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 **Priority:** P1
 **Dependencies:** REQ-DES-001
 **Verification:** Manual check
-**Status:** Planned
+**Status:** Partial
+**Notes:** Code exists (safe-area insets in Base.astro, BottomNav.astro, Sidebar.astro) but no test verifies it.
