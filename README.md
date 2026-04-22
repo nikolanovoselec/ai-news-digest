@@ -18,9 +18,9 @@ Every digest shows execution time, token count, and estimated cost, so you can s
 |---|---|
 | Framework | Astro 5 on Cloudflare Workers |
 | Theme base | [AstroPaper](https://github.com/satnaing/astro-paper) (MIT, minimal reading surface) |
-| Auth | [Better Auth](https://better-auth.com/) + GitHub OAuth provider |
+| Auth | Custom GitHub OAuth + HMAC-SHA256 session JWT (no auth library) |
 | Database | Cloudflare D1 |
-| Sessions | Cloudflare KV |
+| Sessions | Stateless JWT in HttpOnly cookie |
 | LLM | Workers AI (user-selectable model) |
 | Scheduling | Cloudflare Cron Trigger (scans every 15 min) |
 | Styling | Tailwind CSS 4 |
@@ -110,8 +110,63 @@ articles (
   rank            INTEGER
 )
 
--- sessions table managed by Better Auth
+-- no sessions table: sessions are stateless JWTs in HttpOnly cookies
 ```
+
+## Authentication
+
+Custom implementation, no third-party auth library. Pattern lifted from the codeflare repo — proven, ~250 lines of TypeScript, zero ORM or dependency churn.
+
+### Flow
+
+```
+/api/auth/github/login
+  1. Generate random UUID for CSRF state
+  2. Set oauth_state cookie (HttpOnly, Secure, SameSite=Lax, 5 min TTL)
+  3. Redirect to github.com/login/oauth/authorize with client_id, redirect_uri,
+     scope=user:email, state
+
+/api/auth/github/callback
+  1. Validate state cookie === state query param (reject 403 if mismatch)
+  2. Clear oauth_state cookie
+  3. POST code to github.com/login/oauth/access_token → access token
+  4. GET api.github.com/user and /user/emails in parallel → extract primary
+     verified email, numeric id, login
+  5. INSERT OR IGNORE into users (github_id, email, ...) for JIT provisioning
+  6. Sign HMAC-SHA256 JWT with { sub: github_id, email, ghLogin, iat, exp }
+  7. Set news_digest_session cookie (HttpOnly, Secure, SameSite=Lax, 1h TTL)
+  8. Redirect to /digest
+
+/api/auth/github/logout
+  1. Clear news_digest_session cookie (Max-Age=0)
+  2. Redirect to /
+```
+
+### Session validation
+
+Every protected Astro route and API endpoint calls a shared helper that reads `news_digest_session`, verifies the HMAC signature with `OAUTH_JWT_SECRET`, checks `exp`, and returns the user row from D1. Unauthenticated requests redirect to `/`.
+
+### Session auto-refresh
+
+A middleware runs on every response. If the JWT has less than 15 minutes remaining, it issues a fresh 1-hour JWT and updates the cookie. Users stay signed in as long as they visit at least once per hour.
+
+### Secrets
+
+Deployed via `wrangler secret put`:
+
+| Secret | Purpose |
+|---|---|
+| `OAUTH_CLIENT_ID` | GitHub OAuth App client ID |
+| `OAUTH_CLIENT_SECRET` | GitHub OAuth App client secret |
+| `OAUTH_JWT_SECRET` | Random 32+ char string for HMAC signing |
+| `CLOUDFLARE_API_TOKEN` | For the Workers AI models catalog lookup |
+
+### Why no auth library
+
+- Single provider (GitHub), no passwords, no 2FA, no passkeys, no teams — library features we'd never use
+- Stateless JWT + 1h TTL means a stolen token dies quickly even without a revocation list
+- No ORM dependency pulled in by Better Auth / Auth.js adapters
+- If scope later demands multi-provider, passkeys, or session management UI, a one-day migration to Better Auth is bounded — not worth paying that cost up front
 
 ## Generation pipeline
 
@@ -153,4 +208,4 @@ These may be revisited after v1 ships.
 
 ## Deployment
 
-Cloudflare Workers. Cron Trigger configured in `wrangler.toml` to run every 15 minutes. D1 and KV bindings provisioned via `wrangler`. GitHub OAuth client ID/secret and Cloudflare account ID configured as Worker secrets.
+Cloudflare Workers. Cron Trigger configured in `wrangler.toml` to run every 15 minutes. D1 and KV bindings provisioned via `wrangler` (KV is used only for caching the Workers AI model catalog, not for sessions). GitHub OAuth client ID/secret, `OAUTH_JWT_SECRET`, and Cloudflare API token configured as Worker secrets.
