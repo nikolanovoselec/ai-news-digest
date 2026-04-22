@@ -573,9 +573,11 @@ Handler returns immediately with `202 { digest_id }`; generation continues in th
 
 ```
 1. If called from cron (no digestId passed):
-   INSERT a new digest row: status='in_progress', trigger='scheduled'.
-   If today's local_date already has a 'ready' digest for this user → exit
-   (double-safety beyond the cron SELECT filter).
+   First check: SELECT 1 FROM digests WHERE user_id=? AND local_date=?
+   AND status IN ('in_progress', 'ready'). If a row exists → exit (a manual
+   refresh may be mid-flight via ctx.waitUntil, or today's digest already
+   completed; either way, do not start a concurrent generation).
+   Otherwise INSERT a new digest row: status='in_progress', trigger='scheduled'.
 2. For each hashtag in user.hashtags_json, fan out in parallel:
    - Generic sources (HN, Google News, Reddit) queried with the tag
    - Feeds cached under KV key `sources:{tag}`
@@ -601,11 +603,9 @@ Handler returns immediately with `202 { digest_id }`; generation continues in th
     to console.log JSON. No automatic retry — user can click Refresh.
 ```
 
-### Manual refresh
+### Manual refresh rate limits
 
-Triggered from the UI "Refresh now" button. Enqueues a `{ trigger: 'manual' }` job to the same queue with no delay.
-
-**Rate limits** are enforced atomically in a single conditional UPDATE on the users row. Concurrent requests from the same user cannot both pass — the UPDATE returns 0 affected rows when the limit is hit:
+Triggered from the UI "Refresh now" button. Rate limits are enforced atomically in a single conditional UPDATE on the users row. Concurrent requests from the same user cannot both pass — the UPDATE returns 0 affected rows when the limit is hit:
 
 ```sql
 UPDATE users SET
@@ -620,7 +620,7 @@ WHERE id = :user_id
 RETURNING refresh_count_24h;
 ```
 
-Zero rows returned → rate-limited (return 429 with `retry_after_seconds`). One row returned → accepted, enqueue the manual refresh job. No read-then-write race.
+Zero rows returned → rate-limited (return 429 with `retry_after_seconds`). One row returned → accepted, INSERT the digest row, return 202, fire `ctx.waitUntil(generateDigest(...))`. No read-then-write race.
 
 ### Rate-limit UX
 
@@ -628,9 +628,34 @@ When rejected, the API returns `429` with a JSON body `{ error, retry_after_seco
 
 ### Retry strategy
 
-- **Per-source fetch failures**: no custom retry. If a source fails, skip it. If all four sources fail for all hashtags → digest status='failed' with error_code='all_sources_failed'. Cloudflare Queues re-delivers the whole job up to 3 times if the consumer throws.
-- **LLM failures**: no retry. Mark digest failed with error_code='llm_failed'. Queue re-delivery handles transient LLM unavailability.
-- **No dead-letter queue**. Default Queues retry (3 attempts) is sufficient for a solo tool — DLQ inspection overhead is not justified.
+- **Per-source fetch failures**: skip the failing source, proceed with whatever succeeded. Only if ALL sources fail for ALL hashtags → digest status='failed' with error_code='all_sources_failed'.
+- **LLM failures**: mark digest failed with error_code='llm_failed'. No automatic retry — the user can click Refresh to try again.
+- **No durable retry**. We accept this tradeoff for simplicity: the failure window is narrow (transient LLM hiccups are rare), and users get immediate visual feedback + a Refresh button. No Queue retry machinery.
+
+### Stuck `in_progress` sweeper
+
+If a Worker isolate is evicted mid-generation (rare but possible on `ctx.waitUntil`), the digest row stays `status='in_progress'` forever and polling hangs. Prevention: the 5-min cron runs a sweep before its scheduling work:
+
+```sql
+UPDATE digests
+SET status = 'failed', error_code = 'generation_stalled'
+WHERE status = 'in_progress' AND generated_at < :now - 600;
+```
+
+10-minute staleness threshold — longer than any legitimate generation, short enough that users see a failure and can retry within 10 minutes of the crash.
+
+### Cron/waitUntil race prevention
+
+If a manual refresh's `waitUntil` is still generating when the user's scheduled HH:MM window hits, cron would otherwise start a second concurrent generation. Prevention: step 1 of `generateDigest` (scheduled path) checks for ANY existing digest for this user with today's local_date, not just 'ready':
+
+```sql
+-- scheduled path: skip if any non-failed digest exists for today
+SELECT 1 FROM digests
+WHERE user_id = ? AND local_date = ? AND status IN ('in_progress', 'ready')
+LIMIT 1;
+```
+
+If present → exit. The in_progress manual generation will complete and mark ready; scheduled path acks the slot via `last_generated_local_date` during its normal update cycle (which step 9 handles for both trigger types).
 
 ### Error handling
 
@@ -952,7 +977,7 @@ All mutating endpoints require an authenticated session (valid `__Host-news_dige
 |---|---|---|---|---|
 | GET | `/api/digest/today` | — | `{ digest: {...} \| null, articles: [...], live: bool, next_scheduled_at: int \| null }` — returns the newest digest for today's local_date (or yesterday's if today hasn't generated yet); `live=true` when a digest is currently in_progress; `next_scheduled_at` is the unix ts of the next scheduled run when today's has not yet happened | 401 |
 | GET | `/api/digest/:id` | — | Same shape as `/today`, for a specific digest | 401; 403 `not_yours` (shouldn't happen — filtered by query); 404 |
-| POST | `/api/digest/refresh` | — | `202 { digest_id, status: 'in_progress' }` — handler INSERTs the digest row with status='in_progress' BEFORE enqueuing the job, so the client has an id to poll immediately | 401; 429 `rate_limited` `{ retry_after_seconds, reason: 'cooldown' \| 'daily_cap' }`; 409 `already_in_progress` |
+| POST | `/api/digest/refresh` | — | `202 { digest_id, status: 'in_progress' }` — handler inserts the digest row, returns 202, then fires `ctx.waitUntil(generateDigest(...))` for background generation | 401; 429 `rate_limited` `{ retry_after_seconds, reason: 'cooldown' \| 'daily_cap' }`; 409 `already_in_progress` — returned if `SELECT 1 FROM digests WHERE user_id=? AND local_date=? AND status='in_progress'` finds a row (prevents duplicate concurrent generation even if rate-limit window was bypassed) |
 
 ### History and stats
 
@@ -1036,3 +1061,26 @@ Internal error details (exception messages, response bodies) are logged at `leve
 ## Deployment
 
 Cloudflare Workers. Cron Trigger every 5 minutes in `wrangler.toml` (`crons = ["*/5 * * * *"]`). D1 and KV (discovered sources cache + source_health counters) bindings provisioned via `wrangler`. No Queues. GitHub OAuth client ID/secret, `OAUTH_JWT_SECRET`, `RESEND_API_KEY`, `RESEND_FROM`, and `APP_URL` configured as Worker secrets. Schema migrations applied with `wrangler d1 migrations apply`.
+
+## Scaffolding order
+
+When implementation starts, build in this order — each layer unblocks the next:
+
+1. `migrations/0001_initial.sql` — the D1 schema from the Data model section
+2. `src/lib/db.ts` — D1 wrapper with `PRAGMA foreign_keys=ON`, prepared statements, a `transaction()` helper
+3. `src/lib/models.ts` — MODELS constant + DEFAULT_MODEL_ID
+4. `src/lib/prompts.ts` — DIGEST_SYSTEM, DISCOVERY_SYSTEM, helper functions, LLM_PARAMS
+5. `src/lib/session-jwt.ts` — HMAC-SHA256 sign/verify (lift from codeflare)
+6. `src/pages/api/auth/github/{login,callback,logout}.ts` — OAuth flow
+7. `src/middleware/auth.ts` — session validation with session_version check
+8. `src/pages/settings.astro` + `PUT /api/settings` — form component that handles both onboarding and edit
+9. `src/lib/sources.ts` — generic sources + discovery logic
+10. `src/lib/generate.ts` — `generateDigest(user, trigger, digestId?)`
+11. `src/pages/api/digest/refresh.ts` — POST handler with rate limit + ctx.waitUntil
+12. `src/pages/digest.astro` — overview grid with polling
+13. `src/pages/digest/[id]/[slug].astro` — detail view (marks read)
+14. `src/pages/history.astro` + `GET /api/history`
+15. `src/worker.ts` cron handler — sweeper + scheduled generation
+16. `src/lib/email.ts` + Resend integration
+17. PWA manifest + service worker + icons
+18. Polish (animations, stats widget, install prompt)
