@@ -24,7 +24,7 @@ export function generateUlid(): string {
  */
 function encodeTime(ms: number): string {
   let remaining = ms;
-  const chars: string[] = new Array(TIME_LEN);
+  const chars: string[] = Array.from({ length: TIME_LEN });
   for (let i = TIME_LEN - 1; i >= 0; i--) {
     const index = remaining % 32;
     // Bracket-access on a const string literal is always defined; the
@@ -44,7 +44,7 @@ function encodeRandom(): string {
   crypto.getRandomValues(bytes);
 
   // Walk the bit stream MSB-first, consuming 5 bits per output character.
-  const chars: string[] = new Array(RANDOM_LEN);
+  const chars: string[] = Array.from({ length: RANDOM_LEN });
   let bitBuffer = 0;
   let bitsInBuffer = 0;
   let byteIndex = 0;
