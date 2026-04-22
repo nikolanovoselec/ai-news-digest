@@ -52,23 +52,20 @@ Discovery is **fully asynchronous and cron-driven**. Settings save is instant; d
 On settings save (onboarding or edit):
   1. Validate + UPDATE users row with new hashtags_json (instant).
   2. For any submitted tag that doesn't yet have a `sources:{tag}` KV entry,
-     add it to the user's pending-discovery list:
-       KV.put(`discovery_pending:{user_id}`, JSON.stringify([tag1, tag2, ...]))
+     INSERT a row into pending_discoveries (tag PRIMARY KEY — transactional,
+     idempotent; duplicate INSERT silently no-ops via INSERT OR IGNORE).
   3. Return 200 { ok: true, discovering: [tag1, tag2, ...] }.
 
 On every 5-min cron invocation (before generation scheduling):
-  1. Scan `discovery_pending:*` KV entries — list returns a small set.
-  2. Pick up to 3 tags across all users (budget: 3 × 15s = 45s, well inside
-     cron's 15-min wall-clock budget).
-  3. For each: run LLM + validation, write to `sources:{tag}` KV (no TTL).
-     Remove the tag from its user's discovery_pending list; if the list
-     becomes empty, KV.delete the key.
-  4. A stubborn tag (3 consecutive discovery failures — tracked in
+  1. SELECT tag, user_id FROM pending_discoveries ORDER BY added_at LIMIT 3.
+  2. For each: run LLM + validation, write to `sources:{tag}` KV (no TTL).
+     DELETE FROM pending_discoveries WHERE tag = ?.
+  3. A stubborn tag (3 consecutive discovery failures — tracked in
      `discovery_failures:{tag}` KV) is stored with an empty sources array
-     and removed from pending; user can manually re-discover from /settings.
+     and deleted from pending; user can manually re-discover from /settings.
 ```
 
-**State machine**: the presence of the tag in `discovery_pending:{user_id}` means "not discovered yet". Presence of `sources:{tag}` means "discovered (possibly empty if stubborn)". These two are the complete state.
+**State machine**: presence in the `pending_discoveries` table means "not discovered yet". Presence of `sources:{tag}` KV key means "discovered (possibly empty if stubborn)". Both are strongly consistent — no race windows.
 
 **UI indicator**: `/digest` fetches `/api/discovery/status` which returns `{ pending: [tag, ...] }` from the user's KV entry. While non-empty, a subtle banner shows "Discovering sources for #{tag1}, #{tag2}… Your next digest will include them." No schema columns needed.
 
@@ -76,7 +73,7 @@ On every 5-min cron invocation (before generation scheduling):
 
 | Method | Path | Response |
 |---|---|---|
-| GET | `/api/discovery/status` | `{ pending: string[] }` — current discovery_pending list; empty array if none |
+| GET | `/api/discovery/status` | `{ pending: string[] }` — `SELECT tag FROM pending_discoveries WHERE user_id = :session_user_id`; empty array if none |
 
 ### First digest after adding a new tag
 
@@ -133,7 +130,6 @@ Per-hashtag item cap 30 per source (generics) and 20 per source (tag-specific), 
 |---|---|---|
 | `sources:{tag}` | `[{ name, url, kind }]` validated feeds | No TTL (evicted on repeated feed failures) |
 | `source_health:{url}` | `{ consecutive_failures, last_fail_at }` counter per feed URL | 7 days |
-| `discovery_pending:{user_id}` | `string[]` — tags awaiting discovery | No TTL (deleted when list empties) |
 | `discovery_failures:{tag}` | `{ count, last_attempt_at }` | 7 days |
 | `headlines:{source_name}:{tag}` | Cached fetch results from a source for a tag, shared across users | 10 minutes |
 
@@ -425,6 +421,14 @@ CREATE UNIQUE INDEX idx_articles_digest_slug ON articles(digest_id, slug);
 CREATE INDEX idx_articles_digest_rank ON articles(digest_id, rank);
 CREATE INDEX idx_articles_read ON articles(digest_id, read_at);  -- supports "articles read" stats
 
+-- Pending tag discoveries (queue-like; cron processes a few per invocation)
+CREATE TABLE pending_discoveries (
+  tag         TEXT PRIMARY KEY,                       -- global (one discovery per tag shared across users)
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  added_at    INTEGER NOT NULL
+);
+CREATE INDEX idx_pending_discoveries_added ON pending_discoveries(added_at);
+
 -- no sessions table: sessions are stateless JWTs in HttpOnly cookies
 -- no resolved-URL cache: we never fetch article pages, so no resolution needed
 ```
@@ -567,9 +571,9 @@ Producer/consumer architecture. Cron and the refresh API both **enqueue** messag
    a. Stuck-digest sweeper: UPDATE digests SET status='failed',
       error_code='generation_stalled' WHERE status='in_progress'
       AND generated_at < (now - 600).
-   b. Discovery processor: scan `discovery_pending:*` KV, pick up to 3
-      tags total across all users, run LLM + validation inline, write
-      `sources:{tag}` (low volume — fits in cron; doesn't need Queues).
+   b. Discovery processor: SELECT up to 3 rows from pending_discoveries
+      ordered by added_at, run LLM + validation inline, write `sources:{tag}`
+      KV + DELETE the pending row (low volume — fits in cron).
 3. Scheduling pass: for each distinct tz in users:
    a. Compute local_time = now_utc in this tz.
    b. Window = [floor(minute/5)*5, +5) — half-open, non-overlapping.
