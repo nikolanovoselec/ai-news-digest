@@ -168,7 +168,7 @@ export function errorResponse(
   status?: number,
 ): Response {
   const body: Record<string, unknown> = {
-    ...(extras ?? {}),
+    ...extras,
     error: USER_FACING_MESSAGES[code],
     code,
   };
