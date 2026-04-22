@@ -134,16 +134,22 @@ check_body GET /api/stats 'digests_generated|articles_read|tokens_in'
 # /api/discovery/status — returns JSON with per-hashtag status (possibly empty).
 check GET  /api/discovery/status            200
 
-# PUT /api/settings — save a known-valid payload. Uses a minimal hashtag
-# set and a real IANA zone so validation passes.
+# PUT /api/settings — save schedule + model + email (hashtags managed
+# separately at POST /api/tags since the tag editor moved to /digest).
 printf '\n=== PUT /api/settings (save happy path) ===\n'
-PAYLOAD='{"hashtags":["llm","cloudflare","aws"],"digest_hour":8,"digest_minute":30,"tz":"Europe/Zurich","model_id":"@cf/meta/llama-3.1-8b-instruct-fp8-fast","email_enabled":true}'
+PAYLOAD='{"digest_hour":8,"digest_minute":30,"tz":"Europe/Zurich","model_id":"@cf/meta/llama-3.1-8b-instruct-fp8-fast","email_enabled":true}'
 check PUT  /api/settings 200 -H 'Content-Type: application/json' --data "$PAYLOAD"
-
-# Re-read settings via the GET endpoint and confirm the hashtags persisted.
-check_body GET /api/settings '"llm"'
 check_body GET /api/settings '"Europe/Zurich"'
 check_body GET /api/settings '"digest_hour":8'
+
+# POST /api/tags — replace the user's hashtag list. The /digest tag strip
+# is the only editor for this now.
+printf '\n=== POST /api/tags ===\n'
+TAGS_PAYLOAD='{"tags":["llm","cloudflare","aws"]}'
+check POST /api/tags 200 -H 'Content-Type: application/json' --data "$TAGS_PAYLOAD"
+check_body GET /api/settings '"llm"'
+# Empty tags is a 400.
+check POST /api/tags 400 -H 'Content-Type: application/json' --data '{"tags":[]}'
 
 # POST /api/auth/set-tz — auto-detect path. Send a valid zone.
 TZ_PAYLOAD='{"tz":"America/New_York"}'

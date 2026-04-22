@@ -11,7 +11,6 @@
 
 import type { APIContext } from 'astro';
 import Base from '~/layouts/Base.astro';
-import HashtagChip from '~/components/HashtagChip.astro';
 import ModelSelect from '~/components/ModelSelect.astro';
 import InstallPrompt from '~/components/InstallPrompt.astro';
 import StatsWidget from '~/components/StatsWidget.astro';
@@ -19,31 +18,6 @@ import { loadSession } from '~/middleware/auth';
 import { requireSettingsComplete } from '~/middleware/settings-gate';
 import { DEFAULT_TZ } from '~/lib/tz';
 import { DEFAULT_MODEL_ID } from '~/lib/models';
-
-// Curated list of default hashtag chips (REQ-SET-002 AC 1). Kept in sync
-// with requirements.md "Default hashtag proposals".
-const DEFAULT_HASHTAGS: ReadonlyArray<string> = [
-  'cloudflare',
-  'agenticai',
-  'mcp',
-  'aws',
-  'aigateway',
-  'llm',
-  'ragsystems',
-  'vectordb',
-  'workersai',
-  'durableobjects',
-  'typescript',
-  'rust',
-  'webassembly',
-  'edgecompute',
-  'postgres',
-  'openai',
-  'anthropic',
-  'opensource',
-  'devtools',
-  'observability',
-];
 
 
 const env = Astro.locals.runtime.env;
@@ -76,27 +50,9 @@ if (gated !== null) {
 
 const user = session.user;
 
-// Parse current hashtags for selection-state prefill.
-let currentHashtags: string[] = [];
-if (user.hashtags_json !== null && user.hashtags_json !== '') {
-  try {
-    const parsed = JSON.parse(user.hashtags_json) as unknown;
-    if (Array.isArray(parsed)) {
-      currentHashtags = parsed.filter((v): v is string => typeof v === 'string');
-    }
-  } catch {
-    currentHashtags = [];
-  }
-}
-const currentSet = new Set(currentHashtags);
-
-// Custom tags the user added that aren't in the default grid.
-const customTags = currentHashtags.filter((t) => !DEFAULT_HASHTAGS.includes(t));
-
 const url = new URL(Astro.request.url);
 const isFirstRun =
-  url.searchParams.get('first_run') === '1' &&
-  (user.hashtags_json === null || user.digest_hour === null);
+  url.searchParams.get('first_run') === '1' && user.digest_hour === null;
 
 const digestHour = user.digest_hour ?? 8;
 const digestMinute = user.digest_minute;
@@ -106,12 +62,12 @@ const currentModelId = user.model_id ?? DEFAULT_MODEL_ID;
 const emailEnabled = user.email_enabled === 1;
 
 const heroTitle = isFirstRun
-  ? 'Welcome — let’s set up your first digest'
+  ? 'Welcome — pick a time, we handle the rest'
   : 'Settings';
 const heroBody = isFirstRun
-  ? 'Pick the interests that drive your daily digest, choose when you want it generated, and we’ll take it from there.'
-  : 'Tune your interests, schedule, and delivery preferences.';
-const primaryCta = isFirstRun ? 'Generate my first digest' : 'Save';
+  ? 'Choose when your daily digest should arrive and which model powers the summaries. You can add interests once the digest is live.'
+  : 'Tune your schedule, summary model, and email delivery.';
+const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
 ---
 
 <Base title={isFirstRun ? 'Welcome to News Digest' : 'Settings'} firstRun={isFirstRun}>
@@ -122,37 +78,9 @@ const primaryCta = isFirstRun ? 'Generate my first digest' : 'Save';
     </header>
 
     <form class="settings__form" data-settings-form>
-      <fieldset class="settings__section">
-        <legend class="settings__legend">Interests</legend>
-        <p class="settings__hint">Pick at least one hashtag. You can add your own below.</p>
-        <div class="settings__chips" data-chip-grid>
-          {
-            DEFAULT_HASHTAGS.map((tag) => (
-              <HashtagChip tag={tag} selected={currentSet.has(tag)} />
-            ))
-          }
-          {
-            customTags.map((tag) => (
-              <HashtagChip tag={tag} selected={true} />
-            ))
-          }
-        </div>
-        <label class="settings__custom">
-          <span class="settings__custom-label">Add your own</span>
-          <span class="settings__custom-row">
-            <input
-              type="text"
-              data-custom-tag-input
-              placeholder="a-z, 0-9, hyphen"
-              autocomplete="off"
-              maxlength="33"
-              class="settings__custom-input"
-            />
-            <button type="button" data-custom-tag-add class="settings__custom-add">Add</button>
-          </span>
-        </label>
-      </fieldset>
-
+      {/* Interests moved to the top of /digest — the tag strip there is
+          the sole editor for the user's hashtags. Settings now only
+          controls schedule, model, and delivery. */}
       <fieldset class="settings__section">
         <legend class="settings__legend">Schedule</legend>
         <label class="settings__field">
@@ -254,85 +182,6 @@ const primaryCta = isFirstRun ? 'Generate my first digest' : 'Save';
     code?: string;
   }
 
-  function normalizeTag(raw: string): string {
-    const lowered = raw.toLowerCase().trim();
-    const unHashed = lowered.startsWith('#') ? lowered.slice(1) : lowered;
-    return unHashed.replace(/[^a-z0-9-]/g, '');
-  }
-
-  function collectHashtags(): string[] {
-    const chips = document.querySelectorAll<HTMLButtonElement>(
-      '[data-hashtag-chip][data-selected="1"]',
-    );
-    const tags: string[] = [];
-    const seen = new Set<string>();
-    chips.forEach((chip) => {
-      const tag = chip.dataset['tag'];
-      if (tag === undefined || tag === '') return;
-      if (seen.has(tag)) return;
-      seen.add(tag);
-      tags.push(tag);
-    });
-    return tags;
-  }
-
-  /**
-   * Toggle chip selection on click. Binds every [data-hashtag-chip] in
-   * the DOM. Idempotent — safe to call on every page-load event. Kept
-   * in this page's script (not in HashtagChip.astro) because Astro's
-   * component-script bundler occasionally drops it when the same
-   * component renders many times inside a page.
-   */
-  function wireHashtagChips(): void {
-    const chips = document.querySelectorAll<HTMLButtonElement>('[data-hashtag-chip]');
-    chips.forEach((chip) => {
-      if (chip.dataset['chipBound'] === '1') return;
-      chip.dataset['chipBound'] = '1';
-      chip.addEventListener('click', () => {
-        const nowSelected = chip.dataset['selected'] !== '1';
-        chip.dataset['selected'] = nowSelected ? '1' : '0';
-        chip.setAttribute('aria-pressed', nowSelected ? 'true' : 'false');
-        chip.classList.toggle('is-selected', nowSelected);
-      });
-    });
-  }
-
-  function addCustomTag(input: HTMLInputElement, grid: HTMLElement): void {
-    const normalized = normalizeTag(input.value);
-    if (normalized.length < 2 || normalized.length > 32) {
-      input.value = '';
-      return;
-    }
-    // De-dupe against existing chips.
-    const existing = grid.querySelector<HTMLButtonElement>(
-      `[data-hashtag-chip][data-tag="${CSS.escape(normalized)}"]`,
-    );
-    if (existing !== null) {
-      existing.dataset['selected'] = '1';
-      existing.setAttribute('aria-pressed', 'true');
-      existing.classList.add('is-selected');
-      input.value = '';
-      return;
-    }
-    // Build a new chip.
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'hashtag-chip is-selected';
-    chip.dataset['hashtagChip'] = '';
-    chip.dataset['tag'] = normalized;
-    chip.dataset['selected'] = '1';
-    chip.setAttribute('aria-pressed', 'true');
-    chip.innerHTML = `<span class="hashtag-chip__hash" aria-hidden="true">#</span><span class="hashtag-chip__label">${normalized}</span>`;
-    chip.addEventListener('click', () => {
-      const nowSelected = chip.dataset['selected'] !== '1';
-      chip.dataset['selected'] = nowSelected ? '1' : '0';
-      chip.setAttribute('aria-pressed', nowSelected ? 'true' : 'false');
-      chip.classList.toggle('is-selected', nowSelected);
-    });
-    grid.appendChild(chip);
-    input.value = '';
-  }
-
   async function submitSettings(
     form: HTMLFormElement,
     status: HTMLElement,
@@ -356,20 +205,10 @@ const primaryCta = isFirstRun ? 'Generate my first digest' : 'Save';
         : (tzDisplay?.textContent?.trim() ?? '');
     const modelId = modelSelect?.value ?? '';
     const emailEnabled = emailToggle?.checked === true;
-    const hashtags = collectHashtags();
 
-    // Fail fast on empty hashtags with a clear message — the server
-    // message ("One or more of the provided hashtags is not in a valid
-    // format.") is confusing for the common empty-selection case.
-    if (hashtags.length === 0) {
-      status.textContent = 'Please pick at least one hashtag before saving.';
-      const grid = form.querySelector<HTMLElement>('[data-chip-grid]');
-      if (grid !== null) grid.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
-
+    // Hashtags are edited on the /digest tag strip via POST /api/tags;
+    // this endpoint no longer accepts a `hashtags` field.
     const payload = {
-      hashtags,
       digest_hour: digestHour,
       digest_minute: digestMinute,
       tz,
@@ -413,6 +252,20 @@ const primaryCta = isFirstRun ? 'Generate my first digest' : 'Save';
         ?.dataset['firstRun'] === '1';
 
     if (wasFirstRun) {
+      // Kick off the user's first digest automatically so they see a
+      // live "generating…" card as soon as they land on /digest. If the
+      // request fails (e.g., rate-limit, no tags yet), the server still
+      // picks it up on the normal schedule — not worth blocking the
+      // redirect on it.
+      try {
+        await fetch('/api/digest/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+        });
+      } catch {
+        /* best-effort */
+      }
       window.location.assign('/digest');
       return;
     }
@@ -447,10 +300,6 @@ const primaryCta = isFirstRun ? 'Generate my first digest' : 'Save';
   }
 
   function init(): void {
-    // Chip toggles are always safe to (re-)wire, even if the main form
-    // is on a repeat navigation. Idempotent.
-    wireHashtagChips();
-
     const form = document.querySelector<HTMLFormElement>('[data-settings-form]');
     if (form === null) return;
     if (form.dataset['bound'] === '1') return;
@@ -458,20 +307,7 @@ const primaryCta = isFirstRun ? 'Generate my first digest' : 'Save';
 
     const status = form.querySelector<HTMLElement>('[data-settings-status]');
     const submit = form.querySelector<HTMLButtonElement>('[data-settings-submit]');
-    const customInput = form.querySelector<HTMLInputElement>('[data-custom-tag-input]');
-    const customAdd = form.querySelector<HTMLButtonElement>('[data-custom-tag-add]');
-    const grid = form.querySelector<HTMLElement>('[data-chip-grid]');
     const tzDisplay = form.querySelector('[data-tz-display]') as HTMLElement | null;
-
-    if (customInput !== null && customAdd !== null && grid !== null) {
-      customAdd.addEventListener('click', () => addCustomTag(customInput, grid));
-      customInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          addCustomTag(customInput, grid);
-        }
-      });
-    }
 
     // Auto-detect the browser's timezone and sync it to the server when
     // it differs from the stored value. Updates the display without a
@@ -693,8 +529,8 @@ const primaryCta = isFirstRun ? 'Generate my first digest' : 'Save';
   .settings__submit {
     min-height: 44px;
     padding: 0.75rem 1.25rem;
-    background-color: var(--accent);
-    color: #ffffff;
+    background-color: var(--text);
+    color: var(--bg);
     border: none;
     border-radius: 0.375rem;
     font-size: var(--text-base);

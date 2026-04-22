@@ -131,6 +131,21 @@ if (
 const digest = today.digest;
 const articles = today.articles;
 
+// Parse the user's current hashtags for the inline tag strip at the top
+// of the page. Empty array when not yet set — the strip renders an
+// obvious "+ add" prompt and POSTs to /api/tags on submit.
+let userTags: string[] = [];
+if (user.hashtags_json !== null && user.hashtags_json !== '') {
+  try {
+    const parsed = JSON.parse(user.hashtags_json) as unknown;
+    if (Array.isArray(parsed)) {
+      userTags = parsed.filter((v): v is string => typeof v === 'string');
+    }
+  } catch {
+    userTags = [];
+  }
+}
+
 const isLive = digest !== null && digest.status === 'in_progress';
 const isReadyToday =
   digest !== null &&
@@ -158,6 +173,43 @@ if (isReadyToday && articles.length < 3) {
       hidden
     >
       You're offline — showing the last digest you viewed.
+    </div>
+
+    {/*
+      Inline tag strip (REQ-SET-002). The sole editor for the user's
+      hashtags — there is no tag configuration in /settings anymore.
+      Empty state renders just the "+ add" pill which expands into an
+      input on click.
+    */}
+    <div class="tag-strip" data-tag-strip>
+      {userTags.map((tag) => (
+        <span class="tag-chip" data-tag-chip data-tag={tag}>
+          <span class="tag-chip__label">#{tag}</span>
+          <button
+            type="button"
+            class="tag-chip__remove"
+            data-tag-remove
+            aria-label={`Remove ${tag}`}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+              <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
+            </svg>
+          </button>
+        </span>
+      ))}
+      <button type="button" class="tag-add" data-tag-add aria-label="Add a hashtag">
+        <span class="tag-add__plus" aria-hidden="true">+</span>
+        <span class="tag-add__label">add</span>
+      </button>
+      <input
+        type="text"
+        class="tag-add-input"
+        data-tag-add-input
+        placeholder="type a tag"
+        autocomplete="off"
+        maxlength="33"
+        hidden
+      />
     </div>
 
     <header class="digest-page__header">
@@ -393,6 +445,129 @@ if (isReadyToday && articles.length < 3) {
     if (grid !== null) {
       pollCancel = bindDigestPoll();
     }
+
+    wireTagStrip();
+  }
+
+  // --- Tag strip (top of page) --------------------------------------
+  // Replace the entire hashtag list via POST /api/tags. On add/remove
+  // the strip optimistically updates the DOM and fires the request in
+  // the background. If the server rejects, the DOM reverts.
+
+  function tagStripTags(strip: HTMLElement): string[] {
+    return Array.from(
+      strip.querySelectorAll<HTMLElement>('[data-tag-chip]'),
+    ).map((el) => el.dataset['tag'] ?? '').filter((t) => t !== '');
+  }
+
+  function normaliseTag(raw: string): string {
+    const s = raw.toLowerCase().trim().replace(/^#/, '');
+    return s.replace(/[^a-z0-9-]/g, '');
+  }
+
+  async function saveTags(strip: HTMLElement, tags: string[]): Promise<boolean> {
+    try {
+      const res = await fetch('/api/tags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ tags }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  function renderTagChip(strip: HTMLElement, tag: string): HTMLElement {
+    const chip = document.createElement('span');
+    chip.className = 'tag-chip';
+    chip.dataset['tagChip'] = '';
+    chip.dataset['tag'] = tag;
+    chip.innerHTML =
+      `<span class="tag-chip__label">#${tag}</span>` +
+      `<button type="button" class="tag-chip__remove" data-tag-remove aria-label="Remove ${tag}">` +
+      `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">` +
+      `<path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />` +
+      `</svg></button>`;
+    // Insert before the [data-tag-add] button so the "+ add" stays last.
+    const addButton = strip.querySelector<HTMLButtonElement>('[data-tag-add]');
+    if (addButton !== null) strip.insertBefore(chip, addButton);
+    else strip.appendChild(chip);
+    return chip;
+  }
+
+  function wireTagStrip(): void {
+    const strip = document.querySelector<HTMLElement>('[data-tag-strip]');
+    if (strip === null || strip.dataset['bound'] === '1') return;
+    strip.dataset['bound'] = '1';
+
+    const addButton = strip.querySelector<HTMLButtonElement>('[data-tag-add]');
+    const input = strip.querySelector<HTMLInputElement>('[data-tag-add-input]');
+    if (addButton === null || input === null) return;
+
+    const reveal = (): void => {
+      addButton.hidden = true;
+      input.hidden = false;
+      input.focus();
+    };
+    const hide = (): void => {
+      input.value = '';
+      input.hidden = true;
+      addButton.hidden = false;
+    };
+    const commit = async (): Promise<void> => {
+      const tag = normaliseTag(input.value);
+      if (tag.length < 2 || tag.length > 32) {
+        hide();
+        return;
+      }
+      const existing = tagStripTags(strip);
+      if (existing.includes(tag)) {
+        hide();
+        return;
+      }
+      const chip = renderTagChip(strip, tag);
+      hide();
+      const ok = await saveTags(strip, [...existing, tag]);
+      if (!ok) chip.remove();
+    };
+
+    addButton.addEventListener('click', reveal);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void commit();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        hide();
+      }
+    });
+    input.addEventListener('blur', () => {
+      // Small delay so a click on a tag-remove inside the strip doesn't
+      // race with the blur-close and leave the input stranded.
+      setTimeout(() => {
+        if (!input.hidden && document.activeElement !== input) hide();
+      }, 150);
+    });
+
+    // Remove-chip buttons (event delegation since chips can be added
+    // dynamically after initial render).
+    strip.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement | null;
+      const removeBtn = target?.closest<HTMLButtonElement>('[data-tag-remove]');
+      if (removeBtn === null || removeBtn === undefined) return;
+      const chip = removeBtn.closest<HTMLElement>('[data-tag-chip]');
+      if (chip === null) return;
+      if (tagStripTags(strip).length <= 1) return; // keep at least one
+      const tag = chip.dataset['tag'] ?? '';
+      chip.remove();
+      const remaining = tagStripTags(strip);
+      void (async () => {
+        const ok = await saveTags(strip, remaining);
+        if (!ok) renderTagChip(strip, tag);
+      })();
+    });
   }
 
   if (document.readyState === 'loading') {
@@ -445,8 +620,8 @@ if (isReadyToday && articles.length < 3) {
   .digest-page__refresh-button {
     min-height: 44px;
     padding: 0.5rem 1rem;
-    background-color: var(--accent);
-    color: #ffffff;
+    background-color: var(--text);
+    color: var(--bg);
     border: none;
     border-radius: 0.375rem;
     font-weight: 600;
@@ -469,7 +644,7 @@ if (isReadyToday && articles.length < 3) {
   .digest-page__progress-bar {
     position: absolute;
     inset: 0;
-    background-color: var(--accent);
+    background-color: var(--text);
     width: 35%;
     animation: progress-slide 1.8s ease-in-out infinite;
   }
@@ -515,5 +690,100 @@ if (isReadyToday && articles.length < 3) {
     font-size: var(--text-sm);
     text-align: center;
     border-top: 1px solid var(--border);
+  }
+  /* --- Tag strip ------------------------------------------------------- */
+
+  .tag-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.75rem 1rem 0.25rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    min-height: 32px;
+    padding: 0.25rem 0.25rem 0.25rem 0.75rem;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    line-height: 1;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .tag-chip:hover {
+    border-color: var(--text-muted);
+  }
+
+  .tag-chip__label {
+    letter-spacing: -0.01em;
+  }
+
+  .tag-chip__remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    margin-left: 0.15rem;
+    padding: 0;
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+  }
+  .tag-chip__remove:hover {
+    opacity: 1;
+    color: var(--bg);
+    background: var(--text);
+  }
+
+  .tag-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 32px;
+    padding: 0.25rem 0.75rem;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px dashed var(--border);
+    border-radius: 9999px;
+    cursor: pointer;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+  .tag-add:hover {
+    color: var(--text);
+    border-color: var(--text);
+    background: var(--surface);
+  }
+  .tag-add__plus {
+    font-size: var(--text-lg);
+    line-height: 1;
+    font-weight: 400;
+  }
+
+  .tag-add-input {
+    display: inline-flex;
+    min-height: 32px;
+    padding: 0.25rem 0.75rem;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--text);
+    border-radius: 9999px;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    outline: none;
+    min-width: 140px;
   }
 </style>

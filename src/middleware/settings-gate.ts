@@ -63,10 +63,11 @@ export function requireSettingsComplete(context: APIContext): Response | null {
   const pathname = url.pathname;
   const isFirstRun = url.searchParams.get('first_run') === '1';
 
-  const settingsIncomplete =
-    user.hashtags_json === null ||
-    user.hashtags_json === '' ||
-    user.digest_hour === null;
+  // Hashtags moved out of /settings into the /digest tag strip, so
+  // completion hinges on `digest_hour` alone. A user can have no tags
+  // yet and still reach /digest; the empty tag strip prompts them to
+  // add their first one there.
+  const settingsIncomplete = user.digest_hour === null;
 
   // AC 1 — incomplete onboarding pins the user to /settings?first_run=1.
   // Skip the redirect when the user is already on /settings so they can

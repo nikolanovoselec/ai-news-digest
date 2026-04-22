@@ -32,10 +32,10 @@ import { checkOrigin, originOf } from '~/middleware/origin-check';
  * spec AC literally — 2..32 chars, lowercase letters, digits, or hyphen.
  * Anchored so a partial match does not satisfy the check.
  */
-const HASHTAG_REGEX = /^[a-z0-9-]{2,32}$/;
+export const HASHTAG_REGEX = /^[a-z0-9-]{2,32}$/;
 
 /** Maximum hashtags per user (REQ-SET-002 AC 4). */
-const MAX_HASHTAGS = 20;
+export const MAX_HASHTAGS = 20;
 
 /** Shape accepted from the PUT body. All fields are `unknown` because the
  *  body arrives untyped — validation narrows types field-by-field. */
@@ -84,7 +84,7 @@ function parseHashtagsJson(raw: string | null): string[] {
  * callers validate that with {@link HASHTAG_REGEX} after collecting the
  * full list, so error messages can reference the original input.
  */
-function normalizeHashtag(raw: string): string {
+export function normalizeHashtag(raw: string): string {
   const lowered = raw.toLowerCase();
   const unHashed = lowered.startsWith('#') ? lowered.slice(1) : lowered;
   // Replace anything outside the allowed set with empty string. Using a
@@ -96,7 +96,7 @@ function normalizeHashtag(raw: string): string {
  * Validate and normalize the hashtags payload. Returns either a cleaned
  * deduplicated array or an error code on the first failure.
  */
-function validateHashtags(value: unknown): { ok: true; tags: string[] } | { ok: false } {
+export function validateHashtags(value: unknown): { ok: true; tags: string[] } | { ok: false } {
   if (!Array.isArray(value)) return { ok: false };
   if (value.length === 0) return { ok: false };
 
@@ -134,7 +134,7 @@ function isIntegerInRange(value: unknown, min: number, max: number): value is nu
  * `sources:<tag>` KV entry. Runs the lookups in parallel since KV
  * `get` is a network call per tag.
  */
-async function findTagsNeedingDiscovery(
+export async function findTagsNeedingDiscovery(
   kv: KVNamespace,
   incoming: string[],
 ): Promise<string[]> {
@@ -225,12 +225,19 @@ export async function PUT(context: APIContext): Promise<Response> {
     return errorResponse('bad_request');
   }
 
-  // REQ-SET-002 — hashtags
-  const tagsCheck = validateHashtags(body.hashtags);
-  if (!tagsCheck.ok) {
-    return errorResponse('invalid_hashtags');
+  // REQ-SET-002 — hashtags. Hashtags are now managed on the /digest page
+  // (tag strip at top) via POST /api/tags. PUT /api/settings only handles
+  // them when the caller explicitly includes a `hashtags` field — this
+  // keeps the endpoint usable from older clients and from tests without
+  // requiring every caller to re-send them.
+  let hashtags: string[] | null = null;
+  if (body.hashtags !== undefined) {
+    const tagsCheck = validateHashtags(body.hashtags);
+    if (!tagsCheck.ok) {
+      return errorResponse('invalid_hashtags');
+    }
+    hashtags = tagsCheck.tags;
   }
-  const hashtags = tagsCheck.tags;
 
   // REQ-SET-003 — schedule (hour + minute + tz)
   if (!isIntegerInRange(body.digest_hour, 0, 23)) {
@@ -267,14 +274,22 @@ export async function PUT(context: APIContext): Promise<Response> {
   const emailEnabledInt = body.email_enabled ? 1 : 0;
 
   const nowSec = Math.floor(Date.now() / 1000);
-  const hashtagsJson = JSON.stringify(hashtags);
 
   try {
-    await env.DB.prepare(
-      'UPDATE users SET hashtags_json = ?1, digest_hour = ?2, digest_minute = ?3, tz = ?4, model_id = ?5, email_enabled = ?6 WHERE id = ?7',
-    )
-      .bind(hashtagsJson, digestHour, digestMinute, tz, modelId, emailEnabledInt, session.user.id)
-      .run();
+    if (hashtags !== null) {
+      const hashtagsJson = JSON.stringify(hashtags);
+      await env.DB.prepare(
+        'UPDATE users SET hashtags_json = ?1, digest_hour = ?2, digest_minute = ?3, tz = ?4, model_id = ?5, email_enabled = ?6 WHERE id = ?7',
+      )
+        .bind(hashtagsJson, digestHour, digestMinute, tz, modelId, emailEnabledInt, session.user.id)
+        .run();
+    } else {
+      await env.DB.prepare(
+        'UPDATE users SET digest_hour = ?1, digest_minute = ?2, tz = ?3, model_id = ?4, email_enabled = ?5 WHERE id = ?6',
+      )
+        .bind(digestHour, digestMinute, tz, modelId, emailEnabledInt, session.user.id)
+        .run();
+    }
   } catch (err) {
     log('error', 'settings.update.failed', {
       user_id: session.user.id,
@@ -291,7 +306,7 @@ export async function PUT(context: APIContext): Promise<Response> {
   // re-saves after the next deploy.
   let discovering: string[] = [];
   try {
-    discovering = await findTagsNeedingDiscovery(env.KV, hashtags);
+    discovering = hashtags !== null ? await findTagsNeedingDiscovery(env.KV, hashtags) : [];
     if (discovering.length > 0) {
       const stmts = discovering.map((tag) =>
         env.DB.prepare(
