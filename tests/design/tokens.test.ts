@@ -5,7 +5,14 @@
 // of the token contract (e.g. a refactor that drops --accent).
 
 import { describe, it, expect } from 'vitest';
-import cssSource from '../../src/styles/global.css?raw';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
+
+const cssSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../../src/styles/global.css'),
+  'utf-8',
+);
 
 describe('design tokens in global.css', () => {
   it('REQ-DES-001: declares the five type-scale sizes (12, 14, 16, 20, 32 px)', () => {
