@@ -1,0 +1,7 @@
+# Tests live here. Each test name should reference a REQ ID, e.g.:
+#
+#   test('REQ-AUTH-003: rejects state-changing requests without matching Origin', () => { ... })
+#
+# spec-reviewer reads test files on every push to verify which Implemented REQs
+# have automated coverage. enforce_tdd: true in sdd/config.yml means a Planned or
+# Partial REQ with source code but no test will be flagged as HIGH.

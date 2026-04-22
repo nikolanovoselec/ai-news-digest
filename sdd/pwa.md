@@ -1,0 +1,66 @@
+# PWA & Mobile
+
+The app is installable on iOS, Android, and desktop via a standards web manifest. A service worker caches the last viewed digest for offline reading. Mobile layout respects safe-area insets for the iPhone notch and Android gesture bars, with a bottom tab bar on mobile and a left sidebar on desktop.
+
+---
+
+### REQ-PWA-001: Installable PWA manifest
+
+**Intent:** Users can install the app to their home screen and launch it like a native app.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. `/manifest.webmanifest` declares `name`, `short_name`, `description`, `start_url=/digest`, `display=standalone`, `theme_color`, and `background_color`.
+2. The icon set includes 192×192, 512×512, and 512×512 maskable variants in PNG format.
+3. Apple meta tags in the root layout set `apple-mobile-web-app-capable=yes`, `apple-mobile-web-app-status-bar-style=black-translucent`, `apple-mobile-web-app-title`, and `apple-touch-icon` (180×180 PNG).
+4. iOS Safari users (detected via user agent with `!navigator.standalone`) see a one-time instructional note: "Tap the share icon, then Add to Home Screen."
+5. Android and desktop Chrome users see an "Install app" button in `/settings`; click triggers the `beforeinstallprompt` event's prompt.
+
+**Constraints:** None
+**Priority:** P1
+**Dependencies:** REQ-DES-001
+**Verification:** Manual check
+**Status:** Planned
+
+---
+
+### REQ-PWA-002: Offline reading of the last digest
+
+**Intent:** Users can open the installed app on the subway and read the most recently-viewed digest without a network connection.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. A service worker (via `@vite-pwa/astro`) caches static assets (JS, CSS, fonts, icons) with a cache-first strategy using hashed filenames.
+2. `/digest/*` HTML uses a stale-while-revalidate strategy.
+3. `/api/*` uses a network-first strategy with a 3-second timeout and cache fallback.
+4. When `navigator.onLine` is false, a top-of-page banner appears and the "Refresh now" button is disabled with a tooltip.
+5. On logout, the digest cache (`digest-cache-v1`) is explicitly deleted via `caches.delete` so a subsequent user on the same device does not see the previous user's content.
+
+**Constraints:** CON-SEC-001
+**Priority:** P2
+**Dependencies:** REQ-PWA-001
+**Verification:** Manual check
+**Status:** Planned
+
+---
+
+### REQ-PWA-003: Mobile-first responsive layout
+
+**Intent:** The UI feels native on iOS and Android without compromising desktop.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. The viewport meta tag on every page is `width=device-width, initial-scale=1, viewport-fit=cover`.
+2. The sticky header uses `padding-top: env(safe-area-inset-top)` and the bottom tab bar uses `padding-bottom: env(safe-area-inset-bottom)` to respect iPhone notches and Android gesture bars.
+3. Mobile (<768 px) shows a bottom tab bar with Digest, History, and Settings entries plus a safe-area inset; the header shows only logo and theme toggle.
+4. Desktop (≥1024 px) shows a left sidebar with the same entries plus a logout control at the bottom.
+5. Tap highlights are disabled globally with `-webkit-tap-highlight-color: transparent`; focus and active states are handled by CSS.
+
+**Constraints:** CON-A11Y-001
+**Priority:** P1
+**Dependencies:** REQ-DES-001
+**Verification:** Manual check
+**Status:** Planned
