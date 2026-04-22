@@ -23,11 +23,13 @@ Returns the landing page.
 
 ## Authentication
 
-### GET /api/auth/github/login
+### POST /api/auth/github/login (also GET)
 
-Initiates GitHub OAuth. Generates random `state`, sets `oauth_state` cookie (HttpOnly, 5-min TTL), redirects to GitHub.
+Initiates GitHub OAuth. Generates random `state`, sets `oauth_state` cookie (HttpOnly, 10-min TTL), redirects to GitHub.
 
-**Implements:** [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-github)
+`POST` is the canonical entry point — the landing page submits a same-origin form to avoid mobile-browser prefetch races that regenerate the state cookie before GitHub's callback returns. `GET` is retained for direct URL access (bookmarks, test tooling). Both methods are exempt from the Origin check per [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints) AC 4: the only effect is setting the state cookie and returning a 303 redirect; no authenticated session state is mutated.
+
+**Implements:** [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-github), [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
 ### GET /api/auth/github/callback
 
@@ -171,6 +173,7 @@ Implements [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-log
 |---|---|
 | `auth.login` | Successful OAuth callback — user created or re-authenticated |
 | `auth.callback.failed` | Any failure in the OAuth callback (token exchange, user fetch, DB) |
+| `auth.callback.invalid_state` | CSRF state mismatch in the OAuth callback — returns 403 |
 | `auth.logout` | Session version bumped; cookie cleared |
 | `auth.account.delete` | User row deleted from D1 (info on success, warn when no row affected) |
 | `auth.account.delete.failed` | D1 delete threw, or KV cleanup threw |
@@ -180,6 +183,8 @@ Implements [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-log
 | `refresh.rejected` | Manual refresh rejected (rate-limited or already in progress) |
 | `email.send.failed` | Resend API call failed |
 | `discovery.completed` | Per-tag LLM discovery run finished |
+| `discovery.queued` | A new per-tag discovery job was inserted into `pending_discoveries` |
+| `settings.update.failed` | D1 update in `PUT /api/settings` threw |
 
 Raw exception messages appear only in the `detail` field of error-level records; they are never stored in D1 and never returned to clients (see [REQ-OPS-002](../sdd/observability.md#req-ops-002-sanitized-error-surfaces)).
 
