@@ -387,16 +387,34 @@ describe('generateDigest — happy path', () => {
     const inserts = batch.filter((c) => c.sql.includes('INSERT INTO articles'));
     expect(inserts).toHaveLength(2);
     for (let i = 0; i < inserts.length; i++) {
-      // Params: id, digest_id, slug, source_url, title, one_liner, details_json, rank
+      // Params: id, digest_id, slug, source_url, title, one_liner,
+      // details_json, source_name, rank
       const params = inserts[i]!.params;
       expect(params[0]).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
       expect(typeof params[2]).toBe('string');
       expect((params[2] as string).length).toBeGreaterThan(0);
-      expect(params[7]).toBe(i + 1);
+      expect(params[8]).toBe(i + 1);
       // details_json is a string (JSON array).
       expect(typeof params[6]).toBe('string');
       JSON.parse(params[6] as string);
     }
+  });
+
+  it('REQ-GEN-006: INSERT binds source_name resolved from the dedupe headline map', async () => {
+    await generateDigest(env, user, 'scheduled');
+    const batch = db.batches[0]!;
+    const inserts = batch.filter((c) => c.sql.includes('INSERT INTO articles'));
+    expect(inserts).toHaveLength(2);
+    // The INSERT column list must include source_name between details_json
+    // and rank so the badge column is populated on every article row.
+    for (const insert of inserts) {
+      expect(insert.sql).toContain('source_name');
+    }
+    // First article URL maps to the hackernews headline; second to
+    // googlenews. The resolution goes through canonicalize() so http→https
+    // and trailing-slash variants all collapse onto the same key.
+    expect(inserts[0]!.params[7]).toBe('hackernews');
+    expect(inserts[1]!.params[7]).toBe('googlenews');
   });
 
   it('REQ-GEN-006: duplicate-title articles get deduplicated slugs within the batch', async () => {

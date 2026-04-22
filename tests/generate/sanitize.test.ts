@@ -12,6 +12,13 @@ import { __test } from '~/lib/generate';
 
 const { sanitizeText, sanitizeArticles } = __test;
 
+/** Empty source_name lookup for tests that don't care about the badge column.
+ * `sanitizeArticles` resolves each article's `source_name` from this map by
+ * canonicalized URL; with an empty map every article ends up with
+ * `source_name: null`, which is the same null we'd store for any URL the
+ * LLM returns that isn't present in the fan-out headlines. */
+const NO_SOURCES = new Map<string, string>();
+
 describe('sanitizeText', () => {
   it('REQ-GEN-006: strips simple HTML tags', () => {
     expect(sanitizeText('<b>bold</b>')).toBe('bold');
@@ -128,7 +135,7 @@ describe('sanitizeArticles', () => {
           ],
         },
       ],
-    });
+    }, NO_SOURCES);
     expect(out).toHaveLength(1);
     const article = out[0]!;
     expect(article.title).toBe('Hot News');
@@ -157,7 +164,7 @@ describe('sanitizeArticles', () => {
           details: ['a', 'b', 'c'],
         },
       ],
-    });
+    }, NO_SOURCES);
     expect(out).toHaveLength(1);
     expect(out[0]?.title).toBe('Valid title');
   });
@@ -178,7 +185,7 @@ describe('sanitizeArticles', () => {
           details: ['a', 'b', 'c'],
         },
       ],
-    });
+    }, NO_SOURCES);
     expect(out).toHaveLength(1);
     expect(out[0]?.title).toBe('Has URL');
   });
@@ -193,7 +200,7 @@ describe('sanitizeArticles', () => {
           details: ['a', 'b', 'c'],
         },
       ],
-    });
+    }, NO_SOURCES);
     expect(out).toHaveLength(0);
   });
 
@@ -207,14 +214,14 @@ describe('sanitizeArticles', () => {
           details: ['<br/>', 'Bullet 1', '   ', 'Bullet 2'],
         },
       ],
-    });
+    }, NO_SOURCES);
     expect(out).toHaveLength(1);
     expect(out[0]?.details).toEqual(['Bullet 1', 'Bullet 2']);
   });
 
   it('REQ-GEN-006: handles completely empty article list', () => {
-    expect(sanitizeArticles({ articles: [] })).toEqual([]);
-    expect(sanitizeArticles({})).toEqual([]);
+    expect(sanitizeArticles({ articles: [] }, NO_SOURCES)).toEqual([]);
+    expect(sanitizeArticles({}, NO_SOURCES)).toEqual([]);
   });
 
   it('REQ-GEN-006: drops non-object entries in articles', () => {
@@ -231,7 +238,7 @@ describe('sanitizeArticles', () => {
           details: ['x', 'y', 'z'],
         },
       ],
-    });
+    }, NO_SOURCES);
     expect(out).toHaveLength(1);
     expect(out[0]?.title).toBe('OK');
   });
@@ -246,7 +253,7 @@ describe('sanitizeArticles', () => {
           details: 'not an array' as unknown as unknown[],
         },
       ],
-    });
+    }, NO_SOURCES);
     expect(out).toHaveLength(1);
     expect(out[0]?.details).toEqual([]);
   });
@@ -264,7 +271,7 @@ describe('sanitizeArticles', () => {
           details: ['See <a href="https://evil/x">source</a> for details'],
         },
       ],
-    });
+    }, NO_SOURCES);
     expect(out).toHaveLength(1);
     expect(out[0]?.one_liner).toBe('Read here now');
     expect(out[0]?.details).toEqual(['See source for details']);

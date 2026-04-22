@@ -33,6 +33,7 @@
 
 import { adaptersForDiscoveredFeeds, fanOutForTags } from '~/lib/sources';
 import type { SourceAdapter } from '~/lib/sources';
+import { canonicalize } from '~/lib/canonical-url';
 import { DIGEST_SYSTEM, LLM_PARAMS, digestUserPrompt } from '~/lib/prompts';
 import { generateUlid } from '~/lib/ulid';
 import { deduplicateSlug, slugify } from '~/lib/slug';
@@ -47,6 +48,7 @@ import type {
   AuthenticatedUser,
   DiscoveredFeed,
   GeneratedArticle,
+  Headline,
   SourcesCacheValue,
 } from '~/lib/types';
 
@@ -216,6 +218,14 @@ export async function generateDigest(
     // --- Step 4: Fan out across every {tag × source} pair ---------------
     const headlines = await fanOutForTags(tags, env.KV, discoveredByTag);
 
+    // Build a canonical-URL → source_name lookup so we can persist the
+    // originating source on each article row. The LLM returns only the
+    // raw URL string, so we dedupe headline URLs the same way
+    // `fanOutForTags` does (see REQ-GEN-004) and look up by canonical
+    // form. First occurrence wins — matches the fan-out's dedupe order
+    // (tag-specific feeds land ahead of generic sources).
+    const sourceNameByCanonicalUrl = buildSourceNameMap(headlines);
+
     // --- Step 5: All-sources-failed guard -------------------------------
     if (headlines.length === 0) {
       await markFailed(
@@ -289,7 +299,7 @@ export async function generateDigest(
     }
 
     // --- Step 7: Sanitize article plaintext ------------------------------
-    const articles = sanitizeArticles(parsed);
+    const articles = sanitizeArticles(parsed, sourceNameByCanonicalUrl);
     if (articles.length === 0) {
       // Parsed OK but produced zero usable articles — treat as invalid JSON
       // (the contract says ≥1 article with the documented shape).
@@ -519,8 +529,14 @@ function parseLLMPayload(response: unknown): LLMDigestPayload | null {
 
 /** Convert a validated LLM payload into a sanitized list of articles ready
  * for insertion. Drops entries that lack required fields or produce empty
- * text after sanitization. */
-function sanitizeArticles(payload: LLMDigestPayload): GeneratedArticle[] {
+ * text after sanitization. Each article's `source_name` is resolved from
+ * the supplied map by canonicalized URL; articles whose URL is not in the
+ * map (i.e., the LLM hallucinated a URL outside the fetched headlines)
+ * get `source_name: null`. */
+function sanitizeArticles(
+  payload: LLMDigestPayload,
+  sourceNameByCanonicalUrl: Map<string, string>,
+): GeneratedArticle[] {
   const rawArticles = Array.isArray(payload.articles) ? payload.articles : [];
   const out: GeneratedArticle[] = [];
   for (const a of rawArticles) {
@@ -535,9 +551,26 @@ function sanitizeArticles(payload: LLMDigestPayload): GeneratedArticle[] {
       if (sanitized !== '') details.push(sanitized);
     }
     if (title === '' || url === '' || oneLiner === '') continue;
-    out.push({ title, url, one_liner: oneLiner, details });
+    const sourceName =
+      sourceNameByCanonicalUrl.get(canonicalize(url)) ?? null;
+    out.push({ title, url, one_liner: oneLiner, details, source_name: sourceName });
   }
   return out;
+}
+
+/** Build a canonical-URL → source_name lookup from the fetched headlines.
+ * First occurrence wins (mirrors the fan-out's dedupe priority, where
+ * tag-specific feeds are inserted before generic sources). Used by
+ * {@link sanitizeArticles} to persist the originating source on each
+ * article row for the UI's source badge. */
+function buildSourceNameMap(headlines: Headline[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const h of headlines) {
+    const key = canonicalize(h.url);
+    if (map.has(key)) continue;
+    map.set(key, h.source_name);
+  }
+  return map;
 }
 
 /**
@@ -614,8 +647,8 @@ function buildFinalBatch(args: {
       db
         .prepare(
           `INSERT INTO articles
-             (id, digest_id, slug, source_url, title, one_liner, details_json, rank)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+             (id, digest_id, slug, source_url, title, one_liner, details_json, source_name, rank)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
         )
         .bind(
           articleId,
@@ -625,6 +658,7 @@ function buildFinalBatch(args: {
           article.title,
           article.one_liner,
           detailsJson,
+          article.source_name,
           idx + 1,
         ),
     );
@@ -717,4 +751,5 @@ export const __test = {
   extractTokensIn,
   extractTokensOut,
   extractFeeds,
+  buildSourceNameMap,
 };
