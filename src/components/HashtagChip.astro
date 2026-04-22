@@ -1,0 +1,109 @@
+---
+// Implements REQ-SET-002
+//
+// Individual selectable hashtag chip. Renders as a <button type="button">
+// so it can be toggled without submitting the parent form. State lives
+// in `aria-pressed` and is also mirrored to a `data-selected` attribute
+// so stylesheets and client JS can pick it up without parsing ARIA.
+//
+// The underlying tag value is carried on `data-tag`. Client-side code in
+// /settings.astro enumerates `[data-tag]` buttons on submit to collect
+// the current selection — keeping the state in the DOM avoids any
+// component framework runtime.
+//
+// Size and padding satisfy REQ-DES-001 AC 5 (44x44 minimum touch
+// target) even when the chip's label is short.
+
+interface Props {
+  /** The hashtag value (no leading `#`), passed through to `data-tag`. */
+  tag: string;
+  /** Initial selection state — true if the tag is in the user's current list. */
+  selected?: boolean;
+}
+
+const { tag, selected = false } = Astro.props;
+---
+
+<button
+  type="button"
+  class:list={['hashtag-chip', { 'is-selected': selected }]}
+  data-hashtag-chip
+  data-tag={tag}
+  data-selected={selected ? '1' : '0'}
+  aria-pressed={selected ? 'true' : 'false'}
+>
+  <span class="hashtag-chip__hash" aria-hidden="true">#</span>
+  <span class="hashtag-chip__label">{tag}</span>
+</button>
+
+<script>
+  // Implements REQ-SET-002 — toggle chip selection on click / Space / Enter.
+  // Kept deliberately small and framework-free. The parent form reads the
+  // final selected set from the DOM on submit via `[data-hashtag-chip][data-selected="1"]`.
+
+  function initChips(): void {
+    const chips = document.querySelectorAll<HTMLButtonElement>('[data-hashtag-chip]');
+    chips.forEach((chip) => {
+      if (chip.dataset['bound'] === '1') return;
+      chip.dataset['bound'] = '1';
+      chip.addEventListener('click', () => {
+        const nowSelected = chip.dataset['selected'] !== '1';
+        chip.dataset['selected'] = nowSelected ? '1' : '0';
+        chip.setAttribute('aria-pressed', nowSelected ? 'true' : 'false');
+        chip.classList.toggle('is-selected', nowSelected);
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initChips, { once: true });
+  } else {
+    initChips();
+  }
+  // Re-bind on Astro view-transition navigations.
+  document.addEventListener('astro:page-load', initChips);
+</script>
+
+<style>
+  .hashtag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 0.75rem;
+    background-color: var(--surface);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: var(--text-base);
+    font-weight: 400;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .hashtag-chip:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+
+  .hashtag-chip.is-selected {
+    background-color: var(--accent);
+    color: #ffffff;
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+
+  .hashtag-chip:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .hashtag-chip__hash {
+    opacity: 0.7;
+  }
+
+  .hashtag-chip.is-selected .hashtag-chip__hash {
+    opacity: 1;
+  }
+</style>

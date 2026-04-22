@@ -1,0 +1,787 @@
+---
+// Implements REQ-SET-001, REQ-SET-002, REQ-SET-003, REQ-SET-004, REQ-SET-005, REQ-SET-006, REQ-SET-007
+//
+// Unified onboarding + edit form. The `first_run` query param swaps the
+// hero copy and the primary CTA label; the form fields are identical in
+// both modes. A fully-configured user visiting `/settings?first_run=1`
+// is redirected to `/settings` by the settings-gate middleware helper.
+//
+// All validation is repeated server-side in /api/settings — client-side
+// form state is convenience only.
+
+import type { APIContext } from 'astro';
+import Base from '~/layouts/Base.astro';
+import HashtagChip from '~/components/HashtagChip.astro';
+import ModelSelect from '~/components/ModelSelect.astro';
+import InstallPrompt from '~/components/InstallPrompt.astro';
+import { loadSession } from '~/middleware/auth';
+import { requireSettingsComplete } from '~/middleware/settings-gate';
+import { DEFAULT_TZ } from '~/lib/tz';
+import { DEFAULT_MODEL_ID } from '~/lib/models';
+
+// Curated list of default hashtag chips (REQ-SET-002 AC 1). Kept in sync
+// with requirements.md "Default hashtag proposals".
+const DEFAULT_HASHTAGS: ReadonlyArray<string> = [
+  'cloudflare',
+  'agenticai',
+  'mcp',
+  'aws',
+  'aigateway',
+  'llm',
+  'ragsystems',
+  'vectordb',
+  'workersai',
+  'durableobjects',
+  'typescript',
+  'rust',
+  'webassembly',
+  'edgecompute',
+  'postgres',
+  'openai',
+  'anthropic',
+  'opensource',
+  'devtools',
+  'observability',
+];
+
+// Common IANA zones shown in the tz dropdown fallback. The client
+// populates the `<select>` with the browser's zone at load time; this
+// list is the server-rendered fallback.
+const COMMON_TIMEZONES: ReadonlyArray<string> = [
+  'UTC',
+  'Europe/Zurich',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Toronto',
+  'Asia/Tokyo',
+  'Asia/Singapore',
+  'Asia/Shanghai',
+  'Asia/Kolkata',
+  'Australia/Sydney',
+];
+
+const env = Astro.locals.runtime.env;
+if (typeof env.OAUTH_JWT_SECRET !== 'string' || env.OAUTH_JWT_SECRET === '') {
+  return new Response('Application not configured', { status: 500 });
+}
+
+// Load the authenticated user into locals — the settings-gate helper
+// reads from `Astro.locals.user`.
+const session = await loadSession(
+  Astro.request,
+  env.DB,
+  env.OAUTH_JWT_SECRET,
+);
+if (session === null) {
+  return Astro.redirect('/api/auth/github/login', 303);
+}
+Astro.locals.user = session.user;
+
+// Enforce the settings-incomplete / already-complete redirect rules.
+// The helper only reads `request` and `locals`; cast to `APIContext`
+// for the remainder of the surface it does not touch.
+const gated = requireSettingsComplete({
+  request: Astro.request,
+  locals: Astro.locals,
+} as unknown as APIContext);
+if (gated !== null) {
+  return gated;
+}
+
+const user = session.user;
+
+// Parse current hashtags for selection-state prefill.
+let currentHashtags: string[] = [];
+if (user.hashtags_json !== null && user.hashtags_json !== '') {
+  try {
+    const parsed = JSON.parse(user.hashtags_json) as unknown;
+    if (Array.isArray(parsed)) {
+      currentHashtags = parsed.filter((v): v is string => typeof v === 'string');
+    }
+  } catch {
+    currentHashtags = [];
+  }
+}
+const currentSet = new Set(currentHashtags);
+
+// Custom tags the user added that aren't in the default grid.
+const customTags = currentHashtags.filter((t) => !DEFAULT_HASHTAGS.includes(t));
+
+const url = new URL(Astro.request.url);
+const isFirstRun =
+  url.searchParams.get('first_run') === '1' &&
+  (user.hashtags_json === null || user.digest_hour === null);
+
+const digestHour = user.digest_hour ?? 8;
+const digestMinute = user.digest_minute;
+const timeValue = `${String(digestHour).padStart(2, '0')}:${String(digestMinute).padStart(2, '0')}`;
+const tzValue = user.tz === '' ? DEFAULT_TZ : user.tz;
+const currentModelId = user.model_id ?? DEFAULT_MODEL_ID;
+const emailEnabled = user.email_enabled === 1;
+
+const heroTitle = isFirstRun
+  ? 'Welcome — let’s set up your first digest'
+  : 'Settings';
+const heroBody = isFirstRun
+  ? 'Pick the interests that drive your daily digest, choose when you want it generated, and we’ll take it from there.'
+  : 'Tune your interests, schedule, and delivery preferences.';
+const primaryCta = isFirstRun ? 'Generate my first digest' : 'Save';
+---
+
+<Base title={isFirstRun ? 'Welcome to News Digest' : 'Settings'}>
+  <section class="settings" data-settings data-first-run={isFirstRun ? '1' : '0'}>
+    <header class="settings__hero">
+      <h1 class="settings__title">{heroTitle}</h1>
+      <p class="settings__subtitle">{heroBody}</p>
+    </header>
+
+    <form class="settings__form" data-settings-form>
+      <fieldset class="settings__section">
+        <legend class="settings__legend">Interests</legend>
+        <p class="settings__hint">Pick at least one hashtag. You can add your own below.</p>
+        <div class="settings__chips" data-chip-grid>
+          {
+            DEFAULT_HASHTAGS.map((tag) => (
+              <HashtagChip tag={tag} selected={currentSet.has(tag)} />
+            ))
+          }
+          {
+            customTags.map((tag) => (
+              <HashtagChip tag={tag} selected={true} />
+            ))
+          }
+        </div>
+        <label class="settings__custom">
+          <span class="settings__custom-label">Add your own</span>
+          <span class="settings__custom-row">
+            <input
+              type="text"
+              data-custom-tag-input
+              placeholder="a-z, 0-9, hyphen"
+              autocomplete="off"
+              maxlength="33"
+              class="settings__custom-input"
+            />
+            <button type="button" data-custom-tag-add class="settings__custom-add">Add</button>
+          </span>
+        </label>
+      </fieldset>
+
+      <fieldset class="settings__section">
+        <legend class="settings__legend">Schedule</legend>
+        <label class="settings__field">
+          <span class="settings__field-label">Daily digest time</span>
+          <input
+            type="time"
+            name="time"
+            data-time-input
+            value={timeValue}
+            required
+            class="settings__time-input"
+          />
+        </label>
+        <div class="settings__tz" data-tz-block>
+          <span class="settings__field-label">Timezone</span>
+          <output class="settings__tz-current" data-tz-display>{tzValue}</output>
+          <button type="button" data-tz-toggle class="settings__tz-toggle">change</button>
+          <select
+            name="tz"
+            data-tz-select
+            class="settings__tz-select"
+            hidden
+          >
+            {
+              COMMON_TIMEZONES.map((zone) => (
+                <option value={zone} selected={zone === tzValue}>
+                  {zone}
+                </option>
+              ))
+            }
+          </select>
+        </div>
+      </fieldset>
+
+      <details class="settings__section settings__advanced">
+        <summary class="settings__legend">Advanced</summary>
+        <div class="settings__advanced-body">
+          <label class="settings__field">
+            <span class="settings__field-label">Summary model</span>
+            <ModelSelect selected={currentModelId} />
+          </label>
+          <label class="settings__toggle">
+            <input
+              type="checkbox"
+              data-email-toggle
+              checked={emailEnabled}
+            />
+            <span>Email me when my daily digest is ready</span>
+          </label>
+        </div>
+      </details>
+
+      <div class="settings__actions">
+        <button type="submit" class="settings__submit" data-settings-submit>
+          {primaryCta}
+        </button>
+        <p class="settings__status" data-settings-status aria-live="polite"></p>
+      </div>
+    </form>
+
+    {
+      !isFirstRun && (
+        <section class="settings__secondary">
+          <InstallPrompt />
+          <form
+            method="post"
+            action="/api/auth/github/logout"
+            class="settings__logout"
+          >
+            <button type="submit" class="settings__logout-button">
+              Log out
+            </button>
+          </form>
+          <form
+            class="settings__delete"
+            data-delete-account
+            aria-label="Delete account"
+          >
+            <h2 class="settings__danger-title">Delete account</h2>
+            <p class="settings__danger-hint">
+              Permanently deletes your account, digests, and all associated data.
+            </p>
+            <label class="settings__field">
+              <span class="settings__field-label">Type DELETE to confirm</span>
+              <input
+                type="text"
+                data-delete-confirm
+                autocomplete="off"
+                class="settings__delete-input"
+              />
+            </label>
+            <button type="submit" class="settings__delete-button">
+              Delete my account
+            </button>
+          </form>
+        </section>
+      )
+    }
+  </section>
+</Base>
+
+<script>
+  // Implements REQ-SET-001, REQ-SET-002, REQ-SET-003, REQ-SET-004, REQ-SET-005, REQ-SET-007
+  //
+  // Client-side controller for /settings. Framework-free — collects
+  // form state from DOM data attributes and POSTs JSON to /api/settings.
+
+  interface SettingsResponse {
+    ok?: boolean;
+    discovering?: string[];
+    error?: string;
+    code?: string;
+  }
+
+  function normalizeTag(raw: string): string {
+    const lowered = raw.toLowerCase().trim();
+    const unHashed = lowered.startsWith('#') ? lowered.slice(1) : lowered;
+    return unHashed.replace(/[^a-z0-9-]/g, '');
+  }
+
+  function collectHashtags(): string[] {
+    const chips = document.querySelectorAll<HTMLButtonElement>(
+      '[data-hashtag-chip][data-selected="1"]',
+    );
+    const tags: string[] = [];
+    const seen = new Set<string>();
+    chips.forEach((chip) => {
+      const tag = chip.dataset['tag'];
+      if (tag === undefined || tag === '') return;
+      if (seen.has(tag)) return;
+      seen.add(tag);
+      tags.push(tag);
+    });
+    return tags;
+  }
+
+  function addCustomTag(input: HTMLInputElement, grid: HTMLElement): void {
+    const normalized = normalizeTag(input.value);
+    if (normalized.length < 2 || normalized.length > 32) {
+      input.value = '';
+      return;
+    }
+    // De-dupe against existing chips.
+    const existing = grid.querySelector<HTMLButtonElement>(
+      `[data-hashtag-chip][data-tag="${CSS.escape(normalized)}"]`,
+    );
+    if (existing !== null) {
+      existing.dataset['selected'] = '1';
+      existing.setAttribute('aria-pressed', 'true');
+      existing.classList.add('is-selected');
+      input.value = '';
+      return;
+    }
+    // Build a new chip.
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'hashtag-chip is-selected';
+    chip.dataset['hashtagChip'] = '';
+    chip.dataset['tag'] = normalized;
+    chip.dataset['selected'] = '1';
+    chip.setAttribute('aria-pressed', 'true');
+    chip.innerHTML = `<span class="hashtag-chip__hash" aria-hidden="true">#</span><span class="hashtag-chip__label">${normalized}</span>`;
+    chip.addEventListener('click', () => {
+      const nowSelected = chip.dataset['selected'] !== '1';
+      chip.dataset['selected'] = nowSelected ? '1' : '0';
+      chip.setAttribute('aria-pressed', nowSelected ? 'true' : 'false');
+      chip.classList.toggle('is-selected', nowSelected);
+    });
+    grid.appendChild(chip);
+    input.value = '';
+  }
+
+  async function submitSettings(
+    form: HTMLFormElement,
+    status: HTMLElement,
+    submitButton: HTMLButtonElement,
+  ): Promise<void> {
+    const timeInput = form.querySelector<HTMLInputElement>('[data-time-input]');
+    const tzSelect = form.querySelector<HTMLSelectElement>('[data-tz-select]');
+    const tzDisplay = form.querySelector<HTMLElement>('[data-tz-display]');
+    const emailToggle = form.querySelector<HTMLInputElement>('[data-email-toggle]');
+    const modelSelect = form.querySelector<HTMLSelectElement>('select[name="model_id"]');
+
+    const timeValue = timeInput?.value ?? '';
+    const [hourStr, minuteStr] = timeValue.split(':');
+    const digestHour = Number.parseInt(hourStr ?? '', 10);
+    const digestMinute = Number.parseInt(minuteStr ?? '', 10);
+    const tz =
+      tzSelect !== null && !tzSelect.hidden
+        ? tzSelect.value
+        : tzDisplay?.textContent?.trim() ?? '';
+    const modelId = modelSelect?.value ?? '';
+    const emailEnabled = emailToggle?.checked === true;
+    const hashtags = collectHashtags();
+
+    const payload = {
+      hashtags,
+      digest_hour: digestHour,
+      digest_minute: digestMinute,
+      tz,
+      model_id: modelId,
+      email_enabled: emailEnabled,
+    };
+
+    submitButton.disabled = true;
+    status.textContent = 'Saving…';
+    let res: Response;
+    try {
+      res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'same-origin',
+      });
+    } catch {
+      status.textContent = 'Network error. Please try again.';
+      submitButton.disabled = false;
+      return;
+    }
+
+    let body: SettingsResponse = {};
+    try {
+      body = (await res.json()) as SettingsResponse;
+    } catch {
+      /* keep body as {} */
+    }
+
+    if (!res.ok || body.ok !== true) {
+      status.textContent =
+        body.error ?? 'Could not save your settings. Please try again.';
+      submitButton.disabled = false;
+      return;
+    }
+
+    const wasFirstRun =
+      document
+        .querySelector<HTMLElement>('[data-settings]')
+        ?.dataset['firstRun'] === '1';
+
+    if (wasFirstRun) {
+      window.location.assign('/digest');
+      return;
+    }
+
+    status.textContent = 'Saved';
+    submitButton.disabled = false;
+  }
+
+  async function deleteAccount(
+    form: HTMLFormElement,
+    status: HTMLElement,
+  ): Promise<void> {
+    const input = form.querySelector<HTMLInputElement>('[data-delete-confirm]');
+    const confirm = input?.value.trim() ?? '';
+    if (confirm !== 'DELETE') {
+      status.textContent = 'Type DELETE exactly to confirm.';
+      return;
+    }
+    status.textContent = 'Deleting…';
+    const res = await fetch('/api/auth/account', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: 'DELETE' }),
+      credentials: 'same-origin',
+    });
+    if (res.ok) {
+      const body = (await res.json()) as { redirect?: string };
+      window.location.assign(body.redirect ?? '/');
+      return;
+    }
+    status.textContent = 'Could not delete your account. Please try again.';
+  }
+
+  function init(): void {
+    const form = document.querySelector<HTMLFormElement>('[data-settings-form]');
+    if (form === null) return;
+    if (form.dataset['bound'] === '1') return;
+    form.dataset['bound'] = '1';
+
+    const status = form.querySelector<HTMLElement>('[data-settings-status]');
+    const submit = form.querySelector<HTMLButtonElement>('[data-settings-submit]');
+    const customInput = form.querySelector<HTMLInputElement>('[data-custom-tag-input]');
+    const customAdd = form.querySelector<HTMLButtonElement>('[data-custom-tag-add]');
+    const grid = form.querySelector<HTMLElement>('[data-chip-grid]');
+    const tzToggle = form.querySelector<HTMLButtonElement>('[data-tz-toggle]');
+    const tzSelect = form.querySelector<HTMLSelectElement>('[data-tz-select]');
+    const tzDisplay = form.querySelector<HTMLElement>('[data-tz-display]');
+
+    if (customInput !== null && customAdd !== null && grid !== null) {
+      customAdd.addEventListener('click', () => addCustomTag(customInput, grid));
+      customInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          addCustomTag(customInput, grid);
+        }
+      });
+    }
+
+    if (tzToggle !== null && tzSelect !== null) {
+      tzToggle.addEventListener('click', () => {
+        tzSelect.hidden = !tzSelect.hidden;
+        if (!tzSelect.hidden) tzSelect.focus();
+      });
+      tzSelect.addEventListener('change', () => {
+        if (tzDisplay !== null) tzDisplay.textContent = tzSelect.value;
+      });
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (status === null || submit === null) return;
+      void submitSettings(form, status, submit);
+    });
+
+    // Delete account form.
+    const deleteForm = document.querySelector<HTMLFormElement>('[data-delete-account]');
+    if (deleteForm !== null && deleteForm.dataset['bound'] !== '1') {
+      deleteForm.dataset['bound'] = '1';
+      deleteForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const deleteStatus = document.createElement('p');
+        deleteStatus.setAttribute('aria-live', 'polite');
+        deleteForm.appendChild(deleteStatus);
+        void deleteAccount(deleteForm, deleteStatus);
+      });
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    init();
+  }
+  document.addEventListener('astro:page-load', init);
+</script>
+
+<style>
+  .settings {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 1.5rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  .settings__hero {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .settings__title {
+    margin: 0;
+    font-size: var(--text-2xl);
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .settings__subtitle {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-base);
+    line-height: 1.5;
+  }
+
+  .settings__form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .settings__section {
+    margin: 0;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background-color: var(--surface);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .settings__legend {
+    padding: 0;
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .settings__hint {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .settings__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .settings__custom {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .settings__custom-label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+
+  .settings__custom-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .settings__custom-input {
+    flex: 1 1 auto;
+    min-height: 44px;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+  }
+
+  .settings__custom-add {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0.5rem 1rem;
+    background-color: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .settings__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .settings__field-label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+
+  .settings__time-input {
+    min-height: 44px;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    width: max-content;
+  }
+
+  .settings__tz {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .settings__tz-current {
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .settings__tz-toggle {
+    min-height: 44px;
+    padding: 0.25rem 0.75rem;
+    background: transparent;
+    color: var(--accent);
+    border: none;
+    cursor: pointer;
+    font-size: var(--text-sm);
+  }
+
+  .settings__tz-select {
+    flex: 1 1 200px;
+    min-height: 44px;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+  }
+
+  .settings__tz-select[hidden] {
+    display: none;
+  }
+
+  .settings__advanced-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding-top: 0.75rem;
+  }
+
+  .settings__toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text);
+  }
+
+  .settings__toggle input {
+    min-width: 20px;
+    min-height: 20px;
+  }
+
+  .settings__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .settings__submit {
+    min-height: 44px;
+    padding: 0.75rem 1.25rem;
+    background-color: var(--accent);
+    color: #ffffff;
+    border: none;
+    border-radius: 0.375rem;
+    font-size: var(--text-base);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .settings__submit:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+
+  .settings__status {
+    margin: 0;
+    min-height: 1.25rem;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .settings__secondary {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .settings__logout {
+    margin: 0;
+  }
+
+  .settings__logout-button {
+    min-height: 44px;
+    padding: 0.5rem 1rem;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    font-size: var(--text-base);
+    font-weight: 400;
+    cursor: pointer;
+  }
+
+  .settings__delete {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background-color: var(--surface);
+  }
+
+  .settings__danger-title {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .settings__danger-hint {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .settings__delete-input {
+    min-height: 44px;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+  }
+
+  .settings__delete-button {
+    min-height: 44px;
+    padding: 0.75rem 1.25rem;
+    background-color: transparent;
+    color: #b91c1c;
+    border: 1px solid #b91c1c;
+    border-radius: 0.375rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+</style>
