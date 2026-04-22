@@ -54,7 +54,7 @@ Each source URL is canonicalized before the dedupe key is computed. Before follo
 
 ## Default hashtag proposals
 
-Shown as toggleable chips in both `/onboarding` and `/settings`. User may select any subset and add custom hashtags.
+Shown as toggleable chips on `/settings` (the same route handles first-run onboarding via `?first_run=1`). User may select any subset and add custom hashtags.
 
 ```
 #cloudflare  #agenticai  #mcp         #aws            #aigateway
@@ -151,7 +151,7 @@ Provided by `@vite-pwa/astro` (Workbox under the hood). Caching strategies:
 
 The last viewed digest and its article detail pages remain readable offline. `/settings` and the refresh button show an "offline" banner when `navigator.onLine === false`.
 
-**Logout cache clear**: the logout handler posts a message to the service worker (`{ type: 'CLEAR_USER_CACHE' }`); the SW deletes the digest/article caches before the redirect completes. This prevents a subsequent user on the same device from seeing the previous user's cached digest.
+**Logout cache clear**: the logout response is an HTML page with an inline nonce-scripted `caches.delete('digest-cache-v1')` call followed by `window.location='/'`. Direct cache deletion from the page is reliable; the earlier spec using `postMessage` to the service worker is not used because SWs may be terminated at the moment of the message.
 
 ### iOS / Apple meta tags
 
@@ -206,8 +206,12 @@ No dedicated `/onboarding` route. `/settings` IS the onboarding — the same for
    b. Schedule — HH:MM time picker (native <input type="time">). Timezone
       shown with a link "detected Europe/Zurich — change" that opens an
       IANA zone dropdown.
-   c. Model — Workers AI model dropdown (validated against KV catalog on
-      submit), default pre-selected, collapsible "Advanced" disclosure.
+   c. Model — Workers AI model dropdown, populated from `/api/models`
+      (validated against KV catalog on submit), default pre-selected,
+      collapsible "Advanced" disclosure. If the catalog fetch fails
+      on page load, the dropdown renders as a disabled field showing
+      "Model catalog unavailable — using default" and the hidden input
+      carries the default model_id; the user can still save other fields.
 6. On submit: server validates every field (tz in IANA list, model_id in
    cached catalog, hashtags against regex). UPDATE users. For first-run,
    trigger the digest pipeline immediately (out-of-band) and redirect to
@@ -245,8 +249,8 @@ CREATE TABLE users (
   model_id                    TEXT,                   -- Workers AI model id (validated against catalog)
   next_due_at                 INTEGER,                -- unix ts, for cron scan
   last_generated_local_date   TEXT,                   -- YYYY-MM-DD in user tz; dedup key for scheduled runs
-  last_refresh_at             INTEGER,                -- unix ts of most recent manual refresh
-  refresh_window_start        INTEGER,                -- start of current rolling 24h window
+  last_refresh_at             INTEGER,                -- unix ts of most recent manual refresh (NULL if never)
+  refresh_window_start        INTEGER NOT NULL DEFAULT 0,  -- start of current rolling 24h window (0 = never opened)
   refresh_count_24h           INTEGER NOT NULL DEFAULT 0,
   session_version             INTEGER NOT NULL DEFAULT 1,  -- bumped on logout/delete to revoke outstanding JWTs
   created_at                  INTEGER NOT NULL
@@ -262,7 +266,7 @@ CREATE TABLE digests (
   tokens_out            INTEGER,
   estimated_cost_usd    REAL,                         -- computed at insert from a constants file mapping model_id -> per-Mtok prices
   model_id              TEXT NOT NULL,
-  status                TEXT NOT NULL,                -- pending | in_progress | ready | failed
+  status                TEXT NOT NULL,                -- 'in_progress' | 'ready' | 'failed'
   error_code            TEXT,                         -- sanitized code only (see error handling)
   locked_at             INTEGER,                      -- optimistic lock: NULL when free, unix ts when claimed
   trigger               TEXT NOT NULL                 -- 'scheduled' | 'manual'
@@ -271,8 +275,9 @@ CREATE INDEX idx_digests_user_generated ON digests(user_id, generated_at DESC);
 CREATE INDEX idx_digests_status_lock ON digests(status, locked_at);
 
 CREATE TABLE articles (
-  id              TEXT PRIMARY KEY,
+  id              TEXT PRIMARY KEY,                   -- ULID (sortable, 26 chars, generated in-process)
   digest_id       TEXT NOT NULL REFERENCES digests(id) ON DELETE CASCADE,
+  slug            TEXT NOT NULL,                      -- URL-safe slug from title, unique per digest
   source_url      TEXT NOT NULL,                      -- canonical, post-resolution URL
   title           TEXT NOT NULL,
   one_liner       TEXT NOT NULL,                      -- <=120 chars, sanitized
@@ -282,6 +287,7 @@ CREATE TABLE articles (
   rank            INTEGER NOT NULL,
   read_at         INTEGER                             -- unix ts when user first opened the detail view; NULL if unread
 );
+CREATE UNIQUE INDEX idx_articles_digest_slug ON articles(digest_id, slug);
 CREATE INDEX idx_articles_digest_rank ON articles(digest_id, rank);
 CREATE INDEX idx_articles_read ON articles(digest_id, read_at);  -- supports "articles read" stats
 
@@ -291,6 +297,11 @@ CREATE INDEX idx_articles_read ON articles(digest_id, read_at);  -- supports "ar
 ```
 
 **Query discipline**: every query against `digests` and `articles` MUST include `AND user_id = :session_user_id` (or a JOIN that enforces it via `digests.user_id`). This is the only defense against IDOR if a future change introduces a query path that forgets it. Code review must flag any query touching these tables that doesn't scope by user_id.
+
+### ID and slug generation
+
+- `digests.id` and `articles.id`: **ULID** (26-char Crockford-base32, sortable by creation time). Generated in-process via a small helper, no DB sequence.
+- `articles.slug`: derived from `title` — lowercase, replace non-`[a-z0-9]` runs with `-`, trim hyphens, truncate to 60 chars, append a 4-char suffix from the ULID if a collision occurs within the same `digest_id`. The `UNIQUE(digest_id, slug)` index enforces uniqueness at the DB level.
 
 ### Migrations
 
@@ -468,8 +479,15 @@ For each message:
    estimated_cost_usd from a constants file mapping model_id → per-Mtok
    prices (bundled with the Worker; updated via code, not at runtime).
 10. INSERT articles rows. UPDATE digests SET status='ready', clear lock.
-11. For 'scheduled' trigger: UPDATE users SET last_generated_local_date=?
-    (idempotency key for tomorrow's run).
+11. UPDATE users SET last_generated_local_date = local_date_in_user_tz(now())
+    for BOTH trigger types. This means a manual refresh consumed today's
+    scheduled slot — if a user refreshes at 07:55 and their scheduled run
+    is at 08:00, the scheduled job sees last_generated_local_date == today
+    and acks without generating. This is the intended behavior: one digest
+    per local day, regardless of which trigger produced it. To get a second
+    digest on the same day, the user can click Refresh again (within rate
+    limits) which always generates because the idempotency check only
+    applies to scheduled triggers.
 12. Acknowledge queue message.
 ```
 
@@ -604,6 +622,50 @@ Number count-up animations, typing effect for "Detected: Europe/Zurich", particl
 
 These may be revisited after v1 ships.
 
+## HTTP API
+
+All mutating endpoints require an authenticated session (valid `__Host-news_digest_session` cookie with matching `session_version`) AND an `Origin` header equal to the app's canonical origin. All response bodies are JSON unless otherwise noted. Error responses use `{ error: string, code: string, ... }`.
+
+### Auth
+
+| Method | Path | Request | Response | Errors |
+|---|---|---|---|---|
+| GET | `/api/auth/github/login` | — | 302 to github.com; sets `oauth_state` cookie | — |
+| GET | `/api/auth/github/callback?code&state` | — | 302 to `/settings?first_run=1` or `/digest`; sets session cookie | 403 `invalid_state`; 302 `/?error=<code>` |
+| POST | `/api/auth/github/logout` | — | 200 HTML page that clears SW cache and redirects | 401 if not authenticated |
+| POST | `/api/auth/set-tz` | `{ tz: string }` | `200 { ok: true }` | 400 `invalid_tz`; 401 |
+| DELETE | `/api/auth/account` | `{ confirm: "DELETE" }` | `200 { ok: true }` (also clears cookie, bumps session_version) | 400 `confirm_required`; 401 |
+
+### Settings
+
+| Method | Path | Request | Response | Errors |
+|---|---|---|---|---|
+| GET | `/api/settings` | — | `{ hashtags: string[], digest_hour: int, digest_minute: int, tz: string, model_id: string, first_run: bool }` | 401 |
+| PUT | `/api/settings` | `{ hashtags, digest_hour, digest_minute, model_id }` | `{ ok: true }` | 400 `invalid_hashtags` \| `invalid_time` \| `invalid_model_id`; 401; 503 `catalog_cold` |
+| GET | `/api/models` | — | `{ models: [{ id, name, description }] }` (served from KV cache; refreshed on miss) | 401; 503 `catalog_cold` |
+
+### Digest and refresh
+
+| Method | Path | Request | Response | Errors |
+|---|---|---|---|---|
+| GET | `/api/digest/today` | — | `{ digest: { id, generated_at, status, execution_ms, tokens_in, tokens_out, estimated_cost_usd, model_id }, articles: [...], live?: boolean }` | 401; 404 `no_digest_yet` |
+| GET | `/api/digest/:id` | — | Same shape as `/today`, for a specific digest | 401; 403 `not_yours` (shouldn't happen — filtered by query); 404 |
+| POST | `/api/digest/refresh` | — | `202 { digest_id }` (job enqueued) | 401; 429 `rate_limited` `{ retry_after_seconds, reason: 'cooldown' \| 'daily_cap' }`; 409 `already_in_progress` |
+| POST | `/api/digest/:id/cancel` | — | `200 { ok: true }` | 401; 404; 409 `not_cancellable` (already ready/failed) |
+| GET | `/api/digest/:id/events` | — | SSE stream: `event: phase\ndata: {phase, progress}\n\n` then `event: done\ndata: {status}`. Closes on `ready`/`failed`/`user_cancelled`. Auth required (session cookie). 30s idle timeout; single connection per (user, digest). | 401; 404 |
+| POST | `/api/articles/:id/read` | — | `200 { ok: true }` (idempotent; sets `read_at` if NULL) | 401; 404 |
+
+### History and stats
+
+| Method | Path | Request | Response | Errors |
+|---|---|---|---|---|
+| GET | `/api/history?offset=0` | query: `offset` (default 0) | `{ digests: [{ id, generated_at, status, execution_ms, tokens_in, tokens_out, estimated_cost_usd, model_id, article_count }], has_more: bool }` (30 per page) | 401 |
+| GET | `/api/stats` | — | `{ digests_generated, articles_read, articles_total, tokens_consumed, cost_usd }` | 401 |
+
+### Cancel semantics
+
+The `POST /api/digest/:id/cancel` endpoint writes `status='failed', error_code='user_cancelled'` to the digest row and does NOT interrupt the Queue consumer directly. The consumer polls the digest row before each major pipeline phase (sources fetched, LLM called, DB writes) via a single `SELECT status FROM digests WHERE id=? AND user_id=?`. If status is no longer `'in_progress'`, the consumer aborts any in-flight `fetch`/AI call via its `AbortController` and acks the queue message without writing articles. The next phase check is the cancellation window — up to ~5 seconds from cancel click to actual abort, acceptable for this use case.
+
 ## User stats widget
 
 A compact stats widget rendered in the header of `/settings` (and optionally repeated at the top of `/history`). Four tiles, each a big number + small label, pulled from a single D1 query.
@@ -669,4 +731,4 @@ Internal error details (exception messages, response bodies) are logged at `leve
 
 ## Deployment
 
-Cloudflare Workers. Daily Cron Trigger configured in `wrangler.toml` (`crons = ["0 0 * * *"]`). D1, KV (model catalog only), and Queues (`digest-jobs` + `digest-jobs-dlq`) bindings provisioned via `wrangler`. GitHub OAuth client ID/secret, `OAUTH_JWT_SECRET`, and Cloudflare API token configured as Worker secrets. Schema migrations applied with `wrangler d1 migrations apply`.
+Cloudflare Workers. Daily Cron Trigger configured in `wrangler.toml` (`crons = ["0 0 * * *"]`). D1, KV (model catalog + resolved-URL cache), and a single Queue `digest-jobs` (no DLQ; default 3-retry) bindings provisioned via `wrangler`. GitHub OAuth client ID/secret, `OAUTH_JWT_SECRET`, and Cloudflare API token configured as Worker secrets. Schema migrations applied with `wrangler d1 migrations apply`.
