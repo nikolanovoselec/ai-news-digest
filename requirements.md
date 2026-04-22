@@ -57,9 +57,13 @@ On settings save (onboarding or edit):
   3. Return 200 { ok: true, discovering: [tag1, tag2, ...] }.
 
 On every 5-min cron invocation (before generation scheduling):
-  1. SELECT DISTINCT tag FROM pending_discoveries ORDER BY MIN(added_at)
-     GROUP BY tag LIMIT 3. This picks the 3 oldest tags needing discovery
-     across all users (shared work — each tag discovered once globally).
+  1. SELECT tag FROM pending_discoveries
+     GROUP BY tag
+     ORDER BY MIN(added_at)
+     LIMIT 3.
+     Picks the 3 oldest distinct tags needing discovery across all users
+     (shared work — each tag discovered once globally, regardless of how
+     many users queued it).
   2. For each: run LLM + validation, write to `sources:{tag}` KV (no TTL).
      DELETE FROM pending_discoveries WHERE tag = ? (removes from ALL users'
      pending lists at once since discovery is global).
@@ -582,9 +586,11 @@ Producer/consumer architecture. Cron and the refresh API both **enqueue** messag
    a. Stuck-digest sweeper: UPDATE digests SET status='failed',
       error_code='generation_stalled' WHERE status='in_progress'
       AND generated_at < (now - 600).
-   b. Discovery processor: SELECT up to 3 rows from pending_discoveries
-      ordered by added_at, run LLM + validation inline, write `sources:{tag}`
-      KV + DELETE the pending row (low volume — fits in cron).
+   b. Discovery processor: pick up to 3 distinct tags via
+      `SELECT tag FROM pending_discoveries GROUP BY tag ORDER BY MIN(added_at) LIMIT 3`.
+      For each: run LLM + validation, write `sources:{tag}` KV, then
+      `DELETE FROM pending_discoveries WHERE tag = ?` (removes from all
+      users' pending lists since discovery is global).
 3. Scheduling pass: for each distinct tz in users:
    a. Compute local_time = now_utc in this tz.
    b. Window = [floor(minute/5)*5, +5) — half-open, non-overlapping.
@@ -598,7 +604,7 @@ Producer/consumer architecture. Cron and the refresh API both **enqueue** messag
              OR last_generated_local_date != ?)
    d. For each matched user, enqueue { trigger: 'scheduled', user_id,
       local_date } to `digest-jobs`. Use sendBatch for efficiency.
-4. Cron itself returns in <1s regardless of user count.
+4. Cron returns quickly for the dispatch step itself (scheduling pass is <1s — it only runs SELECTs and sendBatch). Maintenance passes (step 2) can take longer: the stuck-digest sweeper is fast (<100ms), but the discovery processor can take up to ~45s when 3 tags are pending (one LLM call + up to 5 validation GETs each). Total cron wall time is bounded at ~1 min on a busy invocation, well within the 15-min budget.
 ```
 
 ### Consumer (`digest-jobs` handler)
@@ -1054,7 +1060,7 @@ All mutating endpoints require an authenticated session (valid `__Host-news_dige
 |---|---|---|---|---|
 | GET | `/api/digest/today` | — | `{ digest: {...} \| null, articles: [...], live: bool, next_scheduled_at: int \| null }`. Query: `SELECT * FROM digests WHERE user_id = :session_user_id ORDER BY generated_at DESC LIMIT 1`. `live=true` if that row has `status='in_progress'`. If `local_date != today_in_user_tz`, compute `next_scheduled_at` from user's `digest_hour:digest_minute` in their tz. | 401 |
 | GET | `/api/digest/:id` | — | Same shape as `/today`, for a specific digest | 401; 403 `not_yours` (shouldn't happen — filtered by query); 404 |
-| POST | `/api/digest/refresh` | — | `202 { digest_id, status: 'in_progress' }` — handler inserts the digest row, returns 202, then fires `ctx.waitUntil(generateDigest(...))` for background generation | 401; 429 `rate_limited` `{ retry_after_seconds, reason: 'cooldown' \| 'daily_cap' }`; 409 `already_in_progress` — returned if `SELECT 1 FROM digests WHERE user_id=? AND local_date=? AND status='in_progress'` finds a row (prevents duplicate concurrent generation even if rate-limit window was bypassed) |
+| POST | `/api/digest/refresh` | — | `202 { digest_id, status: 'in_progress' }` — handler does a conditional INSERT (0 rows → 409), enqueues `{ trigger: 'manual', user_id, local_date, digest_id }` to the `digest-jobs` queue, returns 202. Consumer runs `generateDigest(message)`. | 401; 429 `rate_limited` `{ retry_after_seconds, reason: 'cooldown' \| 'daily_cap' }`; 409 `already_in_progress` — returned when the conditional INSERT matches 0 rows because an in-progress digest already exists for this user's local_date today |
 
 ### History and stats
 
