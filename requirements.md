@@ -6,7 +6,7 @@ A personalized daily tech news digest. Sign in with GitHub, pick your interests 
 
 1. **Sign in with GitHub** — account is created on first login
 2. **Pick your interests** — tap hashtags from 20 defaults or type your own
-3. **Set your digest time** — one scheduled generation per day in your timezone
+3. **Set your digest time** — pick exact HH:MM in your timezone; one scheduled generation per day at that moment
 4. **Read** — overview grid with one-line summaries, click any card for the full brief with source link
 5. **Refresh on demand** — manual "refresh now" button any time
 
@@ -195,14 +195,16 @@ First-run experience after a brand-new user signs in with GitHub.
    - No   → redirect to /digest
 3. /onboarding is a single-page form with three inline sections:
    a. Interests — 20 default hashtag chips, custom text input, min 1 required
-   b. Schedule — hour picker (0-23, local time). Timezone shown read-only as
-      "detected: Europe/Zurich" with no edit control.
+   b. Schedule — HH:MM time picker (native <input type="time">) for the
+      exact local time the digest should run. Timezone shown with a link
+      "detected Europe/Zurich — change" that opens a dropdown of IANA zones.
    c. Model — Workers AI model dropdown, default pre-selected, collapsible
       "Advanced" disclosure hides this by default.
 4. Submit button: "Generate my first digest".
-5. On submit: UPDATE users SET hashtags, digest_hour, model_id, then trigger
-   the digest pipeline immediately and redirect to /digest with a loading
-   state while generation runs.
+5. On submit: UPDATE users SET hashtags_json, digest_hour, digest_minute,
+   tz, model_id. Trigger the digest pipeline immediately (out-of-band,
+   not at the scheduled time) and redirect to /digest with a loading state
+   while generation runs.
 ```
 
 ### Middleware gating
@@ -231,6 +233,7 @@ CREATE TABLE users (
   gh_login                    TEXT NOT NULL,
   tz                          TEXT NOT NULL,          -- IANA timezone
   digest_hour                 INTEGER,                -- 0-23 local time
+  digest_minute               INTEGER NOT NULL DEFAULT 0,  -- 0-59 local time
   hashtags_json               TEXT,                   -- JSON array of strings
   model_id                    TEXT,                   -- Workers AI model id
   next_due_at                 INTEGER,                -- unix ts, for cron scan
@@ -392,10 +395,12 @@ Architecture: dispatcher + consumer, connected by Cloudflare Queues. The dispatc
 
 ```
 1. Single Cron Trigger fires at 00:00 UTC.
-2. SELECT id, tz, digest_hour FROM users WHERE hashtags_json IS NOT NULL.
+2. SELECT id, tz, digest_hour, digest_minute FROM users
+   WHERE hashtags_json IS NOT NULL AND digest_hour IS NOT NULL.
 3. For each user:
-   a. Compute delay_seconds = seconds until next occurrence of digest_hour
-      in user's tz (handles DST, wraps to tomorrow if already past today).
+   a. Compute delay_seconds = seconds until next occurrence of
+      digest_hour:digest_minute in user's tz (handles DST, wraps to
+      tomorrow if that wall-clock time has already passed today).
    b. Enqueue job { user_id, trigger: 'scheduled', local_date: YYYY-MM-DD }
       to the 'digest-jobs' Queue with delaySeconds = delay_seconds.
 4. Done — this run touches D1 only for the user list, fans out to Queues.
