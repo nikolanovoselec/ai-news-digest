@@ -19,10 +19,10 @@
 // whole dist/_worker.js folder via dist/.assetsignore.
 
 import * as esbuild from 'esbuild';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL, fileURLToPath } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -38,10 +38,15 @@ if (!existsSync(astroEntry)) {
 
 // Sanity-check Astro's default export shape so a future adapter change
 // that removes `fetch` fails loudly at build time rather than at runtime.
-const astroMod = await import(pathToFileURL(astroEntry).href);
-if (!astroMod.default || typeof astroMod.default.fetch !== 'function') {
+// Must be a static text check — the built file imports `cloudflare:workers`
+// which Node's ESM loader rejects, so dynamic-importing it would throw.
+const astroSource = await readFile(astroEntry, 'utf8');
+const defaultExportIdx = astroSource.lastIndexOf('export default');
+const hasFetchInDefault =
+  defaultExportIdx !== -1 && astroSource.slice(defaultExportIdx).includes('fetch');
+if (!hasFetchInDefault) {
   console.error(
-    '[merge-worker-handlers] dist/_worker.js/index.js does not export a default object with a fetch function — adapter output shape changed?',
+    '[merge-worker-handlers] dist/_worker.js/index.js does not appear to export a default with a fetch handler — adapter output shape changed?',
   );
   process.exit(1);
 }
