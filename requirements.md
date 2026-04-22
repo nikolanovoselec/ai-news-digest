@@ -22,7 +22,7 @@ Every digest shows execution time, token count, and estimated cost, so you can s
 | Database | Cloudflare D1 |
 | Sessions | Stateless JWT in HttpOnly cookie |
 | LLM | Workers AI (user-selectable model) |
-| Scheduling | Cloudflare Cron Trigger (scans every 15 min) |
+| Scheduling | Daily Cron Trigger (00:00 UTC) + Cloudflare Queues with per-user delayed delivery |
 | Styling | Tailwind CSS 4 |
 | PWA | `@vite-pwa/astro` — manifest, service worker, install prompt |
 
@@ -37,13 +37,20 @@ No feed table, no OPML, no per-user feed management. For each hashtag the user h
 | Reddit | `reddit.com/search.json?q={tag}&t=day&sort=top` | Community discussion signal |
 | arXiv | `export.arxiv.org/api/query?search_query=all:{tag}` | Research papers (for AI/ML tags) |
 
-Results are deduplicated by resolved URL, then a single LLM call ranks the top 10 across all hashtags and writes the one-line + longer summary for each.
+Results are canonicalized and deduplicated (see URL canonicalization below), then a single LLM call ranks the top 10 across all hashtags and writes the one-line + longer summary for each. The LLM is also asked to return which hashtag(s) matched each article — stored on the article row and shown subtly in the card for transparency.
 
-**Google News caveat**: Google News links redirect through `news.google.com/articles/...`. We resolve the final URL with a HEAD request before storing so the source link points to the real publisher.
+### URL canonicalization
+
+Dedupe by resolved URL alone is insufficient (UTM params, mirrors, casing). Each source URL is canonicalized before the dedupe key is computed:
+
+1. Follow redirects with `GET` + `Range: bytes=0-0` + 3s timeout (not `HEAD` — many CDNs reject or mis-redirect HEAD). Cache resolved URL in KV keyed by source URL with 24h TTL.
+2. Strip known tracking params: `utm_*`, `ref`, `ref_src`, `fbclid`, `gclid`, `mc_cid`, `mc_eid`, `igshid`, `si`, `source`.
+3. Lowercase scheme and host, drop trailing slash on pathname.
+4. Dedupe primarily by canonical URL; secondary dedupe by `sha256(host + pathname)` to catch mirrors.
 
 ## Default hashtag proposals
 
-Shown as toggleable chips on the settings page. User may select any subset and add custom hashtags.
+Shown as toggleable chips in both `/onboarding` and `/settings`. User may select any subset and add custom hashtags.
 
 ```
 #cloudflare  #agenticai  #mcp         #aws            #aigateway
@@ -51,6 +58,14 @@ Shown as toggleable chips on the settings page. User may select any subset and a
 #typescript  #rust       #webassembly #edgecompute    #postgres
 #openai      #anthropic  #opensource  #devtools       #observability
 ```
+
+### Hashtag input rules
+
+- Allowed characters: `a-z`, `0-9`, `-` (hyphen). Everything else is stripped on submit.
+- Normalization: lowercase, strip leading `#` (optional when typing, never stored).
+- Min length 2, max length 32 per tag.
+- Max 20 tags per user (enforced server-side).
+- Deduped before storage.
 
 ## Model selection
 
@@ -64,6 +79,8 @@ The result is cached in KV for one hour. The dropdown displays each model's name
 
 **Default**: `@cf/meta/llama-3.1-8b-instruct-fast`.
 
+**Cache invalidation**: the KV entry has a 1h TTL and is keyed by account id. If the server-side fetch fails (non-200, timeout, malformed response), we do NOT overwrite the cached value — the previous good list is served for up to 24h with a stale flag surfaced to the server log. A stale cache is preferable to an empty dropdown.
+
 ## Pages
 
 | Route | Purpose |
@@ -71,9 +88,9 @@ The result is cached in KV for one hour. The dropdown displays each model's name
 | `/` | Landing page with "Sign in with GitHub" |
 | `/onboarding` | First-run configuration: hashtags, digest time, model. Only reachable before first digest is set up. |
 | `/settings` | Same form as onboarding, edit-mode. Also hosts logout, account deletion, install-app prompt |
-| `/digest` | Today's digest — card grid with one-line summaries, "Refresh now" button, execution/cost footer |
-| `/digest/:id/:slug` | Article detail — longer summary with critical points and source link |
-| `/history` | Past digests, each with its own execution/cost metrics |
+| `/digest` | Today's digest — card grid with one-line summaries, matched hashtags shown subtly on each card, "Refresh now" button, execution/cost footer |
+| `/digest/:id/:slug` | Article detail — longer summary with critical points, matched hashtags, source link |
+| `/history` | Past digests paginated 20 per page, each with its own execution/cost metrics |
 
 ## Design system
 
@@ -89,7 +106,9 @@ Swiss-minimal aesthetic. Generous whitespace, restricted palette, no gradients, 
 
 ### Dark mode toggle
 
-Single button in the header (sun icon in light, moon in dark). One click toggles the `data-theme` attribute on `<html>` and persists to `localStorage.theme`. Default follows `prefers-color-scheme`. No flash of wrong theme on load — the choice is read and applied in an inline `<script>` before the first paint.
+Single button in the header (sun icon in light, moon in dark). One click toggles the `data-theme` attribute on `<html>` and persists to `localStorage.theme`. Default follows `prefers-color-scheme`.
+
+**No flash of wrong theme**: a tiny inline `<script>` is injected as the **first child of `<head>`**, before any CSS link. It reads `localStorage.theme` (falling back to `matchMedia('(prefers-color-scheme: dark)')`) and sets `document.documentElement.dataset.theme` synchronously. Because it runs before stylesheets resolve, the correct theme is applied in the same render tick — no FOUC.
 
 ## PWA & offline
 
@@ -128,6 +147,8 @@ Provided by `@vite-pwa/astro` (Workbox under the hood). Caching strategies:
 | `/manifest.webmanifest`, `/icons/*` | Cache-first |
 
 The last viewed digest and its article detail pages remain readable offline. `/settings` and the refresh button show an "offline" banner when `navigator.onLine === false`.
+
+**Logout cache clear**: the logout handler posts a message to the service worker (`{ type: 'CLEAR_USER_CACHE' }`); the SW deletes the digest/article caches before the redirect completes. This prevents a subsequent user on the same device from seeing the previous user's cached digest.
 
 ### iOS / Apple meta tags
 
@@ -186,51 +207,92 @@ First-run experience after a brand-new user signs in with GitHub.
 
 ### Middleware gating
 
-Every authenticated request checks: if `hashtags IS NULL OR digest_hour IS NULL` AND path is not `/onboarding` or an auth route → redirect to `/onboarding`. Once both are set, visiting `/onboarding` redirects to `/settings` (edit-mode reuse of the same form component).
+Every authenticated request checks: if `hashtags_json IS NULL OR digest_hour IS NULL` AND path is not `/onboarding` or an auth route → redirect to `/onboarding`. Once both are set, visiting `/onboarding` redirects to `/settings`. Gating is based on "settings incomplete", not "first digest not yet generated" — a user whose first digest fails is not trapped in onboarding.
 
 ### Timezone handling
 
-Captured once at first login from the browser and stored on the users row. Not user-editable. If the browser's timezone changes between visits (user travels), the app continues to use the stored value unless the user explicitly re-logs in. Cron scans compute each user's "due" moment as `digest_hour` interpreted in their stored `tz`.
+Captured at first login from the browser via `Intl.DateTimeFormat().resolvedOptions().timeZone` and stored on the users row. Editable in `/settings` (dropdown of common IANA zones + search), because users travel and the app should not require re-login to adjust. On every authenticated page load, the browser's current tz is compared to the stored value; if they differ, a one-time non-blocking banner offers "Detected Europe/Paris — update your setting?".
+
+All scheduling math uses the stored tz via `Intl.DateTimeFormat` with the `timeZone` option (part of the Workers runtime, no external library needed). DST is handled by computing the next wall-clock hour in the user's tz and converting to UTC via `Intl`.
 
 ## Data model (D1)
 
+Identity model: `users.id` IS the GitHub numeric id (as TEXT). There is no separate UUID. The JWT `sub` claim is the same value, so every query path uses one key. This eliminates the footgun where `sub` and `id` could drift.
+
+Foreign keys are declared with `ON DELETE CASCADE`. D1 requires `PRAGMA foreign_keys=ON` to enforce them; this pragma is set on every connection.
+
 ```sql
-users (
-  id              TEXT PRIMARY KEY,
-  github_id       TEXT UNIQUE,
-  email           TEXT,
-  tz              TEXT,               -- IANA timezone
-  digest_hour     INTEGER,            -- 0-23 local time
-  hashtags        TEXT,               -- comma-separated
-  model_id        TEXT,               -- Workers AI model id
-  next_due_at     INTEGER,            -- unix ts, for cron scan
-  created_at      INTEGER
-)
+PRAGMA foreign_keys = ON;
 
-digests (
-  id              TEXT PRIMARY KEY,
-  user_id         TEXT,
-  generated_at    INTEGER,
-  execution_ms    INTEGER,
-  tokens_in       INTEGER,
-  tokens_out      INTEGER,
-  model_id        TEXT,
-  status          TEXT                -- pending | ready | failed
-)
+-- users.id == GitHub numeric id, stored as TEXT. Single source of identity.
+CREATE TABLE users (
+  id                          TEXT PRIMARY KEY,
+  email                       TEXT NOT NULL,
+  gh_login                    TEXT NOT NULL,
+  tz                          TEXT NOT NULL,          -- IANA timezone
+  digest_hour                 INTEGER,                -- 0-23 local time
+  hashtags_json               TEXT,                   -- JSON array of strings
+  model_id                    TEXT,                   -- Workers AI model id
+  next_due_at                 INTEGER,                -- unix ts, for cron scan
+  last_generated_local_date   TEXT,                   -- YYYY-MM-DD in user tz; dedup key for scheduled runs
+  last_refresh_at             INTEGER,                -- unix ts of most recent manual refresh
+  refresh_window_start        INTEGER,                -- start of current rolling 24h window
+  refresh_count_24h           INTEGER NOT NULL DEFAULT 0,
+  created_at                  INTEGER NOT NULL
+);
+CREATE INDEX idx_users_next_due ON users(next_due_at);
 
-articles (
+CREATE TABLE digests (
+  id                    TEXT PRIMARY KEY,
+  user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  generated_at          INTEGER NOT NULL,
+  execution_ms          INTEGER,
+  tokens_in             INTEGER,                      -- nullable: model may not return counts
+  tokens_out            INTEGER,
+  input_price_per_mtok  REAL,                         -- price snapshot at generation time
+  output_price_per_mtok REAL,
+  price_source_ts       INTEGER,                      -- unix ts when price was fetched
+  model_id              TEXT NOT NULL,
+  status                TEXT NOT NULL,                -- pending | in_progress | ready | failed
+  error_code            TEXT,                         -- NULL unless status=failed
+  error_message         TEXT,
+  retry_count           INTEGER NOT NULL DEFAULT 0,
+  locked_at             INTEGER,                      -- optimistic lock: NULL when free, ts when claimed
+  lock_owner            TEXT,                         -- job id or queue message id
+  trigger               TEXT NOT NULL                 -- 'scheduled' | 'manual'
+);
+CREATE INDEX idx_digests_user_generated ON digests(user_id, generated_at DESC);
+CREATE INDEX idx_digests_status_lock ON digests(status, locked_at);
+
+CREATE TABLE articles (
   id              TEXT PRIMARY KEY,
-  digest_id       TEXT,
-  source_url      TEXT,
-  title           TEXT,
-  one_liner       TEXT,               -- <=120 chars
-  detail_md       TEXT,               -- longer summary, markdown
+  digest_id       TEXT NOT NULL REFERENCES digests(id) ON DELETE CASCADE,
+  source_url      TEXT NOT NULL,                      -- canonical, post-resolution URL
+  canonical_hash  TEXT NOT NULL,                      -- sha256(host + pathname), secondary dedupe key
+  title           TEXT NOT NULL,
+  one_liner       TEXT NOT NULL,                      -- <=120 chars
+  detail_md       TEXT NOT NULL,                      -- longer summary, markdown
+  matched_tags    TEXT,                               -- JSON array of hashtags that matched
+  source_name     TEXT,                               -- 'Google News' | 'Hacker News' | 'Reddit' | 'arXiv'
   published_at    INTEGER,
-  rank            INTEGER
-)
+  rank            INTEGER NOT NULL
+);
+CREATE INDEX idx_articles_digest_rank ON articles(digest_id, rank);
+
+-- Resolved URL cache (also mirrored in KV for read performance, D1 is the source of truth)
+CREATE TABLE resolved_urls (
+  source_url      TEXT PRIMARY KEY,
+  canonical_url   TEXT NOT NULL,
+  resolved_at     INTEGER NOT NULL
+);
+CREATE INDEX idx_resolved_urls_ts ON resolved_urls(resolved_at);
 
 -- no sessions table: sessions are stateless JWTs in HttpOnly cookies
 ```
+
+### Migrations
+
+Schema evolution managed via `wrangler d1 migrations`. Migration files live in `migrations/NNNN_description.sql` and are applied with `wrangler d1 migrations apply DB_NAME`. The initial schema above is `0001_initial.sql`.
 
 ## Authentication
 
@@ -250,21 +312,40 @@ Custom implementation, no third-party auth library. Pattern lifted from the code
   2. Clear oauth_state cookie
   3. POST code to github.com/login/oauth/access_token → access token
   4. GET api.github.com/user and /user/emails in parallel → extract primary
-     verified email, numeric id, login
-  5. INSERT OR IGNORE into users (github_id, email, tz, ...) for JIT provisioning
-     (tz comes from a query param posted by /, captured via Intl API)
-  6. Sign HMAC-SHA256 JWT with { sub: github_id, email, ghLogin, iat, exp }
-  7. Set news_digest_session cookie (HttpOnly, Secure, SameSite=Lax, 1h TTL)
-  8. Redirect to /onboarding (if hashtags or digest_hour null) else /digest
+     verified email, numeric id (stringified), login
+  5. INSERT OR IGNORE into users (id, email, gh_login, tz, created_at).
+     users.id IS the GitHub numeric id as TEXT — no separate UUID.
+     tz comes from a query param posted by /, captured via Intl API.
+  6. Sign HMAC-SHA256 JWT with { sub: users.id, email, gh_login, iat, exp }.
+     sub and users.id are the same value — single identity key, no drift.
+  7. Set __Host-news_digest_session cookie (HttpOnly, Secure, SameSite=Lax,
+     Path=/, no Domain attribute, 1h TTL)
+  8. Redirect to /onboarding (if hashtags_json or digest_hour null) else /digest
 
 /api/auth/github/logout
-  1. Clear news_digest_session cookie (Max-Age=0)
-  2. Redirect to /
+  1. Clear __Host-news_digest_session cookie (Max-Age=0)
+  2. postMessage to any open service worker: clearCacheForUser()
+  3. Redirect to /
 ```
+
+### Cookie hardening
+
+- Cookie name uses the **`__Host-` prefix** — browser enforces `Secure`, `Path=/`, and no `Domain` attribute. This blocks entire classes of cookie-injection attacks (e.g., a subdomain setting a cookie that shadows ours).
+- Full attribute set: `__Host-news_digest_session=<jwt>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=3600`.
+- `SameSite=Lax` (not `Strict`) because we need the cookie to accompany the redirect back from GitHub OAuth.
+
+### CSRF protection for state-changing endpoints
+
+`SameSite=Lax` blocks cross-origin form submits but NOT same-origin XHR or fetch. Every `POST/PUT/PATCH/DELETE` handler enforces:
+
+1. **Origin check**: reject if `Origin` header is missing or not equal to the app's canonical origin. Workers sees `Origin` on every non-GET fetch from browsers.
+2. **Double-submit CSRF token**: on any authenticated GET that renders a form or API-calling page, set a `csrf_token` cookie (non-HttpOnly, SameSite=Lax, 1h) with a random value. Client-side code reads it and echoes it in an `X-CSRF-Token` header on every unsafe request. Server rejects if the header is missing or does not match the cookie.
+
+Both checks must pass. Origin check alone catches most automated CSRF; the double-submit token catches everything else including any future cross-origin fetch bugs.
 
 ### Session validation
 
-Every protected Astro route and API endpoint calls a shared helper that reads `news_digest_session`, verifies the HMAC signature with `OAUTH_JWT_SECRET`, checks `exp`, and returns the user row from D1. Unauthenticated requests redirect to `/`.
+Every protected Astro route and API endpoint calls a shared helper that reads `__Host-news_digest_session`, verifies the HMAC signature with `OAUTH_JWT_SECRET`, checks `exp`, and loads the user row from D1 via `users.id = jwt.sub`. Unauthenticated requests redirect to `/`.
 
 ### Session auto-refresh
 
@@ -305,20 +386,78 @@ Deployed via `wrangler secret put`:
 
 ## Generation pipeline
 
+Architecture: dispatcher + consumer, connected by Cloudflare Queues. The dispatcher runs once per day; the consumer processes jobs as they become due. This pattern keeps each Worker invocation short, avoids CPU/wall-time limits, and gives us retries + dead-letter handling for free.
+
+### Dispatcher (daily cron at 00:00 UTC)
+
 ```
-1. Cron Worker runs every 15 min
-2. SELECT users WHERE next_due_at <= now()
-3. For each due user (or on manual refresh):
-   a. For each hashtag, fan out 4 queries (Google News, HN, Reddit, arXiv)
-   b. Dedupe by resolved URL
-   c. Single Workers AI call with selected model:
-      "User cares about [hashtags]. From these N headlines, pick top 10
-       and return {title, url, one_liner, detail}"
-   d. Insert digest + articles rows, capturing execution_ms and token usage
-   e. Update users.next_due_at to next local digest_hour
-4. Manual refresh: same pipeline, rate-limited to once per 5 min per user
-   AND capped at 10 refreshes per rolling 24h window per user to bound cost
+1. Single Cron Trigger fires at 00:00 UTC.
+2. SELECT id, tz, digest_hour FROM users WHERE hashtags_json IS NOT NULL.
+3. For each user:
+   a. Compute delay_seconds = seconds until next occurrence of digest_hour
+      in user's tz (handles DST, wraps to tomorrow if already past today).
+   b. Enqueue job { user_id, trigger: 'scheduled', local_date: YYYY-MM-DD }
+      to the 'digest-jobs' Queue with delaySeconds = delay_seconds.
+4. Done — this run touches D1 only for the user list, fans out to Queues.
 ```
+
+No 15-min polling. Each user gets exactly one scheduled job per day, delivered at their local hour.
+
+### Consumer (Queue handler)
+
+```
+For each message:
+1. Claim the digest row: INSERT or UPDATE digests SET status='in_progress',
+   locked_at=now(), lock_owner=messageId
+   WHERE user_id=? AND (status IN ('pending','failed') OR locked_at IS NULL
+                         OR locked_at < now()-900)
+   -- 15-min lock TTL prevents stuck locks from blocking forever.
+2. Idempotency check: if message.trigger='scheduled' AND
+   users.last_generated_local_date == message.local_date → ack and exit
+   (duplicate delivery, already done).
+3. For each hashtag in users.hashtags_json, fan out 4 queries in parallel
+   (Google News, HN, Reddit, arXiv) with per-source concurrency cap of 4
+   and 5s timeout each.
+4. Canonicalize and dedupe URLs (see URL canonicalization section).
+5. Single Workers AI call with users.model_id:
+   "User cares about [hashtags]. From these N headlines, pick top 10.
+    For each: { title, url, one_liner (<=120 chars), detail (markdown,
+    3 bullets covering critical points), matched_tags (array of which
+    user hashtags this article relates to) }."
+6. If LLM call fails: retry once with a shorter prompt (top 50 headlines
+   instead of all). If still fails: mark digest status='failed' with
+   error_code, error_message. Queue retry policy handles bounded re-delivery.
+7. Capture execution_ms, tokens_in, tokens_out (from Workers AI response;
+   if absent, mark as estimated in the UI). Snapshot model price.
+8. INSERT articles rows. UPDATE digests SET status='ready', clear lock.
+9. For 'scheduled' trigger: UPDATE users SET last_generated_local_date=?
+   (idempotency key for tomorrow's run).
+10. Acknowledge queue message.
+```
+
+### Manual refresh
+
+Triggered from the UI "Refresh now" button. Enqueues a `{ trigger: 'manual' }` job to the same queue with no delay.
+
+**Rate limits** (enforced at the `POST /api/digest/refresh` endpoint before enqueue):
+
+```
+- 5-minute cooldown: reject if now() - last_refresh_at < 300.
+- 10/24h cap: if now() > refresh_window_start + 86400, reset window and
+  refresh_count_24h=0. If refresh_count_24h >= 10, reject.
+- On accept: UPDATE users SET last_refresh_at=now(),
+  refresh_count_24h=refresh_count_24h+1 (with window reset as above).
+```
+
+### Rate-limit UX
+
+When rejected, the API returns `429` with a JSON body `{ error, retry_after_seconds, reason }`. The UI shows a non-blocking toast: "You've hit today's refresh limit — try again in 4h 12m" or "Hold on — you can refresh again in 2:30". The refresh button disables with a live countdown until the cooldown expires.
+
+### Retry strategy
+
+- **Per-source fetch failures** (Google News, HN, Reddit, arXiv): 1 retry with 500ms + jitter backoff. If a source fails both attempts, the digest proceeds with whatever sources succeeded. All four failing → digest status='failed' with error_code='all_sources_failed'.
+- **LLM failures**: 1 retry with shorter prompt. Second failure → digest status='failed' with error_code='llm_failed'.
+- **Queue delivery failures**: Cloudflare Queues default retry (up to 3 attempts) + dead-letter queue `digest-jobs-dlq` for manual inspection.
 
 ### Empty and loading states
 
@@ -397,6 +536,46 @@ High-class polish is part of the MVP, not a later pass. Every transition has a p
 
 These may be revisited after v1 ships.
 
+## Security headers
+
+Every response includes these headers, set by a Cloudflare Worker response middleware:
+
+| Header | Value |
+|---|---|
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.github.com; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://github.com` |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` (also covered by CSP `frame-ancestors`) |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `interest-cohort=(), geolocation=(), microphone=(), camera=()` |
+
+`'unsafe-inline'` is present for the theme-init inline script and for CSS-in-Astro. A future pass can move to a CSP nonce if stricter isolation is needed.
+
+## Observability
+
+Structured JSON logs via `console.log(JSON.stringify(...))` so Cloudflare's Logs surface them as queryable fields. Every log line includes `ts`, `level`, `event`, `user_id` (if applicable), and event-specific fields.
+
+Events logged:
+
+| Event | Fields |
+|---|---|
+| `auth.login.success` | `user_id`, `gh_login`, `new_user` (bool) |
+| `auth.login.failed` | `error_code` (from OAuth error contract) |
+| `digest.scheduled.enqueued` | `user_id`, `delay_seconds`, `local_date` |
+| `digest.generation.started` | `user_id`, `digest_id`, `trigger`, `hashtag_count` |
+| `digest.generation.completed` | `user_id`, `digest_id`, `execution_ms`, `tokens_in`, `tokens_out`, `article_count` |
+| `digest.generation.failed` | `user_id`, `digest_id`, `error_code`, `error_message`, `retry_count` |
+| `source.fetch.failed` | `source_name`, `hashtag`, `http_status`, `error` |
+| `source.fetch.ratelimited` | `source_name`, `retry_after` |
+| `refresh.rejected` | `user_id`, `reason` (`cooldown`\|`daily_cap`), `retry_after_seconds` |
+| `llm.call.failed` | `user_id`, `model_id`, `error`, `retry_count` |
+
+Cloudflare Analytics Engine is used for numeric aggregates (daily digest count, failure rate, p95 generation time) via `env.ANALYTICS.writeDataPoint` — cheap and queryable. Logpush to R2 is reserved for v2.
+
+## History pagination
+
+`/history` renders 20 digests per page, newest first. D1 query: `SELECT ... FROM digests WHERE user_id=? ORDER BY generated_at DESC LIMIT 20 OFFSET ?`. Pagination is cursor-based via `?before=<unix_ts>` in the URL (not offset-based) so inserts during paging don't cause duplicates. The "load more" button fetches the next 20 via `fetch` and appends with a staggered fade-in.
+
 ## Deployment
 
-Cloudflare Workers. Cron Trigger configured in `wrangler.toml` to run every 15 minutes. D1 and KV bindings provisioned via `wrangler` (KV is used only for caching the Workers AI model catalog, not for sessions). GitHub OAuth client ID/secret, `OAUTH_JWT_SECRET`, and Cloudflare API token configured as Worker secrets.
+Cloudflare Workers. Daily Cron Trigger configured in `wrangler.toml` (`crons = ["0 0 * * *"]`). D1, KV (model catalog only), and Queues (`digest-jobs` + `digest-jobs-dlq`) bindings provisioned via `wrangler`. GitHub OAuth client ID/secret, `OAUTH_JWT_SECRET`, and Cloudflare API token configured as Worker secrets. Schema migrations applied with `wrangler d1 migrations apply`.
