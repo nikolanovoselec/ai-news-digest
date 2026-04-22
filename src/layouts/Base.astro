@@ -60,6 +60,7 @@ const initialTheme = cookieTheme ?? 'light';
     {/* pwa:apple-tags:start — REQ-PWA-001 AC 3. Keep these markers so this
         block stays idempotent across concurrent edits from other phases. */}
     <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="theme-color" content="#ffffff" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -76,7 +77,17 @@ const initialTheme = cookieTheme ?? 'light';
   <body>
     <header class="site-header safe-top safe-x">
       <a href="/" class="site-header__brand focus-ring" aria-label="News Digest home">
-        <span class="site-header__mark" aria-hidden="true"></span>
+        <svg
+          class="site-header__mark"
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          fill="currentColor"
+        >
+          {/* MDI newspaper-variant-outline — https://pictogrammers.com/library/mdi/icon/newspaper-variant-outline/ */}
+          <path d="M20,11H4V8H20M20,15H13V13H20M20,19H13V17H20M11,19H4V13H11M20.33,4.67L18.67,3L17,4.67L15.33,3L13.67,4.67L12,3L10.33,4.67L8.67,3L7,4.67L5.33,3L3.67,4.67L2,3V19A2,2 0 0,0 4,21H20A2,2 0 0,0 22,19V3L20.33,4.67Z" />
+        </svg>
         <span class="site-header__wordmark">
           <span class="site-header__word site-header__word--one">news</span><span class="site-header__word site-header__word--two">digest</span>
         </span>
@@ -147,14 +158,12 @@ const initialTheme = cookieTheme ?? 'light';
         text-decoration: none;
       }
 
-      /* Logomark: tiny accent-coloured dot. Keeps the brand Swiss-
-         minimal but gives the header a deliberate visual anchor. */
+      /* Logomark: the MDI newspaper-variant-outline icon. Same glyph
+         used for favicon so the browser tab and the in-app brand stay
+         consistent. Inherits var(--text) via currentColor. */
       .site-header__mark {
         display: inline-block;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--accent);
+        color: var(--text);
         flex-shrink: 0;
       }
 
