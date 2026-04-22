@@ -68,16 +68,23 @@ export async function POST(context: APIContext): Promise<Response> {
     userId = row.id;
   }
 
+  // SessionClaims requires email + ghl (verifySession → isSessionClaims
+  // rejects tokens missing them), so we pull the full identity triple.
   const user = await env.DB
-    .prepare('SELECT session_version FROM users WHERE id = ?1')
+    .prepare('SELECT session_version, email, gh_login FROM users WHERE id = ?1')
     .bind(userId)
-    .first<{ session_version: number }>();
+    .first<{ session_version: number; email: string; gh_login: string }>();
   if (user === null) {
     return new Response('user not found', { status: 404 });
   }
 
   const jwt = await signSession(
-    { sub: userId, sv: user.session_version },
+    {
+      sub: userId,
+      email: user.email,
+      ghl: user.gh_login,
+      sv: user.session_version,
+    },
     env.OAUTH_JWT_SECRET,
   );
 
