@@ -29,14 +29,14 @@ Every digest shows execution time, token count, and estimated cost, so you can s
 
 ## Content sources
 
-No feed table, no OPML, no per-user feed management. For each hashtag the user has selected, four free query-able sources are hit in parallel at generation time:
+No feed table, no OPML, no per-user feed management. For each hashtag the user has selected, two free query-able sources are hit in parallel at generation time:
 
-| Source | Endpoint | Purpose |
-|---|---|---|
-| Google News RSS | `news.google.com/rss/search?q={tag}+when:1d` | General tech news coverage, last 24h |
-| Hacker News (Algolia) | `hn.algolia.com/api/v1/search_by_date?query={tag}&tags=story` | Developer-focused stories |
-| Reddit | `reddit.com/search.json?q={tag}&t=day&sort=top` | Community discussion signal |
-| arXiv | `export.arxiv.org/api/query?search_query=all:{tag}` | Research papers (for AI/ML tags) |
+| Source | Endpoint | Purpose | Parsing |
+|---|---|---|---|
+| Hacker News (Algolia) | `hn.algolia.com/api/v1/search_by_date?query={tag}&tags=story&hitsPerPage=25` | Developer-focused stories | `response.json()` — native |
+| Google News RSS | `news.google.com/rss/search?q={tag}+when:1d&hl=en-US&gl=US&ceid=US:en` | General tech news, last 24h | `fast-xml-parser` (Workers-compatible, ~12KB) |
+
+Reddit and arXiv were cut from MVP. Reddit requires User-Agent gymnastics and aggressive rate-limit handling; arXiv only benefits AI/ML hashtags. Both can be added as future sources via the same fan-out pattern once MVP ships. HN + Google News together cover ~95% of the relevant signal for the default hashtag list.
 
 Results are canonicalized and deduplicated (see URL canonicalization below), then a single LLM call ranks the top 10 across all hashtags and writes the one-line + longer summary for each. The LLM is also asked to return which hashtag(s) matched each article — stored on the article row and shown subtly in the card for transparency.
 
@@ -485,21 +485,46 @@ No 15-min polling. Each user gets exactly one scheduled job per day, delivered a
 
 ```
 For each message:
-1. Claim or create the digest row:
-   - **Manual trigger**: the row already exists (created by the POST handler
-     with status='in_progress', locked_at=now()). Consumer verifies the
-     message.digest_id still has status='in_progress' and claims it by
-     updating lock_owner.
-   - **Scheduled trigger**: INSERT a new digest with status='in_progress',
-     locked_at=now(). Conditional INSERT guarded by NOT EXISTS against any
-     digest for this user where status='in_progress' AND locked_at > now()-900
-     (15-min lock TTL — stale locks released naturally on next consumer run).
+1. Claim or create the digest row. Queue message shape is fixed:
+   `{ trigger: 'scheduled' | 'manual', user_id, local_date, digest_id? }`
+   — `digest_id` is always present for manual, absent for scheduled.
+
+   - **Scheduled trigger** (no digest_id in message): first check idempotency
+     via `SELECT last_generated_local_date FROM users WHERE id=?`. If equal
+     to message.local_date, ack and exit. Else INSERT a new digest:
+     ```sql
+     INSERT INTO digests (id, user_id, local_date, generated_at, model_id,
+                          status, locked_at, trigger)
+     SELECT ?, ?, ?, ?, model_id, 'in_progress', :now, 'scheduled'
+     FROM users
+     WHERE id = ?
+       AND NOT EXISTS (
+         SELECT 1 FROM digests
+         WHERE user_id = ? AND status = 'in_progress' AND locked_at > :now - 900
+       );
+     ```
+     If 0 rows inserted, another run owns it — ack and exit.
+
+   - **Manual trigger** (digest_id in message): the POST handler already
+     INSERTed the row. Consumer atomically re-claims (handles retry after
+     stale lock):
+     ```sql
+     UPDATE digests SET locked_at = :now
+     WHERE id = ? AND user_id = ? AND status = 'in_progress'
+       AND (locked_at IS NULL OR locked_at < :now - 900)
+     RETURNING id;
+     ```
+     If 0 rows returned, another run owns it or status changed — ack and exit.
+
+   No `lock_owner` column is used; `locked_at` + 15-min TTL is the complete
+   mechanism.
 2. Idempotency check: if message.trigger='scheduled' AND
    users.last_generated_local_date == message.local_date → ack and exit.
-3. For each hashtag in users.hashtags_json, fan out 4 queries in parallel
-   (Google News, HN, Reddit, arXiv). Per-source concurrency cap 4, 5s
-   timeout each, response body capped at 1MB, items capped at 25 per source
-   (max 100 total after fan-out, regardless of hashtag count).
+3. For each hashtag in users.hashtags_json, fan out 2 queries in parallel
+   (Google News RSS, HN Algolia). Per-source concurrency cap 4, 5s timeout
+   each, response body capped at 1MB, items capped at 25 per source
+   (max 50 per hashtag, 50 * tag_count total after fan-out — canonical
+   dedupe brings the combined pool down significantly).
 4. Canonicalize and dedupe URLs (see URL canonicalization below).
 5. Single Workers AI call with users.model_id, structured as:
    - system message: "You curate tech news. Return strict JSON only.
@@ -861,6 +886,8 @@ Every response includes these headers, set by a Cloudflare Worker response middl
 | `Permissions-Policy` | `geolocation=(), microphone=(), camera=(), payment=(), clipboard-read=()` |
 
 **No inline scripts**: the theme-init script is served as an external file `/theme-init.js` with `defer` in the `<head>`. A small flash of the wrong theme is possible on first paint; it's a ~50ms visual blip, acceptable in exchange for a strict no-inline-scripts CSP. All client code lives in external modules served from `'self'`. `'unsafe-inline'` remains on `style-src` because Astro's scoped component styles require it; CSS injection is low-severity and there is no client-side HTML rendering to amplify it.
+
+**CSP works end-to-end** because the app makes NO off-origin browser-side fetches. All external APIs (GitHub, Resend, Cloudflare, search APIs) are called only from the Worker. The service worker is registered from the same origin (`navigator.serviceWorker.register('/sw.js')`), which `connect-src 'self'` permits. GitHub OAuth uses a top-level navigation (not a fetch), which CSP does not restrict — `form-action 'self' https://github.com` covers the POST from the OAuth consent screen.
 
 `X-Frame-Options: DENY` is not emitted; CSP `frame-ancestors 'none'` supersedes it in all modern browsers.
 
