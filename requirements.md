@@ -22,7 +22,7 @@ Every digest shows execution time, token count, and estimated cost, so you can s
 | Database | Cloudflare D1 |
 | Sessions | Stateless JWT in HttpOnly cookie |
 | LLM | Workers AI (user-selectable model) |
-| Scheduling | Two Cron Triggers (00:00 and 12:00 UTC) + Cloudflare Queues with per-user delayed delivery (≤12h) |
+| Scheduling | Hourly Cron Trigger + Cloudflare Queues with per-user delayed delivery (≤60 min) |
 | Email | Resend — "your daily digest is ready" notification after each scheduled run |
 | Styling | Tailwind CSS 4 |
 | PWA | `@vite-pwa/astro` — manifest, service worker, install prompt |
@@ -428,25 +428,25 @@ Deployed via `wrangler secret put`:
 
 Architecture: dispatcher + consumer, connected by Cloudflare Queues. The dispatcher runs once per day; the consumer processes jobs as they become due. This pattern keeps each Worker invocation short, avoids CPU/wall-time limits, and gives us retries + dead-letter handling for free.
 
-### Dispatcher (two crons at 00:00 and 12:00 UTC)
+### Dispatcher (hourly cron)
 
-Cloudflare Queues caps `delaySeconds` at 12 hours. Running the dispatcher twice daily keeps every user's computed delay below that limit: the 00:00 UTC run schedules users whose local digest time lands in 00:00–12:00 UTC; the 12:00 UTC run handles 12:00–24:00 UTC.
+Cron runs every hour on the hour. Each run enqueues only users whose local digest time falls within the next 60 minutes, so the computed delay always fits within Cloudflare Queues' 12h `delaySeconds` cap with room to spare.
 
 ```
-1. Cron Trigger fires at 00:00 OR 12:00 UTC.
-2. SELECT id, tz, digest_hour, digest_minute FROM users
-   WHERE hashtags_json IS NOT NULL AND digest_hour IS NOT NULL.
+1. Cron Trigger fires at HH:00 UTC (24 times per day).
+2. SELECT id, tz, digest_hour, digest_minute, last_generated_local_date
+   FROM users WHERE hashtags_json IS NOT NULL AND digest_hour IS NOT NULL.
 3. For each user:
    a. Compute target_utc = next occurrence of digest_hour:digest_minute
       in user's tz, converted to UTC (handles DST via Intl).
    b. Compute delay_seconds = target_utc - now_utc.
-   c. Skip if delay_seconds < 0 OR delay_seconds > 43200 (12h) — the
-      OTHER cron run will handle this user's window.
-   d. Skip if users.last_generated_local_date == local_date_for(target_utc)
-      — already generated today (manual refresh claimed the slot).
+   c. Skip if delay_seconds < 0 OR delay_seconds >= 3600 — a future hourly
+      run will pick this user up closer to their time.
+   d. Skip if last_generated_local_date == local_date_for(target_utc) —
+      already generated today (manual refresh claimed the slot).
    e. Enqueue job { user_id, trigger: 'scheduled', local_date: YYYY-MM-DD }
       to the 'digest-jobs' Queue with delaySeconds.
-4. Done — this run touches D1 only for reads and fans out to Queues.
+4. Done. Each invocation is tiny: one SELECT, 0–N Queue writes.
 ```
 
 No 15-min polling. Each user gets exactly one scheduled job per day, delivered at their local hour.
@@ -850,4 +850,4 @@ Internal error details (exception messages, response bodies) are logged at `leve
 
 ## Deployment
 
-Cloudflare Workers. Daily Cron Trigger configured in `wrangler.toml` (`crons = ["0 0 * * *"]`). D1, KV (model catalog + resolved-URL cache), and a single Queue `digest-jobs` (no DLQ; default 3-retry) bindings provisioned via `wrangler`. GitHub OAuth client ID/secret, `OAUTH_JWT_SECRET`, and Cloudflare API token configured as Worker secrets. Schema migrations applied with `wrangler d1 migrations apply`.
+Cloudflare Workers. Hourly Cron Trigger configured in `wrangler.toml` (`crons = ["0 * * * *"]`). D1, KV (model catalog + resolved-URL cache), and a single Queue `digest-jobs` (no DLQ; default 3-retry) bindings provisioned via `wrangler`. GitHub OAuth client ID/secret, `OAUTH_JWT_SECRET`, and Cloudflare API token configured as Worker secrets. Schema migrations applied with `wrangler d1 migrations apply`.
