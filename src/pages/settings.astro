@@ -210,19 +210,21 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
           <fieldset class="settings__section">
             <legend class="settings__legend">Profile picture</legend>
             <p class="settings__hint">
-              Your avatar comes from{' '}
+              Your avatar comes from Gravatar, a free service that links a
+              photo to your email address. Sign up there with the email on
+              your account, upload a photo, and it appears here next time
+              you load the app.
+            </p>
+            <div class="settings__actions-row">
               <a
-                class="settings__link"
                 href="https://gravatar.com/"
                 target="_blank"
                 rel="noopener noreferrer"
+                class="settings__secondary-button"
               >
-                Gravatar
+                Open Gravatar
               </a>
-              , a free service that links a photo to your email address. Sign up
-              there with the email on your account, upload a photo, and it
-              appears here next time you load the app.
-            </p>
+            </div>
           </fieldset>
           <fieldset class="settings__section">
             <legend class="settings__legend">Delete account</legend>
