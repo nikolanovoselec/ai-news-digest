@@ -51,7 +51,8 @@ Content rules:
 - "one_liner" is a single plaintext sentence, ~150–200 characters, stating the single most important fact about the article.
 - Each "details" string is a plaintext paragraph about ~200 words covering context, specifics, and why it matters. No bullet prefixes, no lists inside the paragraph.
 - Return exactly 3 details strings per article.
-- "tags" MUST be a non-empty subset of the user's interest hashtags (provided below) that this article is genuinely about. Use the candidate headline's own "source_tags" field as the authoritative source of truth — copy those entries into "tags", dropping any that the story does not really cover. Never invent tags the user did not provide.
+- "tags" MUST be the FULL set of user hashtags this article is genuinely about, not just one. A Cloudflare post about AI-powered code review must be tagged ["cloudflare", "ai"] — not just "cloudflare". An Azure zero-trust announcement must be tagged ["azure", "zero-trust", "cloud"]. Start from the candidate headline's "source_tags" (the authoritative set of tags the fan-out matched) and KEEP every entry the article is actually about. Only drop a source_tag when you are sure the article does not cover that topic. Never invent a tag the user did not provide.
+- Aim for topical spread: across the returned articles, try to surface every user hashtag that has at least one real candidate in the input. If a particular hashtag has no decent candidate, it's fine to omit it — but don't stack 12 articles on one tag while starving the others when better candidates exist.
 - All strings are plaintext: no HTML, no Markdown, no inline links.
 - Skip duplicates, press releases with no substance, and pure advertising.
 - If fewer than 15 good matches exist, return as many real matches as you have — do not pad with weak results.`;
@@ -94,7 +95,7 @@ Return between 15 and 30 articles in this JSON shape:
       "url": "URL from input, copied verbatim",
       "one_liner": "plaintext sentence, ~150–200 characters, the single most important fact",
       "details": ["paragraph ~200 words", "paragraph ~200 words", "paragraph ~200 words"],
-      "tags": ["subset of the user's hashtags this article is about"]
+      "tags": ["EVERY user hashtag this article is actually about — start from source_tags and keep all that apply, not just the most obvious one"]
     }
   ]
 }
