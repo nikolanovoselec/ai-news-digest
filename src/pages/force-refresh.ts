@@ -19,8 +19,19 @@ import { checkOrigin, originOf } from '~/middleware/origin-check';
 
 /** Concurrency window: if a scrape_runs row with status='running' was
  * started within this many seconds, reuse it instead of kicking a
- * fresh coordinator. Guards against accidental double-clicks and
- * preview-bot re-fetches. */
+ * fresh coordinator. Guards against double-clicks separated by more
+ * than the INSERT commit latency AND against link-preview bots
+ * refetching the URL.
+ *
+ * **Known race**: two truly concurrent requests can both SELECT
+ * (no running row), both INSERT fresh rows, and both enqueue. D1 has
+ * no `SELECT ... FOR UPDATE`; the ULIDs are unique, so no PK collision
+ * collapses the race. For this operator-only endpoint behind
+ * Cloudflare Access the tradeoff is acceptable — the window only
+ * needs to absorb "user clicked twice within N seconds", not a
+ * contested multi-writer flood. If this endpoint ever opens to
+ * non-operators, wrap the SELECT+INSERT in a Durable Object or a
+ * KV SET NX mutex. */
 const REUSE_WINDOW_SECONDS = 120;
 
 interface RecentRun {

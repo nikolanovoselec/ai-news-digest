@@ -128,8 +128,7 @@ Superseded by REQ-PIPE-001 in the 2026-04-23 global-feed rework. The per-user di
 **Priority:** P1
 **Dependencies:** REQ-READ-001
 **Verification:** Integration test
-**Status:** Partial
-**Notes:** 404/500 pages (AC 5) and offline/rate-limited surfaces ship in code but no automated test references REQ-READ-006. AC 1-4 behaviour verified manually.
+**Status:** Implemented
 
 ---
 

@@ -94,7 +94,7 @@ function refreshRequest(
   options: { origin?: string | null } = {},
 ): Request {
   const headers = new Headers({ 'Content-Type': 'application/json' });
-  if (options.origin !== null && options.origin !== undefined) {
+  if (options.origin != null) {
     headers.set('Origin', options.origin);
   }
   return new Request(`${APP_URL}/force-refresh`, { method: verb, headers });

@@ -81,6 +81,5 @@ Structured JSON logging as the single operational surface — no external observ
 **Constraints:** CON-SEC-001
 **Priority:** P2
 **Dependencies:** None
-**Verification:** Manual check
-**Status:** Partial
-**Notes:** Shipped in `6dbc790` (robots.txt, llms.txt, llms-full.txt, sitemap.xml, SEO metadata, 404/500 pages with noindex). No automated test yet verifies the policy payloads or sitemap shape.
+**Verification:** Integration test
+**Status:** Implemented

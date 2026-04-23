@@ -35,9 +35,15 @@ describe('robots.txt — REQ-OPS-004 AC 2', () => {
     // Each authenticated route needs its own Disallow entry — a single
     // catch-all would also hide the landing page. AC 2 requires
     // /api/, /digest, /starred, /history, /settings all blocked.
-    const defaultBlock = robots
-      .split(/\nUser-agent:/)[0]  // first block is the default "*" block
-      ?? '';
+    //
+    // Isolate the "User-agent: *" block so a Disallow belonging to
+    // one of the AI-crawler UAs can't accidentally satisfy the
+    // assertion. The split yields [header, *-block, UA2-block, ...];
+    // the default block is [1] (index [0] is the file header above
+    // the first User-agent line).
+    const blocks = robots.split(/\nUser-agent:/);
+    const defaultBlock = blocks[1] ?? '';
+    expect(defaultBlock.trim().startsWith('*'), '* UA block should be first after header').toBe(true);
     expect(defaultBlock).toMatch(/Disallow:\s*\/api\//);
     expect(defaultBlock).toMatch(/Disallow:\s*\/digest($|\n|\/)/);
     expect(defaultBlock).toMatch(/Disallow:\s*\/starred/);

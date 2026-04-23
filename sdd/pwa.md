@@ -62,6 +62,5 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 **Constraints:** CON-A11Y-001
 **Priority:** P1
 **Dependencies:** REQ-DES-001
-**Verification:** Manual check
-**Status:** Partial
-**Notes:** Code exists (safe-area insets in Base.astro, header UserMenu + History icon) but no test verifies it.
+**Verification:** Integration test
+**Status:** Implemented
