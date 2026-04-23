@@ -53,18 +53,26 @@
 </button>
 
 <style>
+  /* Match HeaderThemeToggle (the authenticated-header variant) so
+     anonymous pages — login, landing, logged-out error pages — show
+     the theme switch in the same transparent circle with a hover-
+     only border. No filled-surface background any more. */
   .theme-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-width: 44px;
     min-height: 44px;
-    padding: 0;
-    border: 1px solid var(--border);
-    background-color: var(--surface);
+    padding: 4px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 9999px;
     color: var(--text);
     cursor: pointer;
-    border-radius: 4px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .theme-toggle:hover {
+    border-color: var(--border);
   }
 
   .theme-toggle__icon {
