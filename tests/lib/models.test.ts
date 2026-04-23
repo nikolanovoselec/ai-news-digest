@@ -39,8 +39,8 @@ describe('MODELS catalog', () => {
 });
 
 describe('DEFAULT_MODEL_ID', () => {
-  it('REQ-SET-004: DEFAULT_MODEL_ID is the fast Llama 3.1 8B fp8 variant', () => {
-    expect(DEFAULT_MODEL_ID).toBe('@cf/meta/llama-3.1-8b-instruct-fp8-fast');
+  it('REQ-SET-004: DEFAULT_MODEL_ID is the 128K-context Llama 3.3 70B fp8 variant', () => {
+    expect(DEFAULT_MODEL_ID).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
   });
 
   it('REQ-SET-004: DEFAULT_MODEL_ID is present in MODELS', () => {

@@ -26,7 +26,7 @@ import type { Headline } from '~/lib/types';
  */
 export const LLM_PARAMS = {
   temperature: 0.2,
-  max_tokens: 16384,
+  max_tokens: 50_000,
   response_format: { type: 'json_object' },
 } as const;
 

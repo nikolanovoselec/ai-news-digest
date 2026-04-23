@@ -18,7 +18,11 @@ export interface ModelOption {
   category: 'featured' | 'budget';
 }
 
-export const DEFAULT_MODEL_ID = '@cf/meta/llama-3.1-8b-instruct-fp8-fast';
+// Default model has a 128K context window, known reliable with JSON
+// mode, and cost ~$0.025 per digest at 8K in / 10K out. The free
+// 30K-context 8B variant kept overflowing its context window on the
+// headline fan-out + longer-paragraph digest shape.
+export const DEFAULT_MODEL_ID = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 // Kimi K2.x prices are not yet published in Cloudflare's per-token table at
 // the time of writing. Set both fields to 0 so `estimateCost` returns 0 for
