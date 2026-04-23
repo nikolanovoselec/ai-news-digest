@@ -183,22 +183,17 @@ if (isReadyToday && articles.length < 3) {
     */}
     <div class="tag-strip" data-tag-strip>
       {userTags.map((tag) => {
-        const removeLabel = 'Remove ' + tag;
         const display = '#' + tag;
         return (
-          <span class="tag-chip" data-tag-chip data-tag={tag}>
-            <span class="tag-chip__label">{display}</span>
-            <button
-              type="button"
-              class="tag-chip__remove"
-              data-tag-remove
-              aria-label={removeLabel}
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
-                <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
-              </svg>
-            </button>
-          </span>
+          <button
+            type="button"
+            class="tag-chip"
+            data-tag-chip
+            data-tag={tag}
+            aria-label={`${tag} — click to arm for removal, click again to remove`}
+          >
+            {display}
+          </button>
         );
       })}
       <button type="button" class="tag-add" data-tag-add aria-label="Add a hashtag">
@@ -484,16 +479,16 @@ if (isReadyToday && articles.length < 3) {
   }
 
   function renderTagChip(strip: HTMLElement, tag: string): HTMLElement {
-    const chip = document.createElement('span');
+    const chip = document.createElement('button');
+    chip.type = 'button';
     chip.className = 'tag-chip';
     chip.dataset['tagChip'] = '';
     chip.dataset['tag'] = tag;
-    chip.innerHTML =
-      `<span class="tag-chip__label">#${tag}</span>` +
-      `<button type="button" class="tag-chip__remove" data-tag-remove aria-label="Remove ${tag}">` +
-      `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">` +
-      `<path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />` +
-      `</svg></button>`;
+    chip.setAttribute(
+      'aria-label',
+      `${tag} — click to arm for removal, click again to remove`,
+    );
+    chip.textContent = '#' + tag;
     // Insert before the [data-tag-add] button so the "+ add" stays last.
     const addButton = strip.querySelector<HTMLButtonElement>('[data-tag-add]');
     if (addButton !== null) strip.insertBefore(chip, addButton);
@@ -588,22 +583,61 @@ if (isReadyToday && articles.length < 3) {
       }, 150);
     });
 
-    // Remove-chip buttons (event delegation since chips can be added
-    // dynamically after initial render).
+    // Two-tap delete:
+    //   1st click on a chip  → chip enters `is-pending` (red) state;
+    //   2nd click on the SAME chip → remove + POST /api/tags;
+    //   click on any other chip or the add button or outside → revert
+    //   pending state; Escape does the same.
+    const clearPending = (): void => {
+      strip
+        .querySelectorAll<HTMLElement>('[data-tag-chip].is-pending')
+        .forEach((el) => {
+          el.classList.remove('is-pending');
+          el.setAttribute('aria-pressed', 'false');
+        });
+    };
     strip.addEventListener('click', (e) => {
       const target = e.target as HTMLElement | null;
-      const removeBtn = target?.closest<HTMLButtonElement>('[data-tag-remove]');
-      if (removeBtn === null || removeBtn === undefined) return;
-      const chip = removeBtn.closest<HTMLElement>('[data-tag-chip]');
-      if (chip === null) return;
-      if (tagStripTags(strip).length <= 1) return; // keep at least one
+      const chip = target?.closest<HTMLElement>('[data-tag-chip]');
+      // A click on the add button or the input clears any pending state.
+      if (chip === null || chip === undefined) {
+        if (target?.closest('[data-tag-add], [data-tag-add-input]')) {
+          clearPending();
+        }
+        return;
+      }
+      e.preventDefault();
       const tag = chip.dataset['tag'] ?? '';
-      chip.remove();
-      const remaining = tagStripTags(strip);
-      void (async () => {
-        const ok = await saveTags(strip, remaining);
-        if (!ok) renderTagChip(strip, tag);
-      })();
+      if (tag === '') return;
+      if (chip.classList.contains('is-pending')) {
+        // Second tap — delete. Keep at least one tag.
+        if (tagStripTags(strip).length <= 1) {
+          showTagError(strip, 'At least one tag is required.');
+          return;
+        }
+        chip.remove();
+        const remaining = tagStripTags(strip);
+        void (async () => {
+          const ok = await saveTags(strip, remaining);
+          if (!ok) {
+            renderTagChip(strip, tag);
+            showTagError(strip, 'Could not save. Please try again.');
+          }
+        })();
+        return;
+      }
+      // First tap — clear any other pending chip, then mark this one.
+      clearPending();
+      chip.classList.add('is-pending');
+      chip.setAttribute('aria-pressed', 'true');
+      showTagError(strip, 'Tap again to remove. Tap elsewhere to cancel.');
+    });
+    document.addEventListener('click', (e) => {
+      const target = e.target as Node | null;
+      if (target !== null && !strip.contains(target)) clearPending();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') clearPending();
     });
   }
 
@@ -728,8 +762,15 @@ if (isReadyToday && articles.length < 3) {
     text-align: center;
     border-top: 1px solid var(--border);
   }
-  /* --- Tag strip ------------------------------------------------------- */
+</style>
 
+{/* Tag-strip styles are `is:global` because renderTagChip() builds
+    chips via the DOM API (not Astro SSR), which means newly-added
+    chips don't inherit the `data-astro-cid-*` attribute that scoped
+    styles match on. Without is:global, fresh chips rendered post-add
+    fell back to default button sizing and looked visibly bigger than
+    the SSR'd ones until the next page reload. */}
+<style is:global>
   .tag-strip {
     display: flex;
     flex-wrap: wrap;
@@ -742,46 +783,28 @@ if (isReadyToday && articles.length < 3) {
   .tag-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.2rem;
     min-height: 32px;
-    padding: 0.25rem 0.25rem 0.25rem 0.75rem;
-    background: var(--surface);
-    color: var(--text);
-    border: 1px solid var(--border);
+    padding: 0.25rem 0.75rem;
+    background: var(--text);
+    color: var(--bg);
+    border: 1px solid var(--text);
     border-radius: 9999px;
     font-size: var(--text-sm);
     font-weight: 500;
+    font-family: inherit;
     line-height: 1;
-    transition: border-color 0.15s ease, transform 0.15s ease;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .tag-chip:hover {
-    border-color: var(--text-muted);
+    opacity: 0.9;
   }
-
-  .tag-chip__label {
-    letter-spacing: -0.01em;
-  }
-
-  .tag-chip__remove {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    margin-left: 0.15rem;
-    padding: 0;
-    background: transparent;
-    color: var(--text-muted);
-    border: none;
-    border-radius: 50%;
-    cursor: pointer;
-    opacity: 0.7;
-    transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
-  }
-  .tag-chip__remove:hover {
-    opacity: 1;
-    color: var(--bg);
-    background: var(--text);
+  .tag-chip.is-pending {
+    background: #dc2626;
+    color: #fff;
+    border-color: #dc2626;
   }
 
   .tag-add {
@@ -795,8 +818,10 @@ if (isReadyToday && articles.length < 3) {
     border: 1px dashed var(--border);
     border-radius: 9999px;
     cursor: pointer;
+    font-family: inherit;
     font-size: var(--text-sm);
     font-weight: 500;
+    -webkit-tap-highlight-color: transparent;
     transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
   }
   .tag-add:hover {
