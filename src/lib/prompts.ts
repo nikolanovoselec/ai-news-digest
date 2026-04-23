@@ -59,7 +59,14 @@ Content rules:
 - "articles" MUST contain exactly one entry per input candidate, in the SAME ORDER as the input. The candidate at index N becomes articles[N]. Never reorder, never skip, never insert — use an empty-tags entry if a candidate is unusable and rely on dedup_groups to merge duplicates.
 - "title" MUST be a punchy New-York-Times-style headline you have written — concrete, specific, active voice, roughly 45–80 characters, plaintext only. Do NOT copy the source headline verbatim when it reads like a press-release or feed title.
 - "details" is a plaintext long-form body of 1–3 paragraphs, each paragraph roughly 40–300 characters, separated by a single newline. No Markdown, no HTML, no bullet prefixes.
-- "tags" MUST be chosen ONLY from the tag allowlist in the user message. Do NOT invent tags. Do NOT include any tag that is not in the allowlist. Return the FULL set of allowlist tags that the article is genuinely about, not just one — an article about Cloudflare Workers AI must be tagged ["cloudflare", "workers", "ai"] if all three appear in the allowlist.
+- "tags" MUST be chosen ONLY from the tag allowlist in the user message. Do NOT invent tags. Do NOT include any tag that is not in the allowlist.
+- MULTI-TAG RULE: return EVERY allowlist tag the article genuinely touches — topic tags AND vendor/platform tags AND language tags. Do NOT return just the single "primary" tag. The source organisation and every technology mentioned in the title or snippet are both signals. Examples of REQUIRED multi-tagging when the allowlist contains these terms:
+  - "Cloudflare's use of Rust in the Workers runtime" → ["cloudflare", "workers", "rust"] (NOT just ["rust"])
+  - "AWS Lambda gets TypeScript 5.9 support" → ["aws", "serverless", "cloud"] (NOT just ["aws"])
+  - "Terraform 1.10 releases Kubernetes provider updates" → ["terraform", "kubernetes", "devsecops"] (if all present)
+  - "Anthropic's Claude now supports MCP natively" → ["ai", "agenticai", "mcp", "genai"]
+  - A post from the Cloudflare blog about any subject → ALWAYS include "cloudflare" as one of the tags if the allowlist contains it.
+- A single-tag output is a red flag. Fewer than 2 tags is only correct when the article truly spans just one topic (rare).
 - "dedup_groups" is an array of arrays. Each inner array is a list of 0-based indices into the "articles" output array that describe the SAME underlying story. Use this when two candidates with different canonical URLs cover the same event (a vendor blog + a Hacker News mirror, a press release + a reporter's write-up). Singleton groups are useless — only emit groups of size ≥2. Omit the field entirely as [] when no duplicates exist.
 - All strings are plaintext: no HTML, no Markdown, no inline links.
 - Skip pure advertising and content-free press releases by returning an empty-tags entry for them (so the chunk consumer can drop them).`;

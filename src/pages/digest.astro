@@ -170,14 +170,12 @@ const sortedUserTags = [...userTags].sort((a, b) => {
     <header class="digest-page__header">
       <h1 class="digest-page__title">Today's digest</h1>
       {
-        today.last_scrape_run !== null && today.next_scrape_at !== null && (
+        today.next_scrape_at !== null && (
           <p
             class="digest-page__meta"
             data-countdown
             data-next-at={String(today.next_scrape_at)}
           >
-            <span>Last updated at <span class="digest-page__meta-time">{lastUpdatedLabel}</span></span>
-            <span aria-hidden="true"> · </span>
             <span>Next update in <span class="digest-page__meta-countdown" data-countdown-text>…</span></span>
           </p>
         )
