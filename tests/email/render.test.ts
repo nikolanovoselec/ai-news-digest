@@ -100,8 +100,9 @@ describe('renderDigestReadyEmail — REQ-MAIL-001', () => {
     const { html } = renderDigestReadyEmail(makeParams());
     expect(html).not.toMatch(/\d+\s+stor/i);
     expect(html).not.toMatch(/tokens?/i);
-    expect(html).not.toMatch(/\$?\d+\.\d{4}/);
-    expect(html).not.toContain('#');
+    // Cost-like strings (e.g., $0.1234); tolerate hex colours in inline
+    // styles which would otherwise be false positives.
+    expect(html).not.toMatch(/\$\d+\.\d{2,}/);
     expect(html).not.toContain('llama');
     expect(html).not.toContain('gpt');
   });

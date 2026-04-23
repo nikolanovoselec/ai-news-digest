@@ -87,13 +87,21 @@ interface MockOpts {
 function makeDb(opts: MockOpts): D1Database {
   const prepare = vi.fn().mockImplementation((sql: string) => {
     const binds: unknown[] = [];
+    // The scrape_runs lookup in today.ts calls .first() directly on
+    // prepare() (no .bind() hop), so this factory mirrors both paths.
+    const directFirst = vi.fn().mockImplementation(async () => {
+      if (sql.startsWith('SELECT id, email, gh_login')) return opts.user;
+      if (sql.includes('FROM scrape_runs')) return opts.lastRun ?? null;
+      return null;
+    });
     return {
+      first: directFirst,
       bind: (...params: unknown[]) => {
         binds.push(...params);
         return {
           first: vi.fn().mockImplementation(async () => {
             if (sql.startsWith('SELECT id, email, gh_login')) return opts.user;
-            if (sql.includes('FROM scrape_runs')) return opts.lastRun;
+            if (sql.includes('FROM scrape_runs')) return opts.lastRun ?? null;
             return null;
           }),
           all: vi.fn().mockImplementation(async () => {
