@@ -57,6 +57,26 @@ const EXISTING_URL_BATCH = 100;
  * cap the simplest lever to keep the pool balanced across sources. */
 const PER_SOURCE_ITEM_CAP = 10;
 
+/** Upper bound on chunks enqueued per tick. Guards against a discovered-
+ * tag explosion inflating the candidate pool to unsafe levels. Normal
+ * load: 52 curated × 10 items = 520 candidates → 6 chunks. Cap at
+ * 20 gives headroom for a reasonable discovered-tag set while keeping
+ * the per-tick LLM cost bounded. */
+const MAX_CHUNKS_PER_TICK = 20;
+
+/** Return true if the URL is a plain http(s) URL. Rejects
+ * `javascript:`, `data:`, `file:`, mailto:, etc. at the coordinator
+ * layer so those schemes can never reach article_sources / primary_source_url
+ * and end up rendered as an `href`. */
+function isSafeWebUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 /** Every `scrape-coordinator` queue message. Enqueued by the hourly
  * cron branch in `src/worker.ts`. */
 export interface CoordinatorMessage {
@@ -76,8 +96,24 @@ export async function handleCoordinatorBatch(
     } catch (err) {
       log('error', 'digest.generation', {
         status: 'coordinator_throw',
+        scrape_run_id: message.body.scrape_run_id,
+        attempts: message.attempts,
         detail: String(err).slice(0, 500),
       });
+      // On final retry, mark the scrape_run as failed so /history and
+      // /stats don't render orphans stuck at status='running' forever.
+      // Queues uses 1-based attempts and max_retries=3 in wrangler.toml.
+      if (message.attempts >= 3) {
+        try {
+          await finishRun(env.DB, message.body.scrape_run_id, 'failed');
+        } catch (finishErr) {
+          log('error', 'digest.generation', {
+            status: 'coordinator_finish_failed_after_throw',
+            scrape_run_id: message.body.scrape_run_id,
+            detail: String(finishErr).slice(0, 500),
+          });
+        }
+      }
       message.retry();
     }
   }
@@ -105,10 +141,20 @@ export async function runCoordinator(
   const rawHeadlines = await fetchAllSources(env.KV, allSources);
 
   // --- Step 3: Build candidate records (canonicalize + carry source) --
+  //
+  // Scheme gate: only http(s) candidates survive. A feed returning a
+  // `javascript:` / `data:` / `file:` URL for an article link would
+  // land as an unsafe href on the detail page's "Read at source"
+  // button if we passed it through. Dropping at write time is the
+  // strongest defence (render-time escaping of a literal `javascript:`
+  // value in an href attribute is NOT enough — Astro's escaping
+  // prevents HTML injection but a `javascript:` href is valid HTML).
   const candidates: Candidate[] = [];
   const nowSec = Math.floor(Date.now() / 1000);
   for (const row of rawHeadlines) {
+    if (!isSafeWebUrl(row.headline.url)) continue;
     const canonical = canonicalize(row.headline.url);
+    if (!isSafeWebUrl(canonical)) continue;
     candidates.push({
       canonical_url: canonical,
       source_url: row.headline.url,
@@ -163,6 +209,21 @@ export async function runCoordinator(
   const chunks: typeof chunkCandidates[] = [];
   for (let i = 0; i < chunkCandidates.length; i += CHUNK_SIZE) {
     chunks.push(chunkCandidates.slice(i, i + CHUNK_SIZE));
+  }
+  // Hard cap: a discovered-tag explosion can't expand the per-tick LLM
+  // fan-out past MAX_CHUNKS_PER_TICK. Any excess is simply deferred to
+  // the next hourly tick (the existing-URL filter keeps tick-N+1 from
+  // re-processing the chunks we emit this tick).
+  const droppedChunks = Math.max(0, chunks.length - MAX_CHUNKS_PER_TICK);
+  if (droppedChunks > 0) {
+    log('warn', 'digest.generation', {
+      status: 'coordinator_chunks_capped',
+      scrape_run_id,
+      total_chunks: chunks.length,
+      kept_chunks: MAX_CHUNKS_PER_TICK,
+      dropped_chunks: droppedChunks,
+    });
+    chunks.length = MAX_CHUNKS_PER_TICK;
   }
   const totalChunks = chunks.length;
 

@@ -107,8 +107,24 @@ export async function handleChunkBatch(
     } catch (err) {
       log('error', 'digest.generation', {
         status: 'chunk_consumer_throw',
+        scrape_run_id: message.body.scrape_run_id,
+        chunk_index: message.body.chunk_index,
+        attempts: message.attempts,
         detail: String(err).slice(0, 500),
       });
+      // On final retry, mark the parent run as failed so operators
+      // and the UI don't see an orphan stuck at status='running'.
+      if (message.attempts >= 3) {
+        try {
+          await finishRun(env.DB, message.body.scrape_run_id, 'failed');
+        } catch (finishErr) {
+          log('error', 'digest.generation', {
+            status: 'chunk_finish_failed_after_throw',
+            scrape_run_id: message.body.scrape_run_id,
+            detail: String(finishErr).slice(0, 500),
+          });
+        }
+      }
       message.retry();
     }
   }
@@ -234,7 +250,7 @@ export async function processOneChunk(
     id: string;
     canonical_url: string;
     title: string;
-    details: string;
+    details: string[]; // 1-3 paragraphs, persisted as JSON array in details_json
     tags: string[];
     primary_source_url: string;
     primary_source_name: string;
@@ -244,8 +260,12 @@ export async function processOneChunk(
   const prepared: PreparedArticle[] = [];
   for (const s of survivors) {
     const title = sanitizeText(s.llmArticle.title);
-    const details = sanitizeText(s.llmArticle.details);
-    if (title === '' || details === '') continue;
+    const detailsRaw = s.llmArticle.details;
+    const details = (Array.isArray(detailsRaw)
+      ? detailsRaw.map((p) => sanitizeText(p))
+      : [sanitizeText(detailsRaw)]
+    ).filter((p) => p !== '');
+    if (title === '' || details.length === 0) continue;
 
     const llmTags = Array.isArray(s.llmArticle.tags) ? s.llmArticle.tags : [];
     const tags: string[] = [];
@@ -278,38 +298,46 @@ export async function processOneChunk(
   }
 
   // Build the atomic batch: one INSERT per article, one per alt source,
-  // one per tag. D1 handles ordering + rollback.
+  // one per tag. D1 handles ordering + rollback. Column list mirrors
+  // migrations/0003_global_feed.sql exactly — details_json / tags_json
+  // are JSON arrays, ingested_at stamps row creation, scrape_run_id
+  // is the parent run attribution.
   const statements: D1PreparedStatement[] = [];
   const nowSec = Math.floor(Date.now() / 1000);
   for (const a of prepared) {
     statements.push(
       env.DB.prepare(
         `INSERT OR IGNORE INTO articles
-           (id, canonical_url, title, details, primary_source_url, primary_source_name, published_at, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+           (id, canonical_url, primary_source_name, primary_source_url,
+            title, details_json, tags_json, published_at, ingested_at,
+            scrape_run_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
       ).bind(
         a.id,
         a.canonical_url,
-        a.title,
-        a.details,
-        a.primary_source_url,
         a.primary_source_name,
+        a.primary_source_url,
+        a.title,
+        JSON.stringify(a.details),
+        JSON.stringify(a.tags),
         a.published_at,
         nowSec,
+        body.scrape_run_id,
       ),
     );
     for (const alt of a.alternatives) {
       statements.push(
         env.DB.prepare(
-          `INSERT INTO article_sources (article_id, source_url, source_name)
-           VALUES (?1, ?2, ?3)`,
-        ).bind(a.id, alt.source_url, alt.source_name),
+          `INSERT OR IGNORE INTO article_sources
+             (article_id, source_name, source_url, published_at)
+           VALUES (?1, ?2, ?3, ?4)`,
+        ).bind(a.id, alt.source_name, alt.source_url, a.published_at),
       );
     }
     for (const tag of a.tags) {
       statements.push(
         env.DB.prepare(
-          `INSERT INTO article_tags (article_id, tag) VALUES (?1, ?2)`,
+          `INSERT OR IGNORE INTO article_tags (article_id, tag) VALUES (?1, ?2)`,
         ).bind(a.id, tag),
       );
     }

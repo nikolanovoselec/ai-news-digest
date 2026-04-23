@@ -270,7 +270,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     // article_sources holds the non-primary alternative.
     const altInserts = records.filter(
       (r) =>
-        r.via === 'batch' && r.sql.includes('INSERT INTO article_sources'),
+        r.via === 'batch' && r.sql.includes('INSERT OR IGNORE INTO article_sources'),
     );
     expect(altInserts.length).toBe(1);
   });
@@ -299,6 +299,51 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
         r.sql.startsWith('INSERT OR IGNORE INTO articles'),
     );
     expect(articleInserts.length).toBe(1);
+  });
+
+  it('REQ-PIPE-002: articles INSERT column list matches migration 0003 schema (regression guard for the details_json / tags_json / ingested_at / scrape_run_id columns)', async () => {
+    const aiResponse = {
+      response: JSON.stringify({
+        articles: [{ title: 'A', details: ['one', 'two'], tags: ['cloudflare'] }],
+        dedup_groups: [],
+      }),
+      usage: { input_tokens: 10, output_tokens: 10 },
+    };
+    const { db, records } = makeDb();
+    const { kv } = makeKv({ chunksRemaining: '1' });
+    const env = makeEnv(db, kv, aiResponse);
+    await processOneChunk(env, makeChunk());
+    const articleInserts = records.filter(
+      (r) =>
+        r.via === 'batch' &&
+        r.sql.startsWith('INSERT OR IGNORE INTO articles'),
+    );
+    expect(articleInserts.length).toBe(1);
+    const sql = articleInserts[0]!.sql;
+    // These columns are NOT NULL in migration 0003 — the INSERT MUST
+    // reference each by the name declared in the schema. A prior bug
+    // wrote to `details` + `created_at` (non-existent) and omitted
+    // details_json + tags_json + scrape_run_id; this guard prevents
+    // that regression.
+    expect(sql).toContain('canonical_url');
+    expect(sql).toContain('primary_source_name');
+    expect(sql).toContain('primary_source_url');
+    expect(sql).toContain('title');
+    expect(sql).toContain('details_json');
+    expect(sql).toContain('tags_json');
+    expect(sql).toContain('published_at');
+    expect(sql).toContain('ingested_at');
+    expect(sql).toContain('scrape_run_id');
+    expect(sql).not.toContain(' details,'); // old column name
+    expect(sql).not.toContain('created_at'); // old column name
+    // details_json must be serialized as a JSON array string so the
+    // reader (pages/api/digest/today.ts) can parseStringArray it.
+    const params = articleInserts[0]!.params as unknown[];
+    const detailsJsonParam = params.find(
+      (p) => typeof p === 'string' && p.startsWith('['),
+    );
+    expect(detailsJsonParam).toBeTruthy();
+    expect(JSON.parse(detailsJsonParam as string)).toEqual(['one', 'two']);
   });
 
   it('REQ-PIPE-002: writes articles + article_sources + article_tags in a single D1 batch', async () => {
@@ -344,10 +389,10 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
       batched.some((r) => r.sql.startsWith('INSERT OR IGNORE INTO articles')),
     ).toBe(true);
     expect(
-      batched.some((r) => r.sql.includes('INSERT INTO article_sources')),
+      batched.some((r) => r.sql.includes('INSERT OR IGNORE INTO article_sources')),
     ).toBe(true);
     expect(
-      batched.some((r) => r.sql.startsWith('INSERT INTO article_tags')),
+      batched.some((r) => r.sql.startsWith('INSERT OR IGNORE INTO article_tags')),
     ).toBe(true);
     // 2 articles + 1 alt + 3 tags (2 for A + 1 for B) = 6 batch statements.
     expect(batched.length).toBe(6);
