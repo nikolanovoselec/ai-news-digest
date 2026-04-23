@@ -169,34 +169,31 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
       !isFirstRun && (
         <section class="settings__secondary">
           <InstallPrompt />
-          <aside class="settings__gravatar" aria-label="Profile picture tip">
-            <span class="settings__gravatar-icon" aria-hidden="true">
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="currentColor"
+          <fieldset class="settings__section">
+            <legend class="settings__legend">
+              <span class="settings__legend-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  {/* MDI account */}
+                  <path d="M12,4A4,4 0 0,1 16,8A4,4 0 0,1 12,12A4,4 0 0,1 8,8A4,4 0 0,1 12,4M12,14C16.42,14 20,15.79 20,18V20H4V18C4,15.79 7.58,14 12,14Z" />
+                </svg>
+              </span>
+              Profile picture
+            </legend>
+            <p class="settings__hint">
+              Your avatar comes from{' '}
+              <a
+                class="settings__link"
+                href="https://gravatar.com/"
+                target="_blank"
+                rel="noopener noreferrer"
               >
-                {/* MDI account — https://pictogrammers.com/library/mdi/icon/account/ */}
-                <path d="M12,4A4,4 0 0,1 16,8A4,4 0 0,1 12,12A4,4 0 0,1 8,8A4,4 0 0,1 12,4M12,14C16.42,14 20,15.79 20,18V20H4V18C4,15.79 7.58,14 12,14Z" />
-              </svg>
-            </span>
-            <div class="settings__gravatar-body">
-              <p class="settings__gravatar-title">Customise your profile picture</p>
-              <p class="settings__gravatar-text">
-                Your avatar comes from{' '}
-                <a
-                  class="settings__gravatar-link"
-                  href="https://gravatar.com/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Gravatar
-                </a>
-                , a free service that links a photo to your email address. Sign up there with the email on your account, upload a photo, and it appears here next time you load the app.
-              </p>
-            </div>
-          </aside>
+                Gravatar
+              </a>
+              , a free service that links a photo to your email address. Sign up
+              there with the email on your account, upload a photo, and it
+              appears here next time you load the app.
+            </p>
+          </fieldset>
           <form
             class="settings__delete"
             data-delete-account
@@ -669,45 +666,14 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
     border-top: 1px solid var(--border);
   }
 
-  .settings__gravatar {
-    display: flex;
-    gap: 0.875rem;
-    padding: 1rem 1.25rem;
-    border: 1px solid var(--border);
-    border-radius: 0.5rem;
-    background-color: var(--surface);
-  }
-
-  .settings__gravatar-icon {
+  .settings__legend-icon {
     display: inline-flex;
-    align-items: flex-start;
+    vertical-align: middle;
+    margin-right: 0.4rem;
     color: var(--text-muted);
-    flex-shrink: 0;
-    padding-top: 0.1rem;
   }
 
-  .settings__gravatar-body {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    min-width: 0;
-  }
-
-  .settings__gravatar-title {
-    margin: 0;
-    font-weight: 600;
-    color: var(--text);
-    font-size: var(--text-base);
-  }
-
-  .settings__gravatar-text {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: var(--text-sm);
-    line-height: 1.5;
-  }
-
-  .settings__gravatar-link {
+  .settings__link {
     color: var(--text);
     text-decoration: underline;
   }
