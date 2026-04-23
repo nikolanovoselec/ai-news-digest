@@ -14,7 +14,9 @@
 // 6. Sign a fresh session JWT (sv=1 on create, or the row's current sv
 //    on re-login — never reset existing sv to 1 or we would re-validate
 //    logged-out tokens).
-// 7. Redirect to /settings?first_run=1 (new user) or /digest (returning).
+// 7. Redirect to /digest for everyone — new users land with complete
+//    onboarding defaults at insert time (digest_hour=8, 20 default
+//    hashtags, tz self-corrects client-side on first page load).
 
 import type { APIContext } from 'astro';
 import { errorResponse } from '~/lib/errors';
@@ -331,20 +333,27 @@ export async function GET(context: APIContext): Promise<Response> {
   let firstRun: boolean;
   try {
     if (row === null) {
-      // New user — insert with defaults. digest_hour stays NULL until
-      // the settings page saves it; the cron dispatcher keys off
-      // `digest_hour IS NOT NULL` to decide whether the user has opted
-      // into scheduled generation.
-      // hashtags_json is seeded with DEFAULT_HASHTAGS so the very first
-      // digest has meaningful input (REQ-SET-002); the user can edit
-      // the strip at any time.
+      // New user — insert with all onboarding-sensitive defaults in
+      // place so first-run routing can skip the old /settings
+      // detour and land the user directly on /digest. Defaults:
+      //   - hashtags_json = DEFAULT_HASHTAGS (20-tag seed)
+      //   - digest_hour = 8, digest_minute = 0 (08:00 local email)
+      //   - tz = DEFAULT_TZ (UTC); the client on /digest detects
+      //     the browser's real timezone on first load and POSTs
+      //     to /api/auth/set-tz to correct it — so the stored
+      //     value converges on the user's tz within a few seconds
+      //     of landing, with no settings-page step required.
+      //   - email_enabled = 1 (user can toggle off in settings)
       const defaultHashtagsJson = JSON.stringify(Array.from(DEFAULT_HASHTAGS));
       await env.DB.prepare(
-        'INSERT INTO users (id, email, gh_login, tz, digest_minute, email_enabled, session_version, created_at, hashtags_json) VALUES (?1, ?2, ?3, ?4, 0, 1, 1, ?5, ?6)',
+        'INSERT INTO users (id, email, gh_login, tz, digest_hour, digest_minute, email_enabled, session_version, created_at, hashtags_json) VALUES (?1, ?2, ?3, ?4, 8, 0, 1, 1, ?5, ?6)',
       )
         .bind(userId, email, ghLogin, DEFAULT_TZ, nowSec, defaultHashtagsJson)
         .run();
       sessionVersion = 1;
+      // firstRun is now a log-only signal — every new account has
+      // complete onboarding state at insert time, so the redirect
+      // below always lands on /digest regardless.
       firstRun = true;
     } else {
       // Returning user — update mutable fields (email, gh_login may
@@ -388,8 +397,12 @@ export async function GET(context: APIContext): Promise<Response> {
     status: 'success',
   });
 
-  // 7. Redirect based on onboarding state.
-  const destination = firstRun ? '/settings?first_run=1' : '/digest';
+  // 7. Redirect — always /digest now that new accounts land with
+  // complete onboarding defaults (hashtags seeded, digest_hour=8,
+  // tz auto-corrected client-side on first load). The prior
+  // firstRun /settings detour was noisy for users who don't want
+  // to fiddle with schedule + tags before seeing any news.
+  const destination = '/digest';
   const headers = new Headers();
   headers.append('Set-Cookie', clearState);
   headers.append('Set-Cookie', buildSessionCookie(jwt));

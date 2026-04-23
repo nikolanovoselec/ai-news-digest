@@ -221,12 +221,36 @@ describe('GET /api/auth/github/callback', () => {
     expect(claims!.sv).toBe(1);
   });
 
-  it('REQ-AUTH-001: redirects new user to /settings?first_run=1', async () => {
+  it('REQ-AUTH-001: redirects new user directly to /digest — no settings onboarding detour', async () => {
+    // New accounts land with complete defaults (digest_hour=8, 20
+    // seeded tags, tz auto-corrects client-side on first load), so
+    // the prior /settings?first_run=1 detour is gone. The user sees
+    // news immediately instead of a schedule picker.
     const { db } = makeDb(null);
     mockGitHubFetch({});
     const req = callbackRequest({ state: 'match', code: 'ghcode' }, 'match');
     const res = await GET(makeContext(req, fullEnv(db)) as never);
-    expect(res.headers.get('Location')).toBe(`${APP_ORIGIN}/settings?first_run=1`);
+    expect(res.headers.get('Location')).toBe(`${APP_ORIGIN}/digest`);
+  });
+
+  it('REQ-AUTH-001: new-user INSERT sets digest_hour=8 + digest_minute=0 so the settings-gate does not trip', async () => {
+    // Regression guard for the "why do I land on a schedule picker"
+    // bug. The INSERT must include digest_hour=8 as a literal so
+    // the next page load passes requireSettingsComplete without
+    // routing to /settings.
+    const { db, runCalls } = makeDb(null);
+    mockGitHubFetch({});
+    const req = callbackRequest({ state: 'match', code: 'ghcode' }, 'match');
+    await GET(makeContext(req, fullEnv(db)) as never);
+    const insert = runCalls.find((c) =>
+      c.sql.startsWith('INSERT INTO users'),
+    );
+    expect(insert).toBeDefined();
+    // digest_hour = 8, digest_minute = 0 must appear as literals
+    // in the INSERT SQL — the bound params cover id/email/gh/tz/
+    // created_at/hashtags_json, not schedule fields.
+    expect(insert!.sql).toMatch(/digest_hour.*digest_minute/);
+    expect(insert!.sql).toMatch(/\?4,\s*8,\s*0,/);
   });
 
   it('REQ-AUTH-001: redirects returning user (configured) to /digest', async () => {
