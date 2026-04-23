@@ -42,7 +42,6 @@ import {
 } from '~/lib/generate';
 import type { AIRunResponse } from '~/lib/generate';
 import {
-  clusterByCanonical,
   mergeClustersByLlmHints,
   type Candidate,
   type Cluster,
