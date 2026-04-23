@@ -1,4 +1,4 @@
-// Implements REQ-GEN-006
+// Implements REQ-PIPE-006
 // ULID generator — 26-char Crockford base32, lexicographically sortable by time.
 // Layout: 48-bit ms timestamp (10 chars) + 80-bit randomness (16 chars).
 // Web-standard crypto only — Workers runtime compatible, no Node imports.

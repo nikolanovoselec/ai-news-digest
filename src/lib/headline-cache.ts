@@ -1,4 +1,4 @@
-// Implements REQ-GEN-003
+// Implements REQ-PIPE-001
 //
 // KV-backed, 10-minute shared cache for per-source / per-tag headline
 // fetches. When many users share the same hashtag, the fan-out pipeline

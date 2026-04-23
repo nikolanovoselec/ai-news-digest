@@ -1,5 +1,5 @@
-// Implements REQ-GEN-003
-// Implements REQ-GEN-005
+// Implements REQ-PIPE-001
+// Implements REQ-PIPE-002
 //
 // Source adapters and fan-out for the digest pipeline. Each generic
 // source is a trusted HTTPS endpoint (Hacker News Algolia, Google News

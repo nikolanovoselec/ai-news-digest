@@ -1,4 +1,4 @@
-// Implements REQ-GEN-006
+// Implements REQ-READ-001
 // Slug utilities — deterministic title -> URL-safe slug, plus collision suffixing.
 // Pure string manipulation, no dependencies, Workers runtime compatible.
 
