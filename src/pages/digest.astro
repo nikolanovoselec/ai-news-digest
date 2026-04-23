@@ -183,7 +183,10 @@ const sortedUserTags = [...userTags].sort((a, b) => {
         data-countdown
         data-next-at={String(today.next_scrape_at)}
       >
-        <span>Next update in <span class="digest-page__meta-countdown" data-countdown-text>…</span></span>
+        <span
+          class="digest-page__meta-label"
+          data-countdown-header
+        >Next update in </span><span class="digest-page__meta-countdown" data-countdown-text>…</span>
       </p>
     </header>
 
@@ -268,7 +271,12 @@ const sortedUserTags = [...userTags].sort((a, b) => {
   function tickCountdown(): void {
     const el = document.querySelector<HTMLElement>('[data-countdown]');
     const textEl = document.querySelector<HTMLElement>('[data-countdown-text]');
+    const headerEl = document.querySelector<HTMLElement>('[data-countdown-header]');
     if (el === null || textEl === null) return;
+    // If we've been told a scrape is running (via data-running on the
+    // countdown wrapper set by the status poll), skip the countdown
+    // math entirely — the label ALREADY reads "Update in progress".
+    if (el.dataset['running'] === '1') return;
     const raw = el.dataset['nextAt'];
     if (raw === undefined || raw === '') return;
     const nextAt = Number.parseInt(raw, 10);
@@ -285,6 +293,47 @@ const sortedUserTags = [...userTags].sort((a, b) => {
       return;
     }
     textEl.textContent = formatCountdown(remaining);
+    if (headerEl !== null) headerEl.textContent = 'Next update in ';
+  }
+
+  async function pollScrapeStatus(): Promise<void> {
+    try {
+      const res = await fetch('/api/scrape-status', {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        running: boolean;
+        chunks_remaining?: number | null;
+        chunks_total?: number | null;
+      };
+      const el = document.querySelector<HTMLElement>('[data-countdown]');
+      const textEl = document.querySelector<HTMLElement>('[data-countdown-text]');
+      const headerEl = document.querySelector<HTMLElement>('[data-countdown-header]');
+      if (el === null || textEl === null || headerEl === null) return;
+      if (body.running) {
+        el.dataset['running'] = '1';
+        headerEl.textContent = 'Update in progress';
+        // Small per-run progress if we have a denominator.
+        if (
+          typeof body.chunks_total === 'number' && body.chunks_total > 0 &&
+          typeof body.chunks_remaining === 'number'
+        ) {
+          const done = Math.max(0, body.chunks_total - body.chunks_remaining);
+          textEl.textContent = ` — ${done}/${body.chunks_total} chunks`;
+        } else {
+          textEl.textContent = '';
+        }
+      } else if (el.dataset['running'] === '1') {
+        // Run just finished — pull in fresh articles + next_scrape_at.
+        delete el.dataset['running'];
+        void refetchAndReplace();
+        tickCountdown();
+      }
+    } catch {
+      /* poll silently; the next tick retries */
+    }
   }
 
   function wireCountdown(): void {
@@ -292,8 +341,15 @@ const sortedUserTags = [...userTags].sort((a, b) => {
     const el = document.querySelector<HTMLElement>('[data-countdown]');
     if (el === null) return;
     tickCountdown();
+    void pollScrapeStatus();
     // Minute-only display → tick every 10s is enough; no need for 1Hz.
-    countdownHandle = window.setInterval(tickCountdown, 10_000);
+    // Also poll /api/scrape-status every 10s so the "Update in
+    // progress" label appears/clears in near-real-time without
+    // shipping a separate interval.
+    countdownHandle = window.setInterval(() => {
+      tickCountdown();
+      void pollScrapeStatus();
+    }, 10_000);
   }
 
   function wireOfflineBanner(): void {

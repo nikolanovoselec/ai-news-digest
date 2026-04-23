@@ -248,6 +248,17 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
                 </button>
               </form>
             </div>
+            {/* Live progress line for any in-flight scrape run. Hidden
+                by default; the script at the bottom of this page polls
+                /api/scrape-status every 5s and fills it with a
+                "chunks done / articles ingested" line while status is
+                running. Clears itself when the run completes. */}
+            <p
+              class="settings__status"
+              data-scrape-progress
+              aria-live="polite"
+              hidden
+            ></p>
           </fieldset>
           <fieldset class="settings__section">
             <legend class="settings__legend">Delete account</legend>
@@ -406,12 +417,75 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
   // engines that eat the submit. The server's POST handler returns a
   // 303 to /?account_deleted=1.
 
+  /** Poll /api/scrape-status every 5s and write a "X/Y chunks done,
+   *  N articles ingested" line into [data-scrape-progress]. Hides
+   *  the element when no run is active, cheap to keep running —
+   *  one SQL SELECT + one KV get per poll, no LLM, no article read. */
+  async function pollScrapeProgress(): Promise<void> {
+    const el = document.querySelector<HTMLElement>('[data-scrape-progress]');
+    if (el === null) return;
+    try {
+      const res = await fetch('/api/scrape-status', {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) {
+        el.hidden = true;
+        return;
+      }
+      const body = (await res.json()) as {
+        running: boolean;
+        chunks_remaining?: number | null;
+        chunks_total?: number | null;
+        articles_ingested?: number | null;
+        started_at?: number;
+      };
+      if (!body.running) {
+        el.hidden = true;
+        el.textContent = '';
+        return;
+      }
+      const parts: string[] = ['Scrape in progress'];
+      if (
+        typeof body.chunks_total === 'number' && body.chunks_total > 0 &&
+        typeof body.chunks_remaining === 'number'
+      ) {
+        const done = Math.max(0, body.chunks_total - body.chunks_remaining);
+        parts.push(`${done}/${body.chunks_total} chunks`);
+      } else if (typeof body.chunks_remaining === 'number') {
+        parts.push(`${body.chunks_remaining} chunks remaining`);
+      }
+      const ing = body.articles_ingested;
+      if (typeof ing === 'number' && ing > 0) {
+        parts.push(`${ing} articles ingested`);
+      }
+      if (typeof body.started_at === 'number') {
+        const elapsed = Math.max(0, Math.floor(Date.now() / 1000) - body.started_at);
+        const m = Math.floor(elapsed / 60);
+        const s = elapsed % 60;
+        parts.push(`${m}m ${s}s elapsed`);
+      }
+      el.textContent = parts.join(' — ');
+      el.hidden = false;
+    } catch {
+      /* keep the current text; the next tick retries */
+    }
+  }
+
+  let scrapeProgressHandle: number | null = null;
+  function wireScrapeProgress(): void {
+    if (scrapeProgressHandle !== null) return;
+    void pollScrapeProgress();
+    scrapeProgressHandle = window.setInterval(pollScrapeProgress, 5_000);
+  }
+
   function init(): void {
     // Restore + delete forms live OUTSIDE the main settings form (they
     // were hoisted to fix a nested-<form> bug). Wire them first so they
     // bind even when the main form early-returns as already-bound.
     wireRestoreForm();
     wireDeleteForm();
+    wireScrapeProgress();
 
     const form = document.querySelector<HTMLFormElement>('[data-settings-form]');
     if (form === null) return;

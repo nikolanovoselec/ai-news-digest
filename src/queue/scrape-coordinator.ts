@@ -241,6 +241,23 @@ export async function runCoordinator(
     expirationTtl: COUNTER_TTL_SECONDS,
   });
 
+  // Persist total chunk count on the scrape_runs row so the
+  // /api/scrape-status endpoint can compute 'X of Y chunks done'
+  // for the in-progress UI. Best-effort; a failure here is logged
+  // but doesn't block the fan-out.
+  try {
+    await env.DB
+      .prepare('UPDATE scrape_runs SET chunk_count = ?1 WHERE id = ?2')
+      .bind(totalChunks, scrape_run_id)
+      .run();
+  } catch (err) {
+    log('warn', 'digest.generation', {
+      status: 'coordinator_chunk_count_update_failed',
+      scrape_run_id,
+      detail: String(err).slice(0, 500),
+    });
+  }
+
   for (let i = 0; i < chunks.length; i++) {
     const candidates = chunks[i] ?? [];
     await env.SCRAPE_CHUNKS.send({
