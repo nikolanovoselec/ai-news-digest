@@ -36,17 +36,22 @@ const defaultStats: StatsResponse = {
 };
 
 // AC 5 — refresh on every page load; no cache layer.
-const statsUrl = new URL('/api/stats', Astro.request.url);
-const cookieHeader = Astro.request.headers.get('Cookie');
-const headers: Record<string, string> = {};
-if (cookieHeader !== null) {
-  headers['Cookie'] = cookieHeader;
-}
+// Call the /api/stats GET handler directly in-process. A same-origin
+// `fetch()` subrequest with forwarded Cookie header worked in local dev
+// but silently failed in the deployed Worker (returned 0 / 0 of 0 /
+// $0.00), so both the widget and the /history page were showing
+// default-empty state regardless of DB contents.
+import type { APIContext } from 'astro';
+import { GET as getStats } from '~/pages/api/stats';
 
 let stats: StatsResponse = defaultStats;
 let loadFailed = false;
 try {
-  const res = await fetch(statsUrl.toString(), { headers });
+  const res = await getStats({
+    request: Astro.request,
+    locals: Astro.locals,
+    url: new URL('/api/stats', Astro.request.url),
+  } as unknown as APIContext);
   if (res.ok) {
     stats = (await res.json()) as StatsResponse;
   } else {

@@ -20,6 +20,7 @@
 //   Each row is wrapped in `<a href="/digest/{id}">` so native anchor
 //   semantics (middle-click, cmd+click, right-click) all work.
 
+import type { APIContext } from 'astro';
 import Base from '~/layouts/Base.astro';
 import { loadSession } from '~/middleware/auth';
 import { localDateInTz, DEFAULT_TZ } from '~/lib/tz';
@@ -67,26 +68,24 @@ Astro.locals.user = user;
 const tz = user.tz === '' ? DEFAULT_TZ : user.tz;
 
 // REQ-HIST-001 AC 1 — /history fetches from /api/history?offset=0.
-// We call the same-origin endpoint via `fetch` so the SSR render
-// reflects exactly what the client would see, with zero query logic
-// duplicated between the page and the handler.
-const initialUrl = new URL('/api/history?offset=0', Astro.request.url);
-const cookieHeader = Astro.request.headers.get('Cookie');
-const initHeaders: Record<string, string> = {};
-if (cookieHeader !== null) {
-  initHeaders['Cookie'] = cookieHeader;
-}
+// Call the handler directly in-process (same pattern as digest.astro
+// uses for /api/digest/today). A same-origin `fetch()` subrequest
+// works from local dev but fails silently in the deployed Worker
+// (subrequest returns 0 digests / stats), which left every page
+// showing the empty-state regardless of DB contents.
+import { GET as getHistory } from '~/pages/api/history';
 
 let initial: HistoryResponse = { digests: [], has_more: false };
 try {
-  const res = await fetch(initialUrl.toString(), { headers: initHeaders });
+  const res = await getHistory({
+    request: Astro.request,
+    locals: Astro.locals,
+    url: new URL('/api/history?offset=0', Astro.request.url),
+  } as unknown as APIContext);
   if (res.ok) {
     initial = (await res.json()) as HistoryResponse;
   }
 } catch {
-  // Defensive — render an empty page rather than 500 if the self-fetch
-  // fails for any reason (the Load more button will still work in the
-  // browser and let the user recover).
   initial = { digests: [], has_more: false };
 }
 

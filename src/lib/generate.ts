@@ -288,18 +288,25 @@ export async function generateDigest(
       // Log a short fingerprint of the raw response so we can diagnose
       // why the parser rejected it. Truncate to keep structured-log
       // payload small and avoid dumping user data into stdout.
-      const rawResponse =
-        typeof aiResult.response === 'string' ? aiResult.response : '';
-      const sample = rawResponse.slice(0, 300);
-      // Also capture the tail so we can tell a truncated (hit max_tokens)
-      // response from one that finished but drifted off-schema.
-      const tail = rawResponse.length > 600 ? rawResponse.slice(-300) : '';
+      // Capture a fingerprint of whatever the LLM returned — might be a
+      // string (most models) or an object (if response_format returned
+      // already-parsed). Both shapes land here when parseLLMPayload
+      // can't find an `articles` array.
+      const rawResponse = aiResult.response;
+      const rawType = typeof rawResponse;
+      const rawString =
+        rawType === 'string'
+          ? (rawResponse as string)
+          : JSON.stringify(rawResponse ?? null);
+      const sample = rawString.slice(0, 300);
+      const tail = rawString.length > 600 ? rawString.slice(-300) : '';
       log('warn', 'digest.generation', {
         user_id: user.id,
         digest_id: resolvedDigestId,
         trigger,
         status: 'llm_invalid_json',
-        raw_length: rawResponse.length,
+        raw_type: rawType,
+        raw_length: rawString.length,
         raw_sample: sample,
         raw_tail: tail,
       });
@@ -532,6 +539,15 @@ function extractFeeds(parsed: unknown): DiscoveredFeed[] {
  * back to extracting the first brace-balanced object in the string when
  * a direct parse fails. */
 function parseLLMPayload(response: unknown): LLMDigestPayload | null {
+  // Some Workers AI models honour `response_format: json_object` by
+  // returning an already-parsed object on `response` instead of a JSON
+  // string. Accept that shape directly — the shape check below is the
+  // same either way.
+  if (response !== null && typeof response === 'object') {
+    const articles = (response as LLMDigestPayload).articles;
+    if (Array.isArray(articles)) return response as LLMDigestPayload;
+  }
+
   if (typeof response !== 'string' || response === '') return null;
 
   const cleaned = stripFencesAndPreamble(response);

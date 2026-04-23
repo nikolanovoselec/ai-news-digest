@@ -19,15 +19,14 @@ import type { Headline } from '~/lib/types';
 /**
  * Shared inference parameters for every Workers AI call.
  * - `temperature: 0.2` — summaries should be consistent, not creative.
- * - `max_tokens: 8192` — headroom for 10 articles × (title + url +
- *   one_liner + 3 bullets) plus JSON structure. The prior 4096 ceiling
- *   was truncating responses once a user crossed ~5 hashtags, missing
- *   the closing `]}` and failing JSON.parse.
+ * - `max_tokens: 16384` — headroom for up to 6 articles with ~200-char
+ *   one-liners and 3× ~200-word bullet details. Prior 8192 ceiling was
+ *   being hit once the prompt asked for longer bullets.
  * - `response_format` — force JSON output on models that support it.
  */
 export const LLM_PARAMS = {
   temperature: 0.2,
-  max_tokens: 8192,
+  max_tokens: 16384,
   response_format: { type: 'json_object' },
 } as const;
 
@@ -43,11 +42,14 @@ CRITICAL OUTPUT CONTRACT:
 The object shape is always:
 {"articles":[{"title":"string","url":"string","one_liner":"string","details":["string","string","string"]}]}
 
-Curation rules:
-- Pick up to 10 headlines most relevant to the user's interests, ranked by relevance then recency.
-- All strings are plaintext: no HTML, no Markdown, no inline links, no bullet prefixes.
+Content rules:
+- Pick up to 6 headlines most relevant to the user's interests, ranked by relevance then recency.
+- "one_liner" is a single plaintext sentence, ~150–200 characters, stating the single most important fact about the article.
+- Each "details" string is a plaintext paragraph about ~200 words covering context, specifics, and why it matters. No bullet prefixes, no lists inside the paragraph.
+- Return exactly 3 details strings per article.
+- All strings are plaintext: no HTML, no Markdown, no inline links.
 - Skip duplicates, press releases with no substance, and pure advertising.
-- If fewer than 10 good matches exist, return fewer — do not pad with weak results.`;
+- If fewer than 6 good matches exist, return fewer — do not pad with weak results.`;
 
 /**
  * Build the user message for the digest call. User-controlled content
@@ -72,13 +74,13 @@ Return exactly this JSON shape:
     {
       "title": "plaintext title, copy as-is from input",
       "url": "URL from input",
-      "one_liner": "plaintext, max 120 chars, the single most important fact",
-      "details": ["bullet 1", "bullet 2", "bullet 3"]
+      "one_liner": "plaintext sentence, ~150–200 characters, the single most important fact",
+      "details": ["paragraph ~200 words", "paragraph ~200 words", "paragraph ~200 words"]
     }
   ]
 }
 
-Each bullet is a complete plaintext sentence covering a critical point. Exactly 3 bullets per article, no leading "- " or "•" characters.`;
+Each details entry is a full paragraph (~200 words) of plaintext prose — context, specifics, and why the story matters. No bullet prefixes, no lists, no code fences.`;
 }
 
 export const DISCOVERY_SYSTEM = `You are a JSON API. You suggest authoritative, stable, publicly accessible RSS/Atom/JSON feed URLs for a given technology or topic, and output JSON.
