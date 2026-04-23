@@ -113,6 +113,12 @@ const initialTheme = cookieTheme ?? 'light';
       <slot />
     </main>
 
+    <footer class="site-footer safe-x" aria-label="Site footer">
+      <p class="site-footer__copy">
+        © 2026 <a class="site-footer__link" href="https://graymatter.ch" target="_blank" rel="noopener noreferrer">Gray Matter GmbH</a>
+      </p>
+    </footer>
+
     <style>
       /* Sticky header with a tasteful backdrop blur on scroll — no solid
          rule across the page. The horizontal line is implied by a tight
@@ -176,6 +182,33 @@ const initialTheme = cookieTheme ?? 'light';
         padding: 16px;
         flex: 1 1 auto;
         min-width: 0;
+      }
+
+      /* Quiet site-wide footer. Same padding as .site-main so it
+         aligns with the reading column edges; muted text + a subtle
+         top border so it reads as chrome, not content. */
+      .site-footer {
+        padding: 1.5rem 16px 2rem;
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        text-align: center;
+        border-top: 1px solid var(--border);
+        margin-top: 2rem;
+      }
+      .site-footer__copy {
+        margin: 0;
+      }
+      .site-footer__link {
+        color: var(--text-muted);
+        text-decoration: none;
+        border-bottom: 1px solid transparent;
+      }
+      .site-footer__link:hover {
+        color: var(--text);
+        border-bottom-color: var(--text);
       }
     </style>
 

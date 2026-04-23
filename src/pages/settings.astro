@@ -186,28 +186,30 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
               appears here next time you load the app.
             </p>
           </fieldset>
-          <form
-            class="settings__delete"
-            data-delete-account
-            aria-label="Delete account"
-          >
-            <h2 class="settings__danger-title">Delete account</h2>
-            <p class="settings__danger-hint">
+          <fieldset class="settings__section">
+            <legend class="settings__legend">Delete account</legend>
+            <p class="settings__hint">
               Permanently deletes your account, digests, and all associated data.
             </p>
-            <label class="settings__field">
-              <span class="settings__field-label">Type DELETE to confirm</span>
-              <input
-                type="text"
-                data-delete-confirm
-                autocomplete="off"
-                class="settings__delete-input"
-              />
-            </label>
-            <button type="submit" class="settings__delete-button">
-              Delete my account
-            </button>
-          </form>
+            <form
+              class="settings__delete"
+              data-delete-account
+              aria-label="Delete account"
+            >
+              <label class="settings__field">
+                <span class="settings__field-label">Type DELETE to confirm</span>
+                <input
+                  type="text"
+                  data-delete-confirm
+                  autocomplete="off"
+                  class="settings__delete-input"
+                />
+              </label>
+              <button type="submit" class="settings__delete-button">
+                Delete my account
+              </button>
+            </form>
+          </fieldset>
         </section>
       )
     }
@@ -714,23 +716,6 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    padding: 1rem 1.25rem;
-    border: 1px solid var(--border);
-    border-radius: 0.5rem;
-    background-color: var(--surface);
-  }
-
-  .settings__danger-title {
-    margin: 0;
-    font-size: var(--text-lg);
-    font-weight: 600;
-    color: var(--text);
-  }
-
-  .settings__danger-hint {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: var(--text-sm);
   }
 
   .settings__delete-input {

@@ -10,7 +10,6 @@
 import type { APIContext } from 'astro';
 import Base from '~/layouts/Base.astro';
 import DigestCard from '~/components/DigestCard.astro';
-import CostFooter from '~/components/CostFooter.astro';
 import { loadSession } from '~/middleware/auth';
 import { requireSettingsComplete } from '~/middleware/settings-gate';
 
@@ -169,19 +168,6 @@ const headerDate = formatLongDate(digestRow.generated_at);
       )
     }
 
-    {
-      digestRow.status === 'ready' && (
-        <CostFooter
-          generatedAt={digestRow.generated_at}
-          tz={session.user.tz}
-          executionMs={digestRow.execution_ms}
-          tokensIn={digestRow.tokens_in}
-          tokensOut={digestRow.tokens_out}
-          estimatedCostUsd={digestRow.estimated_cost_usd}
-          modelId={digestRow.model_id}
-        />
-      )
-    }
   </section>
 </Base>
 

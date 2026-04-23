@@ -222,7 +222,18 @@ if (rawSource !== '') {
       target="_blank"
       rel="noopener noreferrer"
     >
-      Read at source &rarr;
+      <span>Read at source</span>
+      <svg
+        class="article-detail__source-link-icon"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        {/* MDI arrow-right — https://pictogrammers.com/library/mdi/icon/arrow-right/ */}
+        <path d="M4,11V13H16L10.5,18.5L11.92,19.92L19.84,12L11.92,4.08L10.5,5.5L16,11H4Z" />
+      </svg>
     </a>
   </article>
 </Base>
@@ -336,15 +347,16 @@ if (rawSource !== '') {
   .article-detail__paragraph--lead::first-letter {
     float: left;
     font-family: var(--font-serif);
-    font-size: 3.2em;
+    font-size: 3.4em;
     font-weight: 700;
-    line-height: 0.82;
-    /* No top padding — the lead cap's top edge aligns with the first
-       running-text line's cap-height. A tiny negative margin-top pulls
-       the visually-ascendant serif top in line with Inter's cap-height
-       on the first body row. Tuned for Charter/Georgia; visible offset
-       is ≤1 px across the stack. */
-    margin: -0.02em 0.1em 0 0;
+    /* line-height 0.78 at 3.4em ≈ 42 px, spanning ~3 lines of body
+       text at 1.65 line-height. The glyph's top aligns with the first
+       row's cap-height, bottom rests on the baseline of the third
+       row. No negative margins — they misrendered on Samsung WebKit
+       on previous attempts. */
+    line-height: 0.78;
+    padding: 0.02em 0.1em 0 0;
+    margin: 0;
     color: var(--text);
   }
 
@@ -353,6 +365,7 @@ if (rawSource !== '') {
   .article-detail__source-link {
     display: inline-flex;
     align-items: center;
+    gap: 0.5rem;
     align-self: flex-start;
     min-height: 44px;
     padding: 0.75rem 1.25rem;
@@ -366,6 +379,9 @@ if (rawSource !== '') {
   }
   .article-detail__source-link:hover {
     opacity: 0.9;
+  }
+  .article-detail__source-link-icon {
+    display: block;
   }
   .article-detail__source-link:focus-visible {
     outline: 2px solid var(--accent);

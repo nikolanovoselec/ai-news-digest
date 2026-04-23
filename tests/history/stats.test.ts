@@ -122,12 +122,15 @@ describe('GET /api/stats — SQL contract (REQ-HIST-002 AC 2, owned by Phase 5C)
   //   (1) SELECT COUNT(*)           FROM digests WHERE user_id = ?1
   //   (2) SELECT SUM(tokens_in+out) FROM digests WHERE user_id = ?1
   //   (3) SELECT SUM(cost)          FROM digests WHERE user_id = ?1
-  //   (4a) SELECT COUNT(*) FROM articles a
+  //   (4a) SELECT COUNT(DISTINCT a.source_url) FROM articles a
   //         JOIN digests d ON d.id = a.digest_id
   //         WHERE d.user_id = ?1
-  //   (4b) SELECT COUNT(*) FROM articles a
+  //   (4b) SELECT COUNT(DISTINCT a.source_url) FROM articles a
   //         JOIN digests d ON d.id = a.digest_id
   //         WHERE d.user_id = ?1 AND a.read_at IS NOT NULL
+  //
+  //  (4a/4b use DISTINCT source_url so same-URL articles across multiple
+  //   same-day refreshes count once, not per row.)
   //
   // The IDOR property: queries (4a) and (4b) MUST filter on d.user_id,
   // never on articles directly, so a compromised or spoofed digest_id

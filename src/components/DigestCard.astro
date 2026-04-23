@@ -29,8 +29,10 @@ interface Props {
   /** Article tag list (REQ-GEN-005 AC 6). Empty array when no tags. */
   tags?: string[];
   /**
-   * Zero-based index used for the 40ms-per-card stagger animation
-   * (REQ-READ-001 AC 3). Values ≥10 are clamped by the CSS.
+   * Accepted for backward compatibility with callers that pass a
+   * grid index (the old per-card stagger animation consumed it). The
+   * animation is gone; the prop is retained as a no-op so callers
+   * don't need an ordering churn.
    */
   index?: number;
 }
@@ -48,8 +50,9 @@ const {
 
 const href = `/digest/${digestId}/${slug}`;
 const transitionName = `card-${slug}`;
-// Cap stagger at 10 cards per REQ-READ-001 AC 3 — anything beyond that
-// animates at the same 400ms offset.
+// No-op stagger calculation kept so existing call sites that pass
+// `index={i}` don't need updating. Clamp preserved for when we
+// revive any per-card staging (accessibility focus order, e.g.).
 const stagger = Math.min(index, 9);
 // data-tags is the filter contract with the tag-strip script on
 // digest.astro: a comma-joined list so the script can intersect against
@@ -148,18 +151,12 @@ const displaySourceName = resolveDisplaySource();
        grid flicker. Non-selected cards still morph cleanly via VT;
        the hit card uses its own transition:name to shared-element
        back into the grid. */
+    /* Entrance stagger removed — View Transitions already morph the
+       clicked card back into place on return, and the fade-in-other-
+       cards pass kept flickering in some browsers regardless of how
+       we gated it. Instant render + hero-morph is the better
+       compromise. */
     opacity: 1;
-  }
-
-  /* Only play the fade-in-stagger on the first dashboard paint. The
-     mark-seen script on digest.astro sets data-digest-seen on <html>
-     after the initial animation frame, and Astro's View Transitions
-     preserve <html> so subsequent returns to /digest skip this rule
-     entirely. */
-  :root:not([data-digest-seen]) .digest-card {
-    opacity: 0;
-    animation: digest-card-enter 240ms ease-out both;
-    animation-delay: var(--stagger-delay, 0ms);
   }
 
   .digest-card__link {
@@ -261,6 +258,11 @@ const displaySourceName = resolveDisplaySource();
     color: var(--text-muted);
     font-size: var(--text-base);
     line-height: 1.45;
+    /* Flex-grow so the one-liner absorbs any leftover vertical space
+       in the card, pushing the footer to the bottom regardless of
+       summary length. Cards now all align their footers at the same
+       y-offset across the grid. */
+    flex: 1 1 auto;
   }
 
   /* Source name gets a small-caps treatment — no pill, no background.
@@ -330,33 +332,18 @@ const displaySourceName = resolveDisplaySource();
     }
   }
 
+  /* Tag chips inside the # popover are plain text — no pill, no
+     background, no border. The rail is where tags are interactive
+     pills; this popover just lists which tags the article carries. */
   .digest-card__tag-chip {
     display: inline-block;
-    padding: 2px 8px;
-    background: var(--surface);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 999px;
+    padding: 0;
+    background: transparent;
+    color: var(--text-muted);
+    border: 0;
+    border-radius: 0;
     font-size: var(--text-sm);
     line-height: 1.4;
-  }
-
-  @keyframes digest-card-enter {
-    from {
-      opacity: 0;
-      transform: translateY(4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    :root:not([data-digest-seen]) .digest-card {
-      opacity: 1;
-      animation: none;
-    }
   }
 
   /* Hide a card when the tag-strip filter is active and the card's

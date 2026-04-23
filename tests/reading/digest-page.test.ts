@@ -69,10 +69,15 @@ describe('DigestCard.astro — REQ-READ-001 AC 2/3', () => {
     expect(digestCardSource).toMatch(/card-\$\{slug\}/);
   });
 
-  it('REQ-READ-001: reduced-motion removes the entrance animation', () => {
-    expect(digestCardSource).toMatch(
-      /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?animation:\s*none/,
-    );
+  it('REQ-READ-001: no entrance stagger animation on cards', () => {
+    // The 240ms fade-in stagger was removed because it replayed on
+    // every View-Transition back from the article-detail page,
+    // flickering the grid. Cards render instantly; the clicked card
+    // still morphs via its transition:name. Assert the animation
+    // declaration is gone (no keyframes, no animation: ... other
+    // than the popover transitions).
+    expect(digestCardSource).not.toMatch(/@keyframes\s+digest-card-enter/);
+    expect(digestCardSource).not.toMatch(/animation:\s*digest-card-enter/);
   });
 
   it('REQ-READ-001: link target resolves to the detail route', () => {

@@ -21,7 +21,6 @@ import type { APIContext } from 'astro';
 import Base from '~/layouts/Base.astro';
 import DigestCard from '~/components/DigestCard.astro';
 import LoadingSkeleton from '~/components/LoadingSkeleton.astro';
-import CostFooter from '~/components/CostFooter.astro';
 import PendingBanner from '~/components/PendingBanner.astro';
 import { loadSession } from '~/middleware/auth';
 import { requireSettingsComplete } from '~/middleware/settings-gate';
@@ -348,53 +347,21 @@ if (isReadyToday && articles.length < 3) {
       )
     }
 
-    {
-      isReadyToday && digest !== null && (
-        <CostFooter
-          generatedAt={digest.generated_at}
-          tz={user.tz}
-          executionMs={digest.execution_ms}
-          tokensIn={digest.tokens_in}
-          tokensOut={digest.tokens_out}
-          estimatedCostUsd={digest.estimated_cost_usd}
-          modelId={digest.model_id}
-        />
-      )
-    }
   </section>
 </Base>
 
 <script>
   // Implements REQ-READ-001 AC 4, REQ-READ-004, REQ-READ-006 AC 4
   //
-  // Four responsibilities:
+  // Three responsibilities:
   //   1. Wire the Refresh form to POST /api/digest/refresh (JSON), then
   //      morph the button into a progress bar on 202 and reload to pick
   //      up the in-progress digest.
   //   2. Start the 5-second poll loop via digest-poll.ts when the page
   //      renders the live state (reload on ready, redirect on failed).
   //   3. Toggle the offline banner based on navigator.onLine.
-  //   4. Mark `data-digest-seen` on <html> after the first paint so the
-  //      card-entrance stagger only plays once — returns from the
-  //      article-detail view transition then don't replay the flicker.
 
   import { bindDigestPoll } from '~/scripts/digest-poll';
-
-  function markDigestSeen(): void {
-    const root = document.documentElement;
-    if (root.dataset['digestSeen'] === '1') return;
-    // One animation frame after the CSS inserts the cards is enough
-    // for the initial stagger to run to completion; flip the flag so
-    // the next dashboard render (including View-Transition back from
-    // /digest/:id/:slug) skips the fade-in entirely.
-    requestAnimationFrame(() => {
-      window.setTimeout(() => {
-        root.dataset['digestSeen'] = '1';
-      }, 500);
-    });
-  }
-  markDigestSeen();
-  document.addEventListener('astro:page-load', markDigestSeen);
 
   interface RefreshResponse {
     digest_id?: string;
@@ -847,24 +814,26 @@ if (isReadyToday && articles.length < 3) {
     color: var(--text);
   }
 
-  /* Refresh demoted to secondary — it still reads as a button, but
-     the outline treatment defers visual weight to the serif headline.
-     Primary actions that trigger 1–2-minute background jobs shouldn't
-     shout. */
+  /* Refresh uses the primary-button contrast so it reads as the same
+     class of CTA as Save, Read-at-source, Restore-initial-tags —
+     inverted of the current theme: black bg + white text in light
+     mode, white bg + black text in dark. Slightly smaller than the
+     Save button so it still defers visual weight to the serif
+     'Today's digest' anchor. */
   .digest-page__refresh-button {
     min-height: 40px;
-    padding: 0.4rem 1rem;
-    background-color: transparent;
-    color: var(--text);
-    border: 1px solid var(--border);
+    padding: 0.4rem 1.1rem;
+    background-color: var(--text);
+    color: var(--bg);
+    border: 1px solid var(--text);
     border-radius: 0.375rem;
     font-size: var(--text-sm);
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
-    transition: border-color 150ms ease, background-color 150ms ease;
+    transition: opacity 150ms ease;
   }
   .digest-page__refresh-button:hover {
-    border-color: var(--text);
+    opacity: 0.9;
   }
   .digest-page__refresh-button:disabled {
     opacity: 0.6;
@@ -957,10 +926,21 @@ if (isReadyToday && articles.length < 3) {
     overflow-y: visible;
     scroll-snap-type: x proximity;
     scrollbar-width: none;
-    /* No mask-image gradient: the fade made the chip immediately
-       behind the sticky `+ add` bleed through at ~25 % opacity, which
-       looked like a tab peeking under the add button. Sticky + add
-       with a solid background is the sole 'more off-screen' signal. */
+  }
+  /* Desktop (hover-capable + pointer-fine) has no finger-swipe
+     affordance and no visible horizontal scrollbar, so the rightmost
+     tags become unreachable in a scroll-only layout. Switch to a
+     wrapping multi-row rail on those devices so every tag is
+     immediately tap-/click-reachable; sticky '+ add' is pointless
+     when the rail wraps, so revert it to static flow. */
+  @media (hover: hover) and (pointer: fine) {
+    .tag-strip {
+      flex-wrap: wrap;
+      overflow: visible;
+    }
+    .tag-add {
+      position: static;
+    }
   }
   .tag-strip::-webkit-scrollbar {
     display: none;

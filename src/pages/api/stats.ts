@@ -52,7 +52,11 @@ export async function GET(context: APIContext): Promise<Response> {
           .first<CountRow>(),
         env.DB
           .prepare(
-            `SELECT COUNT(*) AS n FROM articles a
+            // DISTINCT source_url: when a user refreshes multiple times
+            // in a day, the same article appears in several digest rows
+            // — we want to count unique stories, not row instances, so
+            // 'read 43 of 52' reads sensibly instead of '59 of 68'.
+            `SELECT COUNT(DISTINCT a.source_url) AS n FROM articles a
              JOIN digests d ON d.id = a.digest_id
              WHERE d.user_id = ?1 AND a.read_at IS NOT NULL`,
           )
@@ -60,7 +64,7 @@ export async function GET(context: APIContext): Promise<Response> {
           .first<CountRow>(),
         env.DB
           .prepare(
-            `SELECT COUNT(*) AS n FROM articles a
+            `SELECT COUNT(DISTINCT a.source_url) AS n FROM articles a
              JOIN digests d ON d.id = a.digest_id
              WHERE d.user_id = ?1`,
           )
