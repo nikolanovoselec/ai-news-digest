@@ -91,8 +91,8 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
           src="/swiss-post.svg"
           alt="Swiss Post"
           class="settings__sponsor-logo"
-          width="56"
-          height="56"
+          width="120"
+          height="120"
         />
         <span class="settings__sponsor-caption">
           Powered by Security Architecture @ Swiss Post
@@ -385,6 +385,12 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
   }
 
   function init(): void {
+    // Restore + delete forms live OUTSIDE the main settings form (they
+    // were hoisted to fix a nested-<form> bug). Wire them first so they
+    // bind even when the main form early-returns as already-bound.
+    wireRestoreForm();
+    wireDeleteForm();
+
     const form = document.querySelector<HTMLFormElement>('[data-settings-form]');
     if (form === null) return;
     if (form.dataset['bound'] === '1') return;
@@ -422,35 +428,45 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
       void submitSettings(form, status, submit);
     });
 
-    // Restore initial tags: the <form> submits natively — the server
-    // writes DEFAULT_HASHTAGS and 303-redirects to /digest. JS here is
-    // a cosmetic layer that paints "Restoring…" while the browser
-    // waits for the redirect. If the script never runs, the button
-    // still works.
+  }
+
+  /** Wire Restore-initial-tags handler. Separate from init() so that
+   * the main settings form's early-return ("already bound") doesn't
+   * skip this handler after a View-Transition DOM swap. */
+  function wireRestoreForm(): void {
     const restoreForm = document.querySelector<HTMLFormElement>('[data-restore-form]');
     const restoreStatus = document.querySelector<HTMLElement>('[data-restore-status]');
-    if (restoreForm !== null && restoreForm.dataset['bound'] !== '1') {
-      restoreForm.dataset['bound'] = '1';
-      restoreForm.addEventListener('submit', () => {
-        const button = restoreForm.querySelector<HTMLButtonElement>('[data-restore-tags]');
-        if (button !== null) button.disabled = true;
-        if (restoreStatus !== null) restoreStatus.textContent = 'Restoring…';
-        // Fall through to native POST — browser follows the 303.
-      });
-    }
+    if (restoreForm === null) return;
+    if (restoreForm.dataset['bound'] === '1') return;
+    restoreForm.dataset['bound'] = '1';
+    restoreForm.addEventListener('submit', () => {
+      const button = restoreForm.querySelector<HTMLButtonElement>('[data-restore-tags]');
+      if (button !== null) button.disabled = true;
+      if (restoreStatus !== null) restoreStatus.textContent = 'Restoring…';
+      // Fall through to native POST — browser follows the 303.
+    });
+  }
 
-    // Delete account form.
+  /** Wire Delete-account handler. Same reasoning as wireRestoreForm —
+   * kept outside init() so a fresh settings DOM always binds. */
+  function wireDeleteForm(): void {
     const deleteForm = document.querySelector<HTMLFormElement>('[data-delete-account]');
-    if (deleteForm !== null && deleteForm.dataset['bound'] !== '1') {
-      deleteForm.dataset['bound'] = '1';
-      deleteForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const deleteStatus = document.createElement('p');
-        deleteStatus.setAttribute('aria-live', 'polite');
-        deleteForm.appendChild(deleteStatus);
-        void deleteAccount(deleteForm, deleteStatus);
-      });
+    if (deleteForm === null) return;
+    if (deleteForm.dataset['bound'] === '1') return;
+    deleteForm.dataset['bound'] = '1';
+    // Dedicated status node so repeated clicks don't stack <p>s.
+    let deleteStatus = deleteForm.querySelector<HTMLElement>('[data-delete-status]');
+    if (deleteStatus === null) {
+      deleteStatus = document.createElement('p');
+      deleteStatus.setAttribute('aria-live', 'polite');
+      deleteStatus.setAttribute('data-delete-status', '');
+      deleteStatus.className = 'settings__status';
+      deleteForm.appendChild(deleteStatus);
     }
+    deleteForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      void deleteAccount(deleteForm, deleteStatus as HTMLElement);
+    });
   }
 
   if (document.readyState === 'loading') {
@@ -477,18 +493,21 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
     gap: 0.5rem;
   }
 
-  /* Sponsor/credit block between hero and stats — small-caps caption
-     to the right of the Swiss Post logo so it reads as chrome-attribution,
-     not a content section. */
+  /* Sponsor/credit block between hero and stats. Logo on top, caption
+     below, both centred horizontally across the settings column so
+     the attribution reads as a deliberate credit plate rather than
+     inline chrome. */
   .settings__sponsor {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 1rem;
-    padding: 0.75rem 0;
+    gap: 0.75rem;
+    padding: 1rem 0;
+    text-align: center;
   }
   .settings__sponsor-logo {
-    width: 48px;
-    height: 48px;
+    width: 120px;
+    height: 120px;
     flex-shrink: 0;
   }
   .settings__sponsor-caption {
