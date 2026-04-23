@@ -145,7 +145,7 @@ const initialTheme = cookieTheme ?? 'light';
         </script> sequence can't escape the script tag and inject
         arbitrary HTML. Current callers pass only server-controlled
         values; this is insurance for future refactors. */}
-    <script type="application/ld+json" set:html={JSON.stringify({
+    <script is:inline type="application/ld+json" set:html={JSON.stringify({
       '@context': 'https://schema.org',
       '@graph': [
         {
@@ -169,11 +169,11 @@ const initialTheme = cookieTheme ?? 'light';
 
     {/* REQ-DES-002: /theme-init.js reconciles the server-rendered data-theme
         with prefers-color-scheme on a first visit where no cookie is set. */}
-    <script defer src="/theme-init.js"></script>
+    <script is:inline defer src="/theme-init.js"></script>
 
     <ClientRouter />
   </head>
-  <body>
+  <body data-first-run={firstRun ? 'true' : 'false'}>
     <header class="site-header safe-top safe-x">
       <a href="/" class="site-header__brand focus-ring" aria-label="News Digest home">
         <svg
@@ -225,7 +225,7 @@ const initialTheme = cookieTheme ?? 'light';
         (`script-src 'self'`) allows it. Inline scripts are blocked;
         bundled modules work too but this keeps the payload out of
         Astro's build graph for a zero-failure-surface static asset. */}
-    <script src="/scramble.js" defer></script>
+    <script is:inline src="/scramble.js" defer></script>
 
     <style>
       /* Sticky header with a tasteful backdrop blur on scroll — no solid

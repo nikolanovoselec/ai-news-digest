@@ -19,7 +19,6 @@ import Base from '~/layouts/Base.astro';
 import DigestCard from '~/components/DigestCard.astro';
 import { loadSession } from '~/middleware/auth';
 import { requireSettingsComplete } from '~/middleware/settings-gate';
-import { localHourMinuteInTz } from '~/lib/tz';
 import { loadTodayPayload } from '~/pages/api/digest/today';
 
 const env = Astro.locals.runtime.env;
@@ -63,19 +62,11 @@ if (user.hashtags_json !== null && user.hashtags_json !== '') {
 const today = await loadTodayPayload(env.DB, user.id, userTags);
 const articles = today.articles;
 
-// Header pieces. `Last updated at HH:MM` is formatted in the user's
-// timezone; the countdown is computed client-side from next_scrape_at
-// so the ticker stays accurate across the tab's lifetime.
-let lastUpdatedLabel = '';
-if (today.last_scrape_run !== null) {
-  const { hour, minute } = localHourMinuteInTz(
-    today.last_scrape_run.started_at,
-    user.tz,
-  );
-  const hh = hour.toString().padStart(2, '0');
-  const mm = minute.toString().padStart(2, '0');
-  lastUpdatedLabel = `${hh}:${mm}`;
-}
+// The countdown is computed client-side from next_scrape_at so the
+// ticker stays accurate across the tab's lifetime. A "Last updated at
+// HH:MM" label was retired alongside the minutes-only countdown — if
+// it's ever reintroduced, import localHourMinuteInTz from ~/lib/tz
+// and derive the HH:MM string from today.last_scrape_run.started_at.
 
 // Per-tag article count for the tag-strip — drives the `[count]`
 // affordance and the count-desc sort order. Tags with zero articles
@@ -336,7 +327,7 @@ const sortedUserTags = [...userTags].sort((a, b) => {
     return s.replace(/[^a-z0-9-]/g, '');
   }
 
-  async function saveTags(strip: HTMLElement, tags: string[]): Promise<boolean> {
+  async function saveTags(tags: string[]): Promise<boolean> {
     try {
       const res = await fetch('/api/tags', {
         method: 'POST',
@@ -455,7 +446,7 @@ const sortedUserTags = [...userTags].sort((a, b) => {
       }
       const chip = renderTagChip(strip, tag);
       hide();
-      const ok = await saveTags(strip, [...existing, tag]);
+      const ok = await saveTags([...existing, tag]);
       if (!ok) {
         chip.remove();
         showTagError(strip, 'Could not save. Please try again.');
@@ -529,7 +520,7 @@ const sortedUserTags = [...userTags].sort((a, b) => {
         applyFilter();
         const remaining = tagStripTags(strip);
         void (async () => {
-          const ok = await saveTags(strip, remaining);
+          const ok = await saveTags(remaining);
           if (!ok) {
             renderTagChip(strip, tag);
             applyFilter();

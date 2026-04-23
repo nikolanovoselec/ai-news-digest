@@ -9,7 +9,7 @@
 //   - users.last_emailed_local_date column exists and is nullable
 
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { env, applyD1Migrations } from 'cloudflare:test';
+import { env, applyD1Migrations } from '../fixtures/cloudflare-test';
 
 const USER_ID = 'schema-0003-user';
 const OTHER_USER_ID = 'schema-0003-other-user';
