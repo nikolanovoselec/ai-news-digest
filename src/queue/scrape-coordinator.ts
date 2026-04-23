@@ -25,6 +25,7 @@ import {
   fetchFromSource,
   type SourceAdapter,
 } from '~/lib/sources';
+import { fetchArticleBodies } from '~/lib/article-fetch';
 import { canonicalize } from '~/lib/canonical-url';
 import { clusterByCanonical, type Candidate } from '~/lib/dedupe';
 import { finishRun } from '~/lib/scrape-run';
@@ -235,21 +236,65 @@ export async function runCoordinator(
     return;
   }
 
+  // --- Step 6.5: Fill in thin snippets by fetching the article ---------
+  //
+  // Feeds that only ship <title>+<link> (or a one-line <description>)
+  // leave the LLM with nothing to ground a summary in, which
+  // produces boilerplate hallucination ("This article explores the
+  // recent development..."). For each survivor whose feed-derived
+  // snippet is shorter than SNIPPET_FLOOR, GET the article URL,
+  // extract body text, and use that instead.
+  //
+  // Bounded: 20 concurrent fetches, 5s timeout each, 1MB cap. Worst
+  // case ~500 candidates × 50KB avg = 25MB bandwidth, ~25s wall.
+  // Failures leave the original snippet (or nothing) in place — the
+  // LLM prompt's "short-snippet → short-honest-summary" branch handles
+  // the miss cleanly.
+  const SNIPPET_FLOOR = 400;
+  const urlsToFetch: string[] = [];
+  for (const c of survivors) {
+    const existingSnippet = c.primary.body_snippet ?? '';
+    if (existingSnippet.length < SNIPPET_FLOOR) {
+      urlsToFetch.push(c.primary.source_url);
+    }
+  }
+  let fetchedBodies = new Map<string, string>();
+  if (urlsToFetch.length > 0) {
+    const fetchStart = Date.now();
+    fetchedBodies = await fetchArticleBodies(urlsToFetch, 20);
+    log('info', 'digest.generation', {
+      status: 'coordinator_article_bodies_fetched',
+      scrape_run_id,
+      urls_requested: urlsToFetch.length,
+      urls_fetched: fetchedBodies.size,
+      duration_ms: Date.now() - fetchStart,
+    });
+  }
+
   // --- Step 7: Flatten clusters into chunk-ready candidates -----------
-  const chunkCandidates = survivors.map((c) => ({
-    canonical_url: c.primary.canonical_url,
-    source_url: c.primary.source_url,
-    source_name: c.primary.source_name,
-    title: c.primary.title,
-    published_at: c.primary.published_at,
-    ...(c.primary.body_snippet !== undefined
-      ? { body_snippet: c.primary.body_snippet }
-      : {}),
-    alternatives: c.alternatives.map((alt) => ({
-      source_url: alt.source_url,
-      source_name: alt.source_name,
-    })),
-  }));
+  const chunkCandidates = survivors.map((c) => {
+    const fetched = fetchedBodies.get(c.primary.source_url);
+    const existingSnippet = c.primary.body_snippet ?? '';
+    // Take whichever is LONGER — the fetched body usually beats the
+    // feed description, but some feeds (Cloudflare's
+    // <content:encoded>) ship the full body directly.
+    const bestSnippet =
+      fetched !== undefined && fetched.length > existingSnippet.length
+        ? fetched
+        : existingSnippet;
+    return {
+      canonical_url: c.primary.canonical_url,
+      source_url: c.primary.source_url,
+      source_name: c.primary.source_name,
+      title: c.primary.title,
+      published_at: c.primary.published_at,
+      ...(bestSnippet !== '' ? { body_snippet: bestSnippet } : {}),
+      alternatives: c.alternatives.map((alt) => ({
+        source_url: alt.source_url,
+        source_name: alt.source_name,
+      })),
+    };
+  });
 
   // --- Step 8: Chunk + prime KV counter + enqueue ---------------------
   const chunks: typeof chunkCandidates[] = [];
