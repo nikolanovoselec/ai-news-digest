@@ -1,26 +1,31 @@
-// Tests for src/lib/email.ts sendDigestEmail end-to-end payload shape —
-// REQ-MAIL-001. Verifies the Resend POST body carries the exact `from`,
-// `to`, `subject`, `html`, `text`, and `tags` fields specified by the
-// requirement, plus the bearer `Authorization` header.
+// Tests for src/lib/email.ts `sendEmail` payload shape AND
+// src/lib/email-dispatch.ts `dispatchDailyEmails` once-per-day gating —
+// REQ-MAIL-001.
+//
+// Two test groups:
+//
+// 1. sendEmail payload — verifies the Resend POST body carries the exact
+//    `from`, `to`, `subject`, `html`, `text`, and `tags` fields plus the
+//    bearer `Authorization` header.
+//
+// 2. dispatchDailyEmails gating — verifies that the dispatcher sends at
+//    most one email per user per local day by keying on
+//    `last_emailed_local_date`. The test drives a fake D1 whose row state
+//    it toggles between runs: first with today's date stamped (no send),
+//    then with yesterday's date stamped (one send), and asserts the
+//    post-send stamp update.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { sendDigestEmail, type DigestEmailContext } from '~/lib/email';
+import { sendEmail, type SendEmailParams } from '~/lib/email';
+import { dispatchDailyEmails } from '~/lib/email-dispatch';
+import { localDateInTz, localHourMinuteInTz } from '~/lib/tz';
 
-function makeCtx(overrides: Partial<DigestEmailContext> = {}): DigestEmailContext {
+function makeParams(overrides: Partial<SendEmailParams> = {}): SendEmailParams {
   return {
-    user: {
-      email: 'alice@example.com',
-      gh_login: 'alice',
-    },
-    digest_id: 'dg-01JABCXYZ',
-    local_date: '2026-04-22',
-    article_count: 7,
-    top_tags: ['react', 'typescript', 'edge'],
-    execution_ms: 2400,
-    tokens: 3847,
-    estimated_cost_usd: 0.0012,
-    model_name: 'llama-3.1-8b-instruct-fast',
-    app_url: 'https://news-digest.example.com',
+    to: 'alice@example.com',
+    subject: 'Your news digest is ready',
+    text: 'Your news digest is ready.\n\nView it here: https://news-digest.example.com/digest',
+    html: '<p>Your news digest is ready.</p>',
     ...overrides,
   };
 }
@@ -42,7 +47,10 @@ interface CapturedCall {
   body: Record<string, unknown>;
 }
 
-function captureSingleFetch(): { fetchMock: ReturnType<typeof vi.fn>; get: () => CapturedCall } {
+function captureSingleFetch(): {
+  fetchMock: ReturnType<typeof vi.fn>;
+  get: () => CapturedCall;
+} {
   const fetchMock = vi.fn().mockResolvedValue(
     new Response(JSON.stringify({ id: 'msg-xyz' }), { status: 200 }),
   );
@@ -60,7 +68,7 @@ function captureSingleFetch(): { fetchMock: ReturnType<typeof vi.fn>; get: () =>
   };
 }
 
-describe('sendDigestEmail payload', () => {
+describe('sendEmail payload — REQ-MAIL-001', () => {
   beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
   });
@@ -71,7 +79,7 @@ describe('sendDigestEmail payload', () => {
 
   it('REQ-MAIL-001: POSTs to https://api.resend.com/emails', async () => {
     const cap = captureSingleFetch();
-    await sendDigestEmail(makeEnv(), makeCtx());
+    await sendEmail(makeEnv(), makeParams());
     const call = cap.get();
     expect(call.url).toBe('https://api.resend.com/emails');
     expect(call.init.method).toBe('POST');
@@ -79,7 +87,7 @@ describe('sendDigestEmail payload', () => {
 
   it('REQ-MAIL-001: sends bearer Authorization header with RESEND_API_KEY', async () => {
     const cap = captureSingleFetch();
-    await sendDigestEmail(makeEnv({ RESEND_API_KEY: 're_secret_xyz' }), makeCtx());
+    await sendEmail(makeEnv({ RESEND_API_KEY: 're_secret_xyz' }), makeParams());
     const call = cap.get();
     const headers = new Headers(call.init.headers);
     expect(headers.get('Authorization')).toBe('Bearer re_secret_xyz');
@@ -87,7 +95,7 @@ describe('sendDigestEmail payload', () => {
 
   it('REQ-MAIL-001: sends Content-Type: application/json', async () => {
     const cap = captureSingleFetch();
-    await sendDigestEmail(makeEnv(), makeCtx());
+    await sendEmail(makeEnv(), makeParams());
     const call = cap.get();
     const headers = new Headers(call.init.headers);
     expect(headers.get('Content-Type')).toBe('application/json');
@@ -95,74 +103,269 @@ describe('sendDigestEmail payload', () => {
 
   it('REQ-MAIL-001: payload.from equals env.RESEND_FROM', async () => {
     const cap = captureSingleFetch();
-    await sendDigestEmail(
+    await sendEmail(
       makeEnv({ RESEND_FROM: 'News Digest <digest@example.com>' }),
-      makeCtx(),
+      makeParams(),
     );
     const call = cap.get();
     expect(call.body.from).toBe('News Digest <digest@example.com>');
   });
 
-  it('REQ-MAIL-001: payload.to is an array containing the user email', async () => {
+  it('REQ-MAIL-001: payload.to is an array containing the recipient', async () => {
     const cap = captureSingleFetch();
-    await sendDigestEmail(
+    await sendEmail(
       makeEnv(),
-      makeCtx({ user: { email: 'recipient@example.com', gh_login: 'alice' } }),
+      makeParams({ to: 'recipient@example.com' }),
     );
     const call = cap.get();
     expect(Array.isArray(call.body.to)).toBe(true);
     expect(call.body.to).toEqual(['recipient@example.com']);
   });
 
-  it('REQ-MAIL-001: payload.subject matches "Your news digest is ready \u00b7 {N} stories"', async () => {
+  it('REQ-MAIL-001: payload.subject is forwarded verbatim from the caller', async () => {
     const cap = captureSingleFetch();
-    await sendDigestEmail(makeEnv(), makeCtx({ article_count: 9 }));
+    await sendEmail(
+      makeEnv(),
+      makeParams({ subject: 'Your news digest is ready' }),
+    );
     const call = cap.get();
-    expect(call.body.subject).toBe('Your news digest is ready \u00b7 9 stories');
+    expect(call.body.subject).toBe('Your news digest is ready');
   });
 
-  it('REQ-MAIL-001: payload.html is a non-empty string containing HTML markup', async () => {
+  it('REQ-MAIL-001: payload.html is the caller-supplied HTML string', async () => {
     const cap = captureSingleFetch();
-    await sendDigestEmail(makeEnv(), makeCtx());
+    await sendEmail(
+      makeEnv(),
+      makeParams({ html: '<p>ready</p>' }),
+    );
     const call = cap.get();
-    const html = call.body.html as string;
-    expect(typeof html).toBe('string');
-    expect(html.length).toBeGreaterThan(0);
-    expect(html).toContain('<html>');
-    expect(html).toContain('Your daily digest is ready');
+    expect(call.body.html).toBe('<p>ready</p>');
   });
 
-  it('REQ-MAIL-001: payload.text is a non-empty plaintext fallback', async () => {
+  it('REQ-MAIL-001: payload.text is the caller-supplied plaintext string', async () => {
     const cap = captureSingleFetch();
-    await sendDigestEmail(makeEnv(), makeCtx());
+    await sendEmail(
+      makeEnv(),
+      makeParams({ text: 'ready' }),
+    );
     const call = cap.get();
-    const text = call.body.text as string;
-    expect(typeof text).toBe('string');
-    expect(text.length).toBeGreaterThan(0);
-    expect(text).toContain('Your daily digest is ready.');
-    expect(text).not.toMatch(/<[a-z]/i);
+    expect(call.body.text).toBe('ready');
   });
 
   it('REQ-MAIL-001: payload.tags contains { name: "kind", value: "daily-digest" }', async () => {
     const cap = captureSingleFetch();
-    await sendDigestEmail(makeEnv(), makeCtx());
+    await sendEmail(makeEnv(), makeParams());
     const call = cap.get();
     expect(call.body.tags).toEqual([{ name: 'kind', value: 'daily-digest' }]);
   });
 
-  it('REQ-MAIL-001: payload body is valid JSON with exactly the documented keys', async () => {
+  it('REQ-MAIL-001: payload body contains exactly the documented keys', async () => {
     const cap = captureSingleFetch();
-    await sendDigestEmail(makeEnv(), makeCtx());
+    await sendEmail(makeEnv(), makeParams());
     const call = cap.get();
     expect(Object.keys(call.body).sort()).toEqual(
       ['from', 'html', 'subject', 'tags', 'text', 'to'].sort(),
     );
   });
 
-  it('REQ-MAIL-001: request carries an AbortSignal (5s timeout)', async () => {
+  it('REQ-MAIL-001: request carries an AbortSignal (timeout)', async () => {
     const cap = captureSingleFetch();
-    await sendDigestEmail(makeEnv(), makeCtx());
+    await sendEmail(makeEnv(), makeParams());
     const call = cap.get();
     expect(call.init.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+/* --------------------------------------------------------------------- */
+/* dispatchDailyEmails — REQ-MAIL-001 once-per-day gating                */
+/* --------------------------------------------------------------------- */
+
+interface DispatchUserRow {
+  id: string;
+  email: string;
+  gh_login: string;
+  digest_hour: number;
+  digest_minute: number;
+  last_emailed_local_date: string | null;
+}
+
+interface PreparedCall {
+  sql: string;
+  params: unknown[];
+}
+
+/** Minimal D1 stub tailored to the two queries `dispatchDailyEmails` issues.
+ *  The row collection is mutable by reference so tests can mutate
+ *  `last_emailed_local_date` between runs without rebuilding the stub. */
+function makeDispatchDb(users: DispatchUserRow[]): {
+  db: D1Database;
+  runCalls: PreparedCall[];
+} {
+  const runCalls: PreparedCall[] = [];
+
+  const prepareSpy = vi.fn().mockImplementation((sql: string) => {
+    const stmt = {
+      _sql: sql,
+      _params: [] as unknown[],
+      bind(...params: unknown[]) {
+        stmt._params = params;
+        return stmt;
+      },
+      all: vi.fn().mockImplementation(async () => {
+        if (sql.includes('SELECT DISTINCT tz')) {
+          const tzs = new Set(users.map(() => 'UTC'));
+          return { results: [...tzs].map((tz) => ({ tz })) };
+        }
+        if (sql.startsWith('SELECT id, email, gh_login')) {
+          const [, hour, bucketStart, bucketEnd, localDate] = stmt._params as [
+            string,
+            number,
+            number,
+            number,
+            string,
+          ];
+          const filtered = users.filter(
+            (u) =>
+              u.digest_hour === hour &&
+              u.digest_minute >= bucketStart &&
+              u.digest_minute < bucketEnd &&
+              (u.last_emailed_local_date === null ||
+                u.last_emailed_local_date !== localDate),
+          );
+          return { results: filtered };
+        }
+        return { results: [] };
+      }),
+      run: vi.fn().mockImplementation(async () => {
+        runCalls.push({ sql, params: stmt._params });
+        if (sql.startsWith('UPDATE users SET last_emailed_local_date')) {
+          const [localDate, id] = stmt._params as [string, string];
+          const user = users.find((u) => u.id === id);
+          if (user !== undefined) {
+            user.last_emailed_local_date = localDate;
+          }
+        }
+        return { success: true, meta: { changes: 1 } };
+      }),
+      first: vi.fn().mockResolvedValue(null),
+    };
+    return stmt;
+  });
+
+  const db = {
+    prepare: prepareSpy,
+    batch: vi.fn().mockResolvedValue([]),
+  } as unknown as D1Database;
+
+  return { db, runCalls };
+}
+
+describe('dispatchDailyEmails — REQ-MAIL-001 once-per-day gating', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: 'msg-1' }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('REQ-MAIL-001: does not send when last_emailed_local_date equals today-in-tz', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const today = localDateInTz(now, 'UTC');
+    const { hour, minute } = localHourMinuteInTz(now, 'UTC');
+
+    const users: DispatchUserRow[] = [
+      {
+        id: 'user-1',
+        email: 'alice@example.com',
+        gh_login: 'alice',
+        digest_hour: hour,
+        digest_minute: minute - (minute % 5), // inside the current 5-min bucket
+        last_emailed_local_date: today,
+      },
+    ];
+    const { db, runCalls } = makeDispatchDb(users);
+    await dispatchDailyEmails(makeEnv({ DB: db }));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(
+      runCalls.filter((c) =>
+        c.sql.startsWith('UPDATE users SET last_emailed_local_date'),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('REQ-MAIL-001: sends and stamps last_emailed_local_date when stamp is stale', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const today = localDateInTz(now, 'UTC');
+    const { hour, minute } = localHourMinuteInTz(now, 'UTC');
+
+    // A stale stamp from a previous day — any value !== today triggers
+    // the send path. Using a clearly-old date avoids edge cases with
+    // tests that run across midnight UTC.
+    const stale = '1970-01-01';
+    const users: DispatchUserRow[] = [
+      {
+        id: 'user-2',
+        email: 'bob@example.com',
+        gh_login: 'bob',
+        digest_hour: hour,
+        digest_minute: minute - (minute % 5),
+        last_emailed_local_date: stale,
+      },
+    ];
+    const { db, runCalls } = makeDispatchDb(users);
+    await dispatchDailyEmails(makeEnv({ DB: db }));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const stampUpdates = runCalls.filter((c) =>
+      c.sql.startsWith('UPDATE users SET last_emailed_local_date'),
+    );
+    expect(stampUpdates).toHaveLength(1);
+    expect(stampUpdates[0]?.params[0]).toBe(today);
+    expect(stampUpdates[0]?.params[1]).toBe('user-2');
+
+    // Stamp was persisted: running again the same day is a no-op.
+    fetchMock.mockClear();
+    await dispatchDailyEmails(makeEnv({ DB: db }));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('REQ-MAIL-001: does not stamp last_emailed_local_date when the send fails', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const { hour, minute } = localHourMinuteInTz(now, 'UTC');
+
+    const users: DispatchUserRow[] = [
+      {
+        id: 'user-3',
+        email: 'carol@example.com',
+        gh_login: 'carol',
+        digest_hour: hour,
+        digest_minute: minute - (minute % 5),
+        last_emailed_local_date: null,
+      },
+    ];
+    const { db, runCalls } = makeDispatchDb(users);
+
+    // Resend returns 500 — sendEmail resolves to { sent: false, ... }.
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(new Response('server error', { status: 500 }));
+
+    await dispatchDailyEmails(makeEnv({ DB: db }));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // No stamp → the next cron tick retries within the same local day.
+    expect(
+      runCalls.filter((c) =>
+        c.sql.startsWith('UPDATE users SET last_emailed_local_date'),
+      ),
+    ).toHaveLength(0);
   });
 });

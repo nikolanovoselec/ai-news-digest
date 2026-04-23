@@ -62,6 +62,13 @@ const tzValue = user.tz === '' ? DEFAULT_TZ : user.tz;
 const currentModelId = user.model_id ?? DEFAULT_MODEL_ID;
 const emailEnabled = user.email_enabled === 1;
 
+// REQ-SET-004 — ModelSelect is hidden while the global pipeline runs on
+// a single default model. The stored `model_id` preference is still
+// persisted by /api/settings (see the PUT handler there) so flipping
+// `showModelSelect` back to `true` is a one-line re-enable without a
+// schema change. `currentModelId` is preserved above for the same reason.
+const showModelSelect = false;
+
 const heroTitle = isFirstRun
   ? 'Welcome — pick a time, we handle the rest'
   : 'Settings';
@@ -106,10 +113,26 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
 
       <fieldset class="settings__section">
         <legend class="settings__legend">Inference and Notification</legend>
-        <label class="settings__field">
-          <span class="settings__field-label">Model</span>
-          <ModelSelect selected={currentModelId} />
-        </label>
+        {showModelSelect ? (
+          <label class="settings__field">
+            {/* Implements REQ-SET-004 — hidden while the global pipeline
+                runs on a single default model. Kept here so re-enabling
+                is a one-line flip of `showModelSelect`. */}
+            <span class="settings__field-label">Model</span>
+            <ModelSelect selected={currentModelId} />
+          </label>
+        ) : (
+          /* Implements REQ-SET-004 — stored preference survives across
+             UI toggles. Hidden input carries the current model_id so
+             the PUT handler (which still validates and persists the
+             field) receives the round-tripped value. */
+          <input
+            type="hidden"
+            name="model_id"
+            data-model-id-fallback
+            value={currentModelId}
+          />
+        )}
         <label class="settings__toggle">
           <input
             type="checkbox"
