@@ -21,7 +21,7 @@ An hourly global scrape-and-summarise pipeline: one cron-triggered coordinator r
 **Priority:** P0
 **Dependencies:** REQ-PIPE-004
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -43,7 +43,7 @@ An hourly global scrape-and-summarise pipeline: one cron-triggered coordinator r
 **Priority:** P0
 **Dependencies:** REQ-PIPE-001
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -64,7 +64,7 @@ An hourly global scrape-and-summarise pipeline: one cron-triggered coordinator r
 **Priority:** P0
 **Dependencies:** REQ-PIPE-001
 **Verification:** Automated test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -85,7 +85,7 @@ An hourly global scrape-and-summarise pipeline: one cron-triggered coordinator r
 **Priority:** P0
 **Dependencies:** None
 **Verification:** Automated test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -105,7 +105,7 @@ An hourly global scrape-and-summarise pipeline: one cron-triggered coordinator r
 **Priority:** P1
 **Dependencies:** REQ-PIPE-001, REQ-STAR-001
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -116,16 +116,16 @@ An hourly global scrape-and-summarise pipeline: one cron-triggered coordinator r
 **Applies To:** System
 
 **Acceptance Criteria:**
-1. Each run records `started_at`, `finished_at`, `articles_ingested`, `articles_deduped`, `tokens_in`, `tokens_out`, `estimated_cost_usd`, `model_id`, `chunk_count`, and `status`.
-2. The stats widget reads global token and cost totals as sums over the `scrape_runs` table.
-3. The history page reads its per-day aggregates and per-tick expansions from the same table, not from article rows.
-4. Status transitions `running` → `ready` on success, or `running` → `failed` when the run aborts.
+1. Each run records its start time, finish time, articles ingested, articles deduplicated, input and output token counts, estimated cost in USD, model identifier, chunk count, and final status.
+2. The stats widget reads global token and cost totals as sums over the scrape-run aggregation.
+3. The history page reads its per-day aggregates and per-tick expansions from the same aggregation, not from article rows.
+4. Status transitions running → ready on success, or running → failed when the run aborts.
 
 **Constraints:** CON-DATA-001
 **Priority:** P1
 **Dependencies:** REQ-PIPE-001
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 

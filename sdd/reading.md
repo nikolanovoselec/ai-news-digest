@@ -21,7 +21,7 @@ The heart of the product. Overview grid of today's digest, detail view per artic
 **Priority:** P0
 **Dependencies:** REQ-PIPE-001, REQ-SET-002
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -43,7 +43,7 @@ The heart of the product. Overview grid of today's digest, detail view per artic
 **Priority:** P0
 **Dependencies:** REQ-READ-001
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -69,22 +69,26 @@ The heart of the product. Overview grid of today's digest, detail view per artic
 
 ### REQ-READ-004: Live generation state
 
-**Intent:** During a ~60-second generation, users see meaningful progress instead of a blank screen, but the implementation stays as simple as possible.
+Superseded by REQ-PIPE-001 in the 2026-04-23 global-feed rework. The per-user digest-in-progress state no longer exists on the dashboard: the shared article pool is always populated, so `/digest` renders real cards immediately (see REQ-READ-001 AC 3). Polling, skeleton cards, and the in-progress progress bar are removed.
+
+**Intent:** During a ~60-second generation, users saw meaningful progress instead of a blank screen.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. When the current digest has `status='in_progress'`, `/digest` shows an indeterminate progress bar at the top and 10 card skeletons matching the real card dimensions (no layout shift when real cards arrive).
-2. The skeleton shimmer is a 1.4-second linear-gradient sweep, disabled under `prefers-reduced-motion: reduce`.
-3. The client polls `GET /api/digest/:id` every 5 seconds while status is `in_progress`; polling stops immediately on a status change.
-4. On `status='ready'`, the real cards fade in with the staggered entrance from REQ-READ-001.
-5. On `status='failed'`, the failure page for the error code is rendered (see REQ-READ-006).
+1. When the current digest was in progress, `/digest` showed an indeterminate progress bar at the top and 10 card skeletons matching the real card dimensions.
+2. The skeleton shimmer was a linear-gradient sweep, disabled under reduced-motion preferences.
+3. The client polled the digest-by-id endpoint every 5 seconds while generation was active; polling stopped immediately on a status change.
+4. On completion, the real cards faded in with the staggered entrance from REQ-READ-001.
+5. On failure, the failure page for the error code was rendered (see REQ-READ-006).
 
 **Constraints:** CON-A11Y-001
 **Priority:** P0
-**Dependencies:** REQ-READ-001, REQ-GEN-005
+**Dependencies:** REQ-READ-001
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Deprecated
+**Replaced By:** REQ-PIPE-001
+**Removed In:** 2026-04-23
 
 ---
 
@@ -103,7 +107,7 @@ The heart of the product. Overview grid of today's digest, detail view per artic
 **Priority:** P1
 **Dependencies:** REQ-READ-001
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -145,7 +149,7 @@ The heart of the product. Overview grid of today's digest, detail view per artic
 **Priority:** P1
 **Dependencies:** REQ-AUTH-002, REQ-AUTH-003
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -165,7 +169,7 @@ The heart of the product. Overview grid of today's digest, detail view per artic
 **Priority:** P1
 **Dependencies:** REQ-STAR-001
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -184,4 +188,4 @@ The heart of the product. Overview grid of today's digest, detail view per artic
 **Priority:** P2
 **Dependencies:** REQ-STAR-002
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented

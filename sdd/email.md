@@ -21,7 +21,7 @@ Resend-backed notification sent after every successful digest — whether genera
 **Priority:** P1
 **Dependencies:** REQ-PIPE-001, REQ-SET-005
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 

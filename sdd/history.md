@@ -21,7 +21,7 @@ Past digests paginated on `/history`, 30 per page. A four-tile stats widget on `
 **Priority:** P1
 **Dependencies:** REQ-PIPE-006
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -43,4 +43,4 @@ Past digests paginated on `/history`, 30 per page. A four-tile stats widget on `
 **Priority:** P2
 **Dependencies:** REQ-HIST-001, REQ-READ-003, REQ-PIPE-006
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented

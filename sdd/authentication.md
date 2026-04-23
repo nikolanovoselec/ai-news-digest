@@ -21,7 +21,7 @@ GitHub OAuth as the only sign-in method. Stateless HMAC-SHA256 JWT sessions with
 **Priority:** P0
 **Dependencies:** None
 **Verification:** Integration test
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
