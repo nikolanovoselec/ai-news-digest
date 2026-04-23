@@ -4,6 +4,10 @@ Semantic changes to the specification. Git history captures diffs; this file cap
 
 Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verification pass" entries. No spec cleanup or format fixes (those live in git history).
 
+## 2026-04-23
+
+- REQ-GEN-005 (single-call LLM summarization) reshaped to produce richer, deeper digests: up to six articles (down from ten), each with a one-sentence one-liner around 150–200 characters and three paragraph-length detail sections of roughly 200 words each. The model output budget grows accordingly so longer paragraphs are not truncated, and the JSON contract now explicitly accepts already-parsed object payloads alongside strings.
+
 ## 2026-04-22
 
 - REQ-SET-002 (hashtag curation) rewritten: tag editing moves out of the settings form and into an inline strip at the top of the reading surface, with an always-visible remove control per tag and an add affordance that expands inline into an input. Every add or remove persists immediately via a dedicated tags write endpoint — no form submit.

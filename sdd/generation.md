@@ -89,16 +89,16 @@ A single `generateDigest` function called from two places: the cron dispatcher (
 
 ### REQ-GEN-005: Single-call LLM summarization
 
-**Intent:** One Workers AI call ranks candidate headlines and produces the top 10 summaries, keeping generation cheap and deterministic.
+**Intent:** One Workers AI call ranks candidate headlines and produces up to six summaries with a short one-liner and three paragraph-length detail sections each, keeping generation cheap and deterministic.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
 1. After canonicalization and dedupe, up to 300 headlines are sent to Workers AI in a single call using the model stored on the digest row (snapshot of `users.model_id` at creation).
-2. The prompt is loaded from `src/lib/prompts.ts`; user-controlled content (hashtags, headlines) is fenced with triple backticks.
-3. Inference parameters are fixed: `temperature: 0.2`, `max_tokens: 4096`, `response_format: { type: 'json_object' }`.
-4. The response is parsed as strict JSON; on parse failure the digest is marked `status='failed'` with `error_code='llm_invalid_json'`.
-5. The expected shape is `{ articles: [{ title, url, one_liner, details }] }` with `one_liner` ≤120 chars plaintext and `details` an array of exactly 3 plaintext strings.
+2. The prompt is loaded from a centralized prompts module; user-controlled content (hashtags, headlines) is fenced with triple backticks so the model treats it as data, not instructions.
+3. Inference parameters are fixed: `temperature: 0.2`, `max_tokens: 16384`, `response_format: { type: 'json_object' }`, giving headroom for up to six articles with ~200-word detail paragraphs.
+4. The response is parsed as strict JSON. Both string payloads and already-parsed object payloads (returned by models that honour `response_format: json_object`) are accepted; on parse failure the digest is marked `status='failed'` with `error_code='llm_invalid_json'`.
+5. The expected shape is `{ articles: [{ title, url, one_liner, details }] }` with up to 6 articles, `one_liner` a single plaintext sentence targeting 150–200 characters, and `details` an array of exactly 3 plaintext paragraphs each targeting ~200 words (prose only, no bullet prefixes, no lists, no HTML, no Markdown). If fewer than 6 strong matches exist the model returns fewer; if none, an empty `articles: []` array is a valid response.
 
 **Constraints:** CON-LLM-001, CON-SEC-003
 **Priority:** P0
