@@ -19,6 +19,18 @@ Returns the landing page.
 
 **Implements:** [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-github)
 
+### GET /404
+
+Catch-all not-found page. Rendered by Astro for any URL that no route file claims. Carries `noindex=true` so stale bookmarks and mistyped URLs do not contaminate search engine indexes. Presents a calm headline ("Page not found") and a "Back to home" link.
+
+**Implements:** [REQ-READ-006](../sdd/reading.md#req-read-006-empty-error-and-offline-pages) AC 5
+
+### GET /500
+
+Generic server-error fallback. Shown when an uncaught exception bubbles up to Astro's error-page handler. Carries `noindex=true`. Presents "Something went wrong" with a "Back to home" link.
+
+**Implements:** [REQ-READ-006](../sdd/reading.md#req-read-006-empty-error-and-offline-pages) AC 5
+
 ---
 
 ## Authentication
@@ -91,27 +103,37 @@ Session near-expiry triggers a `Set-Cookie` refresh in the same response.
 
 ### GET /api/digest/today
 
-**Response:** `{ digest: DigestRow | null, articles: ArticleRow[], live: bool, next_scheduled_at: int | null }`
+**Response:**
+```json
+{
+  "articles": [
+    {
+      "id": "string",
+      "title": "string",
+      "details": ["string"],
+      "primary_source_name": "string",
+      "primary_source_url": "string",
+      "published_at": "ISO-8601",
+      "tags": ["string"],
+      "alt_source_count": 0,
+      "starred": false,
+      "read": false
+    }
+  ],
+  "last_scrape_run": { "id": "string", "started_at": 0, "finished_at": 0, "status": "ready" } | null,
+  "next_scrape_at": 1234567890 | null
+}
+```
 
-Returns the most recent digest row for this user; `live=true` when `status='in_progress'`; `next_scheduled_at` is the unix ts of the next scheduled run when today's has not yet generated (null when live). The digest row includes `id`, `local_date`, `generated_at`, `execution_ms`, `tokens_in`, `tokens_out`, `estimated_cost_usd`, `model_id`, `status`, `error_code`, `trigger`. Each article row includes `id`, `digest_id`, `slug`, `source_url`, `title`, `one_liner`, `details_json`, `source_name`, `published_at`, `rank`, `read_at`, `tags` (JSON array of the user hashtags this article matched during fan-out — used by the tag-strip filter per [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation) and [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest) AC 7).
+Returns up to 30 articles from the global pool filtered by the session user's active hashtags, ordered by `published_at DESC`. `last_scrape_run` is the most recent completed `scrape_runs` row; `next_scrape_at` is `started_at + 3600` (unix seconds). The pool is always populated — no `live` flag or skeleton state.
 
-**Implements:** [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest), [REQ-READ-005](../sdd/reading.md#req-read-005-pending-today-banner)
+**Implements:** [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest)
 
 ### GET /api/digest/:id
 
-**Response:** Same shape as `/today` for a specific digest. Query is scoped: `SELECT * FROM digests WHERE id = ? AND user_id = :session_user_id` — returns 404 if not found or not owned.
+**Response:** Same article shape as `/today` for a single article by ID. Scoped to articles whose digest belongs to the session user — returns 404 if not found or not owned.
 
-**Implements:** [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest), [REQ-READ-004](../sdd/reading.md#req-read-004-live-generation-state)
-
-### POST /api/digest/refresh
-
-Manual refresh. Rate-limited to once per 30 seconds and 100 per rolling 24h. Runs a conditional INSERT to prevent duplicate in-progress digests.
-
-**Response:** `202 { digest_id, status: 'in_progress' }`
-
-**Error codes:** `rate_limited` (429 with `retry_after_seconds`, `reason: cooldown|daily_cap`), `already_in_progress` (409).
-
-**Implements:** [REQ-GEN-002](../sdd/generation.md#req-gen-002-manual-refresh-with-rate-limiting)
+**Implements:** [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view)
 
 ---
 
@@ -132,6 +154,102 @@ Manual refresh. Rate-limited to once per 30 seconds and 100 per rolling 24h. Run
 Verifies the tag is in the user's `hashtags_json`, clears `sources:{tag}` and `discovery_failures:{tag}` KV entries, inserts a fresh `pending_discoveries` row.
 
 **Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)
+
+---
+
+## Stars
+
+### POST /api/articles/:id/star
+
+Stars an article. Optimistic — the UI flips the icon before the response returns. Protected by the Origin check.
+
+**Response:** `200 { ok: true, starred: true }` | `401 unauthorized` | `403 forbidden_origin` | `404 not_found`
+
+**Implements:** [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles)
+
+### DELETE /api/articles/:id/star
+
+Unstars an article. Same auth and error contract as POST.
+
+**Response:** `200 { ok: true, starred: false }` | `401` | `403` | `404`
+
+**Implements:** [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles)
+
+### GET /api/starred
+
+**Response:** `{ articles: WireArticle[] }` — the session user's starred articles, newest star first, limit 60. Same article shape as `/api/digest/today`.
+
+**Implements:** [REQ-STAR-002](../sdd/reading.md#req-star-002-starred-articles-page)
+
+---
+
+## Tags
+
+### PUT /api/tags
+
+Add or remove a single hashtag from the user's tag list. Persists immediately — no form submit required. Normalises to lowercase, strips `#`, rejects characters outside `[a-z0-9-]`, enforces 2–32 char length and max 20 tags.
+
+**Request:** `{ tag: string, action: "add" | "remove" }`
+
+**Response:** `200 { ok: true, hashtags: string[] }` | `400 invalid_tag` | `400 max_tags_reached` | `401`
+
+**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation)
+
+### POST /api/tags/restore
+
+Replaces the user's hashtag list with the curated default seed from `DEFAULT_HASHTAGS`.
+
+**Response:** `200 { ok: true, hashtags: string[] }` | `401`
+
+**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation) AC 8
+
+---
+
+## Operator Tools
+
+### POST /force-refresh (also GET)
+
+Operator-only endpoint that kicks the hourly global-feed coordinator on demand — identical to what the `0 * * * *` cron fires automatically. Creates a fresh `scrape_runs` row with `status='running'` and sends a `SCRAPE_COORDINATOR` queue message.
+
+**Access control:** Intended to be gated by Cloudflare Access at the zone level. `POST` additionally enforces the standard Origin check ([REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)) as defence-in-depth against CSRF from a logged-in browser session. `GET` is exempt from the Origin check so operators can trigger from a bookmark or `curl`.
+
+**Concurrency guard (120-second reuse window):** Before creating a new run, the handler queries for any `scrape_runs` row with `status='running'` started within the last 120 seconds. If one is found it is reused instead of dispatching a second coordinator. This absorbs double-clicks and link-preview bot refetches. Note: two truly concurrent requests can both pass the SELECT before either INSERT commits — the ULIDs are unique so no PK collision collapses the race; for an operator-only endpoint the tradeoff is acceptable.
+
+**POST response:** `303` redirect to `/settings?force_refresh={ok|reused}&run_id={ulid}`.
+
+**GET response:** `200 { ok: true, scrape_run_id: string, reused: bool }`.
+
+**Error response (both methods):** `500 "Failed to dispatch coordinator"` when the D1 INSERT or queue send throws.
+
+**Implements:** [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) (operator tooling surface), [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-hourly-global-scrape-and-summarise-pipeline)
+
+---
+
+## SEO and Crawler Policy
+
+### GET /sitemap.xml
+
+Dynamic XML sitemap. Lists only the public landing page (`/`). `changefreq=daily`, `priority=1.0`, `lastmod` set to the current date at request time. `Cache-Control: public, max-age=3600`. Referenced from `robots.txt`.
+
+**Implements:** [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) AC 4
+
+### GET /robots.txt
+
+Static file served from `public/robots.txt`. Allows crawlers access to the landing page and public assets; explicitly disallows `/api/`, `/digest`, `/starred`, `/history`, `/settings`. Blocks known AI training user agents (GPTBot, anthropic-ai, ClaudeBot, Google-Extended, CCBot, PerplexityBot) with a blanket `Disallow: /`. References the sitemap URL.
+
+**Implements:** [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) AC 2
+
+### GET /llms.txt
+
+Static machine-readable agents policy (served from `public/llms.txt`). Describes the product, what is public, that every surface beyond the landing page requires a GitHub OAuth session, and an explicit request not to train on content behind the login. Links to the sitemap and `robots.txt`.
+
+**Implements:** [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) AC 3
+
+### GET /llms-full.txt
+
+Extended machine-readable agents policy (`public/llms-full.txt`). Superset of `llms.txt` — adds technology stack detail, storage layer, and GDPR basis for withholding per-user content.
+
+**Implements:** [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) AC 3
 
 ---
 

@@ -34,17 +34,24 @@ Declared in `wrangler.toml`:
 
 | Binding | Type | Purpose |
 |---|---|---|
-| `DB` | D1 database | Primary strongly-consistent store — users, digests, articles, pending_discoveries |
+| `DB` | D1 database | Primary strongly-consistent store — users, articles, scrape_runs, pending_discoveries, stars |
 | `KV` | KV namespace | Edge cache for discovered sources, headlines, source health |
-| `DIGEST_JOBS` | Queue producer | Producer binding used by cron + refresh handler |
-| `AI` | Workers AI | LLM inference for summarization and source discovery |
+| `SCRAPE_COORDINATOR` | Queue producer | Producer binding — one message per hourly cron tick kicks the coordinator |
+| `SCRAPE_CHUNKS` | Queue producer | Producer binding — one message per ~100-candidate LLM chunk |
+| `AI` | Workers AI | LLM inference for chunk summarization and source discovery |
 | `ASSETS` | Fetcher (static assets) | Cloudflare static-asset binding for serving the Astro-built output; falls back to `new Response('news-digest')` in tests |
 
-Queue consumer binding is configured in the `[[queues.consumers]]` section of `wrangler.toml`, consuming from the same `digest-jobs` queue. The consumer runs with `max_batch_size = 1` (one isolate per message) and `max_retries = 3`.
+Both queue consumers run with `max_batch_size = 1` (one isolate per message) and `max_retries = 3`.
 
 ## Cron
 
-`crons = ["*/5 * * * *"]` — every 5 minutes at minute 0, 5, 10, ..., 55 UTC.
+Three triggers are declared in `wrangler.toml`:
+
+| Schedule | Purpose |
+|---|---|
+| `0 * * * *` | Hourly global-feed coordinator — fires the scrape pipeline ([REQ-PIPE-001](../sdd/generation.md#req-pipe-001-hourly-global-scrape-and-summarise-pipeline)) |
+| `0 3 * * *` | Daily retention cleanup — removes articles older than 7 days ([REQ-PIPE-005](../sdd/generation.md#req-pipe-005-seven-day-retention-with-starred-exempt-cleanup)) |
+| `*/5 * * * *` | Every-5-minute tick — email dispatcher and discovery drain ([REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email), [REQ-DISC-003](../sdd/discovery.md#req-disc-003-feed-health-tracking-and-auto-eviction)) |
 
 ## Compatibility
 

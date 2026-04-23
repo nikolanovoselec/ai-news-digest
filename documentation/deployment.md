@@ -66,9 +66,10 @@ Or via GitHub Actions (`.github/workflows/deploy.yml`), which:
 
 | Resource | Type | Name | Purpose |
 |---|---|---|---|
-| `DB` | D1 database | `news-digest` | Primary store |
-| `KV` | KV namespace | `news-digest-kv` | Caches |
-| `DIGEST_JOBS` | Queue | `digest-jobs` | Scheduled + manual digest generation |
+| `DB` | D1 database | `ai-news-digest` | Primary store |
+| `KV` | KV namespace | `news-digest-kv` | Caches (headlines, sources, health) |
+| `SCRAPE_COORDINATOR` | Queue | `scrape-coordinator` | Hourly coordinator dispatch |
+| `SCRAPE_CHUNKS` | Queue | `scrape-chunks` | LLM chunk jobs |
 | `AI` | Workers AI | (account-level) | LLM inference |
 
 ## Resend domain verification

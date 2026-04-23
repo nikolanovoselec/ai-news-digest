@@ -8,7 +8,9 @@ System overview, component map, and data flow.
 
 ## Overview
 
-news-digest is a single Cloudflare Worker serving an Astro-rendered app. Every 5 minutes, a Cron Trigger runs a stuck-digest sweeper, processes up to 3 pending source-discovery tasks, and enqueues scheduled digest-generation jobs to a Cloudflare Queue. The queue consumer runs the same `generateDigest` function that powers manual refreshes. See [`sdd/README.md`](../sdd/README.md) for product intent.
+news-digest is a single Cloudflare Worker serving an Astro-rendered app. Every hour, a Cron Trigger fires the global-feed coordinator: it fans out 50+ curated RSS/Atom/JSON sources, canonical-URL-deduplicates candidates, and enqueues chunked LLM summarization jobs to a Cloudflare Queue. Chunk consumers write articles to a shared D1 pool. Per-user dashboards read from that pool filtered by the user's active hashtags — no per-user LLM calls. A daily cron at 03:00 UTC purges articles older than 7 days (starred articles are exempt). See [`sdd/README.md`](../sdd/README.md) for product intent.
+
+Implements [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-hourly-global-scrape-and-summarise-pipeline).
 
 ## Components
 
@@ -42,7 +44,7 @@ news-digest is a single Cloudflare Worker serving an Astro-rendered app. Every 5
 | `src/lib/db.ts` | D1 wrapper with `PRAGMA foreign_keys=ON`, prepared statements, `batch()` helper | (shared, not REQ-specific) |
 | `src/lib/email.ts` | Resend client; `sendDigestEmail()`, `renderDigestEmailHtml()`, `renderDigestEmailText()` — best-effort, never re-throws | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email), [REQ-MAIL-002](../sdd/email.md#req-mail-002-email-failure-handling) |
 | `src/lib/errors.ts` | Closed `ErrorCode` enum + `USER_FACING_MESSAGES` map + `errorResponse()` builder — ensures every API error carries a sanitized code and generic message | [REQ-OPS-002](../sdd/observability.md#req-ops-002-sanitized-error-surfaces) |
-| `src/lib/generate.ts` | The single `generateDigest(env, user, trigger, digestId?)` function — claims the digest row, fans out sources, runs one LLM call, writes articles atomically, sends email. LLM response parsing accepts both a raw string and an already-parsed object; `@cf/openai/*` models return a full OpenAI chat-completion envelope (`{ choices: [{ message: { content } }] }`) that is unwrapped automatically. If the user's stored `model_id` is not in `MODELS` (retired model), generation falls back to `DEFAULT_MODEL_ID` | [REQ-GEN-001](../sdd/generation.md#req-gen-001-scheduled-generation-via-cron-dispatcher), [REQ-GEN-002](../sdd/generation.md#req-gen-002-manual-refresh-with-rate-limiting), [REQ-GEN-003](../sdd/generation.md#req-gen-003-source-fan-out-with-caching), [REQ-GEN-004](../sdd/generation.md#req-gen-004-article-deduplication), [REQ-GEN-005](../sdd/generation.md#req-gen-005-single-call-llm-summarization), [REQ-GEN-006](../sdd/generation.md#req-gen-006-article-slugs-and-ulids), [REQ-GEN-008](../sdd/generation.md#req-gen-008-cost-transparency-footer) |
+| `src/lib/generate.ts` | LLM response helpers for the global-feed pipeline — `extractResponsePayload()` resolves both flat (`{ response }`) and OpenAI-envelope (`{ choices[0].message.content }`) shapes; `parseLLMPayload()` strips fences, extracts the first brace-balanced object, and validates structure. The per-user `generateDigest` function was retired in the 2026-04-23 global-feed rework. | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract) |
 | `src/lib/headline-cache.ts` | KV-backed 10-minute shared cache for per-source/per-tag headline fetches; key `headlines:{source}:{tag}`, TTL 600 s | [REQ-GEN-003](../sdd/generation.md#req-gen-003-source-fan-out-with-caching) |
 | `src/lib/log.ts` | `log(level, event, fields)` — emits `JSON.stringify({ ts, level, event, ...fields })` to `console.log`; `LogEvent` is a closed enum preventing log injection | [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-logging) |
 | `src/lib/default-hashtags.ts` | `DEFAULT_HASHTAGS` seed list (12 technology tags used for brand-new accounts) + `RESTORE_DEFAULTS_LABEL` constant shared by the UI button and tests | [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation) |
@@ -51,7 +53,10 @@ news-digest is a single Cloudflare Worker serving an Astro-rendered app. Every 5
 | `src/lib/prompts.ts` | `DIGEST_SYSTEM`, `DISCOVERY_SYSTEM`, prompt builders, `LLM_PARAMS` | [REQ-GEN-005](../sdd/generation.md#req-gen-005-single-call-llm-summarization), [REQ-DISC-001](../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery) |
 | `src/lib/session-jwt.ts` | HMAC-SHA256 sign/verify for session cookies; `shouldRefreshJWT()` for near-expiry detection | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-session-cookie-and-instant-revocation) |
 | `src/lib/slug.ts` | `slugify(title)` + `deduplicateSlug(slug, existing)` — deterministic ASCII slug generation with collision suffix | [REQ-GEN-006](../sdd/generation.md#req-gen-006-article-slugs-and-ulids) |
-| `src/lib/sources.ts` | Generic source adapters + discovered-feed fetcher; `fanOutForTags()` + `adaptersForDiscoveredFeeds()` | [REQ-GEN-003](../sdd/generation.md#req-gen-003-source-fan-out-with-caching), [REQ-DISC-001](../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery) |
+| `src/lib/sources.ts` | Source adapters (RSS/Atom, JSON) and the fan-out coordinator — fetches every `{tag × curated-source}` pair through a semaphore-capped concurrency of 10; per-source failures are logged via `source.fetch.failed` and never propagate so a single flaky source cannot abort the entire run | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-hourly-global-scrape-and-summarise-pipeline), [REQ-DISC-001](../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery) |
+| `src/lib/curated-sources.ts` | Registry of 50+ curated sources; each entry declares slug, name, feed URL, feed kind, and at least one system tag | [REQ-PIPE-004](../sdd/generation.md#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-20-system-tags) |
+| `src/lib/dedupe.ts` | Canonical-URL + LLM-cluster deduplication — merges `dedup_groups` hints from the LLM payload with URL equality; first-source-wins within each cluster | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-canonical-url-llm-cluster-dedupe-with-first-source-wins) |
+| `src/lib/scrape-run.ts` | `startRun()`, `finishRun()` — D1 helpers for the `scrape_runs` lifecycle (`running` → `ready` or `failed`) | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-hourly-global-scrape-and-summarise-pipeline), [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-and-history) |
 | `src/lib/ssrf.ts` | `isUrlSafe(url)` — SSRF filter for LLM-suggested URLs; rejects non-HTTPS, private IPv4/IPv6 ranges, loopback, CGNAT, metadata hosts | [REQ-DISC-005](../sdd/discovery.md#req-disc-005-ssrf-protection-for-feed-validation), [REQ-GEN-003](../sdd/generation.md#req-gen-003-source-fan-out-with-caching) |
 | `src/lib/types.ts` | Shared cross-module types: `AuthenticatedUser`, `Headline`, `GeneratedArticle`, `DiscoveredFeed`, `SourcesCacheValue` | (shared, not REQ-specific) |
 | `src/lib/tz.ts` | `localDateInTz()`, `localHourMinuteInTz()` — IANA timezone helpers via `Intl.DateTimeFormat`; `DEFAULT_TZ`, `isValidTz()` | [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-GEN-001](../sdd/generation.md#req-gen-001-scheduled-generation-via-cron-dispatcher) |
@@ -75,42 +80,44 @@ news-digest is a single Cloudflare Worker serving an Astro-rendered app. Every 5
 | `src/pages/api/stats.ts` | `GET /api/stats` — four user-scoped aggregates (digests, articles read/total, tokens, cost) via parallel D1 queries | [REQ-HIST-002](../sdd/history.md#req-hist-002-user-stats-widget) |
 | `src/pages/api/discovery/status.ts` | `GET /api/discovery/status` — pending discovery tags for the session user | [REQ-DISC-002](../sdd/discovery.md#req-disc-002-discovery-progress-visibility) |
 | `src/pages/api/discovery/retry.ts` | `POST /api/discovery/retry` — clears `sources:{tag}` and `discovery_failures:{tag}` KV, re-queues in `pending_discoveries` | [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover) |
+| `src/pages/api/articles/[id]/star.ts` | `POST /api/articles/:id/star` + `DELETE /api/articles/:id/star` — star and unstar; user-scoped; protected by Origin check | [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles) |
+| `src/pages/api/starred.ts` | `GET /api/starred` — list the session user's starred articles, newest star first; limit 60 | [REQ-STAR-002](../sdd/reading.md#req-star-002-starred-articles-page) |
+| `src/pages/api/tags.ts` | `PUT /api/tags` — add or remove a single hashtag from the user's tag list; persists immediately (no form submit); normalises to lowercase, strips `#`, rejects invalid chars | [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation) |
+| `src/pages/api/tags/restore.ts` | `POST /api/tags/restore` — replaces the user's hashtag list with the default seed from `DEFAULT_HASHTAGS` | [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation) |
 
 ### Pages
 
 | Path | Responsibility | Implements |
 |---|---|---|
-| `src/pages/digest.astro` | `/digest` overview grid — fetches `GET /api/digest/today`, renders `DigestCard` grid or `LoadingSkeleton` when `live=true`, shows `PendingBanner` when `next_scheduled_at` is set | [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest), [REQ-READ-004](../sdd/reading.md#req-read-004-live-generation-state), [REQ-READ-005](../sdd/reading.md#req-read-005-pending-today-banner) |
-| `src/pages/digest/[id]/` | Article detail page — renders full article with `transition:name` matching `DigestCard` for shared-element morph; marks `read_at` via `PATCH /api/digest/:id/:slug` | [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-page), [REQ-READ-003](../sdd/reading.md#req-read-003-read-state-tracking) |
-| `src/pages/digest/failed.astro` | Error page shown when digest `status='failed'` — surfaces the `error_code`; the Try-again button shows inline status (cooldown remaining, daily cap reached, or network error) without navigating away; on 202/409 it navigates to `/digest` to resume polling. The retry handler is bound three ways (document capture, document bubble, direct button) to guarantee at least one fires after View Transitions | [REQ-READ-004](../sdd/reading.md#req-read-004-live-generation-state), [REQ-READ-006](../sdd/reading.md#req-read-006-manual-refresh-ui) |
-| `src/pages/digest/no-stories.astro` | Empty-state page shown when the digest completed with zero articles | [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest) |
+| `src/pages/digest.astro` | `/digest` overview grid — queries the shared article pool filtered by the user's active tags; renders `DigestCard` grid, inline tag-filter strip, and "Last updated / Next update" countdown header | [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest), [REQ-READ-005](../sdd/reading.md#req-read-005-empty-dashboard-state) |
+| `src/pages/digest/[id]/[slug].astro` | Article detail page — renders full article with `transition:name` matching `DigestCard` for shared-element morph; marks `read_at` on first load | [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view), [REQ-READ-003](../sdd/reading.md#req-read-003-read-tracking) |
+| `src/pages/404.astro` | Catch-all not-found page — `noindex=true`; calm headline and "Back to home" link | [REQ-READ-006](../sdd/reading.md#req-read-006-empty-error-and-offline-pages) |
+| `src/pages/500.astro` | Generic server-error fallback — `noindex=true`; shown when an uncaught exception reaches Astro's error handler | [REQ-READ-006](../sdd/reading.md#req-read-006-empty-error-and-offline-pages) |
+| `src/pages/starred.astro` | `/starred` — card grid scoped to articles the session user has starred, ordered by star time descending | [REQ-STAR-002](../sdd/reading.md#req-star-002-starred-articles-page) |
 | `src/pages/history.astro` | `/history` — calls the `GET /api/history?offset=0` handler in-process (no subrequest), renders paginated digest rows; "Load more" button appends further pages via client-side fetch | [REQ-HIST-001](../sdd/history.md#req-hist-001-paginated-past-digests) |
-| `src/pages/settings.astro` | `/settings` — unified first-run and edit flow; includes `StatsWidget`, `HashtagChip`, `ModelSelect` | [REQ-SET-001](../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow) |
+| `src/pages/settings.astro` | `/settings` — unified first-run and edit flow; includes `StatsWidget`, `HashtagChip`, `ModelSelect`; exposes "Force refresh" button for operators | [REQ-SET-001](../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow) |
+| `src/pages/force-refresh.ts` | `POST /force-refresh` + `GET /force-refresh` — operator-only endpoint that kicks the hourly global-feed coordinator on demand; 120-second reuse window prevents duplicate runs | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-hourly-global-scrape-and-summarise-pipeline), [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) |
+| `src/pages/sitemap.xml.ts` | `GET /sitemap.xml` — dynamic XML sitemap; lists only the public landing page | [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) |
 | `src/pages/offline.astro` | Service-worker fallback page served from Cache Storage when the network is unavailable | [REQ-PWA-002](../sdd/pwa.md#req-pwa-002-offline-reading-of-the-last-digest) |
-| `src/pages/rate-limited.astro` | User-facing rate-limited error page shown when `POST /api/digest/refresh` returns 429 | [REQ-GEN-002](../sdd/generation.md#req-gen-002-manual-refresh-with-rate-limiting), [REQ-READ-006](../sdd/reading.md#req-read-006-manual-refresh-ui) |
-| `src/layouts/Base.astro` | Root HTML shell — manifest link, Apple PWA meta tags, `defer`-loaded `theme-init.js`, View Transitions (`ClientRouter`), `ThemeToggle` in header | [REQ-DES-001](../sdd/design.md#req-des-001-swiss-minimal-visual-language), [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash), [REQ-DES-003](../sdd/design.md#req-des-003-deliberate-motion-system), [REQ-PWA-001](../sdd/pwa.md#req-pwa-001-installable-pwa-manifest), [REQ-PWA-003](../sdd/pwa.md#req-pwa-003-mobile-first-responsive-layout) |
+| `src/pages/rate-limited.astro` | User-facing rate-limited error page shown when `POST /api/digest/refresh` returns 429 | [REQ-READ-006](../sdd/reading.md#req-read-006-empty-error-and-offline-pages) |
+| `src/layouts/Base.astro` | Root HTML shell — manifest link, Apple PWA meta tags, `defer`-loaded `theme-init.js`, View Transitions (`ClientRouter`); landing page carries title, description, canonical, and Open Graph metadata | [REQ-DES-001](../sdd/design.md#req-des-001-swiss-minimal-visual-language), [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash), [REQ-DES-003](../sdd/design.md#req-des-003-deliberate-motion-system), [REQ-PWA-001](../sdd/pwa.md#req-pwa-001-installable-pwa-manifest), [REQ-PWA-003](../sdd/pwa.md#req-pwa-003-mobile-first-responsive-layout), [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) |
 
 ### Components
 
 | Path | Responsibility | Implements |
 |---|---|---|
-| `src/components/ThemeToggle.astro` | Header button with sun/moon icons; wires `initThemeToggle` click handler; `data-theme-toggle` attribute for re-wiring after View Transitions | [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash) |
-| `src/components/BottomNav.astro` | Fixed bottom tab bar (Digest, History, Settings) visible below 768 px; `env(safe-area-inset-bottom)` padding; hides at ≥1024 px | [REQ-PWA-003](../sdd/pwa.md#req-pwa-003-mobile-first-responsive-layout) |
-| `src/components/Sidebar.astro` | Left sidebar (Digest, History, Settings + logout form) visible at ≥1024 px; `env(safe-area-inset-top/bottom)` padding | [REQ-PWA-003](../sdd/pwa.md#req-pwa-003-mobile-first-responsive-layout) |
+| `src/components/ThemeToggle.astro` | Theme-switch button with sun/moon icons inside the user menu; wires `initThemeToggle` click handler; `data-theme-toggle` attribute for re-wiring after View Transitions | [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash) |
+| `src/components/UserMenu.astro` | Avatar-triggered dropdown in the header — contains theme toggle, History, Settings, Starred, and Log out entries; consolidates all navigation into the header on every viewport | [REQ-PWA-003](../sdd/pwa.md#req-pwa-003-mobile-first-responsive-layout) |
 | `src/components/InstallPrompt.astro` | Cross-platform install prompt — defers `beforeinstallprompt` on Android/Chrome; renders one-time iOS share-icon note via UA sniff; hidden when already in standalone mode | [REQ-PWA-001](../sdd/pwa.md#req-pwa-001-installable-pwa-manifest) |
-| `src/components/DigestCard.astro` | Article card for the digest grid — title, 120-character one-liner summary, source badge; carries `transition:name` for shared-element morph into the detail page; stagger animation (40 ms/card, capped at 10); hashtag-glyph affordance opens a 5-second auto-dismissing popover listing the article's stored tags | [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest), [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-page) |
-| `src/components/LoadingSkeleton.astro` | Single skeleton card matching `DigestCard` dimensions with 1.4 s shimmer; disabled under `prefers-reduced-motion` | [REQ-READ-004](../sdd/reading.md#req-read-004-live-generation-state) |
-| `src/components/CostFooter.astro` | Digest footer: "Generated HH:MM TZ · Xs · N tokens · ~$C · model_name"; supports `estimated` flag that prefixes `~` to token count and cost | [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest), [REQ-GEN-008](../sdd/generation.md#req-gen-008-cost-transparency-footer) |
-| `src/components/PendingBanner.astro` | Scheduled-digest countdown banner — "Next digest at HH:MM — in Xh Ym"; live client-side tick every 60 s via `data-next-at` unix ts | [REQ-READ-005](../sdd/reading.md#req-read-005-pending-today-banner) |
+| `src/components/DigestCard.astro` | Article card for the digest grid — title, one-liner summary, source badge, star toggle; carries `transition:name` for shared-element morph into the detail page; stagger animation | [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest), [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view), [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles) |
+| `src/components/AltSourcesModal.astro` | Modal that lists every source (primary + alternatives) for a multi-source article; closes on Escape and backdrop click | [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view) |
 | `src/components/StatsWidget.astro` | Four-tile stats widget (digests generated, articles read/total, tokens consumed, cost to date); calls the `GET /api/stats` handler in-process (no subrequest) on every page load | [REQ-HIST-002](../sdd/history.md#req-hist-002-user-stats-widget) |
-| `src/components/HashtagChip.astro` | Selectable hashtag toggle chip for the settings form; state carried in `aria-pressed` + `data-selected` | [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation) |
 | `src/components/ModelSelect.astro` | `<select>` dropdown populated from the `MODELS` catalog; groups options by category using `<optgroup>`; shows per-model cost estimate | [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection) |
 
 ### Client Scripts
 
 | Path | Responsibility | Implements |
 |---|---|---|
-| `src/scripts/digest-poll.ts` | 5 s polling loop for `GET /api/digest/:id`; stops when `status != 'in_progress'`; triggers `astro:page-load` navigation on `ready` | [REQ-READ-004](../sdd/reading.md#req-read-004-live-generation-state) |
 | `src/scripts/theme-toggle.ts` | `initThemeToggle` — reads/writes `localStorage.theme`, toggles `data-theme` on `<html>`, re-wires on View Transitions | [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash) |
 
 ### Styles and Static Assets
@@ -120,14 +127,21 @@ news-digest is a single Cloudflare Worker serving an Astro-rendered app. Every 5
 | `src/styles/global.css` | CSS custom properties for color tokens (`--bg`, `--surface`, `--text`, `--text-muted`, `--border`, `--accent`) per theme; type scale; focus ring; motion system (`--ease`, `--duration-fast/normal/slow`); safe-area utilities; tap-highlight disable | [REQ-DES-001](../sdd/design.md#req-des-001-swiss-minimal-visual-language), [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash), [REQ-DES-003](../sdd/design.md#req-des-003-deliberate-motion-system), [REQ-PWA-003](../sdd/pwa.md#req-pwa-003-mobile-first-responsive-layout) |
 | `public/theme-init.js` | IIFE loaded with `defer` before CSS — reads `localStorage.theme`, falls back to `prefers-color-scheme`, sets `document.documentElement.dataset.theme`; also triggers `caches.delete('digest-cache-v1')` on `?logged_out=1` | [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash), [REQ-PWA-002](../sdd/pwa.md#req-pwa-002-offline-reading-of-the-last-digest) |
 | `public/manifest.webmanifest` | Web app manifest with `name`, `short_name`, `description`, `start_url=/digest`, `display=standalone`, `theme_color`, `background_color`, and two SVG icon entries (`/icons/app-icon.svg`, `sizes="any"`, one with `purpose: "any"` and one with `purpose: "maskable"`) | [REQ-PWA-001](../sdd/pwa.md#req-pwa-001-installable-pwa-manifest) |
+| `public/robots.txt` | Crawler policy — allows only the landing page and public assets; blocks AI training crawlers; references the sitemap | [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) |
+| `public/llms.txt` | Machine-readable agents policy — describes the product, what is public, and requests that agents not train on content behind the login | [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) |
+| `public/llms-full.txt` | Extended agents policy with technology stack and GDPR basis detail | [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) |
+| `public/swiss-post.svg` | Swiss Post sponsor logo; displayed on the landing page | — |
+| `public/scramble.js` | Text scramble animation script used on the landing page hero | — |
 | `migrations/0001_initial.sql` | D1 schema (users, digests, articles, pending_discoveries) | (foundational) |
 
 ### Worker Entry and Queue
 
 | Path | Responsibility | Implements |
 |---|---|---|
-| `src/worker.ts` | Cron + queue handlers (source for post-build bundle) | [REQ-GEN-001](../sdd/generation.md#req-gen-001-scheduled-generation-via-cron-dispatcher), [REQ-GEN-007](../sdd/generation.md#req-gen-007-stuck-digest-sweeper) |
-| `src/queue/digest-consumer.ts` | Queue handler that invokes `generateDigest` | [REQ-GEN-001](../sdd/generation.md#req-gen-001-scheduled-generation-via-cron-dispatcher), [REQ-GEN-002](../sdd/generation.md#req-gen-002-manual-refresh-with-rate-limiting) |
+| `src/worker.ts` | Cron + queue dispatch entry (source for post-build bundle) — hourly tick fires the scrape coordinator; daily tick fires the 7-day retention cleanup | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-hourly-global-scrape-and-summarise-pipeline), [REQ-PIPE-005](../sdd/generation.md#req-pipe-005-seven-day-retention-with-starred-exempt-cleanup) |
+| `src/queue/scrape-coordinator.ts` | Queue consumer for `SCRAPE_COORDINATOR` messages — fans out sources, chunks candidates, enqueues `SCRAPE_CHUNK` messages for LLM processing | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-hourly-global-scrape-and-summarise-pipeline), [REQ-PIPE-004](../sdd/generation.md#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-20-system-tags) |
+| `src/queue/scrape-chunk-consumer.ts` | Queue consumer for `SCRAPE_CHUNK` messages — runs one LLM call per chunk, deduplicates, writes articles to D1; per-chunk failure only marks that chunk failed, other chunks in the same tick still persist | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract), [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-canonical-url-llm-cluster-dedupe-with-first-source-wins) |
+| `src/queue/cleanup.ts` | Queue consumer for the daily 7-day retention sweep — deletes unstarred articles older than 7 days with FK-cascade cleanup of alternative sources, tag rows, and read-tracking rows | [REQ-PIPE-005](../sdd/generation.md#req-pipe-005-seven-day-retention-with-starred-exempt-cleanup) |
 | `scripts/merge-worker-handlers.mjs` | Post-build esbuild shim — bundles `src/worker.ts` then writes `dist/_worker.js/_merged.mjs`, which re-exports Astro's `fetch` handler alongside the `scheduled` and `queue` exports; this file is what `wrangler.toml main` points at | (build tooling) |
 | `dist/_worker.js/_merged.mjs` | Generated wrangler entry (`main` in `wrangler.toml`); auto-generated, not committed | (build artifact) |
 
@@ -135,38 +149,51 @@ news-digest is a single Cloudflare Worker serving an Astro-rendered app. Every 5
 
 ## Request Lifecycle
 
-### Scheduled digest generation
+### Hourly global-feed pipeline
+
+Implements [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-hourly-global-scrape-and-summarise-pipeline), [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract).
 
 ```
-Cron fires (every 5 min)
-  → stuck-digest sweeper (UPDATE digests WHERE generated_at < now-600)
-  → discovery processor (up to 3 pending tags)
-  → scheduling pass (for each tz, find due users)
-  → enqueue to digest-jobs queue (sendBatch)
-Queue consumer (up to 10 concurrent isolates)
-  → generateDigest(user, 'scheduled')
-  → fan out to generic sources + discovered feeds (cached via headlines:*:* KV)
-  → single Workers AI call
-  → db.batch([articles, digest status, user last_generated_local_date])
-  → if email_enabled: Resend POST (non-blocking)
+Cron fires (every hour, on the hour)
+  → SCRAPE_COORDINATOR queue message sent
+Coordinator consumer
+  → fans out all {tag × curated-source} pairs (concurrency cap: 10)
+  → per-source fetch failure logged; never propagates (resilient fan-out)
+  → canonical-URL deduplication across all candidates
+  → chunks ~100 candidates → enqueues one SCRAPE_CHUNK message per chunk
+Chunk consumer (per chunk, isolated)
+  → single Workers AI call (JSON output)
+  → LLM-cluster + canonical-URL dedupe (first-source-wins)
+  → db.batch([articles, alternative_sources, tags, scrape_run counters])
+  → chunk failure marks only that chunk failed; other chunks persist
 ```
 
-### Manual refresh
+### Operator force-refresh
 
 ```
-Browser → POST /api/digest/refresh
-  → atomic UPDATE users (rate-limit check)
-  → conditional INSERT digests (409 if in-progress exists)
-  → enqueue to digest-jobs queue
-  → return 202 { digest_id }
-Browser polls GET /api/digest/:id every 5s until status != 'in_progress'
+Operator → POST /force-refresh (or GET /force-refresh)
+  → checks scrape_runs for any 'running' row < 120 s old
+  → if found: reuse that run_id (no second coordinator dispatched)
+  → if not found: INSERT scrape_runs row, send SCRAPE_COORDINATOR message
+  → POST: 303 → /settings?force_refresh={ok|reused}&run_id={ulid}
+  → GET:  200 { ok, scrape_run_id, reused }
+```
+
+### Daily retention cleanup
+
+```
+Cron fires (daily at 03:00 UTC)
+  → DELETE articles WHERE published_at < now-7d AND NOT starred by any user
+  → FK cascade removes alternative sources, tag rows, read-tracking rows
 ```
 
 ## Data Flow
 
-Users are the single top-level entity. Every digest belongs to a user; every article belongs to a digest. Foreign keys cascade on delete. Pending discoveries are per-user rows but discovery results (sources per tag) are globally shared in KV so multiple users benefit from a single discovery run.
+Articles are the central entity in the global pool. Each article belongs to a `scrape_runs` tick, not a user. Users read from the pool by filtering on their active hashtags. Foreign keys cascade on delete. Starred articles are user-scoped and exempt from the 7-day cleanup.
 
-Headlines cache (`headlines:{source}:{tag}`) is shared globally with a 10-minute TTL, which is why thundering herds at 08:00 local do not hammer upstream sources.
+Pending discoveries are per-user rows but discovery results (`sources:{tag}` KV) are globally shared so multiple users benefit from a single discovery run.
+
+Implements [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-hourly-global-scrape-and-summarise-pipeline), [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest).
 
 ---
 
