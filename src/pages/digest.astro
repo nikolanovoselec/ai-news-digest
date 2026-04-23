@@ -603,7 +603,10 @@ const sortedUserTags = [...userTags].sort((a, b) => {
 
   /* Visually-hidden h1 for screen readers + skip-to-heading keyboard
      nav. Standard "sr-only" utility pattern: clipped to 1×1 but
-     still in the accessibility tree. */
+     still in the accessibility tree. Uses BOTH the deprecated `clip`
+     (legacy browsers) and `clip-path: inset(50%)` (modern) — the
+     belt-and-suspenders combo every WAI-ARIA authoring-practices
+     doc recommends, and what Bootstrap / Tailwind ship. */
   .digest-page__a11y-title {
     position: absolute;
     width: 1px;
@@ -612,6 +615,7 @@ const sortedUserTags = [...userTags].sort((a, b) => {
     margin: -1px;
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
   }
