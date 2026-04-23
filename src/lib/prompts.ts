@@ -18,15 +18,15 @@
 /**
  * Shared inference parameters for every Workers AI call.
  * - `temperature: 0.2` — summaries should be consistent, not creative.
- * - `max_tokens: 50000` — generous ceiling for up to 6 articles with
- *   ~200-char one-liners and 3× ~200-word detail paragraphs. The
- *   llama-3.3-70b default has a 128K context so 8K input + 50K output
- *   fits comfortably.
+ * - `max_tokens: 100000` — budget for ~100 articles per chunk at
+ *   400–500 words each (~700 tokens/article → ~70K total). Input side
+ *   is ~8K tokens for the prompt + candidate list, so 100K out plus
+ *   8K in stays under the gpt-oss-120b 128K context ceiling.
  * - `response_format` — force JSON output on models that support it.
  */
 export const LLM_PARAMS = {
   temperature: 0.2,
-  max_tokens: 50_000,
+  max_tokens: 100_000,
   response_format: { type: 'json_object' },
 } as const;
 
@@ -58,7 +58,7 @@ The object shape is always:
 Content rules:
 - "articles" MUST contain exactly one entry per input candidate, in the SAME ORDER as the input. The candidate at index N becomes articles[N]. Never reorder, never skip, never insert — use an empty-tags entry if a candidate is unusable and rely on dedup_groups to merge duplicates.
 - "title" MUST be a punchy New-York-Times-style headline you have written — concrete, specific, active voice, roughly 45–80 characters, plaintext only. Do NOT copy the source headline verbatim when it reads like a press-release or feed title.
-- "details" is a plaintext long-form body of 1–3 paragraphs, each paragraph roughly 40–300 characters, separated by a single newline. No Markdown, no HTML, no bullet prefixes.
+- "details" is a plaintext long-form body of 3–5 paragraphs totalling roughly 400–500 words (~2000–2800 characters). Each paragraph is 2–4 sentences separated by a single newline. Cover what happened, who is involved, the technical substance (not just the headline framing), the practical impact or what changes for the reader, and any notable caveats or open questions. No Markdown, no HTML, no bullet prefixes.
 - "tags" MUST be chosen ONLY from the tag allowlist in the user message. Do NOT invent tags. Do NOT include any tag that is not in the allowlist.
 - MULTI-TAG RULE: return EVERY allowlist tag the article genuinely touches — topic tags AND vendor/platform tags AND language tags. Do NOT return just the single "primary" tag. The source organisation and every technology mentioned in the title or snippet are both signals. Examples of REQUIRED multi-tagging when the allowlist contains these terms:
   - "Cloudflare's use of Rust in the Workers runtime" → ["cloudflare", "workers", "rust"] (NOT just ["rust"])

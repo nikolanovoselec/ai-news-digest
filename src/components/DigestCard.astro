@@ -227,12 +227,19 @@ const displaySourceName = resolveDisplaySource();
   /* Footer is a sibling of the anchor (kept OUTSIDE so its <button>s
      receive mobile touch events natively). It pins to the card's
      bottom via the card being flex-column with footer as the last
-     child; the anchor's flex:1 consumes the remaining height. */
+     child; the anchor's flex:1 consumes the remaining height.
+     position:relative + z-index:1 guarantees the footer stacks above
+     the sibling anchor on every engine — some mobile browsers paint
+     later-DOM-order flex siblings underneath earlier ones when both
+     are flex items and positions implicit; the explicit z-index
+     removes that ambiguity. */
   .digest-card__footer {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     padding: 0 1.25rem 1.1rem;
+    position: relative;
+    z-index: 1;
   }
   .digest-card__footer-left,
   .digest-card__footer-right {
@@ -273,6 +280,10 @@ const displaySourceName = resolveDisplaySource();
     opacity: 0.65;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+    /* Tell mobile browsers this is a single-tap target, not a
+       scroll/pinch target — prevents the 300ms delay that can
+       eat first-taps on some mobile engines. */
+    touch-action: manipulation;
     transition: color 150ms var(--ease, ease), opacity 150ms var(--ease, ease);
   }
   .digest-card__star:hover {
@@ -356,6 +367,9 @@ const displaySourceName = resolveDisplaySource();
     line-height: 1;
     opacity: 0.65;
     user-select: none;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
     transition: opacity 150ms ease, color 150ms ease;
   }
   .digest-card__tag-trigger:hover {
