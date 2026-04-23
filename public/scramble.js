@@ -7,6 +7,10 @@
   var activeInterval = null;
 
   function initFooterScramble() {
+    // Targets are the .live layer of the ghost+live pair. The .ghost
+    // carries the real text that reserves layout width; the .live
+    // layer is absolute-positioned and paints the scramble without
+    // affecting the footer's flow.
     var elements = document.querySelectorAll('.js-scramble-target');
     if (elements.length === 0) return;
 

@@ -196,7 +196,7 @@ const initialTheme = cookieTheme ?? 'light';
 
     <footer class="site-footer safe-x" aria-label="Site footer">
       <p class="site-footer__copy">
-        Built with <a class="site-footer__link" href="https://codeflare.ch/" target="_blank" rel="noopener noreferrer"><span class="site-footer__scramble js-scramble-target" aria-label="Codeflare">Codeflare</span></a> © 2026 <a class="site-footer__link" href="https://graymatter.ch" target="_blank" rel="noopener noreferrer">Gray Matter GmbH</a>
+        Built with <a class="site-footer__link" href="https://codeflare.ch/" target="_blank" rel="noopener noreferrer"><span class="site-footer__scramble" aria-label="Codeflare"><span class="site-footer__scramble-ghost" aria-hidden="true">Codeflare</span><span class="site-footer__scramble-live js-scramble-target" aria-hidden="true">Codeflare</span></span></a> · © 2026 <a class="site-footer__link" href="https://graymatter.ch" target="_blank" rel="noopener noreferrer">Gray Matter GmbH</a>
       </p>
     </footer>
 
@@ -288,26 +288,40 @@ const initialTheme = cookieTheme ?? 'light';
       .site-footer__copy {
         margin: 0;
       }
-      /* Scramble-target sits inside a link. The scramble rotates
-         through proportional chars (W vs i vs *) that have very
-         different widths — in a flowing line this would shove the
-         surrounding text back and forth every 50ms, making the whole
-         footer flicker. Fix:
-           1. inline-block with a fixed `ch`-based width — each glyph
-              position gets the same horizontal slot regardless of
-              which char lands there.
-           2. monospace font — each slot is actually the same width
-              at render time (prop fonts still vary within `ch`).
-           3. text-align:left so the scrambled chars fill the slot
-              from the left, not center-justified.
-         "Codeflare" is 9 chars; 9ch is the exact rest width. */
+      /* Scramble target uses a ghost/live pair so the scrambling
+         never perturbs the surrounding footer layout:
+           - .ghost renders the target word ("Codeflare") in the
+             footer's natural (proportional) font and is the ONLY
+             element that occupies layout width.
+           - .live sits absolute on top of .ghost with visibility,
+             takes up zero layout space, and receives the scramble
+             text via textContent from /scramble.js.
+         The live layer uses a monospace stack so the moving chars
+         each occupy a uniform horizontal slot and don't shift
+         within the fixed ghost width. overflow:visible on the wrapper
+         lets marginally-wider chars (W, M) paint past the ghost
+         without re-flowing the parent's baseline. */
       .site-footer__scramble {
+        position: relative;
         display: inline-block;
-        width: 9ch;
+        vertical-align: baseline;
+      }
+      .site-footer__scramble-ghost {
+        /* Invisible but lays out — this is what reserves "Codeflare"'s
+           width in the footer's natural font so '·' and '©' never
+           shift regardless of what the scrambler paints. */
+        visibility: hidden;
+      }
+      .site-footer__scramble-live {
+        position: absolute;
+        inset: 0;
+        display: inline-block;
         font-family:
           ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         text-align: left;
         white-space: pre;
+        overflow: hidden;
+        pointer-events: none;
       }
       .site-footer__link {
         color: var(--text-muted);
