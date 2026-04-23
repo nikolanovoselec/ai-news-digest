@@ -22,8 +22,14 @@ import { isUrlSafe } from '~/lib/ssrf';
 import { readCachedHeadlines, writeCachedHeadlines } from '~/lib/headline-cache';
 import { log } from '~/lib/log';
 
-/** Hard-cap returned by `fanOutForTags` — aligns with REQ-GEN-005 AC #1. */
-const MAX_COMBINED_HEADLINES = 300;
+/** Hard-cap returned by `fanOutForTags`. 300 overflowed
+ * llama-3.1-8b-instruct-fp8-fast's 30K token context window: ~24K
+ * input tokens left no room for the 16K max_output. 100 keeps the
+ * input at ~8K so input + output comfortably fits in 30K with
+ * headroom. The LLM still picks the top 6 articles — fewer headlines
+ * just means a tighter candidate pool, which raises the bar for what
+ * gets summarized. */
+const MAX_COMBINED_HEADLINES = 100;
 /** 5-second per-fetch timeout (REQ-GEN-003, AC #4). */
 const FETCH_TIMEOUT_MS = 5_000;
 /** 1 MB cap on the response body (REQ-GEN-003, AC #4). */

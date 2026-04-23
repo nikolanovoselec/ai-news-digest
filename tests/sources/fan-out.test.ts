@@ -303,10 +303,10 @@ describe('fanOutForTags', () => {
     );
   });
 
-  it('REQ-GEN-005: combined output capped at 300 headlines', async () => {
+  it('REQ-GEN-005: combined output capped at 100 headlines (fits llama-3.1-8b 30K context)', async () => {
     const { kv, preload } = makeKv();
-    // Each of 4 tags × 3 generic sources contributes 30 items → 360 candidates
-    // before dedupe. With all URLs unique, the output should hit 300 exactly.
+    // 4 tags × 3 sources × 30 items = 360 candidates, 120 after unique URLs
+    // per tag. Cap should clamp to 100.
     const tags = ['a', 'b', 'c', 'd'];
     let counter = 0;
     for (const tag of tags) {
@@ -323,8 +323,8 @@ describe('fanOutForTags', () => {
       }
     }
     const out = await fanOutForTags(tags, kv, new Map());
-    expect(out.length).toBeLessThanOrEqual(300);
-    expect(out).toHaveLength(300);
+    expect(out.length).toBeLessThanOrEqual(100);
+    expect(out).toHaveLength(100);
   });
 
   it('REQ-GEN-003: a failing source does not fail the whole fan-out', async () => {
