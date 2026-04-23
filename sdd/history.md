@@ -4,42 +4,43 @@ Past digests paginated on `/history`, 30 per page. A four-tile stats widget on `
 
 ---
 
-### REQ-HIST-001: Paginated past digests
+### REQ-HIST-001: Day-grouped article history
 
-**Intent:** Users can browse prior digests, not just today's, and catch up on days they missed.
+**Intent:** Users can browse how the global pool has grown over time, grouped by day of publication, and drill into the per-tick detail for any day when they want to see what each hourly run contributed.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. `/history` fetches from `GET /api/history?offset=0`; each page returns up to 30 digests, newest first.
-2. Each row shows date (user-local), status, article count, execution time, tokens consumed, estimated cost, and model name.
-3. A "Load more" button fetches the next 30 via `offset` pagination; the list appends with a staggered fade-in.
-4. Rows are clickable and open the corresponding digest's `/digest/:id` view.
-5. The SQL is `SELECT d.*, (SELECT COUNT(*) FROM articles WHERE digest_id = d.id) AS article_count FROM digests d WHERE d.user_id = :session_user_id ORDER BY generated_at DESC LIMIT 30 OFFSET :offset` — the `user_id` filter is mandatory.
+1. `/history` renders a day-grouped list of days on which articles were published, newest day first.
+2. Each day row shows the date (user-local), the story count for that day, the aggregated cost for that day, and the aggregated token count for that day.
+3. Clicking a day row expands inline to reveal each hourly tick that contributed to that day, showing the tick time, articles added, tokens, and cost.
+4. Clicking an expanded day row again collapses the per-tick list.
+5. Per-day aggregates are read from the scrape-run aggregation rather than re-derived from article rows.
 
 **Constraints:** CON-DATA-001
 **Priority:** P1
-**Dependencies:** REQ-GEN-006
+**Dependencies:** REQ-PIPE-006
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Planned
 
 ---
 
 ### REQ-HIST-002: User stats widget
 
-**Intent:** Users see at-a-glance metrics of how much the product has cost them and how much they actually engaged with.
+**Intent:** Users see at-a-glance metrics of how much the global pipeline has cost overall and how much of the pool they have personally engaged with.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
 1. `/settings` displays a compact widget with four tiles: Digests generated, Articles read / total, Tokens consumed, Cost to date.
-2. Each tile value is the result of a single SQL query scoped to the session user; article queries JOIN through digests and filter by `d.user_id = :session_user_id` so a user cannot see another user's data.
-3. "Articles read / total" shows both numbers as `{read} of {total}`.
-4. Cost is displayed in USD with 2-4 significant figures, e.g., `$0.14` or `$2.37`.
-5. The widget refreshes on every page load; no cache layer is involved.
+2. Tokens-consumed and Cost-to-date tiles read from the scrape-run aggregation, reflecting the global pipeline's totals rather than any per-user generation cost.
+3. Articles-total counts the articles in the pool whose tags intersect the session user's tag list; Articles-read counts the article-read rows owned by the session user.
+4. "Articles read / total" shows both numbers as `{read} of {total}`.
+5. Cost is displayed in USD with 2-4 significant figures, e.g., `$0.14` or `$2.37`.
+6. The widget refreshes on every page load; no cache layer is involved.
 
 **Constraints:** CON-DATA-001
 **Priority:** P2
-**Dependencies:** REQ-HIST-001, REQ-READ-003
+**Dependencies:** REQ-HIST-001, REQ-READ-003, REQ-PIPE-006
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Planned
