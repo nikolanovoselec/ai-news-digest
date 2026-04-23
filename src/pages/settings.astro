@@ -104,6 +104,24 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
       </fieldset>
 
       <fieldset class="settings__section">
+        <legend class="settings__legend">Interests</legend>
+        <p class="settings__hint">
+          Tags live at the top of the digest page — click to select/filter, click
+          the × to delete. You can revert to the curated starter list at any time.
+        </p>
+        <div class="settings__actions-row">
+          <button
+            type="button"
+            class="settings__secondary-button"
+            data-restore-tags
+          >
+            Restore initial tags
+          </button>
+          <p class="settings__status" data-restore-status aria-live="polite"></p>
+        </div>
+      </fieldset>
+
+      <fieldset class="settings__section">
         <legend class="settings__legend">Inference and Notification</legend>
         <label class="settings__field">
           <span class="settings__field-label">Model</span>
@@ -193,6 +211,9 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
   //
   // Client-side controller for /settings. Framework-free — collects
   // form state from DOM data attributes and POSTs JSON to /api/settings.
+
+  import { DEFAULT_HASHTAGS } from '~/lib/default-hashtags';
+  const DEFAULT_HASHTAGS_CLIENT = Array.from(DEFAULT_HASHTAGS);
 
   interface SettingsResponse {
     ok?: boolean;
@@ -355,6 +376,40 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
       if (status === null || submit === null) return;
       void submitSettings(form, status, submit);
     });
+
+    // Restore initial tags button (REQ-SET-002). POSTs the bundled
+    // defaults to /api/tags; on success, reloads so the tag strip on
+    // /digest reflects the new list (user lands on /digest since the
+    // digest page is the only place the tag strip renders).
+    const restoreBtn = document.querySelector<HTMLButtonElement>('[data-restore-tags]');
+    const restoreStatus = document.querySelector<HTMLElement>('[data-restore-status]');
+    if (restoreBtn !== null && restoreStatus !== null && restoreBtn.dataset['bound'] !== '1') {
+      restoreBtn.dataset['bound'] = '1';
+      restoreBtn.addEventListener('click', async () => {
+        restoreBtn.disabled = true;
+        restoreStatus.textContent = 'Restoring…';
+        try {
+          const res = await fetch('/api/tags', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tags: DEFAULT_HASHTAGS_CLIENT }),
+            credentials: 'same-origin',
+          });
+          if (!res.ok) {
+            restoreStatus.textContent = 'Could not restore. Please try again.';
+            restoreBtn.disabled = false;
+            return;
+          }
+          restoreStatus.textContent = 'Restored.';
+          setTimeout(() => {
+            window.location.assign('/digest');
+          }, 300);
+        } catch {
+          restoreStatus.textContent = 'Network error. Please try again.';
+          restoreBtn.disabled = false;
+        }
+      });
+    }
 
     // Delete account form.
     const deleteForm = document.querySelector<HTMLFormElement>('[data-delete-account]');
@@ -565,6 +620,32 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
     font-size: var(--text-base);
     font-weight: 600;
     cursor: pointer;
+  }
+
+  .settings__actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .settings__secondary-button {
+    min-height: 40px;
+    padding: 0.5rem 1rem;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .settings__secondary-button:hover {
+    border-color: var(--text);
+  }
+  .settings__secondary-button:disabled {
+    opacity: 0.6;
+    cursor: wait;
   }
 
   .settings__submit:disabled {

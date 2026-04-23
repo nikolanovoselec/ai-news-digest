@@ -38,6 +38,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 5. Each hashtag must be 2–32 characters long, is normalised to lowercase with any leading `#` stripped, and may contain only characters in `[a-z0-9-]`; other characters are stripped server-side before storage.
 6. At least one hashtag is required for a digest to generate, a maximum of 20 total hashtags is enforced server-side, and duplicates are collapsed before storage.
 7. While one or more tags are selected, the reading surface filters its visible articles to those whose stored tag list intersects the selection. When every article is filtered out, the reading surface shows a short message naming the selected tags and inviting the user to deselect.
+8. Brand-new accounts are seeded with a curated default hashtag list so the first digest has meaningful input before the user touches the strip. The settings page exposes a "Restore initial tags" action that replaces the current list with the same default seed, letting the user reset to a known good starting point at any time.
 
 **Constraints:** None
 **Priority:** P0

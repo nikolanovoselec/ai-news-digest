@@ -22,6 +22,7 @@ import { log } from '~/lib/log';
 import { signSession } from '~/lib/session-jwt';
 import { mapOAuthError, type OAuthErrorCode } from '~/lib/oauth-errors';
 import { DEFAULT_TZ } from '~/lib/tz';
+import { DEFAULT_HASHTAGS } from '~/lib/default-hashtags';
 import { buildSessionCookie } from '~/middleware/auth';
 import {
   OAUTH_STATE_COOKIE_NAME,
@@ -334,10 +335,14 @@ export async function GET(context: APIContext): Promise<Response> {
       // the settings page saves it; the cron dispatcher keys off
       // `digest_hour IS NOT NULL` to decide whether the user has opted
       // into scheduled generation.
+      // hashtags_json is seeded with DEFAULT_HASHTAGS so the very first
+      // digest has meaningful input (REQ-SET-002); the user can edit
+      // the strip at any time.
+      const defaultHashtagsJson = JSON.stringify(Array.from(DEFAULT_HASHTAGS));
       await env.DB.prepare(
-        'INSERT INTO users (id, email, gh_login, tz, digest_minute, email_enabled, session_version, created_at) VALUES (?1, ?2, ?3, ?4, 0, 1, 1, ?5)',
+        'INSERT INTO users (id, email, gh_login, tz, digest_minute, email_enabled, session_version, created_at, hashtags_json) VALUES (?1, ?2, ?3, ?4, 0, 1, 1, ?5, ?6)',
       )
-        .bind(userId, email, ghLogin, DEFAULT_TZ, nowSec)
+        .bind(userId, email, ghLogin, DEFAULT_TZ, nowSec, defaultHashtagsJson)
         .run();
       sessionVersion = 1;
       firstRun = true;
