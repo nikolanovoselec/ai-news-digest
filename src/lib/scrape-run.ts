@@ -60,7 +60,11 @@ export interface ChunkStats {
  */
 export async function startRun(db: D1Database, seed: ScrapeRunSeed): Promise<void> {
   const now = nowSeconds();
-  const chunkCount = seed.chunk_count ?? null;
+  // The schema has `chunk_count INTEGER NOT NULL DEFAULT 0`; binding
+  // NULL explicitly bypasses the DEFAULT and trips the NOT NULL
+  // constraint. Fall back to 0 so the coordinator can later UPDATE
+  // the real chunk count once fan-out is known.
+  const chunkCount = seed.chunk_count ?? 0;
   await db
     .prepare(
       `INSERT INTO scrape_runs (id, model_id, started_at, status, chunk_count)
