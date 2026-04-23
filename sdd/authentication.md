@@ -16,6 +16,7 @@ GitHub OAuth as the only sign-in method. Stateless HMAC-SHA256 JWT sessions with
 3. GitHub returns the user to the app's OAuth callback; successful consent creates or looks up the user by GitHub numeric id.
 4. If the GitHub account has no primary+verified email, sign-in fails with error code `no_verified_email` and the user is redirected to the landing page with a clear message.
 5. New-account creation seeds the user's hashtag list with the 20-entry system default: cloudflare, ai, mcp, agenticai, genai, aws, cloud, serverless, workers, azure, zero-trust, microsegmentation, kubernetes, terraform, devsecops, observability, rust, python, postgres, threat-intel.
+6. New accounts are also seeded with a default scheduled-digest time of 08:00, a default UTC timezone that the reading surface overwrites with the browser's actual IANA zone on first load, and the email-notification preference enabled. As a result, successful sign-in for a brand-new account lands the user directly on the reading surface with real articles visible — there is no forced onboarding detour through the settings form.
 
 **Constraints:** CON-AUTH-001
 **Priority:** P0

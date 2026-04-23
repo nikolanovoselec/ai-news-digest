@@ -110,9 +110,9 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ---
 
-### REQ-PIPE-006: scrape_runs aggregation surfaces stats and history
+### REQ-PIPE-006: scrape_runs aggregation surfaces stats, history, and in-flight progress
 
-**Intent:** The per-tick token, cost, article, and dedupe counters feed the user-facing stats widget and history page without having to re-derive totals from article rows.
+**Intent:** The per-tick token, cost, article, and dedupe counters feed the user-facing stats widget and history page without having to re-derive totals from article rows, and surface live progress while a run is in flight so users who trigger or wait on a scrape know the system is working.
 
 **Applies To:** System
 
@@ -121,12 +121,14 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 2. The stats widget reads global token and cost totals as sums over the scrape-run aggregation.
 3. The history page reads its per-day aggregates and per-tick expansions from the same aggregation, not from article rows.
 4. Status transitions running → ready on success, or running → failed when the run aborts.
+5. A lightweight status endpoint reports whether a scrape is currently running; while running it returns the run identifier, start time, chunks completed, total chunks, and articles ingested so far. The reading surface uses this endpoint to replace its "Next update in Xm" countdown with an "Update in progress — X/Y chunks" indicator, and the settings surface shows the same progress alongside its manual-refresh control. Both indicators hide themselves automatically when the run finishes.
 
 **Constraints:** CON-DATA-001
 **Priority:** P1
 **Dependencies:** REQ-PIPE-001
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Partial
+**Notes:** AC 1–4 have automated coverage via the global-feed rework tests. AC 5 (in-flight progress endpoint and reading/settings indicators) ships in code but is not yet covered by automated tests.
 
 ---
 

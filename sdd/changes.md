@@ -6,6 +6,7 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 ## 2026-04-23
 
+- REQ-AUTH-001 gains AC 6: new sign-ins land directly on the reading surface with sensible defaults (08:00 scheduled time, UTC timezone that the browser overwrites on first load, email notifications enabled) so a brand-new user sees real articles immediately instead of being detoured through the settings form. REQ-PIPE-006 extended with AC 5 and auto-demoted to Partial: a lightweight scrape-status signal now drives an "Update in progress — X/Y chunks" indicator on both the reading and settings surfaces, replacing the static countdown while a run is in flight; the new AC ships in code but has no automated test yet.
 - REQ-READ-001 AC 5 dashboard cap raised from 30 to 50 newest articles so users with broader tag sets see more of each day's ticks without navigating away from `/digest`.
 - REQ-DES-001 AC 1 typography surfaces reduced: the serif stack now applies to article titles and long-form reading only; the standalone dashboard digest headline was retired and the brand wordmark (sans stack) now carries that role.
 - REQ-PIPE-001 gains AC 6: each candidate's published-at timestamp now reflects the source feed's real publish date, so a three-week-old article is no longer stamped "today" on the dashboard. When the feed provides no usable date, the ingestion time is used as a safe fallback.
