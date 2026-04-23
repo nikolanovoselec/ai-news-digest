@@ -1,11 +1,12 @@
 ---
 // Implements REQ-READ-001, REQ-READ-002
+// Implements REQ-STAR-001
 // Implements REQ-GEN-005 AC 6 (renders the validated per-article tag list)
 //
 // Single article card for the digest overview grid. Renders the title,
-// 120-char one-liner summary, source-name badge, and an inline `#`
-// disclosure that opens a non-interactive popover with the article's
-// tag list (REQ-READ-001 AC 6).
+// 120-char one-liner summary, source-name badge, a star-toggle button,
+// and an inline `#` disclosure that opens a non-interactive popover
+// with the article's tag list (REQ-READ-001 AC 6).
 //
 // View Transitions: each card carries a unique `transition:name` derived
 // from the article slug so Astro's ClientRouter performs a shared-element
@@ -18,6 +19,11 @@
 
 interface Props {
   digestId: string;
+  /** Article id, used for the star-toggle endpoint.
+   *  Falls back to digestId when not supplied (callers that still pass
+   *  the old shape keep working — the two ids happen to be the same in
+   *  the global-feed schema). */
+  articleId?: string;
   slug: string;
   title: string;
   oneLiner: string;
@@ -28,6 +34,11 @@ interface Props {
   sourceUrl?: string | null;
   /** Article tag list (REQ-GEN-005 AC 6). Empty array when no tags. */
   tags?: string[];
+  /** Initial star state for the session user. Drives the button's
+   *  glyph (filled vs outline) and aria-pressed attribute on first
+   *  render. Defaults to false when the caller hasn't wired the
+   *  per-user JOIN yet. */
+  starred?: boolean;
   /**
    * Accepted for backward compatibility with callers that pass a
    * grid index (the old per-card stagger animation consumed it). The
@@ -39,12 +50,14 @@ interface Props {
 
 const {
   digestId,
+  articleId = digestId,
   slug,
   title,
   oneLiner,
   sourceName,
   sourceUrl = null,
   tags = [],
+  starred = false,
   index = 0,
 } = Astro.props;
 
@@ -86,6 +99,8 @@ const displaySourceName = resolveDisplaySource();
 <article
   class="digest-card"
   data-digest-card
+  data-article-id={articleId}
+  data-starred={starred ? 'true' : 'false'}
   data-stagger-index={stagger}
   data-tags={tagAttr}
   style={`--stagger-delay: ${stagger * 40}ms`}
@@ -99,31 +114,73 @@ const displaySourceName = resolveDisplaySource();
     <h2 class="digest-card__title">{title}</h2>
     <p class="digest-card__one-liner">{oneLiner}</p>
     <footer class="digest-card__footer">
-      {
-        displaySourceName !== null && displaySourceName !== '' && (
-          <span class="digest-card__source">{displaySourceName}</span>
-        )
-      }
-      {
-        tags.length > 0 && (
-          <div class="digest-card__tag-disclosure" data-tag-disclosure>
-            <button
-              type="button"
-              class="digest-card__tag-trigger"
-              data-tag-trigger
-              aria-label={`Show tags for ${title}`}
-              aria-expanded="false"
-            >
-              #
-            </button>
-            <div class="digest-card__tag-popover" role="region">
-              {tags.map((t) => (
-                <span class="digest-card__tag-chip">#{t}</span>
-              ))}
+      <span class="digest-card__footer-left">
+        {
+          displaySourceName !== null && displaySourceName !== '' && (
+            <span class="digest-card__source">{displaySourceName}</span>
+          )
+        }
+      </span>
+      <span class="digest-card__footer-center">
+        {/* Implements REQ-STAR-001 — star toggle. aria-pressed tracks
+            the current state; client script flips the attribute
+            optimistically and POSTs/DELETEs /api/articles/{id}/star. */}
+        <button
+          type="button"
+          class="digest-card__star"
+          data-star-toggle
+          data-article-id={articleId}
+          aria-pressed={starred ? 'true' : 'false'}
+          aria-label={starred ? `Unstar ${title}` : `Star ${title}`}
+        >
+          <svg
+            class="digest-card__star-icon digest-card__star-icon--filled"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+          </svg>
+          <svg
+            class="digest-card__star-icon digest-card__star-icon--outline"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61z" />
+          </svg>
+        </button>
+      </span>
+      <span class="digest-card__footer-right">
+        {
+          tags.length > 0 && (
+            <div class="digest-card__tag-disclosure" data-tag-disclosure>
+              <button
+                type="button"
+                class="digest-card__tag-trigger"
+                data-tag-trigger
+                aria-label={`Show tags for ${title}`}
+                aria-expanded="false"
+              >
+                #
+              </button>
+              <div class="digest-card__tag-popover" role="region">
+                {tags.map((t) => (
+                  <span class="digest-card__tag-chip">#{t}</span>
+                ))}
+              </div>
             </div>
-          </div>
-        )
-      }
+          )
+        }
+      </span>
     </footer>
   </a>
 </article>
@@ -167,15 +224,77 @@ const displaySourceName = resolveDisplaySource();
   }
 
   /* Footer row anchors to the card's bottom via margin-top: auto and
-     is a flex row: source on the left, # tag-disclosure on the right.
-     When a card is shorter than the min-height, the footer still
-     pins to the bottom edge so cards read as aligned blocks. */
+     is a three-column flex layout: source on the left, star toggle
+     centred, # tag-disclosure on the right. When a card is shorter
+     than the min-height, the footer still pins to the bottom edge so
+     cards read as aligned blocks. */
   .digest-card__footer {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 0.5rem;
     margin-top: auto;
+  }
+  .digest-card__footer-left,
+  .digest-card__footer-right {
+    flex: 1 1 0;
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .digest-card__footer-left {
+    justify-content: flex-start;
+  }
+  .digest-card__footer-right {
+    justify-content: flex-end;
+  }
+  .digest-card__footer-center {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Star toggle. No box, no border — a plain glyph that swaps between
+     the MDI star-outline (unstarred) and the MDI star (starred) via
+     the aria-pressed attribute. Min tap target per touch-safe size. */
+  .digest-card__star {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 150ms var(--ease, ease), background 150ms var(--ease, ease);
+  }
+  .digest-card__star:hover {
+    color: var(--text);
+    background: var(--surface);
+  }
+  .digest-card__star[aria-pressed='true'] {
+    color: var(--text);
+  }
+  .digest-card__star-icon {
+    display: inline-flex;
+  }
+  /* Default: unstarred → show outline, hide filled. aria-pressed='true'
+     inverts. Both glyphs share the same 24×24 viewBox so the swap is a
+     pure visibility flip with no layout shift. */
+  .digest-card__star-icon--filled {
+    display: none;
+  }
+  .digest-card__star[aria-pressed='true'] .digest-card__star-icon--filled {
+    display: inline-flex;
+  }
+  .digest-card__star[aria-pressed='true'] .digest-card__star-icon--outline {
+    display: none;
   }
 
   .digest-card:hover {
@@ -371,18 +490,62 @@ const displaySourceName = resolveDisplaySource();
       });
   }
 
+  // REQ-STAR-001 — optimistic star-toggle handler. Wired once at the
+  // document level so every card (and the detail-page star button)
+  // shares the same listener, and survives Astro view transitions
+  // without re-binding. The handler reads aria-pressed to determine
+  // the current state, flips it optimistically, then fires POST or
+  // DELETE to /api/articles/{id}/star. On non-2xx, the attribute
+  // reverts so the UI matches server state.
+  async function handleStarClick(button: HTMLButtonElement): Promise<void> {
+    const articleId = button.dataset['articleId'];
+    if (articleId === undefined || articleId === '') return;
+    const wasPressed = button.getAttribute('aria-pressed') === 'true';
+    const nextPressed = !wasPressed;
+    // Optimistic flip.
+    button.setAttribute('aria-pressed', nextPressed ? 'true' : 'false');
+    try {
+      const res = await fetch(
+        `/api/articles/${encodeURIComponent(articleId)}/star`,
+        {
+          method: nextPressed ? 'POST' : 'DELETE',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+      if (!res.ok) {
+        button.setAttribute('aria-pressed', wasPressed ? 'true' : 'false');
+      }
+    } catch {
+      button.setAttribute('aria-pressed', wasPressed ? 'true' : 'false');
+    }
+  }
+
   function init(): void {
     if (document.documentElement.dataset['tagDisclosureBound'] === '1') return;
     document.documentElement.dataset['tagDisclosureBound'] = '1';
 
     // Capture-phase click: the trigger lives inside the card's <a>,
     // so we must preventDefault + stopPropagation BEFORE the anchor's
-    // own navigation fires.
+    // own navigation fires. This single listener handles both the
+    // tag-disclosure open/close AND the star-toggle button.
     document.addEventListener(
       'click',
       (e) => {
         const target = e.target;
         if (!(target instanceof Element)) return;
+
+        // Star toggle first — same interception rule as the tag
+        // trigger: preventDefault + stopPropagation so the parent
+        // anchor never navigates.
+        const starButton = target.closest<HTMLButtonElement>('[data-star-toggle]');
+        if (starButton !== null) {
+          e.preventDefault();
+          e.stopPropagation();
+          void handleStarClick(starButton);
+          return;
+        }
+
         const trigger = target.closest<HTMLButtonElement>('[data-tag-trigger]');
         if (trigger === null) {
           // Click outside any trigger: close every open popover.
