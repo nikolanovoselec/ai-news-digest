@@ -1,22 +1,19 @@
-// Implements REQ-GEN-005
 // Implements REQ-DISC-001
 // Implements REQ-DISC-005
 //
 // Centralised LLM prompts for the two calls the product makes:
-//   1. Digest generation — rank + summarise up to 100 candidate headlines.
+//   1. Global-feed chunk processing — summarise and tag a batch of scraped candidates.
 //   2. Source discovery — suggest authoritative RSS/Atom/JSON feeds for a tag.
 //
 // Kept in one file so iteration is easy, the system/user split is obvious,
 // and all user-controlled fencing can be audited in one place. User-supplied
-// content (hashtags, headlines, tag names) is always wrapped in triple-
+// content (tag names, candidate headlines) is always wrapped in triple-
 // backtick fences so the model treats it as data, not instructions — the
 // core prompt-injection mitigation for both calls.
 //
 // Inference parameters are pinned via LLM_PARAMS; a separate retry/model
 // layer decides _which_ model runs, but the sampling knobs stay constant
 // across calls so outputs remain reproducible.
-
-import type { Headline } from '~/lib/types';
 
 /**
  * Shared inference parameters for every Workers AI call.
@@ -32,76 +29,6 @@ export const LLM_PARAMS = {
   max_tokens: 50_000,
   response_format: { type: 'json_object' },
 } as const;
-
-export const DIGEST_SYSTEM = `You are a JSON API. You read headlines and output JSON.
-
-CRITICAL OUTPUT CONTRACT:
-- Your entire response MUST be a single valid JSON object.
-- DO NOT write any text before the opening "{" or after the closing "}".
-- DO NOT wrap the JSON in \`\`\` code fences.
-- DO NOT write "Here is the JSON" or any prose at all.
-- If you cannot produce a useful digest, output {"articles": []}.
-
-The object shape is always:
-{"articles":[{"title":"string","url":"string","one_liner":"string","details":["string","string","string"],"tags":["string"]}]}
-
-Content rules:
-- Pick between 15 and 30 headlines most relevant to the user's interests, ranked by relevance then recency. Fifteen is the floor when the candidate pool supports it; 30 is the hard ceiling.
-- "title" MUST be a punchy, glance-ready New-York-Times-style headline of your own writing — concrete, specific, active voice, roughly 45–80 characters, and free of clickbait. Do NOT copy the source headline verbatim when it reads like a press-release or feed title. The goal is a headline a reader would pause on.
-- "one_liner" is a single plaintext sentence, ~150–200 characters, stating the single most important fact about the article.
-- Each "details" string is a plaintext paragraph about ~200 words covering context, specifics, and why it matters. No bullet prefixes, no lists inside the paragraph.
-- Return exactly 3 details strings per article.
-- "tags" MUST be the FULL set of user hashtags this article is genuinely about, not just one. A Cloudflare post about AI-powered code review must be tagged ["cloudflare", "ai"] — not just "cloudflare". An Azure zero-trust announcement must be tagged ["azure", "zero-trust", "cloud"]. Start from the candidate headline's "source_tags" (the authoritative set of tags the fan-out matched) and KEEP every entry the article is actually about. Only drop a source_tag when you are sure the article does not cover that topic. Never invent a tag the user did not provide.
-- Aim for topical spread: across the returned articles, try to surface every user hashtag that has at least one real candidate in the input. If a particular hashtag has no decent candidate, it's fine to omit it — but don't stack 12 articles on one tag while starving the others when better candidates exist.
-- All strings are plaintext: no HTML, no Markdown, no inline links.
-- Skip duplicates, press releases with no substance, and pure advertising.
-- If fewer than 15 good matches exist, return as many real matches as you have — do not pad with weak results.`;
-
-/**
- * Build the user message for the digest call. User-controlled content
- * (hashtags, headlines) is fenced with triple backticks so the model treats
- * it as data; without fencing, a hostile headline's text could steer the
- * model's behaviour.
- */
-export function digestUserPrompt(hashtags: string[], headlines: Headline[]): string {
-  // Each candidate headline carries a `source_tags` array listing the
-  // user hashtags that pulled it from a source. The LLM copies those
-  // into the article's `tags` output, dropping any that the story
-  // doesn't really cover. Pass the pruned headline shape explicitly
-  // so the model doesn't see internal-only fields like `snippet`.
-  const candidateHeadlines = headlines.map((h) => ({
-    title: h.title,
-    url: h.url,
-    source_name: h.source_name,
-    source_tags: h.source_tags ?? [],
-  }));
-  return `User interests (hashtags):
-\`\`\`
-${hashtags.join(', ')}
-\`\`\`
-
-Candidate headlines (JSON array). Each headline's "source_tags" field is
-the authoritative list of user hashtags that matched the article during
-fan-out — copy the relevant entries into the output "tags" field:
-\`\`\`json
-${JSON.stringify(candidateHeadlines)}
-\`\`\`
-
-Return between 15 and 30 articles in this JSON shape:
-{
-  "articles": [
-    {
-      "title": "punchy NYT-style headline you have written (roughly 45–80 characters)",
-      "url": "URL from input, copied verbatim",
-      "one_liner": "plaintext sentence, ~150–200 characters, the single most important fact",
-      "details": ["paragraph ~200 words", "paragraph ~200 words", "paragraph ~200 words"],
-      "tags": ["EVERY user hashtag this article is actually about — start from source_tags and keep all that apply, not just the most obvious one"]
-    }
-  ]
-}
-
-Each details entry is a full paragraph (~200 words) of plaintext prose — context, specifics, and why the story matters. No bullet prefixes, no lists, no code fences.`;
-}
 
 // Implements REQ-PIPE-002
 //
