@@ -93,7 +93,7 @@ GitHub OAuth as the only sign-in method. Stateless HMAC-SHA256 JWT sessions with
 
 **Acceptance Criteria:**
 1. `/settings` has a "Delete account" control with a confirmation dialog requiring the user to type an explicit confirmation string.
-2. `DELETE /api/auth/account` deletes the `users` row; foreign-key cascade removes every related `digests`, `articles`, and `pending_discoveries` row.
+2. Submitting the confirmed deletion deletes the user and every row owned by the user (digests, articles, stars, read-tracking, pending discoveries) via foreign-key cascade. The account-deletion endpoint accepts both a JSON API path (used by scripted clients and smoke tests) and a native HTML form submission (used by the settings page) so deletion succeeds on every browser the app supports, including mobile in-app webviews that do not reliably dispatch fetch-based `DELETE` requests.
 3. The session cookie is cleared and the user is redirected to the landing page with a one-time confirmation banner.
 4. KV entries keyed by the user's id (if any) are deleted in the same handler.
 

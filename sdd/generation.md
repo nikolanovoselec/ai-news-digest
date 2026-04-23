@@ -16,6 +16,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 3. Each run is tracked by a `scrape_runs` row that transitions `running` → `ready` on success (or `failed` on abort), with a chunk counter that drops to zero when the last chunk finishes.
 4. Candidates whose canonical URL is already present in the article pool are skipped on subsequent ticks so the same story is never re-summarised.
 5. The pipeline is independent of individual user accounts — it runs once per tick regardless of how many users are signed up, and adding users does not multiply LLM spend.
+6. Each candidate's published-at timestamp reflects the source feed's real publish date (parsed from the feed entry) rather than the ingestion tick time, so a story first published three weeks ago is never displayed as "today" on the dashboard. When a feed entry provides no usable publish date, or the parsed value is implausible (pre-2000 or more than one day in the future), the ingestion time is used as a safe fallback.
 
 **Constraints:** CON-LLM-001, CON-PERF-001
 **Priority:** P0
