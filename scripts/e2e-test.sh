@@ -173,6 +173,31 @@ check_body GET /api/stats 'digests_generated|articles_read|tokens_consumed'
 # /api/discovery/status — returns JSON with per-hashtag status (possibly empty).
 check GET  /api/discovery/status            200
 
+# ------------------------------------------------------------- snapshot
+# Snapshot the session user's mutable state BEFORE any write so the
+# end-of-script restore block can put it back exactly as we found it.
+# This is the "don't pollute prod" guard — the whole e2e runs against
+# the owner account (the only account a fresh Worker has), so every
+# tag/star write HAS to be a save → assert → restore cycle.
+printf '\n=== snapshot ===\n'
+ORIG_SETTINGS_JSON=$(curl -sS -b "$COOKIE_JAR" "$BASE/api/settings" || echo '{}')
+ORIG_HASHTAGS_JSON=$(printf '%s' "$ORIG_SETTINGS_JSON" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d.get('hashtags_json') or []))" 2>/dev/null || echo '[]')
+ORIG_DIGEST_HOUR=$(printf '%s' "$ORIG_SETTINGS_JSON" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('digest_hour') or 8)" 2>/dev/null || echo '8')
+ORIG_DIGEST_MINUTE=$(printf '%s' "$ORIG_SETTINGS_JSON" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('digest_minute') or 0)" 2>/dev/null || echo '0')
+ORIG_TZ=$(printf '%s' "$ORIG_SETTINGS_JSON" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tz') or 'Europe/Zurich')" 2>/dev/null || echo 'Europe/Zurich')
+ORIG_MODEL_ID=$(printf '%s' "$ORIG_SETTINGS_JSON" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('model_id') or '@cf/meta/llama-3.1-8b-instruct-fp8-fast')" 2>/dev/null || echo '@cf/meta/llama-3.1-8b-instruct-fp8-fast')
+ORIG_EMAIL_ENABLED=$(printf '%s' "$ORIG_SETTINGS_JSON" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if d.get('email_enabled') else 'false')" 2>/dev/null || echo 'true')
+ORIG_STARRED=$(curl -sS -b "$COOKIE_JAR" "$BASE/api/starred" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(' '.join(a['id'] for a in d.get('articles',[])))" 2>/dev/null || echo '')
+printf 'original hashtags: %s\n' "$ORIG_HASHTAGS_JSON"
+printf 'original starred (%d): %s\n' "$(printf '%s' "$ORIG_STARRED" | wc -w)" "$ORIG_STARRED"
+
 # PUT /api/settings — save schedule + model + email (hashtags managed
 # separately at POST /api/tags since the tag editor moved to /digest).
 printf '\n=== PUT /api/settings (save happy path) ===\n'
@@ -182,7 +207,8 @@ check_body GET /api/settings '"Europe/Zurich"'
 check_body GET /api/settings '"digest_hour":8'
 
 # POST /api/tags — replace the user's hashtag list. The /digest tag strip
-# is the only editor for this now.
+# is the only editor for this now. We write a fixed test set to prove
+# the write happens, then restore the snapshot at the end of the script.
 printf '\n=== POST /api/tags ===\n'
 TAGS_PAYLOAD='{"tags":["llm","cloudflare","aws"]}'
 check POST /api/tags 200 -H 'Content-Type: application/json' --data "$TAGS_PAYLOAD"
@@ -226,6 +252,62 @@ fi
 check POST /api/discovery/retry 200 -H 'Content-Type: application/json' --data '{"tag":"llm"}'
 # Unknown tag → 400 unknown_tag.
 check POST /api/discovery/retry 400 -H 'Content-Type: application/json' --data '{"tag":"not-a-user-tag-xyz"}'
+
+# ------------------------------------------------------------- restore
+# Put the owner's tags + stars + settings back exactly as we found
+# them. The whole e2e has been a save → mutate → assert cycle; this
+# is the "mutate" side closing. Any failure here logs but does not
+# fail the run — if the restore 500s for some reason we still want
+# the mutation-assertion results in the summary so the real cause is
+# visible.
+printf '\n=== restore owner state ===\n'
+
+# Tags — POST /api/tags accepts {"tags":[...]} where [] is a 400, so
+# if the snapshot was empty we DON'T hit the endpoint (a user with
+# zero tags shouldn't be possible, but be defensive).
+if [ "$ORIG_HASHTAGS_JSON" != "[]" ] && [ -n "$ORIG_HASHTAGS_JSON" ]; then
+  RESTORE_BODY=$(printf '{"tags":%s}' "$ORIG_HASHTAGS_JSON")
+  printf 'restoring tags: %s\n' "$ORIG_HASHTAGS_JSON"
+  curl -sS -o /dev/null -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+    -X POST -H "Origin: $BASE" -H 'Content-Type: application/json' \
+    --data "$RESTORE_BODY" "$BASE/api/tags" || printf 'WARN tag restore failed\n'
+fi
+
+# Settings — restore schedule + model + email + tz from snapshot.
+RESTORE_SETTINGS=$(printf '{"digest_hour":%s,"digest_minute":%s,"tz":"%s","model_id":"%s","email_enabled":%s}' \
+  "$ORIG_DIGEST_HOUR" "$ORIG_DIGEST_MINUTE" "$ORIG_TZ" "$ORIG_MODEL_ID" "$ORIG_EMAIL_ENABLED")
+printf 'restoring settings: %s\n' "$RESTORE_SETTINGS"
+curl -sS -o /dev/null -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -X PUT -H "Origin: $BASE" -H 'Content-Type: application/json' \
+  --data "$RESTORE_SETTINGS" "$BASE/api/settings" || printf 'WARN settings restore failed\n'
+
+# Stars — the stars lifecycle above ended with `ARTICLE_ID` starred.
+# Compute the exact before/after delta and apply the inverse so the
+# saved set matches the snapshot byte-for-byte.
+CURRENT_STARRED=$(curl -sS -b "$COOKIE_JAR" "$BASE/api/starred" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(' '.join(a['id'] for a in d.get('articles',[])))" 2>/dev/null || echo '')
+for id in $CURRENT_STARRED; do
+  case " $ORIG_STARRED " in
+    *" $id "*) ;; # was starred before — leave alone
+    *)
+      printf 'unstarring %s (added during e2e)\n' "$id"
+      curl -sS -o /dev/null -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+        -X DELETE -H "Origin: $BASE" -H 'Content-Type: application/json' \
+        "$BASE/api/articles/$id/star" || true
+      ;;
+  esac
+done
+for id in $ORIG_STARRED; do
+  case " $CURRENT_STARRED " in
+    *" $id "*) ;; # still starred — leave alone
+    *)
+      printf 're-starring %s (removed during e2e)\n' "$id"
+      curl -sS -o /dev/null -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+        -X POST -H "Origin: $BASE" -H 'Content-Type: application/json' \
+        "$BASE/api/articles/$id/star" || true
+      ;;
+  esac
+done
 
 # /api/auth/github/logout — signing out should 303 back to `/`.
 check POST /api/auth/github/logout 303 -H 'Content-Type: application/json'

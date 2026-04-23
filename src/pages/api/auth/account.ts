@@ -148,24 +148,24 @@ export async function POST(context: APIContext): Promise<Response> {
   // redirect so the browser navigates to the landing page with a
   // query param the UI can pick up to show "your account was
   // deleted" confirmation.
-  // Guard: reject an explicitly empty body before touching
-  // formData(). Native browser form POSTs set Content-Length to the
-  // encoded length, so a zero here means a programmatic caller sent
-  // nothing — which can't satisfy the confirmation contract anyway.
-  // Also cheaper than letting formData() throw and catching the
-  // TypeError. Absent header (chunked encoding) passes through and
-  // takes the try/catch path below as before.
-  const contentLength = context.request.headers.get('content-length');
-  if (contentLength === '0') {
-    return errorResponse('bad_request');
-  }
-
+  //
+  // Body parsing is tolerant: empty body (Content-Length: 0) and
+  // any formData() parse error fall through with confirm = null.
+  // deleteAccountCore then runs the ordered validation (Origin →
+  // session → confirm) so a cross-site probe still sees a 403
+  // forbidden_origin, a logged-out caller still sees a 401, and
+  // only an authenticated same-origin request with a missing or
+  // wrong confirm literal gets the 400 confirmation_required.
   let confirm: FormDataEntryValue | null = null;
-  try {
-    const form = await context.request.formData();
-    confirm = form.get('confirm');
-  } catch {
-    return errorResponse('bad_request');
+  const contentLength = context.request.headers.get('content-length');
+  if (contentLength !== '0') {
+    try {
+      const form = await context.request.formData();
+      confirm = form.get('confirm');
+    } catch {
+      // Leave confirm=null; deleteAccountCore decides the response
+      // code based on Origin/session state first.
+    }
   }
 
   const result = await deleteAccountCore(
