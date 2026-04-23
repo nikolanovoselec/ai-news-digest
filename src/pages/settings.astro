@@ -227,6 +227,26 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
             </div>
           </fieldset>
           <fieldset class="settings__section">
+            <legend class="settings__legend">Force refresh</legend>
+            <p class="settings__hint">
+              Fire the global scrape pipeline immediately instead of
+              waiting for the next hourly tick. Useful after a deploy
+              to verify the coordinator + chunk consumer end-to-end.
+              This endpoint is gated by Cloudflare Access — only
+              operators with an Access session can reach it.
+            </p>
+            <div class="settings__actions-row">
+              <form method="post" action="/force-refresh">
+                <button
+                  type="submit"
+                  class="settings__secondary-button"
+                >
+                  Force refresh now
+                </button>
+              </form>
+            </div>
+          </fieldset>
+          <fieldset class="settings__section">
             <legend class="settings__legend">Delete account</legend>
             <p class="settings__hint">
               Permanently deletes your account, digests, and all associated data.
@@ -742,6 +762,12 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
   }
 
   .settings__secondary-button {
+    /* inline-flex so an <a> styled as a button gets proper vertical
+       centering of its label; a bare baseline sits too low inside a
+       44px touch target. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     min-height: 44px;
     padding: 0.5rem 1.25rem;
     /* Primary-button contrast: inverted of the current theme so it
@@ -752,6 +778,7 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
     border-radius: 0.375rem;
     font-size: var(--text-sm);
     font-weight: 600;
+    text-decoration: none;
     cursor: pointer;
   }
   .settings__secondary-button:hover {
