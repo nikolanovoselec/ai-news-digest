@@ -3,11 +3,12 @@
 // Implements REQ-READ-005
 //
 // Today's digest view — global article pool filtered by the user's
-// active hashtags. The hourly scrape_run populates the pool; this page
-// renders the 30 newest articles whose tags intersect the user's tag
-// set, plus a countdown header:
-//
-//   Last updated at HH:MM · Next update in Xm Ys
+// active hashtags. The 4-hourly scrape_run populates the pool; this
+// page renders the 30 newest articles whose tags intersect the user's
+// tag set, plus a countdown header ("Last updated at HH:MM" in the
+// page comment, shown on-screen as "Next update in Xm" or "Xh Ym"
+// aligned to the right end of the title row — wraps below on narrow
+// viewports).
 //
 // The page is server-rendered in-process via loadTodayPayload — no
 // subrequest roundtrip. The tag-strip filter is preserved unchanged.
@@ -222,7 +223,7 @@ const sortedUserTags = [...userTags].sort((a, b) => {
   // Implements REQ-READ-001
   //
   // Three responsibilities:
-  //   1. Tick the "Next update in Xm Ys" countdown once per second from
+  //   1. Tick the "Next update in Xm" (or "Xh Ym") countdown every 10s from
   //      the server-rendered next_scrape_at; refetch /api/digest/today
   //      when the countdown hits zero and re-render the header+grid.
   //   2. Toggle the offline banner based on navigator.onLine.
@@ -231,10 +232,14 @@ const sortedUserTags = [...userTags].sort((a, b) => {
   let countdownHandle: number | null = null;
 
   function formatCountdown(seconds: number): string {
-    if (seconds <= 0) return '0m 0s';
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}m ${s}s`;
+    if (seconds <= 0) return '0m';
+    // Round up so the display ticks down to 0m at the actual boundary
+    // rather than sitting on 0m for 59 seconds.
+    const totalMinutes = Math.ceil(seconds / 60);
+    if (totalMinutes < 60) return `${totalMinutes}m`;
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return `${h}h ${m}m`;
   }
 
   async function refetchAndReplace(): Promise<void> {
@@ -277,7 +282,7 @@ const sortedUserTags = [...userTags].sort((a, b) => {
     const nowSec = Math.floor(Date.now() / 1000);
     const remaining = nextAt - nowSec;
     if (remaining <= 0) {
-      textEl.textContent = '0m 0s';
+      textEl.textContent = '0m';
       // Fire a refetch exactly once; avoid a tight loop by bumping the
       // next-at forward by 60s so we don't refetch on every tick until
       // the real update lands.
@@ -293,7 +298,8 @@ const sortedUserTags = [...userTags].sort((a, b) => {
     const el = document.querySelector<HTMLElement>('[data-countdown]');
     if (el === null) return;
     tickCountdown();
-    countdownHandle = window.setInterval(tickCountdown, 1000);
+    // Minute-only display → tick every 10s is enough; no need for 1Hz.
+    countdownHandle = window.setInterval(tickCountdown, 10_000);
   }
 
   function wireOfflineBanner(): void {
@@ -587,11 +593,16 @@ const sortedUserTags = [...userTags].sort((a, b) => {
     display: none;
   }
 
+  /* REQ-READ-001 — title on the left, "Next update in Xm" on the right
+     of the same row when there's space; the countdown wraps to its own
+     line below the title when the viewport is too narrow. */
   .digest-page__header {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.35rem;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    column-gap: 1rem;
+    row-gap: 0.35rem;
     padding: 0 0.25rem;
   }
   @media (min-width: 768px) {

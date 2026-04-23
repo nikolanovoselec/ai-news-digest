@@ -126,7 +126,11 @@ export async function loadTodayPayload(
     lastRun = null;
   }
 
-  const nextScrapeAt = lastRun === null ? null : lastRun.started_at + 3600;
+  // Cron fires every 4 hours at the top of the hour UTC — 00, 04, 08,
+  // 12, 16, 20. The next tick from "now" is the next one of those
+  // that's strictly in the future. Wrapping to 24 rolls to tomorrow
+  // 00:00 UTC.
+  const nextScrapeAt = computeNextScrapeAt();
 
   // No tags → nothing to show. Return the run metadata so the header
   // countdown still renders, but articles is empty.
@@ -189,6 +193,41 @@ export async function loadTodayPayload(
     last_scrape_run: lastRun,
     next_scrape_at: nextScrapeAt,
   };
+}
+
+/**
+ * Compute the unix-seconds timestamp of the next scrape cron tick.
+ * The schedule is `0 *\/4 * * *` UTC — 00/04/08/12/16/20. Returns the
+ * next such time STRICTLY in the future; rolls to tomorrow 00:00 UTC
+ * when we're past 20:00.
+ */
+function computeNextScrapeAt(): number {
+  const now = new Date();
+  const next = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      now.getUTCHours(),
+      0,
+      0,
+      0,
+    ),
+  );
+  // Round hour UP to the next multiple of 4. If we're currently at a
+  // quadrant-hour with :00 minutes exactly, advance past it too so the
+  // countdown always shows a positive delta.
+  const h = next.getUTCHours();
+  let nextHour = Math.ceil((h + (next.getTime() === now.getTime() ? 1 : 0)) / 4) * 4;
+  // Strictly-in-the-future guard: if now.getUTCMinutes()/sec are 0
+  // and we landed on the same hour, bump by 4.
+  if (nextHour <= h) nextHour += 4;
+  if (nextHour >= 24) {
+    next.setUTCDate(next.getUTCDate() + 1);
+    nextHour = nextHour - 24;
+  }
+  next.setUTCHours(nextHour, 0, 0, 0);
+  return Math.floor(next.getTime() / 1000);
 }
 
 export async function GET(context: APIContext): Promise<Response> {

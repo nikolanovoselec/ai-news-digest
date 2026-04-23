@@ -240,7 +240,7 @@ describe('GET /api/digest/today — REQ-READ-001', () => {
     }
   });
 
-  it('REQ-READ-001: returns last_scrape_run metadata and next_scrape_at = started_at + 3600', async () => {
+  it('REQ-READ-001: returns last_scrape_run metadata and next_scrape_at on the next 4-hour UTC cron boundary', async () => {
     const now = Math.floor(Date.now() / 1000);
     const lastRun: ScrapeRunRow = {
       id: 'run-abc',
@@ -259,7 +259,14 @@ describe('GET /api/digest/today — REQ-READ-001', () => {
     expect(body.last_scrape_run?.id).toBe('run-abc');
     expect(body.last_scrape_run?.status).toBe('ready');
     expect(body.last_scrape_run?.started_at).toBe(lastRun.started_at);
-    expect(body.next_scrape_at).toBe(lastRun.started_at + 3600);
+    expect(body.next_scrape_at).not.toBeNull();
+    expect(body.next_scrape_at).toBeGreaterThan(now);
+    // next_scrape_at is always strictly in the future and lands on a
+    // 0/4/8/12/16/20 UTC hour boundary (cron `0 */4 * * *`).
+    const nextDate = new Date((body.next_scrape_at as number) * 1000);
+    expect(nextDate.getUTCMinutes()).toBe(0);
+    expect(nextDate.getUTCSeconds()).toBe(0);
+    expect(nextDate.getUTCHours() % 4).toBe(0);
   });
 
   it('REQ-READ-001: excludes articles whose tags do not match any user tag (no cross-user leak via tag spoofing)', async () => {
@@ -322,7 +329,12 @@ describe('GET /api/digest/today — REQ-READ-001', () => {
     const body = (await res.json()) as WireResponse;
     expect(body.articles).toEqual([]);
     expect(body.last_scrape_run).toBeNull();
-    expect(body.next_scrape_at).toBeNull();
+    // next_scrape_at is derived from the cron schedule, not from
+    // lastRun, so the header countdown still renders for users with no
+    // tags.
+    expect(body.next_scrape_at).not.toBeNull();
+    const nowSec = Math.floor(Date.now() / 1000);
+    expect(body.next_scrape_at).toBeGreaterThan(nowSec);
   });
 
   it('REQ-READ-001: emits starred + read flags from per-user join', async () => {
