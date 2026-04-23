@@ -367,20 +367,27 @@ async function fetchAllSources(
       if (i >= jobs.length) return;
       const job = jobs[i];
       if (job === undefined) return;
-      // fetchFromSource's signature takes a tag string; curated feeds
-      // ignore it (their URL is constant) and discovered feeds also
-      // ignore it (the adapter's url closure captures the feed URL).
-      // Passing the empty string keeps the call well-formed.
-      const headlines = await fetchFromSource(job.adapter, '', kv);
-      // Cap per-source items so a hyperactive feed doesn't flood the
-      // chunking stage.
-      const capped = headlines.slice(0, PER_SOURCE_ITEM_CAP).map((h) => ({
-        headline: {
-          ...h,
+      // Per-source fetch is wrapped in try/catch so a single flaky
+      // feed (404/403/timeout/malformed XML) never bubbles up and
+      // kills the rest of the pool. Empty result keeps the worker
+      // loop going; the logged event gives operators enough signal
+      // to swap the URL later.
+      try {
+        const headlines = await fetchFromSource(job.adapter, '', kv);
+        const capped = headlines.slice(0, PER_SOURCE_ITEM_CAP).map((h) => ({
+          headline: {
+            ...h,
+            source_name: job.sourceName,
+          },
+        }));
+        results[i] = capped;
+      } catch (err) {
+        log('warn', 'source.fetch.failed', {
           source_name: job.sourceName,
-        },
-      }));
-      results[i] = capped;
+          detail: String(err).slice(0, 200),
+        });
+        results[i] = [];
+      }
     }
   };
 
