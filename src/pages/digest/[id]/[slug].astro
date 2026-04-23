@@ -149,12 +149,21 @@ function formatDate(unixSec: number): string {
 const publishedSec = articleRow.published_at ?? digestRow.generated_at;
 const publishedLabel = formatDate(publishedSec);
 
-// Display source name matches the reading-grid: strip the `feed:`
-// prefix that fan-out uses to namespace discovered feeds.
-const rawSource = articleRow.source_name ?? '';
-const displaySource = rawSource.startsWith('feed:')
-  ? rawSource.slice('feed:'.length)
-  : rawSource;
+// Display source: prefer the fan-out's source_name (minus the
+// `feed:` namespace prefix), fall back to the outbound URL's host so
+// a null source_name never leaves the metadata line empty.
+function resolveDisplaySource(): string {
+  const raw = articleRow.source_name ?? '';
+  if (raw !== '') {
+    return raw.startsWith('feed:') ? raw.slice('feed:'.length) : raw;
+  }
+  try {
+    return new URL(articleRow.source_url).host.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+const displaySource = resolveDisplaySource();
 ---
 
 <Base title={articleRow.title}>
@@ -281,35 +290,23 @@ const displaySource = rawSource.startsWith('feed:')
     text-wrap: pretty;
   }
 
-  /* Lead paragraph gets a drop cap. Modern browsers (Safari 15+,
-     Chrome 110+) support `initial-letter` which drops the glyph to
-     the correct baseline without guessing margins. The float fallback
-     below covers Firefox / older Chrome — tuned so the cap-height
-     lines up with the first running-text line (no visual sag). */
+  /* Lead paragraph gets a drop cap. Plain float, no negative margins,
+     no initial-letter trickery — browser implementations of both
+     initial-letter and aggressive negative-margin alignment vary too
+     much (Samsung WebKit sent the glyph flying above the metadata
+     line). Here the letter occupies ~3 body lines naturally via
+     line-height: 0.88 and drops cleanly. Cap-height sits a hair below
+     the first running line; 1 px isn't worth fighting the rendering
+     engine for. */
   .article-detail__paragraph--lead::first-letter {
     float: left;
     font-family: var(--font-serif);
-    font-size: 3em;
+    font-size: 3.2em;
     font-weight: 700;
-    line-height: 1;
-    /* Critical: pull the cap UP by a fraction so its top edge aligns
-       with the cap-height of the first line rather than sitting on
-       the line-box top. Adjust in tandem with font-size if swapped. */
-    margin: -0.08em 0.1em -0.1em 0;
+    line-height: 0.88;
+    padding-top: 0.08em;
+    margin-right: 0.08em;
     color: var(--text);
-  }
-  @supports (initial-letter: 3) or (-webkit-initial-letter: 3) {
-    .article-detail__paragraph--lead::first-letter {
-      float: none;
-      -webkit-initial-letter: 3 1;
-      initial-letter: 3 1;
-      font-family: var(--font-serif);
-      font-size: inherit;
-      line-height: inherit;
-      font-weight: 700;
-      margin: 0 0.12em 0 0;
-      color: var(--text);
-    }
   }
 
   /* Primary source link — stays solid-inverted like the other primary

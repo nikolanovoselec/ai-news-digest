@@ -22,6 +22,10 @@ interface Props {
   title: string;
   oneLiner: string;
   sourceName: string | null;
+  /** Outbound URL to the original article — used as the hostname
+   * fallback when sourceName is null so the card never renders
+   * without any source attribution. */
+  sourceUrl?: string | null;
   /** Article tag list (REQ-GEN-005 AC 6). Empty array when no tags. */
   tags?: string[];
   /**
@@ -37,6 +41,7 @@ const {
   title,
   oneLiner,
   sourceName,
+  sourceUrl = null,
   tags = [],
   index = 0,
 } = Astro.props;
@@ -50,12 +55,29 @@ const stagger = Math.min(index, 9);
 // digest.astro: a comma-joined list so the script can intersect against
 // the selected-tag set without re-parsing JSON per card.
 const tagAttr = tags.join(',');
-// Discovered-feed source names are stored as `feed:<slug>` so fan-out
-// can dedupe them separately; the slug is all users need to see.
-const displaySourceName =
-  sourceName !== null && sourceName.startsWith('feed:')
-    ? sourceName.slice('feed:'.length)
-    : sourceName;
+
+/** Resolve the badge text shown at the bottom-left of the card.
+ *  Preference order: the fan-out source_name (minus the `feed:`
+ *  namespace prefix) → the source-URL hostname minus `www.`. Only
+ *  returns the empty string when every fallback is missing. Pure
+ *  display logic — doesn't mutate the DB. */
+function resolveDisplaySource(): string {
+  if (sourceName !== null && sourceName !== '') {
+    return sourceName.startsWith('feed:')
+      ? sourceName.slice('feed:'.length)
+      : sourceName;
+  }
+  if (typeof sourceUrl === 'string' && sourceUrl !== '') {
+    try {
+      const host = new URL(sourceUrl).host;
+      return host.replace(/^www\./, '');
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+const displaySourceName = resolveDisplaySource();
 ---
 
 <article
@@ -81,19 +103,22 @@ const displaySourceName =
       }
       {
         tags.length > 0 && (
-          <details class="digest-card__tag-details" data-tag-details>
-            <summary
+          <div class="digest-card__tag-disclosure" data-tag-disclosure>
+            <button
+              type="button"
               class="digest-card__tag-trigger"
+              data-tag-trigger
               aria-label={`Show tags for ${title}`}
+              aria-expanded="false"
             >
               #
-            </summary>
-            <div class="digest-card__tag-popover">
+            </button>
+            <div class="digest-card__tag-popover" role="region">
               {tags.map((t) => (
                 <span class="digest-card__tag-chip">#{t}</span>
               ))}
             </div>
-          </details>
+          </div>
         )
       }
     </footer>
@@ -171,19 +196,15 @@ const displaySourceName =
     text-wrap: balance;
   }
 
-  /* Native <details> disclosure for the tag popover, sitting in the
-     footer row. The popover is absolute-positioned above the footer
-     so it doesn't push the card's layout. */
-  .digest-card__tag-details {
+  /* Tag disclosure: plain <div> wrapper + <button> trigger. The
+     popover is always in the DOM with visibility: hidden; CSS flips
+     visibility + opacity on :hover (desktop) or .is-open (mobile,
+     set by the client script). Simpler and more predictable than
+     <details>, whose UA rule `display: none` on non-open children
+     fought the :hover rule on specificity. */
+  .digest-card__tag-disclosure {
     position: relative;
     flex-shrink: 0;
-  }
-  .digest-card__tag-details summary {
-    list-style: none;
-    cursor: pointer;
-  }
-  .digest-card__tag-details summary::-webkit-details-marker {
-    display: none;
   }
 
   /* Demote the # to a lightweight muted glyph — no box, no border,
@@ -214,7 +235,7 @@ const displaySourceName =
     color: var(--text);
     opacity: 1;
   }
-  .digest-card__tag-details[open] .digest-card__tag-trigger {
+  .digest-card__tag-disclosure.is-open .digest-card__tag-trigger {
     color: var(--text);
     opacity: 1;
   }
@@ -246,9 +267,10 @@ const displaySourceName =
     text-transform: uppercase;
   }
 
-  /* Popover for the footer # affordance. Anchored to its right edge
-     (the # sits at the far right of the card) and opens upward so it
-     never sticks out below the grid. */
+  /* Popover — always in the DOM, hidden via visibility + opacity so
+     CSS :hover can toggle it without fighting a UA display:none rule.
+     Anchored to the bottom-right of the # trigger and opens UPWARD
+     so it never clips below the grid. */
   .digest-card__tag-popover {
     position: absolute;
     bottom: calc(100% + 6px);
@@ -263,14 +285,32 @@ const displaySourceName =
     border-radius: 6px;
     max-width: min(260px, 80vw);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(4px);
+    transition:
+      opacity 150ms var(--ease, ease),
+      transform 150ms var(--ease, ease),
+      visibility 0s linear 150ms;
+    pointer-events: none;
   }
-
-  /* Desktop (hover-capable): show the popover on hover — no click
-     needed. Native <details> still toggles on click so the user can
-     pin it open on both desktop and mobile. */
+  .digest-card__tag-disclosure.is-open .digest-card__tag-popover {
+    visibility: visible;
+    opacity: 1;
+    transform: translateY(0);
+    transition-delay: 0s;
+    pointer-events: auto;
+  }
+  /* Desktop (hover-capable) — popover opens on hover without any JS.
+     Mobile keeps the click-to-open flow via the .is-open class, set
+     by the script at the bottom of this file. */
   @media (hover: hover) and (pointer: fine) {
-    .digest-card__tag-details:hover .digest-card__tag-popover {
-      display: flex;
+    .digest-card__tag-disclosure:hover .digest-card__tag-popover {
+      visibility: visible;
+      opacity: 1;
+      transform: translateY(0);
+      transition-delay: 0s;
+      pointer-events: auto;
     }
   }
 
@@ -312,54 +352,66 @@ const displaySourceName =
 </style>
 
 <script>
-  // Pure progressive enhancement on top of the native <details>:
-  //   * stop the click from navigating the parent <a> (details is
-  //     inside the anchor so the toggle propagates),
-  //   * auto-close the popover 5 s after open,
-  //   * close other open popovers so only one is visible at a time.
-  // If this script never runs, the popover still toggles natively on
-  // click — the user keeps the core behaviour.
+  // Mobile click-to-open with 5s auto-close. Desktop (hover-capable
+  // devices) shows the popover via CSS :hover — no script needed
+  // there. The script still runs on desktop to catch click taps
+  // which "pin" the popover open until a click-outside closes it.
   const POPOVER_TTL_MS = 5000;
-  const timers = new WeakMap<HTMLDetailsElement, number>();
+  const timers = new WeakMap<HTMLElement, number>();
+
+  function closeAll(except?: HTMLElement): void {
+    document
+      .querySelectorAll<HTMLElement>('[data-tag-disclosure].is-open')
+      .forEach((d) => {
+        if (d === except) return;
+        d.classList.remove('is-open');
+        const trigger = d.querySelector<HTMLButtonElement>('[data-tag-trigger]');
+        if (trigger !== null) trigger.setAttribute('aria-expanded', 'false');
+        const existing = timers.get(d);
+        if (existing !== undefined) {
+          window.clearTimeout(existing);
+          timers.delete(d);
+        }
+      });
+  }
 
   function init(): void {
-    if (document.documentElement.dataset['tagDetailsBound'] === '1') return;
-    document.documentElement.dataset['tagDetailsBound'] = '1';
+    if (document.documentElement.dataset['tagDisclosureBound'] === '1') return;
+    document.documentElement.dataset['tagDisclosureBound'] = '1';
+
+    // Capture-phase click: the trigger lives inside the card's <a>,
+    // so we must preventDefault + stopPropagation BEFORE the anchor's
+    // own navigation fires.
     document.addEventListener(
       'click',
       (e) => {
         const target = e.target;
         if (!(target instanceof Element)) return;
-        const summary = target.closest('summary');
-        if (summary === null) return;
-        const details = summary.closest<HTMLDetailsElement>('[data-tag-details]');
-        if (details === null) return;
-        // Stop the anchor navigation — the <details> lives inside the
-        // card's <a>.
+        const trigger = target.closest<HTMLButtonElement>('[data-tag-trigger]');
+        if (trigger === null) {
+          // Click outside any trigger: close every open popover.
+          if (target.closest('[data-tag-disclosure]') === null) closeAll();
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
+        const disclosure = trigger.closest<HTMLElement>('[data-tag-disclosure]');
+        if (disclosure === null) return;
+        const willOpen = !disclosure.classList.contains('is-open');
+        closeAll(willOpen ? disclosure : undefined);
+        if (willOpen) {
+          disclosure.classList.add('is-open');
+          trigger.setAttribute('aria-expanded', 'true');
+          const t = window.setTimeout(() => {
+            disclosure.classList.remove('is-open');
+            trigger.setAttribute('aria-expanded', 'false');
+            timers.delete(disclosure);
+          }, POPOVER_TTL_MS);
+          timers.set(disclosure, t);
+        }
       },
       true,
     );
-    document.addEventListener('toggle', (e) => {
-      const details = e.target;
-      if (!(details instanceof HTMLDetailsElement)) return;
-      if (details.dataset['tagDetails'] === undefined) return;
-      const existing = timers.get(details);
-      if (existing !== undefined) window.clearTimeout(existing);
-      if (!details.open) {
-        timers.delete(details);
-        return;
-      }
-      // Close every other open popover.
-      document
-        .querySelectorAll<HTMLDetailsElement>('[data-tag-details][open]')
-        .forEach((d) => {
-          if (d !== details) d.open = false;
-        });
-      const t = window.setTimeout(() => { details.open = false; }, POPOVER_TTL_MS);
-      timers.set(details, t);
-    }, true);
   }
 
   init();
