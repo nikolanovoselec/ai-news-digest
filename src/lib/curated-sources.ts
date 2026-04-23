@@ -194,14 +194,14 @@ export const CURATED_SOURCES: readonly CuratedSource[] = [
     name: 'LangChain Blog',
     feed_url: 'https://blog.langchain.com/rss/',
     kind: 'rss',
-    tags: ['ai', 'agenticai', 'genai'],
+    tags: ['ai', 'agenticai', 'genai', 'mcp'],
   },
   {
     slug: 'autogpt-news',
     name: 'AutoGPT News',
     feed_url: 'https://news.agpt.co/rss/',
     kind: 'rss',
-    tags: ['ai', 'agenticai'],
+    tags: ['ai', 'agenticai', 'mcp'],
   },
 
   // ---- Security ----------------------------------------------------------
