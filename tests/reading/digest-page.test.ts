@@ -149,4 +149,31 @@ describe('DigestCard.astro — REQ-READ-001 AC 2/3', () => {
   it('REQ-READ-001: link target resolves to the detail route', () => {
     expect(digestCardSource).toMatch(/\/digest\/\$\{digestId\}\/\$\{slug\}/);
   });
+
+  it('REQ-READ-001: # tag-trigger always shows the tag count (including "#1" for single-tag articles)', () => {
+    // Pin the "#{tags.length}" form; the prior "#{tags.length > 1 ? tags.length : ''}"
+    // hid the count for single-tag cards and made them look decoration-only.
+    expect(digestCardSource).toMatch(/#\{tags\.length\}/);
+    // Regression guard: the single-tag "hide the number" branch is gone.
+    expect(digestCardSource).not.toMatch(
+      /tags\.length\s*>\s*1\s*\?\s*tags\.length\s*:\s*['"]{2}/,
+    );
+  });
+
+  it('REQ-STAR-001 / REQ-READ-001: star toggle and tag popover adopt the inverted-theme palette (bg=var(--text), fg=var(--bg))', () => {
+    // Star: when aria-pressed='true' the button flips to a filled
+    // inverted pill matching the # trigger.
+    expect(digestCardSource).toMatch(
+      /\.digest-card__star\[aria-pressed='true'\]\s*\{[^}]*background:\s*var\(--text\)[^}]*color:\s*var\(--bg\)/,
+    );
+    // Popover: inverted pill, not the prior card-style background.
+    expect(digestCardSource).toMatch(
+      /\.digest-card__tag-popover\s*\{[^}]*background:\s*var\(--text\)[^}]*color:\s*var\(--bg\)/,
+    );
+    // Chips inherit instead of hard-coding --text-muted, so the popover
+    // palette flows through.
+    expect(digestCardSource).toMatch(
+      /\.digest-card__tag-chip\s*\{[^}]*color:\s*inherit/,
+    );
+  });
 });

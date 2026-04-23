@@ -175,7 +175,7 @@ const displaySourceName = resolveDisplaySource();
               aria-label={`Show ${tags.length} tag${tags.length === 1 ? '' : 's'} for ${title}`}
               aria-expanded="false"
             >
-              #{tags.length > 1 ? tags.length : ''}
+              #{tags.length}
             </button>
             <div class="digest-card__tag-popover" role="region">
               {tags.map((t) => (
@@ -266,33 +266,44 @@ const displaySourceName = resolveDisplaySource();
      with 0 padding so the rendered size tracks the '#' character
      directly. A generous invisible hit area (2px padding) keeps
      touch-targetability without the button looking bigger than #. */
+  /* Star toggle — matches the # trigger's inverted-theme pill when
+     starred (aria-pressed='true'): filled background = var(--text),
+     glyph = var(--bg). Unstarred stays as a quiet muted outline so
+     most cards don't shout "I'm starred!" at rest. */
   .digest-card__star {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-width: 0;
     min-height: 0;
-    padding: 2px 4px;
+    padding: 3px 7px;
     background: transparent;
     border: 0;
-    border-radius: 3px;
+    border-radius: 4px;
     color: var(--text-muted);
-    opacity: 0.65;
+    opacity: 0.7;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     /* Tell mobile browsers this is a single-tap target, not a
        scroll/pinch target — prevents the 300ms delay that can
        eat first-taps on some mobile engines. */
     touch-action: manipulation;
-    transition: color 150ms var(--ease, ease), opacity 150ms var(--ease, ease);
+    transition:
+      background-color 150ms var(--ease, ease),
+      color 150ms var(--ease, ease),
+      opacity 150ms var(--ease, ease);
   }
   .digest-card__star:hover {
     color: var(--text);
     opacity: 1;
   }
   .digest-card__star[aria-pressed='true'] {
-    color: var(--text);
+    background: var(--text);
+    color: var(--bg);
     opacity: 1;
+  }
+  .digest-card__star[aria-pressed='true']:hover {
+    background: color-mix(in oklab, var(--text) 88%, var(--text-muted) 12%);
   }
   .digest-card__star-icon {
     display: inline-flex;
@@ -425,7 +436,10 @@ const displaySourceName = resolveDisplaySource();
   /* Popover — always in the DOM, hidden via visibility + opacity so
      CSS :hover can toggle it without fighting a UA display:none rule.
      Anchored to the bottom-right of the # trigger and opens UPWARD
-     so it never clips below the grid. */
+     so it never clips below the grid. Uses the same inverted-theme
+     palette as the # trigger: bg = var(--text), chip text =
+     var(--bg), so the popover reads as a "pinned" version of the
+     same pill rather than a floating card. */
   .digest-card__tag-popover {
     position: absolute;
     bottom: calc(100% + 6px);
@@ -435,11 +449,12 @@ const displaySourceName = resolveDisplaySource();
     flex-wrap: wrap;
     gap: 4px;
     padding: 6px 8px;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: var(--text);
+    color: var(--bg);
+    border: 1px solid var(--text);
     border-radius: 6px;
     max-width: min(260px, 80vw);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
     visibility: hidden;
     opacity: 0;
     transform: translateY(4px);
@@ -470,13 +485,13 @@ const displaySourceName = resolveDisplaySource();
   }
 
   /* Tag chips inside the # popover are plain text — no pill, no
-     background, no border. The rail is where tags are interactive
-     pills; this popover just lists which tags the article carries. */
+     background, no border. The popover itself provides the inverted
+     background; the chips just inherit its color. */
   .digest-card__tag-chip {
     display: inline-block;
     padding: 0;
     background: transparent;
-    color: var(--text-muted);
+    color: inherit;
     border: 0;
     border-radius: 0;
     font-size: var(--text-sm);
