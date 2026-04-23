@@ -105,38 +105,6 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
       </fieldset>
 
       <fieldset class="settings__section">
-        <legend class="settings__legend">Interests</legend>
-        <p class="settings__hint">
-          Tags live at the top of the digest page — click to select/filter, click
-          the × to delete. You can revert to the curated starter list at any time.
-        </p>
-        <div class="settings__actions-row">
-          {/*
-            Native <form> POST to /api/tags/restore — the endpoint
-            writes DEFAULT_HASHTAGS server-side and 303-redirects to
-            /digest, so the button works with zero JavaScript. The
-            light progressive enhancement below only updates the
-            inline "Restoring…" status during the POST round-trip.
-          */}
-          <form
-            method="post"
-            action="/api/tags/restore"
-            class="settings__restore-form"
-            data-restore-form
-          >
-            <button
-              type="submit"
-              class="settings__secondary-button"
-              data-restore-tags
-            >
-              {RESTORE_DEFAULTS_LABEL}
-            </button>
-          </form>
-          <p class="settings__status" data-restore-status aria-live="polite"></p>
-        </div>
-      </fieldset>
-
-      <fieldset class="settings__section">
         <legend class="settings__legend">Inference and Notification</legend>
         <label class="settings__field">
           <span class="settings__field-label">Model</span>
@@ -160,6 +128,42 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
         <p class="settings__status" data-settings-status aria-live="polite"></p>
       </div>
     </form>
+
+    {
+      !isFirstRun && (
+        <fieldset class="settings__section settings__section--standalone">
+          <legend class="settings__legend">Interests</legend>
+          <p class="settings__hint">
+            Tags live at the top of the digest page — click to select/filter, click
+            the × to delete. You can revert to the curated starter list at any time.
+          </p>
+          <div class="settings__actions-row">
+            {/*
+              Native <form> POST to /api/tags/restore. MUST sit outside
+              the main <form class='settings__form'> above — nested
+              <form>s are invalid HTML and the browser submits the
+              outer one on click, which redirected users to
+              /settings?time=08:30 instead of calling the endpoint.
+            */}
+            <form
+              method="post"
+              action="/api/tags/restore"
+              class="settings__restore-form"
+              data-restore-form
+            >
+              <button
+                type="submit"
+                class="settings__secondary-button"
+                data-restore-tags
+              >
+                {RESTORE_DEFAULTS_LABEL}
+              </button>
+            </form>
+            <p class="settings__status" data-restore-status aria-live="polite"></p>
+          </div>
+        </fieldset>
+      )
+    }
 
     {
       !isFirstRun && (

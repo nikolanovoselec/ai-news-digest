@@ -46,7 +46,7 @@ The object shape is always:
 {"articles":[{"title":"string","url":"string","one_liner":"string","details":["string","string","string"],"tags":["string"]}]}
 
 Content rules:
-- Pick up to 6 headlines most relevant to the user's interests, ranked by relevance then recency.
+- Pick between 15 and 30 headlines most relevant to the user's interests, ranked by relevance then recency. Fifteen is the floor when the candidate pool supports it; 30 is the hard ceiling.
 - "title" MUST be a punchy, glance-ready New-York-Times-style headline of your own writing — concrete, specific, active voice, roughly 45–80 characters, and free of clickbait. Do NOT copy the source headline verbatim when it reads like a press-release or feed title. The goal is a headline a reader would pause on.
 - "one_liner" is a single plaintext sentence, ~150–200 characters, stating the single most important fact about the article.
 - Each "details" string is a plaintext paragraph about ~200 words covering context, specifics, and why it matters. No bullet prefixes, no lists inside the paragraph.
@@ -54,7 +54,7 @@ Content rules:
 - "tags" MUST be a non-empty subset of the user's interest hashtags (provided below) that this article is genuinely about. Use the candidate headline's own "source_tags" field as the authoritative source of truth — copy those entries into "tags", dropping any that the story does not really cover. Never invent tags the user did not provide.
 - All strings are plaintext: no HTML, no Markdown, no inline links.
 - Skip duplicates, press releases with no substance, and pure advertising.
-- If fewer than 6 good matches exist, return fewer — do not pad with weak results.`;
+- If fewer than 15 good matches exist, return as many real matches as you have — do not pad with weak results.`;
 
 /**
  * Build the user message for the digest call. User-controlled content
@@ -86,7 +86,7 @@ fan-out — copy the relevant entries into the output "tags" field:
 ${JSON.stringify(candidateHeadlines)}
 \`\`\`
 
-Return exactly this JSON shape:
+Return between 15 and 30 articles in this JSON shape:
 {
   "articles": [
     {

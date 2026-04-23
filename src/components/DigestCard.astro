@@ -3,9 +3,9 @@
 // Implements REQ-GEN-005 AC 6 (renders the validated per-article tag list)
 //
 // Single article card for the digest overview grid. Renders the title,
-// 120-char one-liner summary, source-name badge, and a hashtag
-// affordance on the left of the title that opens a non-interactive
-// popover showing the article's tag list (REQ-READ-001 AC 6).
+// 120-char one-liner summary, source-name badge, and an inline `#`
+// disclosure that opens a non-interactive popover with the article's
+// tag list (REQ-READ-001 AC 6).
 //
 // View Transitions: each card carries a unique `transition:name` derived
 // from the article slug so Astro's ClientRouter performs a shared-element
@@ -50,15 +50,14 @@ const stagger = Math.min(index, 9);
 // digest.astro: a comma-joined list so the script can intersect against
 // the selected-tag set without re-parsing JSON per card.
 const tagAttr = tags.join(',');
+// Discovered-feed source names are stored as `feed:<slug>` so fan-out
+// can dedupe them separately; the slug is all users need to see.
+const displaySourceName =
+  sourceName !== null && sourceName.startsWith('feed:')
+    ? sourceName.slice('feed:'.length)
+    : sourceName;
 ---
 
-{/* The # tag trigger and popover are SIBLINGS of the card link, not
-    descendants — a <button> nested inside an <a> is invalid HTML and
-    Safari "flattens" nested interactive elements, making neither click
-    target reliable. Here the <a> covers the visible card (via absolute
-    positioning), and the # button floats above the top-left corner with
-    its own z-index so clicks land on whichever control the user aimed
-    at. */}
 <article
   class="digest-card"
   data-digest-card
@@ -73,44 +72,38 @@ const tagAttr = tags.join(',');
     aria-label={title}
   >
     <div class="digest-card__heading">
+      {
+        /* `<details>` native click-toggle — no JS required to open or
+           close. Positioned inline with the title, click on the `#`
+           opens the popover; click again closes; auto-close after 5 s
+           via the light script below. */
+      }
+      {
+        tags.length > 0 && (
+          <details class="digest-card__tag-details" data-tag-details>
+            <summary
+              class="digest-card__tag-trigger"
+              aria-label={`Show tags for ${title}`}
+            >
+              #
+            </summary>
+            <div class="digest-card__tag-popover">
+              {tags.map((t) => (
+                <span class="digest-card__tag-chip">#{t}</span>
+              ))}
+            </div>
+          </details>
+        )
+      }
       <h2 class="digest-card__title">{title}</h2>
     </div>
     <p class="digest-card__one-liner">{oneLiner}</p>
     {
-      sourceName !== null && sourceName !== '' && (
-        <span class="digest-card__source">{sourceName}</span>
+      displaySourceName !== null && displaySourceName !== '' && (
+        <span class="digest-card__source">{displaySourceName}</span>
       )
     }
   </a>
-  {
-    tags.length > 0 && (
-      <>
-        <button
-          type="button"
-          class="digest-card__tag-trigger"
-          data-tag-trigger
-          aria-label={`Show tags for ${title}`}
-          aria-expanded="false"
-          aria-controls={`tags-popover-${slug}`}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            {/* MDI pound-box-outline — https://pictogrammers.com/library/mdi/icon/pound-box-outline/ */}
-            <path d="M5,3H19A2,2 0 0,1 21,5V19A2,2 0 0,1 19,21H5A2,2 0 0,1 3,19V5A2,2 0 0,1 5,3M5,5V19H19V5H5M15.04,12.06L14.16,15.87L12.21,15.42L13.09,11.61L11.15,11.16L10.26,14.97L8.32,14.52L9.2,10.71L7,10.2L7.46,8.25L9.65,8.76L10.21,6.35L8,5.83L8.46,3.88L10.67,4.4L11.55,0.59L13.5,1.04L12.62,4.85L14.56,5.3L15.44,1.5L17.39,1.94L16.5,5.75L18.71,6.26L18.25,8.21L16.05,7.7L15.5,10.11L17.71,10.62L17.25,12.56L15.04,12.06M12.17,7.25L11.62,9.66L13.56,10.11L14.12,7.7L12.17,7.25Z" />
-          </svg>
-        </button>
-        <div
-          id={`tags-popover-${slug}`}
-          class="digest-card__tag-popover"
-          data-tag-popover
-          hidden
-        >
-          {tags.map((t) => (
-            <span class="digest-card__tag-chip">#{t}</span>
-          ))}
-        </div>
-      </>
-    )
-  }
 </article>
 
 <style>
@@ -128,13 +121,10 @@ const tagAttr = tags.join(',');
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    padding: 1rem 1.25rem 1rem 2.5rem;
+    padding: 1rem 1.25rem;
     color: var(--text);
     text-decoration: none;
     min-height: 140px;
-    /* Undo the global 44x44 minimum so the card isn't forced wider
-       than its grid cell on small viewports. The card itself is a
-       large tap target via the full surface. */
     min-width: 0;
   }
 
@@ -150,30 +140,9 @@ const tagAttr = tags.join(',');
 
   .digest-card__heading {
     display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-
-  .digest-card__tag-trigger {
-    /* The trigger lives inside the anchor; clicking it must NOT
-       navigate. Event-capture on the container stops propagation via
-       the client script below. */
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    min-height: 28px;
-    padding: 2px;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    color: var(--text-muted);
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-  .digest-card__tag-trigger:hover {
-    color: var(--text);
-    background: var(--bg);
+    align-items: baseline;
+    gap: 0.4rem;
+    position: relative;
   }
 
   .digest-card__title {
@@ -183,6 +152,50 @@ const tagAttr = tags.join(',');
     line-height: 1.3;
     flex: 1 1 auto;
     min-width: 0;
+  }
+
+  /* Native <details> disclosure for the tag popover. `position:
+     static` on the element, `position: absolute` on the popover so it
+     floats over the card without pushing the title. */
+  .digest-card__tag-details {
+    flex-shrink: 0;
+  }
+  .digest-card__tag-details summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  .digest-card__tag-details summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .digest-card__tag-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    /* Override the global 44x44 min so the # sits snug next to the
+       title baseline. The whole <summary> is still clickable. */
+    min-width: 0;
+    min-height: 0;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: var(--text-base);
+    font-weight: 600;
+    font-family: inherit;
+    line-height: 1;
+    user-select: none;
+  }
+  .digest-card__tag-trigger:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+  .digest-card__tag-details[open] .digest-card__tag-trigger {
+    color: var(--text);
+    border-color: var(--text);
   }
 
   .digest-card__one-liner {
@@ -207,8 +220,8 @@ const tagAttr = tags.join(',');
 
   .digest-card__tag-popover {
     position: absolute;
-    top: 42px;
-    left: 16px;
+    top: calc(100% + 6px);
+    left: 0;
     z-index: 5;
     display: flex;
     flex-wrap: wrap;
@@ -217,10 +230,7 @@ const tagAttr = tags.join(',');
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 6px;
-    max-width: calc(100% - 32px);
-  }
-  .digest-card__tag-popover[hidden] {
-    display: none;
+    max-width: calc(100% - 0px);
   }
 
   .digest-card__tag-chip {
@@ -245,7 +255,6 @@ const tagAttr = tags.join(',');
     }
   }
 
-  /* REQ-READ-001 AC 3 — reduce motion disables stagger entirely. */
   @media (prefers-reduced-motion: reduce) {
     .digest-card {
       opacity: 1;
@@ -262,66 +271,54 @@ const tagAttr = tags.join(',');
 </style>
 
 <script>
-  // REQ-READ-001 AC 6: clicking the # trigger opens a non-interactive
-  // popover; clicking it again closes immediately. Popover auto-
-  // dismisses after 5s. Delegated on <document> so it works across
-  // View Transitions re-renders.
+  // Pure progressive enhancement on top of the native <details>:
+  //   * stop the click from navigating the parent <a> (details is
+  //     inside the anchor so the toggle propagates),
+  //   * auto-close the popover 5 s after open,
+  //   * close other open popovers so only one is visible at a time.
+  // If this script never runs, the popover still toggles natively on
+  // click — the user keeps the core behaviour.
   const POPOVER_TTL_MS = 5000;
-  const triggerAttr = 'data-tag-trigger';
-  const popoverAttr = 'data-tag-popover';
-  const activeTimers = new WeakMap<Element, number>();
-
-  function closePopover(popover: HTMLElement): void {
-    popover.hidden = true;
-    const timer = activeTimers.get(popover);
-    if (timer !== undefined) {
-      window.clearTimeout(timer);
-      activeTimers.delete(popover);
-    }
-  }
-
-  function openPopover(popover: HTMLElement): void {
-    // Close any other open popover first — only one visible at a time.
-    document.querySelectorAll<HTMLElement>(`[${popoverAttr}]`).forEach((p) => {
-      if (p !== popover) closePopover(p);
-    });
-    popover.hidden = false;
-    const timer = window.setTimeout(() => closePopover(popover), POPOVER_TTL_MS);
-    activeTimers.set(popover, timer);
-  }
+  const timers = new WeakMap<HTMLDetailsElement, number>();
 
   function init(): void {
-    if (document.documentElement.dataset['tagPopoverBound'] === '1') return;
-    document.documentElement.dataset['tagPopoverBound'] = '1';
+    if (document.documentElement.dataset['tagDetailsBound'] === '1') return;
+    document.documentElement.dataset['tagDetailsBound'] = '1';
     document.addEventListener(
       'click',
       (e) => {
         const target = e.target;
         if (!(target instanceof Element)) return;
-        const trigger = target.closest<HTMLButtonElement>(`[${triggerAttr}]`);
-        if (trigger === null) return;
-        // Prevent card navigation — the trigger lives inside the
-        // anchor.
+        const summary = target.closest('summary');
+        if (summary === null) return;
+        const details = summary.closest<HTMLDetailsElement>('[data-tag-details]');
+        if (details === null) return;
+        // Stop the anchor navigation — the <details> lives inside the
+        // card's <a>.
         e.preventDefault();
         e.stopPropagation();
-        const card = trigger.closest<HTMLElement>('[data-digest-card]');
-        if (card === null) return;
-        const popover = card.querySelector<HTMLElement>(`[${popoverAttr}]`);
-        if (popover === null) return;
-        if (popover.hidden) {
-          openPopover(popover);
-        } else {
-          closePopover(popover);
-        }
       },
       true,
     );
-    // Clicking anywhere else closes all popovers.
-    document.addEventListener('click', (e) => {
-      const target = e.target;
-      if (target instanceof Element && target.closest(`[${triggerAttr}]`)) return;
-      document.querySelectorAll<HTMLElement>(`[${popoverAttr}]`).forEach(closePopover);
-    });
+    document.addEventListener('toggle', (e) => {
+      const details = e.target;
+      if (!(details instanceof HTMLDetailsElement)) return;
+      if (details.dataset['tagDetails'] === undefined) return;
+      const existing = timers.get(details);
+      if (existing !== undefined) window.clearTimeout(existing);
+      if (!details.open) {
+        timers.delete(details);
+        return;
+      }
+      // Close every other open popover.
+      document
+        .querySelectorAll<HTMLDetailsElement>('[data-tag-details][open]')
+        .forEach((d) => {
+          if (d !== details) d.open = false;
+        });
+      const t = window.setTimeout(() => { details.open = false; }, POPOVER_TTL_MS);
+      timers.set(details, t);
+    }, true);
   }
 
   init();
