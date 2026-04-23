@@ -105,7 +105,7 @@ Returns the most recent digest row for this user; `live=true` when `status='in_p
 
 ### POST /api/digest/refresh
 
-Manual refresh. Rate-limited to once per 5 minutes and 10 per rolling 24h. Runs a conditional INSERT to prevent duplicate in-progress digests.
+Manual refresh. Rate-limited to once per 30 seconds and 100 per rolling 24h. Runs a conditional INSERT to prevent duplicate in-progress digests.
 
 **Response:** `202 { digest_id, status: 'in_progress' }`
 
