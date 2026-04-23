@@ -311,18 +311,17 @@ const initialTheme = cookieTheme ?? 'light';
       /* Scramble target uses a ghost/live pair so the scrambling
          never perturbs the surrounding footer layout:
            - .ghost renders the target word ("Codeflare") in the
-             footer's natural font and is the ONLY element that
-             occupies layout width.
+             footer's natural (proportional) font and is the ONLY
+             element that occupies layout width.
            - .live sits absolute on top of .ghost with visibility,
              takes up zero layout space, and receives the scramble
              text via textContent from /scramble.js.
-         The live layer INHERITS font-family/weight/letter-spacing
-         from the surrounding footer copy so "Codeflare" reads as
-         part of the same sentence — previously it was rendered in
-         monospace and stuck out visually against the sans-serif
-         uppercase footer. The ghost's reserved width still prevents
-         any char-width wobble during the animation from reflowing
-         the '©' and 'Gray Matter GmbH' to its right. */
+         The live layer uses a monospace stack so the moving chars
+         each occupy a uniform horizontal slot and don't shift
+         within the fixed ghost width. Color is explicitly inherited
+         from the parent <a class="site-footer__link"> so the
+         monospace "Codeflare" reads in the same muted tone as the
+         rest of the footer copy. */
       .site-footer__scramble {
         position: relative;
         display: inline-block;
@@ -330,21 +329,21 @@ const initialTheme = cookieTheme ?? 'light';
       }
       .site-footer__scramble-ghost {
         /* Invisible but lays out — this is what reserves "Codeflare"'s
-           width in the footer's natural font so '©' never shifts
-           regardless of what the scrambler paints. */
+           width in the footer's natural font so '·' and '©' never
+           shift regardless of what the scrambler paints. */
         visibility: hidden;
       }
       .site-footer__scramble-live {
         position: absolute;
         inset: 0;
         display: inline-block;
-        /* Inherit font stack + weight + letter-spacing from the
-           surrounding .site-footer rule so this reads as the same
-           text as "Built with" / "Gray Matter GmbH". */
-        font-family: inherit;
-        font-weight: inherit;
-        letter-spacing: inherit;
-        text-transform: inherit;
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        /* Lock the color to the surrounding .site-footer__link (which
+           is already var(--text-muted) — same tone as "Built with
+           … © 2026 Gray Matter GmbH"). Prevents any browser default
+           link-color bleeding into the live layer. */
+        color: inherit;
         text-align: left;
         white-space: pre;
         overflow: hidden;

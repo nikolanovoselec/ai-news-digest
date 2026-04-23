@@ -55,9 +55,10 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 **Acceptance Criteria:**
 1. The viewport meta tag on every page is `width=device-width, initial-scale=1, viewport-fit=cover`.
 2. The header respects iPhone notches and Android gesture bars via safe-area insets so its controls never sit under system chrome.
-3. Navigation is consolidated into the header on every viewport: brand on the left and an avatar-triggered user menu on the right. The user menu contains the theme toggle, a History entry, Settings, and Log out. No separate sidebar or bottom tab bar, and no standalone header buttons beyond the brand and avatar.
+3. Navigation is consolidated into the header on every viewport: brand on the left, and on the right a standalone theme-toggle icon immediately followed by an avatar-triggered user menu. The user menu contains a History entry, Starred, Settings, and Log out — the theme toggle is no longer an item inside the menu. No separate sidebar or bottom tab bar, and no standalone header buttons beyond the brand, theme toggle, and avatar.
 4. The digest is the app home; clicking the brand returns to it when signed in.
 5. Tap highlights are disabled globally; focus and active states are handled by CSS.
+6. Interactive header controls (theme toggle, avatar) meet the 44×44 CSS-pixel minimum tap-target guidance on mobile viewports.
 
 **Constraints:** CON-A11Y-001
 **Priority:** P1
