@@ -742,22 +742,36 @@ if (isReadyToday && articles.length < 3) {
 
   .digest-page__title {
     margin: 0;
+    /* Editorial headline — serif, tight leading, slight negative
+       tracking so the three-word title sits anchor-weight on the
+       page. This is the visual focal point of the dashboard. */
+    font-family: var(--font-serif);
     font-size: var(--text-2xl);
     font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
     color: var(--text);
   }
 
+  /* Refresh demoted to secondary — it still reads as a button, but
+     the outline treatment defers visual weight to the serif headline.
+     Primary actions that trigger 1–2-minute background jobs shouldn't
+     shout. */
   .digest-page__refresh-button {
-    min-height: 44px;
-    padding: 0.5rem 1rem;
-    background-color: var(--text);
-    color: var(--bg);
-    border: none;
+    min-height: 40px;
+    padding: 0.4rem 1rem;
+    background-color: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
     border-radius: 0.375rem;
-    font-weight: 600;
+    font-size: var(--text-sm);
+    font-weight: 500;
     cursor: pointer;
+    transition: border-color 150ms ease, background-color 150ms ease;
   }
-
+  .digest-page__refresh-button:hover {
+    border-color: var(--text);
+  }
   .digest-page__refresh-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;

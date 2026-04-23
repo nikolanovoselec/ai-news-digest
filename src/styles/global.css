@@ -19,6 +19,14 @@
   --color-accent: var(--accent);
   --font-sans:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
+  /* Editorial serif stack for long-form reading surfaces (article
+   * detail, magazine-style headlines). Prefers Charter (iOS/macOS),
+   * then Iowan Old Style, Georgia (ubiquitous), Noto Serif (Android),
+   * Source Serif Pro (desktop Linux). No font-download — every
+   * platform already has at least one usable serif in this chain. */
+  --font-serif:
+    'Charter', 'Iowan Old Style', 'Georgia', 'Noto Serif', 'Source Serif Pro',
+    'Cambria', 'Times New Roman', serif;
 
   /* Type scale — five sizes per REQ-DES-001 AC1. Two weights
    * (400 body, 600 headings/labels). */

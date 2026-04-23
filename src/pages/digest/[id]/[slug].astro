@@ -122,6 +122,39 @@ try {
 }
 
 const transitionName = `card-${articleRow.slug}`;
+
+// Reading-time estimate from the sum of detail-paragraph word counts.
+// 220 wpm is the standard desk-reader rate; clamp to ≥1 minute so a
+// very short article doesn't read "0 MIN".
+function countWords(s: string): number {
+  const t = s.trim();
+  if (t === '') return 0;
+  return t.split(/\s+/u).length;
+}
+const totalWords = details.reduce((acc, p) => acc + countWords(p), 0);
+const readMinutes = Math.max(1, Math.ceil(totalWords / 220));
+
+// Publish-date formatting. When the article has its own `published_at`
+// fall back to the digest's generated_at. Render in the US editorial
+// short style (APR 23, NOV 8). Pure display, no timezone affordances
+// needed because the field is informational, not interactive.
+const MONTHS = [
+  'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+  'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'
+];
+function formatDate(unixSec: number): string {
+  const d = new Date(unixSec * 1000);
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+}
+const publishedSec = articleRow.published_at ?? digestRow.generated_at;
+const publishedLabel = formatDate(publishedSec);
+
+// Display source name matches the reading-grid: strip the `feed:`
+// prefix that fan-out uses to namespace discovered feeds.
+const rawSource = articleRow.source_name ?? '';
+const displaySource = rawSource.startsWith('feed:')
+  ? rawSource.slice('feed:'.length)
+  : rawSource;
 ---
 
 <Base title={articleRow.title}>
@@ -132,16 +165,32 @@ const transitionName = `card-${articleRow.slug}`;
 
     <header class="article-detail__header" transition:name={transitionName}>
       <h1 class="article-detail__title">{articleRow.title}</h1>
-      {
-        articleRow.source_name !== null && articleRow.source_name !== '' && (
-          <span class="article-detail__source">{articleRow.source_name}</span>
-        )
-      }
+      <p class="article-detail__meta" aria-label="Article metadata">
+        {
+          displaySource !== '' && (
+            <>
+              <span class="article-detail__meta-item">{displaySource}</span>
+              <span class="article-detail__meta-sep" aria-hidden="true">·</span>
+            </>
+          )
+        }
+        <span class="article-detail__meta-item">{publishedLabel}</span>
+        <span class="article-detail__meta-sep" aria-hidden="true">·</span>
+        <span class="article-detail__meta-item">{readMinutes} MIN READ</span>
+      </p>
     </header>
 
-    <ul class="article-detail__bullets">
-      {details.map((bullet) => <li class="article-detail__bullet">{bullet}</li>)}
-    </ul>
+    <div class="article-detail__body">
+      {
+        details.map((paragraph, i) => (
+          <p
+            class={`article-detail__paragraph${i === 0 ? ' article-detail__paragraph--lead' : ''}`}
+          >
+            {paragraph}
+          </p>
+        ))
+      }
+    </div>
 
     <a
       class="article-detail__source-link"
@@ -155,13 +204,16 @@ const transitionName = `card-${articleRow.slug}`;
 </Base>
 
 <style>
+  /* Editorial reading surface: serif headline, small-caps metadata
+     line, optical-sized body measure, drop-cap lead paragraph. The
+     cumulative effect is "magazine" rather than "dashboard". */
   .article-detail {
-    max-width: 720px;
+    max-width: 680px;
     margin: 0 auto;
-    padding: 1.5rem 0;
+    padding: 1.5rem 0 3rem;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.75rem;
   }
 
   .article-detail__back-link {
@@ -169,7 +221,6 @@ const transitionName = `card-${articleRow.slug}`;
     text-decoration: none;
     font-size: var(--text-sm);
   }
-
   .article-detail__back-link:hover {
     color: var(--text);
   }
@@ -177,41 +228,74 @@ const transitionName = `card-${articleRow.slug}`;
   .article-detail__header {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.9rem;
   }
 
   .article-detail__title {
     margin: 0;
+    font-family: var(--font-serif);
+    /* 32 px anchor but we let it breathe vs the prior 700 weight by
+       dropping to 600 and loosening tracking — hairline heavier glyphs
+       read as "display" without shouting. */
     font-size: var(--text-2xl);
-    font-weight: 700;
-    line-height: 1.25;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
     color: var(--text);
+    text-wrap: balance;
   }
 
-  .article-detail__source {
-    align-self: flex-start;
-    padding: 0.2rem 0.6rem;
-    background-color: var(--surface);
-    color: var(--text-muted);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    font-size: var(--text-sm);
-  }
-
-  .article-detail__bullets {
+  .article-detail__meta {
     margin: 0;
-    padding-left: 1.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .article-detail__meta-sep {
+    opacity: 0.6;
+  }
+
+  .article-detail__body {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    color: var(--text);
-    line-height: 1.55;
+    gap: 1.1rem;
   }
 
-  .article-detail__bullet {
+  .article-detail__paragraph {
+    margin: 0;
+    max-width: 62ch;
+    font-family: var(--font-sans);
     font-size: var(--text-base);
+    line-height: 1.65;
+    color: var(--text);
+    /* Proper reading prose controls: allow hyphenation, ask the
+       browser for a `pretty` wrap that avoids orphan lines. */
+    hyphens: auto;
+    -webkit-hyphens: auto;
+    text-wrap: pretty;
   }
 
+  /* Lead paragraph gets a drop cap — large serif initial, 3-line
+     capital, flush top with negative margin so x-height aligns with
+     the first running-text line. */
+  .article-detail__paragraph--lead::first-letter {
+    float: left;
+    font-family: var(--font-serif);
+    font-size: 3.2em;
+    font-weight: 700;
+    line-height: 0.9;
+    padding: 0.12em 0.1em 0 0;
+    color: var(--text);
+  }
+
+  /* Primary source link — stays solid-inverted like the other primary
+     actions (Save, Refresh) so the CTA still feels "the button". */
   .article-detail__source-link {
     display: inline-flex;
     align-items: center;
@@ -220,11 +304,15 @@ const transitionName = `card-${articleRow.slug}`;
     padding: 0.75rem 1.25rem;
     background-color: var(--text);
     color: var(--bg);
+    border: 1px solid var(--text);
     border-radius: 0.375rem;
     font-weight: 600;
     text-decoration: none;
+    margin-top: 0.5rem;
   }
-
+  .article-detail__source-link:hover {
+    opacity: 0.9;
+  }
   .article-detail__source-link:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
