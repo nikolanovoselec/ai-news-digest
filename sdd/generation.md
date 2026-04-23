@@ -176,7 +176,9 @@ Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
 **Priority:** P0
 **Dependencies:** REQ-GEN-001
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Deprecated
+**Replaced By:** REQ-PIPE-001
+**Removed In:** 2026-04-23
 
 ---
 
@@ -293,7 +295,9 @@ Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
 **Priority:** P1
 **Dependencies:** REQ-GEN-001
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Deprecated
+**Replaced By:** REQ-PIPE-001
+**Removed In:** 2026-04-23
 
 ---
 
@@ -315,4 +319,6 @@ Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
 **Priority:** P1
 **Dependencies:** REQ-GEN-006
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Deprecated
+**Replaced By:** REQ-HIST-002
+**Removed In:** 2026-04-23

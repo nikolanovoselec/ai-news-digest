@@ -27,15 +27,16 @@ Resend-backed notification sent after every successful digest — whether genera
 
 ### REQ-MAIL-002: Non-blocking email failure
 
-**Intent:** A Resend outage, misconfiguration, or bounce never blocks or fails a digest that otherwise completed successfully.
+**Intent:** A Resend outage, misconfiguration, or bounce never blocks the user's access to their digest and never blocks sibling users' sends on the same cron tick.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The Resend POST uses a 5-second timeout.
-2. Any non-2xx response, network failure, or timeout is logged as `{ level: 'error', event: 'email.send.failed', user_id, digest_id, status }`; no exception bubbles up.
-3. The `digests` row remains `status='ready'` regardless of email outcome.
-4. The in-app digest is fully viewable independent of email delivery.
+1. The Resend POST uses a short request timeout.
+2. Any non-2xx response, network failure, or timeout is logged as a structured error event; no exception bubbles up to the cron handler.
+3. One user's failed send never blocks or aborts another user's send in the same cron invocation.
+4. The reading surfaces stay fully usable regardless of email outcome.
+5. On send failure, the per-user "last emailed date" marker is NOT advanced, so the next cron tick retries the same user naturally.
 
 **Constraints:** None
 **Priority:** P1

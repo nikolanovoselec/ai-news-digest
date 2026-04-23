@@ -1,4 +1,7 @@
 // Implements REQ-MAIL-001
+// Implements REQ-MAIL-002 (non-blocking failure: per-user try/catch,
+// no bubble to cron handler, failed sends do NOT advance
+// last_emailed_local_date so the next tick retries naturally).
 //
 // Daily digest-ready email dispatcher. Runs on the `*/5 * * * *` cron.
 //
