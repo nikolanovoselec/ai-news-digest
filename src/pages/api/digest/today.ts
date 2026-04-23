@@ -95,9 +95,10 @@ export interface WireArticle {
 export interface TodayResponse {
   articles: WireArticle[];
   last_scrape_run: ScrapeRunRow | null;
-  /** Unix seconds of the next `0 */4 * * *` UTC cron tick. Always a
-   *  real timestamp — the countdown renders even when lastRun is null
-   *  because the schedule is independent of any completed run. */
+  /** Unix seconds of the next 4-hour UTC cron tick (00/04/08/12/16/20).
+   *  Always a real timestamp — the countdown renders even when
+   *  lastRun is null because the schedule is independent of any
+   *  completed run. */
   next_scrape_at: number;
 }
 
