@@ -131,12 +131,15 @@ const displaySourceName = resolveDisplaySource();
 <style>
   .digest-card {
     position: relative;
+    /* The card itself is a flex container too so the inner anchor
+       (.digest-card__link) can flex: 1 1 auto and stretch to the
+       FULL height the grid gives us. Without this, the grid stretches
+       the card but the anchor stays content-sized, the anchor's flex
+       layout only sees its own content height, and 'margin-top: auto'
+       on the footer pushes it to the wrong point. */
+    display: flex;
+    flex-direction: column;
     background-color: var(--surface);
-    /* Hairline vertical gradient for dark-mode depth — 2% white at
-       the top fading to transparent gives a faint "paper under lamp"
-       highlight so cards don't read as flat rectangles. On light
-       theme the effect is near-imperceptible; on dark it's the
-       difference between "dashboard" and "evening paper". */
     background-image: linear-gradient(
       180deg,
       rgba(255, 255, 255, 0.02),
@@ -144,33 +147,23 @@ const displaySourceName = resolveDisplaySource();
     );
     border: 1px solid var(--border);
     border-radius: 0.5rem;
-    /* Default: rendered visible. The entrance stagger only fires on
-       the very first dashboard paint (see the
-       :root:not([data-digest-seen]) rule below) so the back-from-
-       detail View Transition doesn't replay the fade and make the
-       grid flicker. Non-selected cards still morph cleanly via VT;
-       the hit card uses its own transition:name to shared-element
-       back into the grid. */
-    /* Entrance stagger removed — View Transitions already morph the
-       clicked card back into place on return, and the fade-in-other-
-       cards pass kept flickering in some browsers regardless of how
-       we gated it. Instant render + hero-morph is the better
-       compromise. */
     opacity: 1;
   }
 
   .digest-card__link {
     display: flex;
     flex-direction: column;
-    /* Equal 1rem rhythm inside the card so title ↔ one-liner ↔ footer
-       spacing matches the between-card gap on the grid; the user
-       reads cards as blocks rather than floating boxes. */
     gap: 1rem;
     padding: 1.1rem 1.25rem;
     color: var(--text);
     text-decoration: none;
     min-height: 140px;
     min-width: 0;
+    /* Stretch the anchor to fill the card's full grid-row height so
+       the inner flex column actually has the space it needs for
+       'margin-top: auto' on the footer to pin source+# to the bottom
+       regardless of content length. */
+    flex: 1 1 auto;
   }
 
   /* Footer row anchors to the card's bottom via margin-top: auto and
