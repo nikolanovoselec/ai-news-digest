@@ -9,7 +9,12 @@ export default defineConfig({
   adapter: cloudflare({
     platformProxy: {
       enabled: true
-    }
+    },
+    // `imageService: 'compile'` runs sharp only during the build to
+    // optimise prerendered images; the deployed Worker never touches
+    // sharp, which isn't available in workerd. Silences the "sharp at
+    // runtime" adapter warning.
+    imageService: 'compile'
     // scheduled + queue handlers are merged into the built worker by
     // scripts/merge-worker-handlers.mjs, which runs after `astro build`
     // (see the `build` script in package.json). It bundles src/worker.ts
@@ -18,6 +23,17 @@ export default defineConfig({
     // workerEntryPoint option produced an invalid merged worker, so we
     // compose the handlers ourselves instead.
   }),
+  // Astro 5 Sessions are enabled by default on adapters that support
+  // them (Cloudflare is one). We don't use `Astro.session` anywhere —
+  // session state rides on the HMAC-signed __Host-news_digest_session
+  // cookie (REQ-AUTH-002). Reusing our existing `KV` binding for
+  // Astro's session driver silences the "Invalid binding `SESSION`"
+  // advisory without wasting a KV namespace, and has no runtime cost
+  // because nothing in the app reads or writes the session.
+  session: {
+    driver: 'cloudflare-kv-binding',
+    options: { binding: 'KV' }
+  },
   integrations: [
     AstroPWA({
       registerType: 'autoUpdate',
