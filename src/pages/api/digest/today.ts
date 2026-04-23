@@ -1,6 +1,6 @@
 // Implements REQ-READ-001
 //
-// GET /api/digest/today — returns the 30 most recent articles from the
+// GET /api/digest/today — returns the 50 most recent articles from the
 // GLOBAL article pool filtered by the authenticated user's active
 // hashtags, plus metadata about the most recent completed scrape_run so
 // the dashboard can render the "Last updated at HH:MM · Next update in
@@ -103,7 +103,7 @@ export interface TodayResponse {
 }
 
 /**
- * Load the dashboard payload for a user — the 30 newest articles from
+ * Load the dashboard payload for a user — the 50 newest articles from
  * the global pool whose tag set intersects the user's active tags, plus
  * the most recent `ready` scrape_run metadata.
  *
@@ -164,7 +164,7 @@ export async function loadTodayPayload(
        SELECT DISTINCT article_id FROM article_tags WHERE tag IN (${tagPlaceholders})
      )
      ORDER BY a.published_at DESC
-     LIMIT 30
+     LIMIT 50
   `;
 
   let rows: ArticleRow[] = [];
