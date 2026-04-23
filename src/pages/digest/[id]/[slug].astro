@@ -151,19 +151,22 @@ const publishedLabel = formatDate(publishedSec);
 
 // Display source: prefer the fan-out's source_name (minus the
 // `feed:` namespace prefix), fall back to the outbound URL's host so
-// a null source_name never leaves the metadata line empty.
-function resolveDisplaySource(): string {
-  const raw = articleRow.source_name ?? '';
-  if (raw !== '') {
-    return raw.startsWith('feed:') ? raw.slice('feed:'.length) : raw;
-  }
+// a null source_name never leaves the metadata line empty. Inlined
+// instead of a local function so tsc's null-narrowing on articleRow
+// from the 404 guard above stays in scope.
+const rawSource = articleRow.source_name ?? '';
+let displaySource: string;
+if (rawSource !== '') {
+  displaySource = rawSource.startsWith('feed:')
+    ? rawSource.slice('feed:'.length)
+    : rawSource;
+} else {
   try {
-    return new URL(articleRow.source_url).host.replace(/^www\./, '');
+    displaySource = new URL(articleRow.source_url).host.replace(/^www\./, '');
   } catch {
-    return '';
+    displaySource = '';
   }
 }
-const displaySource = resolveDisplaySource();
 ---
 
 <Base title={articleRow.title}>
