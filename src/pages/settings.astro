@@ -18,6 +18,7 @@ import { loadSession } from '~/middleware/auth';
 import { requireSettingsComplete } from '~/middleware/settings-gate';
 import { DEFAULT_TZ } from '~/lib/tz';
 import { DEFAULT_MODEL_ID } from '~/lib/models';
+import { RESTORE_DEFAULTS_LABEL } from '~/lib/default-hashtags';
 
 
 const env = Astro.locals.runtime.env;
@@ -115,7 +116,7 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
             class="settings__secondary-button"
             data-restore-tags
           >
-            Restore initial tags
+            {RESTORE_DEFAULTS_LABEL}
           </button>
           <p class="settings__status" data-restore-status aria-live="polite"></p>
         </div>

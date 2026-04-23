@@ -127,7 +127,16 @@ export async function generateDigest(
 
   const startedAtMs = Date.now();
   const localDate = localDateInTz(Math.floor(startedAtMs / 1000), user.tz);
-  const modelId = user.model_id ?? DEFAULT_MODEL_ID;
+  // Fall back to DEFAULT_MODEL_ID when the user's stored model_id is
+  // null OR no longer in the MODELS catalog. The latter protects users
+  // whose preference pointed at a model we've since retired (e.g.,
+  // llama-3.3-70b-instruct-fp8-fast, which was removed after its 24K
+  // async-queue limitation surfaced in production).
+  const storedModelValid =
+    user.model_id !== null &&
+    user.model_id !== '' &&
+    modelById(user.model_id) !== undefined;
+  const modelId = storedModelValid ? user.model_id! : DEFAULT_MODEL_ID;
 
   // --- Step 1: Claim / create the digest row --------------------------------
   //
