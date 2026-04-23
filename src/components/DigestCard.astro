@@ -350,35 +350,40 @@ const displaySourceName = resolveDisplaySource();
      article title owns the card's visual weight. Hitbox stays
      comfortably large via padding on the <summary>, not a min-size
      box. */
+  /* Tag trigger reads as a small inverted-theme pill — same treatment
+     as the selected tag-chip and the primary CTAs elsewhere in the
+     app (background=var(--text), color=var(--bg)). Sits at 10%
+     larger font than the footer's text-sm baseline so it has a bit
+     more presence than the single-character '#' had before. */
   .digest-card__tag-trigger {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 2px 4px;
+    padding: 3px 7px;
     min-width: 0;
     min-height: 0;
-    background: transparent;
+    background: var(--text);
     border: 0;
-    border-radius: 3px;
-    color: var(--text-muted);
-    font-size: var(--text-sm);
+    border-radius: 4px;
+    color: var(--bg);
+    font-size: calc(var(--text-sm) * 1.1);
     font-weight: 600;
     font-family: inherit;
     line-height: 1;
-    opacity: 0.65;
     user-select: none;
     cursor: pointer;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
-    transition: opacity 150ms ease, color 150ms ease;
+    transition:
+      background-color 150ms ease,
+      color 150ms ease,
+      opacity 150ms ease;
   }
-  .digest-card__tag-trigger:hover {
-    color: var(--text);
-    opacity: 1;
-  }
+  .digest-card__tag-trigger:hover,
   .digest-card__tag-disclosure.is-open .digest-card__tag-trigger {
-    color: var(--text);
-    opacity: 1;
+    /* Subtle darken on hover / while open — mixes the inverted
+       background toward the text-muted tone. */
+    background: color-mix(in oklab, var(--text) 88%, var(--text-muted) 12%);
   }
 
   .digest-card__one-liner {
