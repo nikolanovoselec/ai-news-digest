@@ -17,7 +17,42 @@ import { startRun } from '~/lib/scrape-run';
 import { DEFAULT_MODEL_ID } from '~/lib/models';
 import { checkOrigin, originOf } from '~/middleware/origin-check';
 
-async function kickCoordinator(env: Env): Promise<string> {
+/** Concurrency window: if a scrape_runs row with status='running' was
+ * started within this many seconds, reuse it instead of kicking a
+ * fresh coordinator. Guards against accidental double-clicks and
+ * preview-bot re-fetches. */
+const REUSE_WINDOW_SECONDS = 120;
+
+interface RecentRun {
+  id: string;
+  started_at: number;
+}
+
+/** Find any `status='running'` row started within REUSE_WINDOW_SECONDS.
+ * Returns null when there's nothing to reuse. */
+async function findRecentRunningRun(env: Env): Promise<RecentRun | null> {
+  const cutoff = Math.floor(Date.now() / 1000) - REUSE_WINDOW_SECONDS;
+  const row = await env.DB
+    .prepare(
+      `SELECT id, started_at FROM scrape_runs
+        WHERE status = 'running' AND started_at >= ?1
+        ORDER BY started_at DESC LIMIT 1`,
+    )
+    .bind(cutoff)
+    .first<RecentRun>();
+  return row ?? null;
+}
+
+async function kickCoordinator(env: Env): Promise<{ run_id: string; reused: boolean }> {
+  const existing = await findRecentRunningRun(env);
+  if (existing !== null) {
+    log('info', 'digest.generation', {
+      status: 'force_refresh_reused',
+      scrape_run_id: existing.id,
+      age_seconds: Math.floor(Date.now() / 1000) - existing.started_at,
+    });
+    return { run_id: existing.id, reused: true };
+  }
   const scrape_run_id = generateUlid();
   await startRun(env.DB, { id: scrape_run_id, model_id: DEFAULT_MODEL_ID });
   await env.SCRAPE_COORDINATOR.send({ scrape_run_id });
@@ -25,13 +60,16 @@ async function kickCoordinator(env: Env): Promise<string> {
     status: 'force_refresh_dispatched',
     scrape_run_id,
   });
-  return scrape_run_id;
+  return { run_id: scrape_run_id, reused: false };
 }
 
-function redirectToSettings(origin: string, runId: string): Response {
+function redirectToSettings(origin: string, runId: string, reused: boolean): Response {
+  const status = reused ? 'reused' : 'ok';
   return new Response(null, {
     status: 303,
-    headers: { Location: `${origin}/settings?force_refresh=${runId}` },
+    headers: {
+      Location: `${origin}/settings?force_refresh=${status}&run_id=${runId}`,
+    },
   });
 }
 
@@ -46,8 +84,8 @@ export async function POST(context: APIContext): Promise<Response> {
   if (!originResult.ok) return originResult.response!;
 
   try {
-    const runId = await kickCoordinator(env);
-    return redirectToSettings(appOrigin, runId);
+    const { run_id, reused } = await kickCoordinator(env);
+    return redirectToSettings(appOrigin, run_id, reused);
   } catch (err) {
     log('error', 'digest.generation', {
       status: 'force_refresh_failed',
@@ -61,14 +99,16 @@ export async function GET(context: APIContext): Promise<Response> {
   // GET path exists so the operator can trigger from a bookmark or
   // curl without needing a form. Cloudflare Access is the sole gate
   // — no Origin check here (there's no state-changing browser flow).
+  // The REUSE_WINDOW_SECONDS guard below prevents accidental storms
+  // from link-preview bots refetching the URL.
   const env = context.locals.runtime.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
     return new Response('Application not configured', { status: 500 });
   }
   try {
-    const runId = await kickCoordinator(env);
+    const { run_id, reused } = await kickCoordinator(env);
     return new Response(
-      JSON.stringify({ ok: true, scrape_run_id: runId }, null, 2),
+      JSON.stringify({ ok: true, scrape_run_id: run_id, reused }, null, 2),
       {
         status: 200,
         headers: { 'Content-Type': 'application/json; charset=utf-8' },

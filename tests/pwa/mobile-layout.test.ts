@@ -11,7 +11,10 @@
 import { describe, it, expect } from 'vitest';
 import baseSource from '../../src/layouts/Base.astro?raw';
 import userMenuSource from '../../src/components/UserMenu.astro?raw';
-import globalCss from '../../src/styles/global.css?raw';
+// The cloudflare vitest pool can't raw-import .css, so the project
+// generates tests/fixtures/global-css.ts via `npm run fixtures` at
+// pretest time. Use that fixture instead of `?raw` on global.css.
+import { GLOBAL_CSS as globalCss } from '../fixtures/global-css';
 
 describe('viewport meta — REQ-PWA-003 AC 1', () => {
   it('REQ-PWA-003: viewport declaration is the exact Safari-compliant triple', () => {

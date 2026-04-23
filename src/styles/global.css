@@ -90,6 +90,14 @@ input[type='reset'] {
   min-height: 44px;
 }
 
+/* Suppress the default iOS/Android blue tap flash per REQ-PWA-003 AC5.
+ * Paired with the focus-visible ring below so keyboard users still get
+ * a clear focus indicator — touch users just don't get the lingering
+ * tint on every tap. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Visible focus ring on keyboard focus per REQ-DES-001 AC4. Uses :focus-visible
  * so mouse clicks don't trigger the ring; the `.focus-ring` utility class
  * applies the same treatment to custom focus targets. */

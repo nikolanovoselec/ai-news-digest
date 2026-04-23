@@ -1,0 +1,261 @@
+// Tests for /force-refresh — operator-only manual coordinator kick.
+//
+// Coverage:
+//   - POST rejects missing/foreign Origin (CSRF defence-in-depth)
+//   - POST happy path: startRun + SCRAPE_COORDINATOR.send, 303 redirect
+//   - GET happy path: same backend work, JSON response
+//   - Concurrency guard: if a status='running' row exists within
+//     REUSE_WINDOW_SECONDS, both paths reuse it instead of kicking
+//     a second coordinator message (prevents double-click storms
+//     and preview-bot refetches from multiplying LLM cost).
+
+import { describe, it, expect, vi } from 'vitest';
+import { POST, GET } from '~/pages/force-refresh';
+
+const APP_URL = 'https://news-digest.example.com';
+const APP_ORIGIN = 'https://news-digest.example.com';
+
+interface PreparedStmt {
+  sql: string;
+  params: unknown[];
+  first: ReturnType<typeof vi.fn>;
+  run: ReturnType<typeof vi.fn>;
+}
+
+interface DbFixture {
+  /** Rows returned by the "find recent running run" query. */
+  recentRun?: { id: string; started_at: number } | null;
+  /** Captured call log for assertions. */
+  calls: Array<{ sql: string; params: unknown[]; verb: 'first' | 'run' }>;
+}
+
+function makeDb(fixture: DbFixture): D1Database {
+  const prepare = vi.fn().mockImplementation((sql: string) => {
+    const bound: unknown[] = [];
+    const stmt: PreparedStmt = {
+      sql,
+      params: bound,
+      first: vi.fn().mockImplementation(async () => {
+        fixture.calls.push({ sql, params: [...bound], verb: 'first' });
+        if (sql.includes('FROM scrape_runs')) {
+          return fixture.recentRun ?? null;
+        }
+        return null;
+      }),
+      run: vi.fn().mockImplementation(async () => {
+        fixture.calls.push({ sql, params: [...bound], verb: 'run' });
+        return { success: true, meta: { changes: 1 } };
+      }),
+    };
+    return {
+      bind: (...params: unknown[]) => {
+        bound.push(...params);
+        return stmt;
+      },
+      first: stmt.first,
+      run: stmt.run,
+    };
+  });
+  return { prepare } as unknown as D1Database;
+}
+
+interface QueueFixture {
+  sent: unknown[];
+}
+
+function makeQueue(fixture: QueueFixture): Queue<unknown> {
+  return {
+    send: vi.fn().mockImplementation(async (msg: unknown) => {
+      fixture.sent.push(msg);
+    }),
+    sendBatch: vi.fn(),
+  } as unknown as Queue<unknown>;
+}
+
+function makeEnv(db: D1Database, queue: Queue<unknown>): Partial<Env> {
+  return {
+    APP_URL,
+    DB: db,
+    SCRAPE_COORDINATOR: queue as unknown as Env['SCRAPE_COORDINATOR'],
+  };
+}
+
+function makeContext(request: Request, env: Partial<Env>): unknown {
+  return {
+    request,
+    locals: { runtime: { env: env as Env } },
+    url: new URL(request.url),
+    params: {},
+  };
+}
+
+function refreshRequest(
+  verb: 'POST' | 'GET',
+  options: { origin?: string | null } = {},
+): Request {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (options.origin !== null && options.origin !== undefined) {
+    headers.set('Origin', options.origin);
+  }
+  return new Request(`${APP_URL}/force-refresh`, { method: verb, headers });
+}
+
+describe('POST /force-refresh', () => {
+  it('rejects POST with missing Origin (REQ-AUTH-003 CSRF defence)', async () => {
+    const calls: DbFixture['calls'] = [];
+    const db = makeDb({ calls });
+    const queue = makeQueue({ sent: [] });
+    const req = refreshRequest('POST', { origin: null });
+    const res = await POST(makeContext(req, makeEnv(db, queue)) as never);
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects POST with a foreign Origin', async () => {
+    const calls: DbFixture['calls'] = [];
+    const db = makeDb({ calls });
+    const queue = makeQueue({ sent: [] });
+    const req = refreshRequest('POST', { origin: 'https://evil.example.com' });
+    const res = await POST(makeContext(req, makeEnv(db, queue)) as never);
+    expect(res.status).toBe(403);
+  });
+
+  it('POST happy path: inserts scrape_runs row, enqueues coordinator, 303 to /settings', async () => {
+    const fixture: DbFixture = { calls: [] };
+    const db = makeDb(fixture);
+    const qsent: unknown[] = [];
+    const queue = makeQueue({ sent: qsent });
+    const req = refreshRequest('POST', { origin: APP_ORIGIN });
+    const res = await POST(makeContext(req, makeEnv(db, queue)) as never);
+
+    expect(res.status).toBe(303);
+    expect(res.headers.get('Location')).toMatch(
+      /\/settings\?force_refresh=ok&run_id=/,
+    );
+    // An INSERT INTO scrape_runs happened with chunk_count=0 (NOT NULL
+    // schema — see src/lib/scrape-run.ts). Regression guard for the
+    // NULL-binding bug that was fixed in dc65bf0.
+    const insert = fixture.calls.find(
+      (c) => c.sql.includes('INSERT INTO scrape_runs') && c.verb === 'run',
+    );
+    expect(insert).toBeDefined();
+    // Param order: id, model_id, started_at, chunk_count
+    expect(insert!.params[3]).toBe(0);
+    // Queue received exactly one coordinator message with the run id.
+    expect(qsent).toHaveLength(1);
+    expect((qsent[0] as { scrape_run_id: string }).scrape_run_id).toMatch(
+      /^[0-9A-HJKMNP-TV-Z]{26}$/, // ULID alphabet
+    );
+  });
+
+  it('POST reuses an existing running run within the 120s window instead of kicking a new one', async () => {
+    // User double-clicks "Force refresh now" — second click MUST NOT
+    // create a second scrape_runs row and MUST NOT enqueue a second
+    // coordinator message. Both would double the LLM cost.
+    const now = Math.floor(Date.now() / 1000);
+    const fixture: DbFixture = {
+      calls: [],
+      recentRun: { id: 'already-running-id', started_at: now - 30 },
+    };
+    const db = makeDb(fixture);
+    const qsent: unknown[] = [];
+    const queue = makeQueue({ sent: qsent });
+    const req = refreshRequest('POST', { origin: APP_ORIGIN });
+    const res = await POST(makeContext(req, makeEnv(db, queue)) as never);
+
+    expect(res.status).toBe(303);
+    // Redirect carries the REUSED marker + the existing run id.
+    expect(res.headers.get('Location')).toMatch(
+      /force_refresh=reused&run_id=already-running-id/,
+    );
+    // Crucially: no INSERT, no queue send.
+    const insert = fixture.calls.find(
+      (c) => c.sql.includes('INSERT INTO scrape_runs') && c.verb === 'run',
+    );
+    expect(insert).toBeUndefined();
+    expect(qsent).toHaveLength(0);
+  });
+});
+
+describe('GET /force-refresh', () => {
+  it('GET 200 JSON happy path: inserts scrape_runs, enqueues, returns { ok, scrape_run_id, reused: false }', async () => {
+    const fixture: DbFixture = { calls: [] };
+    const db = makeDb(fixture);
+    const qsent: unknown[] = [];
+    const queue = makeQueue({ sent: qsent });
+    const req = refreshRequest('GET');
+    const res = await GET(makeContext(req, makeEnv(db, queue)) as never);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      scrape_run_id: string;
+      reused: boolean;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.reused).toBe(false);
+    expect(body.scrape_run_id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(qsent).toHaveLength(1);
+  });
+
+  it('GET with a recent running run reuses instead of kicking (link-preview bot storm guard)', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const fixture: DbFixture = {
+      calls: [],
+      recentRun: { id: 'reused-run-id', started_at: now - 60 },
+    };
+    const db = makeDb(fixture);
+    const qsent: unknown[] = [];
+    const queue = makeQueue({ sent: qsent });
+    const req = refreshRequest('GET');
+    const res = await GET(makeContext(req, makeEnv(db, queue)) as never);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      scrape_run_id: string;
+      reused: boolean;
+    };
+    expect(body.reused).toBe(true);
+    expect(body.scrape_run_id).toBe('reused-run-id');
+    // No new INSERT, no new queue send.
+    const insert = fixture.calls.find(
+      (c) => c.sql.includes('INSERT INTO scrape_runs') && c.verb === 'run',
+    );
+    expect(insert).toBeUndefined();
+    expect(qsent).toHaveLength(0);
+  });
+
+  it('GET does NOT run Origin check (deliberately — the endpoint is gated by Cloudflare Access, not by browser cookies)', async () => {
+    // The absence of Origin headers MUST NOT block a GET — operators
+    // trigger via bookmark/curl with no Origin. Only the Access
+    // policy in front of the endpoint decides access.
+    const fixture: DbFixture = { calls: [] };
+    const db = makeDb(fixture);
+    const queue = makeQueue({ sent: [] });
+    const req = refreshRequest('GET', { origin: null });
+    const res = await GET(makeContext(req, makeEnv(db, queue)) as never);
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('reuse-window SQL contract', () => {
+  it('queries scrape_runs for status=running started within 120s of now', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const fixture: DbFixture = { calls: [] };
+    const db = makeDb(fixture);
+    const queue = makeQueue({ sent: [] });
+    const req = refreshRequest('GET');
+    await GET(makeContext(req, makeEnv(db, queue)) as never);
+
+    const recent = fixture.calls.find(
+      (c) => c.sql.includes('FROM scrape_runs') && c.verb === 'first',
+    );
+    expect(recent).toBeDefined();
+    expect(recent!.sql).toMatch(/status\s*=\s*'running'/);
+    expect(recent!.sql).toMatch(/started_at\s*>=\s*\?1/);
+    // The bound cutoff must be (now - 120) ± a few seconds to absorb
+    // clock drift between the test and the helper's Date.now().
+    const cutoff = recent!.params[0] as number;
+    expect(cutoff).toBeGreaterThanOrEqual(now - 125);
+    expect(cutoff).toBeLessThanOrEqual(now - 115);
+  });
+});

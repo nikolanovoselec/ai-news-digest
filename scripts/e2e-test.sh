@@ -102,13 +102,17 @@ check GET  /                                200\|303
 check GET  /digest                          200\|303
 check GET  /settings                        200\|303
 check GET  /history                         200
-check GET  /digest/failed?code=llm_failed   200
-check GET  /digest/no-stories               200
-check GET  /offline                         200
-check GET  /rate-limited                    200
+check GET  /starred                         200
+# Error pages (global-feed rework retired /digest/failed + /digest/no-stories).
+check GET  /does-not-exist                  404
 check GET  /favicon.svg                     200
 check GET  /manifest.webmanifest            200
 check GET  /theme-init.js                   200
+check GET  /scramble.js                     200
+check GET  /robots.txt                      200
+check GET  /llms.txt                        200
+check GET  /llms-full.txt                   200
+check GET  /sitemap.xml                     200
 
 # ------------------------------------------------------------ API surface
 printf '\n=== API endpoints ===\n'
@@ -119,17 +123,21 @@ check POST /api/auth/github/login           303
 # /api/auth/account — DELETE-only in production; GET is 405 or 404.
 check GET  /api/auth/account                404\|405
 
-# /api/digest/today — returns JSON; 200 with { digest, ... }.
+# /api/digest/today — global-feed response: { articles, last_scrape_run, next_scrape_at }.
 check GET  /api/digest/today                200
-check_body GET /api/digest/today 'digest|next_scheduled_at'
+check_body GET /api/digest/today 'articles|last_scrape_run|next_scrape_at'
 
-# /api/history — returns JSON. Empty digests list is fine for a new account.
+# /api/starred — returns { articles } for the session user.
+check GET  /api/starred                     200
+check_body GET /api/starred 'articles'
+
+# /api/history — returns { days } day-grouped list.
 check GET  /api/history                     200
-check GET  /api/history?offset=0            200
+check_body GET /api/history 'days'
 
 # /api/stats — returns JSON with { digests_generated, ... }.
 check GET  /api/stats                       200
-check_body GET /api/stats 'digests_generated|articles_read|tokens_in'
+check_body GET /api/stats 'digests_generated|articles_read|tokens_consumed'
 
 # /api/discovery/status — returns JSON with per-hashtag status (possibly empty).
 check GET  /api/discovery/status            200

@@ -41,7 +41,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Dependencies:** REQ-DISC-001
 **Verification:** Integration test
 **Status:** Partial
-**Notes:** `GET /api/discovery/status` endpoint ships and returns the pending-tags list; the in-app banner wiring and UI is not yet verified by a dedicated test.
+**Notes:** AC 1 (GET /api/discovery/status scoped by session user) is verified by tests/settings/discovery-status.test.ts. AC 2 and AC 3 (in-app banner on /digest) are not yet implemented — the post-rework dashboard does not render a discovery banner. Tracked in pending.md for the next sprint.
 
 ---
 
@@ -63,7 +63,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Dependencies:** REQ-DISC-001
 **Verification:** Integration test
 **Status:** Partial
-**Notes:** Eviction logic is live and tests cover discovery-time failure counting and tag re-queue behaviour; end-to-end feed-level health tracking during normal digest fetches is not yet exercised by a dedicated test.
+**Notes:** Discovery-time failure counting + tag re-queue on auto-eviction (process-pending path) is verified by tests/discovery/process-pending.test.ts. Feed-level health tracking during the hourly global-feed coordinator run is not yet implemented — the coordinator's per-source try/catch swallows fetch errors but does not increment `source_health:{url}` or evict URLs from `sources:{tag}` after 2 consecutive failures. Tracked in pending.md.
 
 ---
 

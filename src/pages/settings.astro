@@ -127,7 +127,7 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
       </fieldset>
 
       <fieldset class="settings__section">
-        <legend class="settings__legend">Inference and Notification</legend>
+        <legend class="settings__legend">Notifications</legend>
         {showModelSelect ? (
           <label class="settings__field">
             {/* Implements REQ-SET-004 — hidden while the global pipeline
@@ -157,14 +157,17 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
           />
           <span>Email me when my daily digest is ready</span>
         </label>
+        <div class="settings__actions-row">
+          <button
+            type="submit"
+            class="settings__secondary-button"
+            data-settings-submit
+          >
+            {primaryCta}
+          </button>
+          <p class="settings__status" data-settings-status aria-live="polite"></p>
+        </div>
       </fieldset>
-
-      <div class="settings__actions">
-        <button type="submit" class="settings__submit" data-settings-submit>
-          {primaryCta}
-        </button>
-        <p class="settings__status" data-settings-status aria-live="polite"></p>
-      </div>
     </form>
 
     {

@@ -10,15 +10,14 @@
 // AC 5: error pages (404/500) are noindex
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { GET as sitemapGet } from '~/pages/sitemap.xml';
 import baseSource from '../../src/layouts/Base.astro?raw';
-
-const ROOT = resolve(import.meta.dirname ?? process.cwd(), '../../');
-const robots = readFileSync(resolve(ROOT, 'public/robots.txt'), 'utf-8');
-const llms = readFileSync(resolve(ROOT, 'public/llms.txt'), 'utf-8');
-const llmsFull = readFileSync(resolve(ROOT, 'public/llms-full.txt'), 'utf-8');
+// node:fs isn't available in the Workers-pool runtime; Vite's `?raw`
+// handles plain text files so we inline the crawler-policy payloads
+// directly into the bundle at test time.
+import robots from '../../public/robots.txt?raw';
+import llms from '../../public/llms.txt?raw';
+import llmsFull from '../../public/llms-full.txt?raw';
 
 describe('robots.txt — REQ-OPS-004 AC 2', () => {
   it('REQ-OPS-004: default User-agent allows the landing page and explicit static assets', () => {

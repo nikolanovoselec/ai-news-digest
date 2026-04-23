@@ -54,7 +54,12 @@ const fullTitle =
 
 const canonicalUrl =
   canonical ?? `${Astro.url.origin}${Astro.url.pathname}`;
-const ogImageUrl = ogImage ?? `${Astro.url.origin}/og.png`;
+// Only emit og:image when the caller explicitly supplies one. Emitting
+// a default that points at a non-existent /og.png makes Slack/Twitter
+// unfurls render a "broken image" placeholder, which looks worse than
+// no card image at all. A future commit can generate a real 1200×630
+// PNG and wire it back in as the default.
+const ogImageUrl = ogImage ?? null;
 
 // Server-side theme resolution (REQ-DES-002).
 // Reading the `theme` cookie lets us set `data-theme` on <html> in the FIRST
@@ -97,16 +102,22 @@ const initialTheme = cookieTheme ?? 'light';
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonicalUrl} />
-    <meta property="og:image" content={ogImageUrl} />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
+    {ogImageUrl !== null && (
+      <>
+        <meta property="og:image" content={ogImageUrl} />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+      </>
+    )}
     <meta property="og:locale" content="en_US" />
 
-    {/* Twitter / X card */}
-    <meta name="twitter:card" content="summary_large_image" />
+    {/* Twitter / X card — summary_large_image when we have a real OG
+        image, `summary` otherwise so the card still renders a text
+        preview without a broken image placeholder. */}
+    <meta name="twitter:card" content={ogImageUrl !== null ? 'summary_large_image' : 'summary'} />
     <meta name="twitter:title" content={fullTitle} />
     <meta name="twitter:description" content={description} />
-    <meta name="twitter:image" content={ogImageUrl} />
+    {ogImageUrl !== null && <meta name="twitter:image" content={ogImageUrl} />}
 
     {/* Performance hints — the site itself has no third-party deps on
         the critical path, but the dns-prefetch cost is ~0 and keeps the
@@ -126,7 +137,13 @@ const initialTheme = cookieTheme ?? 'light';
 
     {/* Schema.org JSON-LD: WebSite + Organization. Gives Google a clean
         knowledge-panel card and disambiguates the site from the
-        publisher entity. */}
+        publisher entity.
+
+        Defensive escape: replace </ with <\/ in the serialized JSON so
+        any future caller-supplied string that contains a literal
+        </script> sequence can't escape the script tag and inject
+        arbitrary HTML. Current callers pass only server-controlled
+        values; this is insurance for future refactors. */}
     <script type="application/ld+json" set:html={JSON.stringify({
       '@context': 'https://schema.org',
       '@graph': [
@@ -147,7 +164,7 @@ const initialTheme = cookieTheme ?? 'light';
           logo: `${Astro.url.origin}/favicon.svg`,
         },
       ],
-    })} />
+    }).replace(/<\//g, '<\\/')} />
 
     {/* REQ-DES-002: /theme-init.js reconciles the server-rendered data-theme
         with prefers-color-scheme on a first visit where no cookie is set. */}
