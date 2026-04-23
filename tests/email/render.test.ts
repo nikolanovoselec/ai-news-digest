@@ -1,219 +1,151 @@
-// Tests for src/lib/email.ts rendering helpers — REQ-MAIL-001 AC 3 (HTML
-// template shape) and AC 4 (plaintext fallback). Also covers HTML escaping
-// of user-derived fields (top_tags, gh_login, article_count) which prevents
-// stored-XSS-in-email attacks against downstream clients that render HTML.
+// Tests for src/lib/email.ts `renderDigestReadyEmail` — REQ-MAIL-001.
+//
+// Wave 2 simplification: the email is a bare notification — one subject,
+// one link to /digest, no per-article content, no cost/token footer, no
+// tag summary, no article count. The renderer's entire surface is:
+//   input:  { appUrl, userDisplayName }
+//   output: { subject, text, html }
+//
+// These tests pin the observable shape of that output. They deliberately
+// over-assert the *absence* of per-article content (title, summary,
+// article count, tag summary, cost footer) so a regression that pulls
+// those back into the template trips the suite.
 
 import { describe, it, expect } from 'vitest';
 import {
-  renderDigestEmailHtml,
-  renderDigestEmailText,
-  renderDigestEmailSubject,
-  type DigestEmailContext,
+  renderDigestReadyEmail,
+  type DigestReadyEmailParams,
 } from '~/lib/email';
 
-/** Build a plausible DigestEmailContext with overridable fields. */
-function makeCtx(overrides: Partial<DigestEmailContext> = {}): DigestEmailContext {
+/** Build a plausible params object with overridable fields. */
+function makeParams(
+  overrides: Partial<DigestReadyEmailParams> = {},
+): DigestReadyEmailParams {
   return {
-    user: {
-      email: 'alice@example.com',
-      gh_login: 'alice',
-    },
-    digest_id: 'dg-01JABCXYZ',
-    local_date: '2026-04-22',
-    article_count: 7,
-    top_tags: ['react', 'typescript', 'edge'],
-    execution_ms: 2400,
-    tokens: 3847,
-    estimated_cost_usd: 0.0012,
-    model_name: 'llama-3.1-8b-instruct-fast',
-    app_url: 'https://news-digest.example.com',
+    appUrl: 'https://news-digest.example.com',
+    userDisplayName: 'alice',
     ...overrides,
   };
 }
 
-describe('renderDigestEmailHtml', () => {
-  it('REQ-MAIL-001: contains the uppercase "News Digest" label', () => {
-    const html = renderDigestEmailHtml(makeCtx());
-    expect(html).toContain('News Digest');
+describe('renderDigestReadyEmail — REQ-MAIL-001', () => {
+  it('REQ-MAIL-001: subject is the exact "Your news digest is ready" string', () => {
+    const { subject } = renderDigestReadyEmail(makeParams());
+    expect(subject).toBe('Your news digest is ready');
   });
 
-  it('REQ-MAIL-001: contains the "Your daily digest is ready" headline', () => {
-    const html = renderDigestEmailHtml(makeCtx());
-    expect(html).toContain('Your daily digest is ready');
+  it('REQ-MAIL-001: subject does not include an article count or tag summary', () => {
+    const { subject } = renderDigestReadyEmail(
+      makeParams({ userDisplayName: 'bob' }),
+    );
+    // No middle-dot, no "N stories", no hashtag list.
+    expect(subject).not.toMatch(/\d+\s+stor/i);
+    expect(subject).not.toContain('\u00b7');
+    expect(subject).not.toContain('#');
   });
 
-  it('REQ-MAIL-001: one-line summary includes article count and top-3 hashtags', () => {
-    const html = renderDigestEmailHtml(makeCtx({
-      article_count: 7,
-      top_tags: ['react', 'typescript', 'edge'],
-    }));
-    expect(html).toContain('7 stories');
-    expect(html).toContain('react');
-    expect(html).toContain('typescript');
-    expect(html).toContain('edge');
+  it('REQ-MAIL-001: text body contains a single link to /digest', () => {
+    const { text } = renderDigestReadyEmail(
+      makeParams({ appUrl: 'https://news-digest.example.com' }),
+    );
+    const link = 'https://news-digest.example.com/digest';
+    const occurrences = text.split(link).length - 1;
+    expect(occurrences).toBe(1);
   });
 
-  it('REQ-MAIL-001: limits the summary to the top 3 hashtags', () => {
-    const html = renderDigestEmailHtml(makeCtx({
-      top_tags: ['one', 'two', 'three', 'four', 'five'],
-    }));
-    expect(html).toContain('one');
-    expect(html).toContain('two');
-    expect(html).toContain('three');
-    expect(html).not.toContain('four');
-    expect(html).not.toContain('five');
+  it('REQ-MAIL-001: text body trims trailing slashes from appUrl', () => {
+    const { text } = renderDigestReadyEmail(
+      makeParams({ appUrl: 'https://news-digest.example.com/' }),
+    );
+    expect(text).toContain('https://news-digest.example.com/digest');
+    expect(text).not.toContain('//digest');
   });
 
-  it('REQ-MAIL-001: CTA button links to {app_url}/digest', () => {
-    const html = renderDigestEmailHtml(makeCtx({
-      app_url: 'https://news-digest.example.com',
-    }));
+  it('REQ-MAIL-001: text body does not contain per-article fields', () => {
+    const { text } = renderDigestReadyEmail(makeParams());
+    // No article titles, no tag lists, no "N stories" counter, no cost
+    // footer, no model name, no execution time.
+    expect(text).not.toMatch(/\d+\s+stor/i);
+    expect(text).not.toMatch(/tokens?/i);
+    expect(text).not.toMatch(/\$?\d+\.\d{4}/); // cost-style number
+    expect(text).not.toMatch(/\bms\b/);
+    expect(text).not.toContain('#');
+    expect(text).not.toContain('llama');
+    expect(text).not.toContain('gpt');
+  });
+
+  it('REQ-MAIL-001: text body does not contain HTML tags', () => {
+    const { text } = renderDigestReadyEmail(makeParams());
+    expect(text).not.toMatch(/<[a-z]/i);
+  });
+
+  it('REQ-MAIL-001: html body contains a single <a> linking to /digest', () => {
+    const { html } = renderDigestReadyEmail(
+      makeParams({ appUrl: 'https://news-digest.example.com' }),
+    );
+    const anchors = html.match(/<a\b[^>]*>/gi) ?? [];
+    expect(anchors).toHaveLength(1);
     expect(html).toContain('href="https://news-digest.example.com/digest"');
   });
 
-  it('REQ-MAIL-001: CTA button has the primary call-to-action copy', () => {
-    const html = renderDigestEmailHtml(makeCtx());
-    expect(html).toContain("Read today's digest");
-  });
-
-  it('REQ-MAIL-001: footer contains execution time, tokens, and cost', () => {
-    const html = renderDigestEmailHtml(makeCtx({
-      execution_ms: 2400,
-      tokens: 3847,
-      estimated_cost_usd: 0.0012,
-    }));
-    expect(html).toContain('2.4');
-    expect(html).toContain('3,847');
-    expect(html).toContain('0.0012');
-  });
-
-  it('REQ-MAIL-001: footer contains the model_name', () => {
-    const html = renderDigestEmailHtml(makeCtx({
-      model_name: 'llama-3.1-8b-instruct-fast',
-    }));
-    expect(html).toContain('llama-3.1-8b-instruct-fast');
-  });
-
-  it('REQ-MAIL-001: footer includes a link to /settings', () => {
-    const html = renderDigestEmailHtml(makeCtx({
-      app_url: 'https://news-digest.example.com',
-    }));
-    expect(html).toContain('href="https://news-digest.example.com/settings"');
-  });
-
-  it('REQ-MAIL-001: styles are inlined on elements (no <style> blocks)', () => {
-    const html = renderDigestEmailHtml(makeCtx());
-    expect(html).not.toContain('<style');
-    expect(html).toContain('style="');
-  });
-
-  it('REQ-MAIL-001: trims trailing slashes from app_url to avoid double-slash URLs', () => {
-    const html = renderDigestEmailHtml(makeCtx({
-      app_url: 'https://news-digest.example.com/',
-    }));
+  it('REQ-MAIL-001: html body trims trailing slashes from appUrl', () => {
+    const { html } = renderDigestReadyEmail(
+      makeParams({ appUrl: 'https://news-digest.example.com/' }),
+    );
     expect(html).toContain('href="https://news-digest.example.com/digest"');
     expect(html).not.toContain('//digest');
   });
 
-  it('REQ-MAIL-001: renders gracefully when top_tags is empty', () => {
-    const html = renderDigestEmailHtml(makeCtx({
-      article_count: 3,
-      top_tags: [],
-    }));
-    expect(html).toContain('3 stories');
-    // No trailing ": ." artifact
-    expect(html).not.toContain('interests: .');
+  it('REQ-MAIL-001: html body does not contain per-article fields', () => {
+    const { html } = renderDigestReadyEmail(makeParams());
+    expect(html).not.toMatch(/\d+\s+stor/i);
+    expect(html).not.toMatch(/tokens?/i);
+    // Cost-like strings (e.g., $0.1234); tolerate hex colours in inline
+    // styles which would otherwise be false positives.
+    expect(html).not.toMatch(/\$\d+\.\d{2,}/);
+    expect(html).not.toContain('llama');
+    expect(html).not.toContain('gpt');
   });
 
-  describe('HTML escaping', () => {
-    it('REQ-MAIL-001: escapes top_tags containing HTML metacharacters', () => {
-      const html = renderDigestEmailHtml(makeCtx({
-        top_tags: ['<script>', 'a&b', 'x"y'],
-      }));
-      expect(html).not.toContain('<script>');
-      expect(html).toContain('&lt;script&gt;');
-      expect(html).toContain('a&amp;b');
-      expect(html).toContain('x&quot;y');
-    });
-
-    it('REQ-MAIL-001: escapes model_name with special characters', () => {
-      const html = renderDigestEmailHtml(makeCtx({
-        model_name: 'custom<model>&"v1',
-      }));
-      expect(html).not.toContain('<model>');
-      expect(html).toContain('custom&lt;model&gt;&amp;&quot;v1');
-    });
-
-    it('REQ-MAIL-001: does not allow injection via article_count downstream rendering', () => {
-      // article_count is a number per the interface, but defense-in-depth:
-      // the html output must never contain raw <script> from any source.
-      const html = renderDigestEmailHtml(makeCtx({ article_count: 5 }));
-      expect(html).not.toMatch(/<script\b/i);
-    });
-  });
-});
-
-describe('renderDigestEmailText', () => {
-  it('REQ-MAIL-001: begins with the plaintext "Your daily digest is ready." headline', () => {
-    const text = renderDigestEmailText(makeCtx());
-    expect(text).toMatch(/^Your daily digest is ready\./);
+  it('REQ-MAIL-001: html body does not reference article titles, summaries, or counts', () => {
+    const { html } = renderDigestReadyEmail(makeParams());
+    // Generic regressions: article list markers should never appear.
+    expect(html).not.toContain('<ul');
+    expect(html).not.toContain('<ol');
+    expect(html).not.toContain('<h2');
+    expect(html).not.toContain('<h3');
   });
 
-  it('REQ-MAIL-001: contains article count in plaintext summary', () => {
-    const text = renderDigestEmailText(makeCtx({ article_count: 9 }));
-    expect(text).toContain('9 stories');
+  it('REQ-MAIL-001: html body has no <script> anywhere', () => {
+    const { html } = renderDigestReadyEmail(makeParams());
+    expect(html).not.toMatch(/<script\b/i);
   });
 
-  it('REQ-MAIL-001: lists top-3 hashtags in plaintext', () => {
-    const text = renderDigestEmailText(makeCtx({
-      top_tags: ['react', 'typescript', 'edge'],
-    }));
-    expect(text).toContain('react');
-    expect(text).toContain('typescript');
-    expect(text).toContain('edge');
+  it('REQ-MAIL-001: html body has no <style> blocks (styles are inlined)', () => {
+    const { html } = renderDigestReadyEmail(makeParams());
+    expect(html).not.toMatch(/<style\b/i);
   });
 
-  it('REQ-MAIL-001: plaintext contains the digest URL', () => {
-    const text = renderDigestEmailText(makeCtx({
-      app_url: 'https://news-digest.example.com',
-    }));
-    expect(text).toContain('https://news-digest.example.com/digest');
+  it('REQ-MAIL-001: html escapes HTML metacharacters that appear in appUrl', () => {
+    // Defense-in-depth: the caller supplies appUrl from env.APP_URL
+    // (trusted config), but a stray quote must not break out of the
+    // href attribute.
+    const { html } = renderDigestReadyEmail(
+      makeParams({ appUrl: 'https://evil"<x>&example.com' }),
+    );
+    expect(html).not.toContain('"<x>&example');
+    expect(html).toContain('&quot;');
+    expect(html).toContain('&lt;x&gt;');
+    expect(html).toContain('&amp;');
   });
 
-  it('REQ-MAIL-001: plaintext footer contains execution/tokens/cost/model', () => {
-    const text = renderDigestEmailText(makeCtx({
-      execution_ms: 2400,
-      tokens: 3847,
-      estimated_cost_usd: 0.0012,
-      model_name: 'llama-3.1-8b-instruct-fast',
-    }));
-    expect(text).toContain('2.4');
-    expect(text).toContain('3,847');
-    expect(text).toContain('0.0012');
-    expect(text).toContain('llama-3.1-8b-instruct-fast');
-  });
-
-  it('REQ-MAIL-001: plaintext contains link to /settings', () => {
-    const text = renderDigestEmailText(makeCtx({
-      app_url: 'https://news-digest.example.com',
-    }));
-    expect(text).toContain('https://news-digest.example.com/settings');
-  });
-
-  it('REQ-MAIL-001: plaintext does NOT contain HTML tags', () => {
-    const text = renderDigestEmailText(makeCtx());
-    expect(text).not.toMatch(/<[a-z]/i);
-  });
-});
-
-describe('renderDigestEmailSubject', () => {
-  it('REQ-MAIL-001: matches the exact REQ template with the middle dot', () => {
-    const subject = renderDigestEmailSubject(makeCtx({ article_count: 7 }));
-    expect(subject).toBe('Your news digest is ready \u00b7 7 stories');
-  });
-
-  it('REQ-MAIL-001: substitutes the article count', () => {
-    const subject = renderDigestEmailSubject(makeCtx({ article_count: 12 }));
-    expect(subject).toContain('12 stories');
+  it('REQ-MAIL-001: return shape is { subject, text, html } with string values', () => {
+    const rendered = renderDigestReadyEmail(makeParams());
+    expect(typeof rendered.subject).toBe('string');
+    expect(typeof rendered.text).toBe('string');
+    expect(typeof rendered.html).toBe('string');
+    expect(rendered.subject.length).toBeGreaterThan(0);
+    expect(rendered.text.length).toBeGreaterThan(0);
+    expect(rendered.html.length).toBeGreaterThan(0);
   });
 });

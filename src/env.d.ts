@@ -13,7 +13,8 @@ interface Env {
   // Bindings
   DB: D1Database;
   KV: KVNamespace;
-  DIGEST_JOBS: Queue<DigestJobMessage>;
+  SCRAPE_COORDINATOR: Queue<import('./queue/scrape-coordinator').CoordinatorMessage>;
+  SCRAPE_CHUNKS: Queue<import('./queue/scrape-chunk-consumer').ChunkJobMessage>;
   AI: Ai;
   ASSETS: Fetcher;
 
@@ -24,11 +25,4 @@ interface Env {
   RESEND_API_KEY: string;
   RESEND_FROM: string;
   APP_URL: string;
-}
-
-interface DigestJobMessage {
-  trigger: 'scheduled' | 'manual';
-  user_id: string;
-  local_date: string;
-  digest_id?: string;
 }

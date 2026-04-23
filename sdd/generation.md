@@ -1,10 +1,143 @@
 # Digest Generation
 
-A single `generateDigest` function called from two places: the cron dispatcher (scheduled) and the refresh API handler (manual). Cron enqueues to Cloudflare Queues; the consumer runs the pipeline in isolate-per-message so memory does not leak between concurrent digests. Rate limits are enforced via atomic conditional UPDATEs. Stuck digests are swept by the cron.
+An hourly global scrape-and-summarise pipeline: one cron-triggered coordinator run per hour assembles candidates from the curated source registry, canonical-URL-dedupes them, and fans chunks out to the LLM consumer. The consumer writes summaries + tags + cluster groupings into a shared article pool. The per-user dashboard then reads from that pool filtered by each user's active tags, so cost scales with the world (one LLM pass per hour) rather than with users × refreshes. Starred articles survive the 7-day retention cutoff.
+
+---
+
+### REQ-PIPE-001: Hourly global scrape-and-summarise pipeline
+
+**Intent:** Every hour, the system fetches from the curated source registry, canonical-URL-dedupes candidates, and queues LLM summarization so the per-user dashboard reads from a single up-to-date pool rather than running the LLM per user. Cost scales O(1) in users instead of O(users × refreshes).
+
+**Applies To:** System
+
+**Acceptance Criteria:**
+1. An hourly Cron Trigger fires on the top of the hour and kicks off a single coordinator run for all users.
+2. The coordinator enqueues one chunk job per ~100 candidates so LLM calls stay within the model's context window and partial failures only lose one chunk.
+3. Each run is tracked by a `scrape_runs` row that transitions `running` → `ready` on success (or `failed` on abort), with a chunk counter that drops to zero when the last chunk finishes.
+4. Candidates whose canonical URL is already present in the article pool are skipped on subsequent ticks so the same story is never re-summarised.
+5. The pipeline is independent of individual user accounts — it runs once per hour regardless of how many users are signed up, and adding users does not multiply LLM spend.
+
+**Constraints:** CON-LLM-001, CON-PERF-001
+**Priority:** P0
+**Dependencies:** REQ-PIPE-004
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-002: Chunked LLM processing with JSON output contract
+
+**Intent:** Candidate articles are summarised in batches of ~100 per LLM call so prompt size stays under the model's context window and partial failures only lose one chunk, not the whole tick.
+
+**Applies To:** System
+
+**Acceptance Criteria:**
+1. Each chunk yields a JSON payload shaped `{articles: [{title, details[], tags[]}], dedup_groups: [[…]]}` and no other top-level keys.
+2. Titles are NYT-style headlines, 45–80 characters, active voice, rewritten rather than copied from the source feed.
+3. `details` is a long-form body of 1–3 plaintext paragraphs per article, with no lists, HTML, or Markdown.
+4. `tags` values come exclusively from the system-approved allowlist; any tag the LLM invents outside that list is discarded server-side before persistence.
+5. Intra-chunk duplicates collapse via the `dedup_groups` hints: the earliest-published source becomes the primary article and the others are recorded as alternative sources.
+6. A chunk failure marks only that chunk's portion of the run as failed; other chunks in the same tick still persist their articles.
+
+**Constraints:** CON-LLM-001, CON-SEC-003
+**Priority:** P0
+**Dependencies:** REQ-PIPE-001
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-003: Canonical-URL + LLM-cluster dedupe with first-source-wins
+
+**Intent:** The same story published by five outlets appears as one primary card with four alternative-source links rather than five duplicate cards.
+
+**Applies To:** System
+
+**Acceptance Criteria:**
+1. URLs are canonicalised by stripping `utm_*` and `fbclid` tracking parameters, trimming trailing slashes, and removing default ports before any comparison.
+2. Clusters are merged per the LLM's `dedup_groups` hints, not only by canonical-URL equality.
+3. Within a cluster the earliest-published source becomes the primary article; the remaining members are persisted as alternative sources for that article.
+4. A canonical URL already present in the article pool is skipped on subsequent ticks — re-ingestion never produces a duplicate primary card.
+5. A single-source article (no cluster members) is persisted with zero alternative-source rows.
+
+**Constraints:** CON-SEC-002
+**Priority:** P0
+**Dependencies:** REQ-PIPE-001
+**Verification:** Automated test
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-004: Curated source registry with ≥50 feeds spanning the 20 system tags
+
+**Intent:** The product covers the full breadth of cloud, AI, security, DevOps, languages, databases, and observability topics without relying on any single aggregator.
+
+**Applies To:** System
+
+**Acceptance Criteria:**
+1. The registry contains at least 50 entries, each declaring a slug, human-readable name, feed URL, feed kind, and at least one tag.
+2. Every one of the 20 system tags is covered by at least one source.
+3. Every source declares at least one tag drawn from the system tag list.
+4. Every feed URL uses HTTPS.
+5. A live-fetch validator can be run on demand to detect dead feeds so operators can swap them out before they pollute the pool.
+
+**Constraints:** CON-SEC-002
+**Priority:** P0
+**Dependencies:** None
+**Verification:** Automated test
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-005: Seven-day retention with starred-exempt cleanup
+
+**Intent:** The global pool stays small and fast by dropping stories older than a week, but articles any user has starred are preserved indefinitely.
+
+**Applies To:** System
+
+**Acceptance Criteria:**
+1. A daily cron fires at 03:00 UTC and deletes articles whose published-at timestamp is older than 7 days, when no user has starred the article.
+2. An article starred by any user is preserved regardless of age.
+3. Deletion cascades remove the article's alternative sources, tag rows, and read-tracking rows so no orphans remain.
+4. The cleanup run is independent of the hourly scrape run and never blocks ingestion.
+
+**Constraints:** CON-DATA-001
+**Priority:** P1
+**Dependencies:** REQ-PIPE-001, REQ-STAR-001
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-006: scrape_runs aggregation surfaces stats and history
+
+**Intent:** The per-tick token, cost, article, and dedupe counters feed the user-facing stats widget and history page without having to re-derive totals from article rows.
+
+**Applies To:** System
+
+**Acceptance Criteria:**
+1. Each run records its start time, finish time, articles ingested, articles deduplicated, input and output token counts, estimated cost in USD, model identifier, chunk count, and final status.
+2. The stats widget reads global token and cost totals as sums over the scrape-run aggregation.
+3. The history page reads its per-day aggregates and per-tick expansions from the same aggregation, not from article rows.
+4. Status transitions running → ready on success, or running → failed when the run aborts.
+
+**Constraints:** CON-DATA-001
+**Priority:** P1
+**Dependencies:** REQ-PIPE-001
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+## Out of Scope
+
+The following REQs described the previous per-user digest generation pipeline. They are superseded by REQ-PIPE-001..006 in the 2026-04-23 global-feed rework and are preserved here verbatim for decision history.
 
 ---
 
 ### REQ-GEN-001: Scheduled generation via cron dispatcher
+
+Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
 
 **Intent:** Each user's digest is generated at their chosen local time, reliably, even when 100 users all schedule the same HH:MM.
 
@@ -27,6 +160,8 @@ A single `generateDigest` function called from two places: the cron dispatcher (
 
 ### REQ-GEN-002: Manual refresh with rate limiting
 
+Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
+
 **Intent:** Users can trigger a digest at any time. A short cooldown debounces accidental double-clicks and tap spam; a very high daily ceiling acts as a backstop against pathological loops. The scheduler — not this endpoint — is the real guardrail on generation volume.
 
 **Applies To:** User
@@ -46,6 +181,8 @@ A single `generateDigest` function called from two places: the cron dispatcher (
 ---
 
 ### REQ-GEN-003: Source fan-out with caching
+
+Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
 
 **Intent:** Assemble a pool of candidate articles from every relevant source without paying for redundant fetches when many users share the same tag.
 
@@ -68,6 +205,8 @@ A single `generateDigest` function called from two places: the cron dispatcher (
 
 ### REQ-GEN-004: URL canonicalization and dedupe
 
+Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
+
 **Intent:** Articles pointing at the same story from different sources are collapsed to one entry without ever fetching the article body.
 
 **Applies To:** User
@@ -88,6 +227,8 @@ A single `generateDigest` function called from two places: the cron dispatcher (
 ---
 
 ### REQ-GEN-005: Single-call LLM summarization
+
+Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
 
 **Intent:** One Workers AI call ranks candidate headlines and produces up to six summaries with a short one-liner and three paragraph-length detail sections each, keeping generation cheap and deterministic.
 
@@ -112,6 +253,8 @@ A single `generateDigest` function called from two places: the cron dispatcher (
 
 ### REQ-GEN-006: Atomic final write
 
+Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
+
 **Intent:** Either the full digest (articles + status + user dedupe key) commits, or none of it does — there is no partial observable state.
 
 **Applies To:** User
@@ -134,6 +277,8 @@ A single `generateDigest` function called from two places: the cron dispatcher (
 
 ### REQ-GEN-007: Stuck-digest sweeper
 
+Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
+
 **Intent:** A crashed consumer does not leave a digest in `in_progress` forever, causing the client to poll indefinitely.
 
 **Applies To:** User
@@ -152,6 +297,8 @@ A single `generateDigest` function called from two places: the cron dispatcher (
 ---
 
 ### REQ-GEN-008: Cost, time, and token transparency
+
+Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
 
 **Intent:** Every digest surfaces what it cost to produce, so users can see the value of the LLM call and choose cheaper models when appropriate.
 

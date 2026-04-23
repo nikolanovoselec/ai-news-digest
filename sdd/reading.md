@@ -6,39 +6,38 @@ The heart of the product. Overview grid of today's digest, detail view per artic
 
 ### REQ-READ-001: Overview grid of today's digest
 
-**Intent:** Today's digest is a scannable grid of article cards, each with enough information to decide whether to click through.
+**Intent:** Today's digest is a scannable grid of article cards read from the shared article pool filtered by the user's active tags, with a lightweight header that shows when the pool was last refreshed and when the next refresh is due.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. `/digest` renders a responsive card grid: 1 column on mobile (<640px), 2 on tablet (≥768px), 3 on desktop (≥1024px).
-2. Each card shows the article title, the 120-character one-liner summary, and the source name as a subtle badge.
-3. Cards enter with a staggered fade-in (40ms per card, capped at 10 cards) when `prefers-reduced-motion` is `no-preference`; under `reduce` the entrance is instant.
-4. A "Refresh now" button is visible; during generation it morphs into an indeterminate progress bar.
-5. The digest footer shows execution time, token count, estimated cost, and model name.
-6. Each card shows a hashtag-glyph affordance to the left of the title. Activating the affordance opens a non-interactive popover anchored to the card listing the user hashtags this article is tagged with; the popover dismisses itself automatically after 5 seconds, or immediately when the affordance is activated a second time.
-7. The tag strip (REQ-SET-002) doubles as a filter: while any tag is selected, the grid shows only cards whose stored tag list intersects the selection. With no selection every card is visible; with a selection that matches no card, a brief "no stories match" message replaces the grid and invites the user to deselect.
+1. `/digest` reads articles from the global article pool filtered by the user's active tags; articles whose tag list does not intersect the user's tag list are excluded.
+2. The top of the page shows "Last updated at HH:MM · Next update in Xm Ys" with both the most-recent scrape time and a live countdown to the next scheduled tick; the countdown decrements once per second.
+3. No manual Refresh button is rendered and no live-state skeleton cards are shown — the pool is always populated so the grid renders directly.
+4. When the user has no tag filters selected, the grid shows every article whose tags intersect the user's full tag list; when one or more filter tags are selected, the grid narrows to articles matching those filters.
+5. The grid shows the 30 newest articles ordered by published-at descending.
 
 **Constraints:** CON-A11Y-001
 **Priority:** P0
-**Dependencies:** REQ-GEN-006, REQ-SET-002
+**Dependencies:** REQ-PIPE-001, REQ-SET-002
 **Verification:** Integration test
-**Status:** Partial
-**Notes:** AC 6 (per-card # popover with 5 s auto-dismiss) and AC 7 (tag-strip filter + "no stories match" empty state) ship in code but have no automated test. AC 1-5 remain verified by `tests/reading/digest-page.test.ts`.
+**Status:** Implemented
 
 ---
 
 ### REQ-READ-002: Article detail view
 
-**Intent:** Each article gets a focused detail page with the long-form summary and a prominent link to the original source.
+**Intent:** Each article gets a focused detail page with the long-form summary and a prominent link to the original source; multi-source articles expose every known source behind the same affordance.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. `/digest/:id/:slug` renders the article title, the three `details` paragraphs as long-form reading prose, a small-caps metadata line (source · publish date · estimated read time), and a prominent "Read at source" link to `source_url` (opens in a new tab with `rel="noopener noreferrer"`). The first paragraph carries a drop-cap initial and the reading column is capped around 62 characters with hyphenation.
+1. `/digest/:id/:slug` renders the article title, the detail paragraphs as long-form reading prose, a small-caps metadata line (source · publish date · estimated read time), and a prominent "Read at source" affordance. The first paragraph carries a drop-cap initial and the reading column is capped around 62 characters with hyphenation.
 2. All text is rendered with `textContent` — no markdown parsing, no HTML sanitizer, no `innerHTML`.
-3. The slug is derived from the title and enforced unique per digest.
+3. The slug is derived from the title and enforced unique per article.
 4. A back control returns to `/digest` using the View Transitions shared-element morph for the card→detail transition, and reverses it on back.
+5. When the article has at least one alternative source, activating "Read at source" opens a modal listing every known source (primary + alternatives) with each source's name and per-source timestamp; when the article has only one source, the affordance links directly to that source in a new tab with `rel="noopener noreferrer"`.
+6. The modal closes on Escape and on backdrop click.
 
 **Constraints:** CON-SEC-003, CON-A11Y-001
 **Priority:** P0
@@ -70,40 +69,43 @@ The heart of the product. Overview grid of today's digest, detail view per artic
 
 ### REQ-READ-004: Live generation state
 
-**Intent:** During a ~60-second generation, users see meaningful progress instead of a blank screen, but the implementation stays as simple as possible.
+Superseded by REQ-PIPE-001 in the 2026-04-23 global-feed rework. The per-user digest-in-progress state no longer exists on the dashboard: the shared article pool is always populated, so `/digest` renders real cards immediately (see REQ-READ-001 AC 3). Polling, skeleton cards, and the in-progress progress bar are removed.
+
+**Intent:** During a ~60-second generation, users saw meaningful progress instead of a blank screen.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. When the current digest has `status='in_progress'`, `/digest` shows an indeterminate progress bar at the top and 10 card skeletons matching the real card dimensions (no layout shift when real cards arrive).
-2. The skeleton shimmer is a 1.4-second linear-gradient sweep, disabled under `prefers-reduced-motion: reduce`.
-3. The client polls `GET /api/digest/:id` every 5 seconds while status is `in_progress`; polling stops immediately on a status change.
-4. On `status='ready'`, the real cards fade in with the staggered entrance from REQ-READ-001.
-5. On `status='failed'`, the failure page for the error code is rendered (see REQ-READ-006).
+1. When the current digest was in progress, `/digest` showed an indeterminate progress bar at the top and 10 card skeletons matching the real card dimensions.
+2. The skeleton shimmer was a linear-gradient sweep, disabled under reduced-motion preferences.
+3. The client polled the digest-by-id endpoint every 5 seconds while generation was active; polling stopped immediately on a status change.
+4. On completion, the real cards faded in with the staggered entrance from REQ-READ-001.
+5. On failure, the failure page for the error code was rendered (see REQ-READ-006).
 
 **Constraints:** CON-A11Y-001
 **Priority:** P0
-**Dependencies:** REQ-READ-001, REQ-GEN-005
+**Dependencies:** REQ-READ-001
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Deprecated
+**Replaced By:** REQ-PIPE-001
+**Removed In:** 2026-04-23
 
 ---
 
-### REQ-READ-005: Pending-today banner
+### REQ-READ-005: Empty dashboard state
 
-**Intent:** Users who open the app before today's scheduled time see exactly when the next digest is coming, rather than confusingly seeing yesterday's content.
+**Intent:** When the global pool contains no articles matching the user's tags, the dashboard communicates that clearly and nudges the user toward broadening their interests.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. `GET /api/digest/today` returns `{ digest, live, next_scheduled_at }` where `digest` is the most recent digest row for this user.
-2. If `digest.local_date` is not today, `/digest` shows a subtle banner "Next digest scheduled at {HH:MM} — in {Xh Ym}. Or refresh now."
-3. The banner's countdown updates live, using the user's stored timezone.
-4. If the user has never generated a digest, the banner reads "Your first digest is scheduled for {HH:MM}."
+1. When the filtered article grid is empty, `/digest` shows exactly the copy "No news for you today, try adding additional tags." and no other body content.
+2. The empty state does not include a link or redirect to the settings page.
+3. The countdown header continues to render above the empty-state copy so users still see when the pool will next refresh.
 
 **Constraints:** None
 **Priority:** P1
-**Dependencies:** REQ-SET-003, REQ-GEN-006
+**Dependencies:** REQ-READ-001
 **Verification:** Integration test
 **Status:** Implemented
 
@@ -125,5 +127,65 @@ The heart of the product. Overview grid of today's digest, detail view per artic
 **Constraints:** CON-SEC-001
 **Priority:** P1
 **Dependencies:** REQ-READ-001
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+### REQ-STAR-001: Star and unstar articles
+
+**Intent:** Users can mark articles worth keeping by starring them from the dashboard grid or the article detail page, and remove the star with the same affordance.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. Every card in the dashboard grid and the article detail page shows a star toggle; activating it stars the article when unstarred and unstars it when starred.
+2. Starring POSTs to the article-star endpoint; unstarring DELETEs the same endpoint; both flip the icon optimistically on click before the server response returns.
+3. Star state is user-scoped — starring an article in one account never reveals the star in any other account's view.
+4. State-changing star requests are protected by the Origin check from REQ-AUTH-003; unauthenticated requests receive HTTP 401.
+5. A successful star/unstar response confirms the new state and the UI reconciles with the server value if the optimistic flip disagreed.
+
+**Constraints:** CON-SEC-001, CON-DATA-001
+**Priority:** P1
+**Dependencies:** REQ-AUTH-002, REQ-AUTH-003
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+### REQ-STAR-002: Starred articles page
+
+**Intent:** A dedicated page lists the articles the user has starred so they can return to items of lasting interest without digging through history.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. `/starred` renders the same card grid as `/digest` but shows only articles the user has starred.
+2. Articles are ordered by the time they were starred, most recent first.
+3. When the user has starred no articles, the page shows exactly the copy "No starred articles yet." with no countdown header.
+4. The countdown header from `/digest` does not appear on `/starred`.
+
+**Constraints:** CON-A11Y-001
+**Priority:** P1
+**Dependencies:** REQ-STAR-001
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+### REQ-STAR-003: Starred entry in the user menu
+
+**Intent:** The user menu exposes a first-class entry point to the starred-articles page so users can find their saved items quickly.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. The avatar user menu includes an entry labelled "Starred" linking to the starred-articles page.
+2. The entry shows a star-outline glyph aligned to the right side of the row.
+3. The entry is placed between the existing History and Settings entries in the menu order.
+
+**Constraints:** CON-A11Y-001
+**Priority:** P2
+**Dependencies:** REQ-STAR-002
 **Verification:** Integration test
 **Status:** Implemented

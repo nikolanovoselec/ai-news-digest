@@ -1,0 +1,152 @@
+---
+// Implements REQ-STAR-002
+//
+// /starred — the user's starred-article collection, newest star first.
+//
+// Behaviour:
+//   - Reuses the DigestCard grid layout (identical to /digest).
+//   - No countdown header — this isn't a live feed; it's a personal
+//     bookmark list.
+//   - Empty state renders the exact string "No starred articles yet."
+//   - Every card is emitted with `starred={true}` so the star button
+//     shows the filled glyph and `aria-pressed="true"` on initial load.
+//
+// The page loads its data by calling `loadStarredPayload` in-process
+// (same pattern as digest.astro's `loadTodayPayload` call). This keeps
+// the auth scoping identical to a browser navigation because the helper
+// runs against the same D1 and session.
+
+import type { APIContext } from 'astro';
+import Base from '~/layouts/Base.astro';
+import DigestCard from '~/components/DigestCard.astro';
+import { loadSession } from '~/middleware/auth';
+import { requireSettingsComplete } from '~/middleware/settings-gate';
+import { loadStarredPayload } from '~/pages/api/starred';
+
+const env = Astro.locals.runtime.env;
+if (typeof env.OAUTH_JWT_SECRET !== 'string' || env.OAUTH_JWT_SECRET === '') {
+  return new Response('Application not configured', { status: 500 });
+}
+
+const session = await loadSession(Astro.request, env.DB, env.OAUTH_JWT_SECRET);
+if (session === null) {
+  return Astro.redirect('/api/auth/github/login', 303);
+}
+Astro.locals.user = session.user;
+
+const gated = requireSettingsComplete({
+  request: Astro.request,
+  locals: Astro.locals,
+} as unknown as APIContext);
+if (gated !== null) {
+  return gated;
+}
+
+const user = session.user;
+
+let payload: Awaited<ReturnType<typeof loadStarredPayload>> = { articles: [] };
+try {
+  payload = await loadStarredPayload(env.DB, user.id);
+} catch {
+  // Load failure falls through to the empty state — the user still
+  // sees the page frame with a "No starred articles yet." message
+  // rather than a hard 500.
+  payload = { articles: [] };
+}
+
+const articles = payload.articles;
+---
+
+<Base title="Starred articles">
+  <section class="starred-page" data-starred-page>
+    <header class="starred-page__header">
+      <h1 class="starred-page__title">Starred articles</h1>
+    </header>
+
+    {
+      articles.length === 0 ? (
+        <p class="starred-page__empty">No starred articles yet.</p>
+      ) : (
+        <div class="starred-page__grid" data-starred-grid>
+          {articles.map((a, i) => (
+            <DigestCard
+              digestId={a.id}
+              articleId={a.id}
+              slug={a.slug}
+              title={a.title}
+              oneLiner={a.details[0] ?? ''}
+              sourceName={a.primary_source_name}
+              sourceUrl={a.primary_source_url}
+              tags={a.tags}
+              starred={true}
+              index={i}
+            />
+          ))}
+        </div>
+      )
+    }
+  </section>
+</Base>
+
+<style>
+  .starred-page {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 1.25rem 0 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+  @media (min-width: 768px) {
+    .starred-page {
+      padding: 1.75rem 0 3rem;
+      gap: 2rem;
+    }
+  }
+
+  .starred-page__header {
+    padding: 0 0.25rem;
+  }
+  @media (min-width: 768px) {
+    .starred-page__header {
+      padding: 0 0.5rem;
+    }
+  }
+
+  .starred-page__title {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: var(--text-2xl);
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+
+  .starred-page__empty {
+    margin: 0;
+    padding: 0 0.25rem;
+    color: var(--text-muted);
+    font-size: var(--text-base);
+  }
+
+  .starred-page__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  @media (min-width: 768px) {
+    .starred-page__grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.25rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .starred-page__grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1.5rem;
+    }
+  }
+</style>

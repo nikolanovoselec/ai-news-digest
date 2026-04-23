@@ -6,6 +6,7 @@ import { GET } from '~/pages/api/auth/github/callback';
 import { OAUTH_STATE_COOKIE_NAME } from '~/pages/api/auth/github/login';
 import { SESSION_COOKIE_NAME } from '~/middleware/auth';
 import { verifySession } from '~/lib/session-jwt';
+import { DEFAULT_HASHTAGS } from '~/lib/default-hashtags';
 
 /** Collect every Set-Cookie value from a Response. Prefers the
  * `getSetCookie()` extension when the runtime exposes it. */
@@ -305,5 +306,24 @@ describe('GET /api/auth/github/callback', () => {
       makeContext(req, { APP_URL, DB: db }) as never,
     );
     expect(res.status).toBe(500);
+  });
+
+  it('REQ-AUTH-001: new account seeds hashtags_json with the 20-entry default set', async () => {
+    const { db, runCalls } = makeDb(null); // no existing row -> new user
+    mockGitHubFetch({});
+    const req = callbackRequest({ state: 'match', code: 'ghcode' }, 'match');
+    const res = await GET(makeContext(req, fullEnv(db)) as never);
+
+    expect(res.status).toBe(303);
+    const insert = runCalls.find((c) => c.sql.startsWith('INSERT INTO users'));
+    expect(insert).toBeDefined();
+    // The INSERT binds (userId, email, ghLogin, DEFAULT_TZ, nowSec, hashtags_json)
+    // so the seeded hashtags JSON lives at params[5].
+    const hashtagsJson = insert!.params[5];
+    expect(typeof hashtagsJson).toBe('string');
+    const parsed = JSON.parse(hashtagsJson as string) as unknown;
+    expect(Array.isArray(parsed)).toBe(true);
+    expect((parsed as string[]).length).toBe(20);
+    expect(parsed).toEqual([...DEFAULT_HASHTAGS]);
   });
 });

@@ -543,6 +543,35 @@ describe('PUT /api/settings', () => {
     expect(await res.json()).toMatchObject({ code: 'bad_request' });
   });
 
+  it('REQ-SET-004: model_id POST still accepts stored preference (no regression when UI is re-enabled)', async () => {
+    // The ModelSelect UI is hidden in Wave 2 (`showModelSelect = false`
+    // in settings.astro), but the PUT handler must continue to accept
+    // and persist a valid model_id so flipping the toggle back on is a
+    // one-line change — not a DB migration. This test asserts that the
+    // round-trip (receive valid model_id → persist to users.model_id)
+    // still works unmodified.
+    const { db, runCalls } = makeDb(baseRow());
+    const { kv } = makeKv(['ai']);
+    const STORED_MODEL_ID = '@cf/openai/gpt-oss-20b';
+    const req = await authedRequest('PUT', {
+      hashtags: ['ai'],
+      digest_hour: 8,
+      digest_minute: 0,
+      tz: 'UTC',
+      model_id: STORED_MODEL_ID,
+      email_enabled: true,
+    });
+    const res = await PUT(makeContext(req, env(db, kv)) as never);
+    expect(res.status).toBe(200);
+
+    const update = runCalls.find((c) => c.sql.startsWith('UPDATE users'));
+    expect(update).toBeDefined();
+    // Binding order: hashtags_json, digest_hour, digest_minute, tz,
+    // model_id, email_enabled, id. The persisted model_id is the 5th
+    // param (index 4).
+    expect(update!.params[4]).toBe(STORED_MODEL_ID);
+  });
+
   it('REQ-SET-006: no discovery inserts when every tag already has sources', async () => {
     const { db, batchCalls } = makeDb(baseRow());
     const { kv } = makeKv(['ai', 'llm']);

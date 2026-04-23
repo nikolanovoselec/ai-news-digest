@@ -6,20 +6,20 @@ Resend-backed notification sent after every successful digest — whether genera
 
 ### REQ-MAIL-001: Digest-ready email
 
-**Intent:** Users who have opted in receive a simple, aesthetically consistent email when their daily digest is ready, inviting them back to the app.
+**Intent:** Users who have opted in receive a single notification per day at their configured local time, nudging them back to the dashboard — the dashboard itself is authoritative for article listings.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. Immediately after the digest consumer commits `status='ready'`, and only if `users.email_enabled = 1`, a POST is made to Resend to send the email. The email fires for both the scheduled-cron trigger and the manual-refresh trigger — manual refreshes are minutes-long background runs and the email is the notification that the digest finished.
-2. The subject line reads "Your news digest is ready · {N} stories" where N is the article count.
-3. The HTML body follows the Swiss-minimal template: a small uppercase "News Digest" label, a large "Your daily digest is ready" headline, a one-line summary of story count and top-3 hashtags, a single primary CTA button to the digest, and a muted footer with execution time, token count, estimated cost, and a link to /settings.
-4. A plaintext fallback body is included for clients that do not render HTML.
-5. Users who turn off `email_enabled` in settings receive no email regardless of trigger.
+1. At most one email per user is sent per day, gated so the same user never receives a second notification on the same local date.
+2. The email fires at the user's configured local digest time, independent of the hourly scrape cadence.
+3. The subject line reads exactly "Your news digest is ready".
+4. The body contains a single direct link to the dashboard and no per-article content; the dashboard is authoritative for article listings.
+5. Users who turn off `email_enabled` in settings receive no email.
 
 **Constraints:** None
 **Priority:** P1
-**Dependencies:** REQ-GEN-006, REQ-SET-005
+**Dependencies:** REQ-PIPE-001, REQ-SET-005
 **Verification:** Integration test
 **Status:** Implemented
 

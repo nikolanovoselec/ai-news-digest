@@ -9,15 +9,13 @@ const config: KnipConfig = {
     'src/pages/**/*.{astro,ts}',
     'src/middleware/index.ts',
     'src/worker.ts',
-    'src/queue/digest-consumer.ts',
     'src/scripts/**/*.ts', // imported from .astro <script> tags which knip can't trace
-    'public/theme-init.js',
-    'scripts/merge-worker-handlers.mjs', // invoked by package.json "build" script
-    'scripts/generate-test-fixtures.mjs' // invoked by package.json "fixtures" script
+    'public/theme-init.js'
   ],
   project: ['src/**/*.{ts,astro}'],
   ignoreDependencies: [
-    'tailwindcss' // resolved transitively via @tailwindcss/vite plugin
+    'tailwindcss', // resolved transitively via @tailwindcss/vite plugin
+    'cloudflare' // `cloudflare:test` virtual module shipped by @cloudflare/vitest-pool-workers
   ],
   ignoreExportsUsedInFile: true,
   ignore: []

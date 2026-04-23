@@ -1,4 +1,4 @@
-// Implements REQ-GEN-003
+// Implements REQ-PIPE-001
 //
 // KV-backed, 10-minute shared cache for per-source / per-tag headline
 // fetches. When many users share the same hashtag, the fan-out pipeline
@@ -8,7 +8,7 @@
 //
 // Key format:  `headlines:{source_name}:{tag}`
 // Value:       JSON-serialised `Headline[]`
-// TTL:         600 seconds (REQ-GEN-003, AC #3)
+// TTL:         600 seconds (10-minute amortisation window)
 //
 // Contracts:
 //  - `readCachedHeadlines` returns `null` on miss, on corrupt JSON, or

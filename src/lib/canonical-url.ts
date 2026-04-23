@@ -1,4 +1,4 @@
-// Implements REQ-GEN-004
+// Implements REQ-PIPE-003
 // URL canonicalization for cross-source article dedupe.
 //
 // Rules (string-only — we never follow redirects):
