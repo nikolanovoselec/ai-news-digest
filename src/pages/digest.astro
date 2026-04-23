@@ -367,15 +367,34 @@ if (isReadyToday && articles.length < 3) {
 <script>
   // Implements REQ-READ-001 AC 4, REQ-READ-004, REQ-READ-006 AC 4
   //
-  // Three responsibilities:
+  // Four responsibilities:
   //   1. Wire the Refresh form to POST /api/digest/refresh (JSON), then
   //      morph the button into a progress bar on 202 and reload to pick
   //      up the in-progress digest.
   //   2. Start the 5-second poll loop via digest-poll.ts when the page
   //      renders the live state (reload on ready, redirect on failed).
   //   3. Toggle the offline banner based on navigator.onLine.
+  //   4. Mark `data-digest-seen` on <html> after the first paint so the
+  //      card-entrance stagger only plays once — returns from the
+  //      article-detail view transition then don't replay the flicker.
 
   import { bindDigestPoll } from '~/scripts/digest-poll';
+
+  function markDigestSeen(): void {
+    const root = document.documentElement;
+    if (root.dataset['digestSeen'] === '1') return;
+    // One animation frame after the CSS inserts the cards is enough
+    // for the initial stagger to run to completion; flip the flag so
+    // the next dashboard render (including View-Transition back from
+    // /digest/:id/:slug) skips the fade-in entirely.
+    requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        root.dataset['digestSeen'] = '1';
+      }, 500);
+    });
+  }
+  markDigestSeen();
+  document.addEventListener('astro:page-load', markDigestSeen);
 
   interface RefreshResponse {
     digest_id?: string;

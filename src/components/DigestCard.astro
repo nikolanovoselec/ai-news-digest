@@ -141,6 +141,22 @@ const displaySourceName = resolveDisplaySource();
     );
     border: 1px solid var(--border);
     border-radius: 0.5rem;
+    /* Default: rendered visible. The entrance stagger only fires on
+       the very first dashboard paint (see the
+       :root:not([data-digest-seen]) rule below) so the back-from-
+       detail View Transition doesn't replay the fade and make the
+       grid flicker. Non-selected cards still morph cleanly via VT;
+       the hit card uses its own transition:name to shared-element
+       back into the grid. */
+    opacity: 1;
+  }
+
+  /* Only play the fade-in-stagger on the first dashboard paint. The
+     mark-seen script on digest.astro sets data-digest-seen on <html>
+     after the initial animation frame, and Astro's View Transitions
+     preserve <html> so subsequent returns to /digest skip this rule
+     entirely. */
+  :root:not([data-digest-seen]) .digest-card {
     opacity: 0;
     animation: digest-card-enter 240ms ease-out both;
     animation-delay: var(--stagger-delay, 0ms);
@@ -337,7 +353,7 @@ const displaySourceName = resolveDisplaySource();
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .digest-card {
+    :root:not([data-digest-seen]) .digest-card {
       opacity: 1;
       animation: none;
     }
