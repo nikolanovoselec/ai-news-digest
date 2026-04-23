@@ -16,7 +16,8 @@ const config: KnipConfig = {
   ],
   project: ['src/**/*.{ts,astro}'],
   ignoreDependencies: [
-    'tailwindcss' // resolved transitively via @tailwindcss/vite plugin
+    'tailwindcss', // resolved transitively via @tailwindcss/vite plugin
+    'vite' // transitive peer of vitest; used for Plugin type in vitest.config.ts
   ],
   ignoreExportsUsedInFile: true,
   ignore: []
