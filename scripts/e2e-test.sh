@@ -181,8 +181,19 @@ check GET  /api/discovery/status            200
 # tag/star write HAS to be a save → assert → restore cycle.
 printf '\n=== snapshot ===\n'
 ORIG_SETTINGS_JSON=$(curl -sS -b "$COOKIE_JAR" "$BASE/api/settings" || echo '{}')
+# /api/settings returns the parsed array under the key `hashtags`, NOT
+# the raw `hashtags_json` column value. Reading the wrong key made the
+# snapshot silently empty and the restore block a no-op — which
+# stranded the e2e test tags ["llm","cloudflare","aws"] on the owner
+# account after every deploy. Fail hard if the snapshot fetch didn't
+# return a non-empty array so a future regression can't leak again.
 ORIG_HASHTAGS_JSON=$(printf '%s' "$ORIG_SETTINGS_JSON" \
-  | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d.get('hashtags_json') or []))" 2>/dev/null || echo '[]')
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d.get('hashtags') or []))" 2>/dev/null || echo '[]')
+if [ "$ORIG_HASHTAGS_JSON" = '[]' ] || [ -z "$ORIG_HASHTAGS_JSON" ]; then
+  printf 'FATAL: snapshot returned empty hashtags — refusing to run mutating assertions\n'
+  printf '       response body was: %s\n' "$(printf '%s' "$ORIG_SETTINGS_JSON" | head -c 300)"
+  exit 3
+fi
 ORIG_DIGEST_HOUR=$(printf '%s' "$ORIG_SETTINGS_JSON" \
   | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('digest_hour') or 8)" 2>/dev/null || echo '8')
 ORIG_DIGEST_MINUTE=$(printf '%s' "$ORIG_SETTINGS_JSON" \
