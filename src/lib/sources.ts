@@ -91,7 +91,20 @@ const HACKER_NEWS: SourceAdapter = {
           ? `https://news.ycombinator.com/item?id=${hit['objectID']}`
           : null);
       if (title === null || url === null) continue;
-      out.push({ title, url, source_name: 'hackernews' });
+      // HN Algolia returns `story_text` for self-posts (Ask HN etc.)
+      // and `_highlightResult.story_text.value` with HTML matches.
+      // Use the plain `story_text` when available.
+      const story = asString(hit['story_text']);
+      const snippet =
+        story !== null && story.length >= 40
+          ? htmlSnippetToText(story)
+          : null;
+      out.push({
+        title,
+        url,
+        source_name: 'hackernews',
+        ...(snippet !== null ? { snippet } : {}),
+      });
     }
     return out;
   },
@@ -136,7 +149,19 @@ const REDDIT: SourceAdapter = {
             ? `https://www.reddit.com${permalink}`
             : null;
       if (title === null || url === null) continue;
-      out.push({ title, url, source_name: 'reddit' });
+      // Reddit has `selftext` (self-posts) and `title` itself can
+      // be the whole post. Prefer selftext when long enough.
+      const selftext = asString(d['selftext']);
+      const snippet =
+        selftext !== null && selftext.length >= 40
+          ? htmlSnippetToText(selftext)
+          : null;
+      out.push({
+        title,
+        url,
+        source_name: 'reddit',
+        ...(snippet !== null ? { snippet } : {}),
+      });
     }
     return out;
   },
@@ -460,11 +485,29 @@ function extractJsonFeed(parsed: unknown, sourceName: string): Headline[] {
     const url = asString(item['url']) ?? asString(item['external_url']);
     if (title === null || url === null) continue;
     const published_at = parseFeedDate(item['date_published']);
+    // JSON Feed 1.1: prefer plaintext `content_text`, fall back to
+    // HTML `content_html` stripped, then the `summary` blurb.
+    let snippet: string | null = null;
+    const ct = asString(item['content_text']);
+    if (ct !== null && ct.length >= 40) {
+      snippet = htmlSnippetToText(ct);
+    } else {
+      const ch = asString(item['content_html']);
+      if (ch !== null && ch.length >= 40) {
+        snippet = htmlSnippetToText(ch);
+      } else {
+        const sum = asString(item['summary']);
+        if (sum !== null && sum.length >= 40) {
+          snippet = htmlSnippetToText(sum);
+        }
+      }
+    }
     out.push({
       title,
       url,
       source_name: sourceName,
       ...(published_at !== null ? { published_at } : {}),
+      ...(snippet !== null ? { snippet } : {}),
     });
   }
   return out;
@@ -501,6 +544,89 @@ function toArray(v: unknown): unknown[] {
   return [v];
 }
 
+/**
+ * Extract text from an XML node that might be a string, a record
+ * with `#text`, or a CDATA-containing object. `content:encoded`,
+ * `description`, and Atom `summary`/`content` can all appear in any
+ * of these shapes depending on the feed producer + fxp settings.
+ */
+function extractNodeText(node: unknown): string | null {
+  if (typeof node === 'string') return node;
+  if (isRecord(node)) {
+    const text = node['#text'];
+    if (typeof text === 'string') return text;
+    const cdata = node['#cdata'];
+    if (typeof cdata === 'string') return cdata;
+  }
+  return null;
+}
+
+/**
+ * Strip HTML tags + collapse whitespace + HTML-entity-decode a small
+ * set of common sequences. Intended for feed-snippet cleanup before
+ * the text lands in the LLM prompt — not a full HTML sanitizer (the
+ * output is never rendered as HTML anywhere). Caps at 1200 characters
+ * so a giant `<content:encoded>` body can't blow up the chunk prompt
+ * budget.
+ */
+function htmlSnippetToText(raw: string): string {
+  const noTags = raw.replace(/<[^>]+>/g, ' ');
+  const decoded = noTags
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_m, n: string) => {
+      const code = Number.parseInt(n, 10);
+      return Number.isFinite(code) && code >= 32 && code < 65536
+        ? String.fromCharCode(code)
+        : ' ';
+    });
+  const collapsed = decoded.replace(/\s+/g, ' ').trim();
+  return collapsed.length > 1200 ? collapsed.slice(0, 1200) : collapsed;
+}
+
+/**
+ * Pull a usable body-snippet out of an RSS `<item>`. Checks
+ * `content:encoded` (the full HTML body when the feed is
+ * feature-complete), then `description` (usually a summary).
+ * Returns the cleaned text or null if neither field was present.
+ */
+function rssItemSnippet(item: Record<string, unknown>): string | null {
+  const candidates: Array<unknown> = [
+    item['content:encoded'],
+    item['content'],
+    item['description'],
+    item['summary'],
+  ];
+  for (const c of candidates) {
+    const text = extractNodeText(c);
+    if (text !== null && text !== '') {
+      const cleaned = htmlSnippetToText(text);
+      if (cleaned.length >= 40) return cleaned;
+    }
+  }
+  return null;
+}
+
+/**
+ * Atom `<entry>` equivalent: prefer `content` over `summary` (content
+ * is the full body; summary is often a 1-line abstract).
+ */
+function atomEntrySnippet(entry: Record<string, unknown>): string | null {
+  const candidates: Array<unknown> = [entry['content'], entry['summary']];
+  for (const c of candidates) {
+    const text = extractNodeText(c);
+    if (text !== null && text !== '') {
+      const cleaned = htmlSnippetToText(text);
+      if (cleaned.length >= 40) return cleaned;
+    }
+  }
+  return null;
+}
+
 function itemToHeadline(item: unknown, sourceName: string): Headline | null {
   if (!isRecord(item)) return null;
   const title = asString(item['title']);
@@ -513,11 +639,13 @@ function itemToHeadline(item: unknown, sourceName: string): Headline | null {
     parseFeedDate(item['pubDate']) ??
     parseFeedDate(item['dc:date']) ??
     parseFeedDate(item['published']);
+  const snippet = rssItemSnippet(item);
   return {
     title,
     url: link,
     source_name: sourceName,
     ...(published_at !== null ? { published_at } : {}),
+    ...(snippet !== null ? { snippet } : {}),
   };
 }
 
@@ -534,11 +662,13 @@ function entryToHeadline(entry: unknown, sourceName: string): Headline | null {
   // Prefer published, fall back to updated.
   const published_at =
     parseFeedDate(entry['published']) ?? parseFeedDate(entry['updated']);
+  const snippet = atomEntrySnippet(entry);
   return {
     title,
     url,
     source_name: sourceName,
     ...(published_at !== null ? { published_at } : {}),
+    ...(snippet !== null ? { snippet } : {}),
   };
 }
 
