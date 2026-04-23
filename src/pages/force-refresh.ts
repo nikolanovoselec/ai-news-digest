@@ -59,12 +59,12 @@ export async function POST(context: APIContext): Promise<Response> {
 
 export async function GET(context: APIContext): Promise<Response> {
   // GET path exists so the operator can trigger from a bookmark or
-  // curl without needing a form. Cloudflare Access is the sole gate.
+  // curl without needing a form. Cloudflare Access is the sole gate
+  // — no Origin check here (there's no state-changing browser flow).
   const env = context.locals.runtime.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
     return new Response('Application not configured', { status: 500 });
   }
-  const appOrigin = originOf(env.APP_URL);
   try {
     const runId = await kickCoordinator(env);
     return new Response(
