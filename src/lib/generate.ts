@@ -281,8 +281,14 @@ export async function generateDigest(
       };
     }
 
-    // Parse the LLM response as strict JSON — any deviation is fatal.
-    const parsed = parseLLMPayload(aiResult.response);
+    // Different Workers AI model families return the generated text under
+    // different keys. Traditional Meta/Mistral/etc. models expose a flat
+    // `response` (string or already-parsed object). OpenAI-style models
+    // (`@cf/openai/gpt-oss-*`) return the full chat-completion envelope
+    // with the text under `choices[0].message.content`. Resolve both
+    // here so parseLLMPayload sees a plain string/object either way.
+    const rawResponse = extractResponsePayload(aiResult);
+    const parsed = parseLLMPayload(rawResponse);
     if (parsed === null) {
       await markFailed(
         env.DB,
@@ -297,7 +303,6 @@ export async function generateDigest(
       // string (most models) or an object (if response_format returned
       // already-parsed). Both shapes land here when parseLLMPayload
       // can't find an `articles` array.
-      const rawResponse = aiResult.response;
       const rawType = typeof rawResponse;
       const rawString =
         rawType === 'string'
@@ -538,6 +543,37 @@ function extractFeeds(parsed: unknown): DiscoveredFeed[] {
     out.push({ name, url, kind });
   }
   return out;
+}
+
+/**
+ * Pull the model-produced text out of an `AIRunResponse`. Resolves two
+ * shapes across Workers AI's model families:
+ *
+ *   1. Flat: `{ response: "<JSON string>" | <object> }` — Llama, Mistral,
+ *      Kimi, and most other text-generation models.
+ *   2. OpenAI envelope: `{ choices: [{ message: { content: "..." } }] }`
+ *      — every `@cf/openai/*` endpoint, which proxies OpenAI's
+ *      chat-completions API shape directly.
+ *
+ * Any other shape returns `undefined`, which `parseLLMPayload` then
+ * treats as `llm_invalid_json`.
+ */
+function extractResponsePayload(aiResult: AIRunResponse): unknown {
+  if (typeof aiResult.response === 'string' || typeof aiResult.response === 'object') {
+    return aiResult.response;
+  }
+  const choices = (aiResult as Record<string, unknown>)['choices'];
+  if (Array.isArray(choices) && choices.length > 0) {
+    const first = choices[0] as Record<string, unknown> | null | undefined;
+    if (first !== null && first !== undefined && typeof first === 'object') {
+      const message = first['message'] as Record<string, unknown> | null | undefined;
+      if (message !== null && message !== undefined && typeof message === 'object') {
+        const content = message['content'];
+        if (typeof content === 'string' || typeof content === 'object') return content;
+      }
+    }
+  }
+  return undefined;
 }
 
 /** Parse the LLM response body as `{ articles: [...] }`. Returns the parsed
