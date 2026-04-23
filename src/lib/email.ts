@@ -220,10 +220,21 @@ export async function sendDigestEmail(
   }
 
   if (!response.ok) {
+    // Surface Resend's error body so we can diagnose why delivery
+    // was rejected (missing domain verification, throttled API key,
+    // malformed `from`, etc.). The body is Resend's own JSON which
+    // contains no user data — safe to log.
+    let resendDetail = '';
+    try {
+      resendDetail = (await response.text()).slice(0, 500);
+    } catch {
+      /* body read failure — non-fatal */
+    }
     log('error', 'email.send.failed', {
       user_id: ctx.user.gh_login,
       digest_id: ctx.digest_id,
       status: response.status,
+      resend_detail: resendDetail,
     });
     return { sent: false, error_code: 'resend_non_2xx' };
   }

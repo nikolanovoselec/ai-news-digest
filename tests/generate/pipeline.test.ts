@@ -626,9 +626,21 @@ describe('generateDigest — email delivery', () => {
     expect(call?.[0]).toContain('api.resend.com/emails');
   });
 
-  it('REQ-MAIL-001: manual trigger never emails, even with email_enabled=1', async () => {
+  it('REQ-MAIL-001: manual trigger + email_enabled=1 → email POST fires', async () => {
+    // Manual refresh now takes minutes of real time, so surfacing the
+    // 'your digest is ready' email on manual triggers is a meaningful
+    // signal — the user can close the tab and get notified.
     const existingId = '01JXXXXXXXXXXXXXXXXXXXXXXX';
     await generateDigest(env, user, 'manual', existingId);
+    expect(fetchMock).toHaveBeenCalled();
+    const call = fetchMock.mock.calls[0];
+    expect(call?.[0]).toContain('api.resend.com/emails');
+  });
+
+  it('REQ-MAIL-001: manual trigger + email_enabled=0 → no email POST', async () => {
+    const silentUser = makeUser({ email_enabled: 0 });
+    const existingId = '01JYYYYYYYYYYYYYYYYYYYYYYY';
+    await generateDigest(env, silentUser, 'manual', existingId);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

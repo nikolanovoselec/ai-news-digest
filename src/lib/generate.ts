@@ -420,10 +420,13 @@ export async function generateDigest(
 
     // --- Step 9: Best-effort email --------------------------------------
     //
-    // Scheduled + email_enabled only. Manual refreshes never email — the
-    // user is already looking at the page. Email failures are logged by
-    // `sendDigestEmail` but never rejected to the caller.
-    if (trigger === 'scheduled' && user.email_enabled === 1) {
+    // Send on BOTH scheduled and manual digests when email_enabled = 1.
+    // Manual refreshes now take minutes of real time, so surfacing the
+    // "your digest is ready" email on manual is a meaningful signal
+    // (users close the tab and come back to an inbox notification).
+    // Email failures are logged by `sendDigestEmail` but never
+    // rejected to the caller — digest read surface is independent.
+    if (user.email_enabled === 1) {
       try {
         const modelOption = modelById(modelId);
         const modelName = modelOption?.name ?? modelId;
