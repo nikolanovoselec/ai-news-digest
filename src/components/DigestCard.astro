@@ -71,12 +71,13 @@ const displaySourceName =
     transition:name={transitionName}
     aria-label={title}
   >
-    <div class="digest-card__heading">
+    <h2 class="digest-card__title">{title}</h2>
+    <p class="digest-card__one-liner">{oneLiner}</p>
+    <footer class="digest-card__footer">
       {
-        /* `<details>` native click-toggle — no JS required to open or
-           close. Positioned inline with the title, click on the `#`
-           opens the popover; click again closes; auto-close after 5 s
-           via the light script below. */
+        displaySourceName !== null && displaySourceName !== '' && (
+          <span class="digest-card__source">{displaySourceName}</span>
+        )
       }
       {
         tags.length > 0 && (
@@ -95,14 +96,7 @@ const displaySourceName =
           </details>
         )
       }
-      <h2 class="digest-card__title">{title}</h2>
-    </div>
-    <p class="digest-card__one-liner">{oneLiner}</p>
-    {
-      displaySourceName !== null && displaySourceName !== '' && (
-        <span class="digest-card__source">{displaySourceName}</span>
-      )
-    }
+    </footer>
   </a>
 </article>
 
@@ -130,15 +124,27 @@ const displaySourceName =
   .digest-card__link {
     display: flex;
     flex-direction: column;
-    /* Equal 1rem rhythm inside the card so the title ↔ one-liner ↔
-       source spacing matches the between-card gap on the grid; the
-       user reads cards as blocks rather than floating boxes. */
+    /* Equal 1rem rhythm inside the card so title ↔ one-liner ↔ footer
+       spacing matches the between-card gap on the grid; the user
+       reads cards as blocks rather than floating boxes. */
     gap: 1rem;
     padding: 1.1rem 1.25rem;
     color: var(--text);
     text-decoration: none;
     min-height: 140px;
     min-width: 0;
+  }
+
+  /* Footer row anchors to the card's bottom via margin-top: auto and
+     is a flex row: source on the left, # tag-disclosure on the right.
+     When a card is shorter than the min-height, the footer still
+     pins to the bottom edge so cards read as aligned blocks. */
+  .digest-card__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: auto;
   }
 
   .digest-card:hover {
@@ -151,13 +157,6 @@ const displaySourceName =
     border-radius: 0.5rem;
   }
 
-  .digest-card__heading {
-    display: flex;
-    align-items: baseline;
-    gap: 0.4rem;
-    position: relative;
-  }
-
   .digest-card__title {
     margin: 0;
     /* Editorial serif — same family as the article-detail headline
@@ -168,15 +167,15 @@ const displaySourceName =
     font-weight: 600;
     line-height: 1.25;
     letter-spacing: -0.01em;
-    flex: 1 1 auto;
     min-width: 0;
     text-wrap: balance;
   }
 
-  /* Native <details> disclosure for the tag popover. `position:
-     static` on the element, `position: absolute` on the popover so it
-     floats over the card without pushing the title. */
+  /* Native <details> disclosure for the tag popover, sitting in the
+     footer row. The popover is absolute-positioned above the footer
+     so it doesn't push the card's layout. */
   .digest-card__tag-details {
+    position: relative;
     flex-shrink: 0;
   }
   .digest-card__tag-details summary {
@@ -231,10 +230,11 @@ const displaySourceName =
      It's metadata, not an interactive control, and de-pilling it lets
      the card's real pills (tag chips) own the "clickable" affordance
      without visual competition. */
+  /* Source name — small-caps metadata that matches the article-
+     detail page's metadata line. Sits at the bottom-left of the card
+     via the footer row. */
   .digest-card__source {
     display: inline-block;
-    align-self: flex-start;
-    margin-top: auto;
     padding: 0;
     background: transparent;
     color: var(--text-muted);
@@ -246,10 +246,13 @@ const displaySourceName =
     text-transform: uppercase;
   }
 
+  /* Popover for the footer # affordance. Anchored to its right edge
+     (the # sits at the far right of the card) and opens upward so it
+     never sticks out below the grid. */
   .digest-card__tag-popover {
     position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
+    bottom: calc(100% + 6px);
+    right: 0;
     z-index: 5;
     display: flex;
     flex-wrap: wrap;
@@ -258,7 +261,17 @@ const displaySourceName =
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 6px;
-    max-width: calc(100% - 0px);
+    max-width: min(260px, 80vw);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Desktop (hover-capable): show the popover on hover — no click
+     needed. Native <details> still toggles on click so the user can
+     pin it open on both desktop and mobile. */
+  @media (hover: hover) and (pointer: fine) {
+    .digest-card__tag-details:hover .digest-card__tag-popover {
+      display: flex;
+    }
   }
 
   .digest-card__tag-chip {

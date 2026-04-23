@@ -149,6 +149,26 @@ if (user.hashtags_json !== null && user.hashtags_json !== '') {
   }
 }
 
+// Per-tag article count for today's digest — drives both the rail's
+// `[count]` affordance and the "sort by count descending" order. Tags
+// the user subscribes to but that have zero articles today render
+// with a middle-dot (`·`) instead of a literal 0.
+const tagCounts = new Map<string, number>();
+for (const tag of userTags) tagCounts.set(tag, 0);
+for (const a of articles) {
+  const raw = a.tags ?? [];
+  for (const t of raw) {
+    if (!tagCounts.has(t)) continue;
+    tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
+  }
+}
+// Sort: count DESC, alphabetical as tiebreaker.
+const sortedUserTags = [...userTags].sort((a, b) => {
+  const diff = (tagCounts.get(b) ?? 0) - (tagCounts.get(a) ?? 0);
+  if (diff !== 0) return diff;
+  return a.localeCompare(b);
+});
+
 const isLive = digest !== null && digest.status === 'in_progress';
 const isReadyToday =
   digest !== null &&
@@ -185,28 +205,37 @@ if (isReadyToday && articles.length < 3) {
       input on click.
     */}
     <div class="tag-strip" data-tag-strip>
-      {userTags.map((tag) => {
-        const display = '#' + tag;
+      {sortedUserTags.map((tag) => {
+        const count = tagCounts.get(tag) ?? 0;
         return (
           <button
             type="button"
             class="tag-chip"
             data-tag-chip
             data-tag={tag}
+            data-count={count}
             aria-pressed="false"
-            aria-label={`${tag} — click to filter, click again to deselect`}
+            aria-label={`${tag} — ${count} articles today. Click to filter, click again to deselect.`}
           >
-            <span class="tag-chip__label">{display}</span>
-            <span
-              class="tag-chip__remove"
-              data-tag-remove
-              role="button"
-              tabindex="-1"
-              aria-label={`Remove ${tag} from your hashtags`}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
-              </svg>
+            <span class="tag-chip__label">#{tag}</span>
+            {/*
+              The right-edge slot is a single width. Unselected: count
+              (or middle-dot when 0). Selected: an × remove affordance.
+              They crossfade in place so chip width never jitters.
+            */}
+            <span class="tag-chip__slot" aria-hidden="true">
+              <span class="tag-chip__count">{count > 0 ? count : '·'}</span>
+              <span
+                class="tag-chip__remove"
+                data-tag-remove
+                role="button"
+                tabindex="-1"
+                aria-label={`Remove ${tag} from your hashtags`}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
+                </svg>
+              </span>
             </span>
           </button>
         );
@@ -504,19 +533,32 @@ if (isReadyToday && articles.length < 3) {
   }
 
   function renderTagChip(strip: HTMLElement, tag: string): HTMLElement {
-    // Match the SSR chip markup in digest.astro so selected styling and
-    // the remove affordance behave identically for dynamically-added chips.
+    // Mirror the SSR chip markup so dynamically-added chips behave
+    // identically. A newly-added tag has zero articles today → render
+    // the middle-dot placeholder in the count slot.
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'tag-chip';
     chip.dataset['tagChip'] = '';
     chip.dataset['tag'] = tag;
+    chip.dataset['count'] = '0';
     chip.setAttribute('aria-pressed', 'false');
-    chip.setAttribute('aria-label', `${tag} — click to filter, click again to deselect`);
+    chip.setAttribute(
+      'aria-label',
+      `${tag} — 0 articles today. Click to filter, click again to deselect.`,
+    );
     const label = document.createElement('span');
     label.className = 'tag-chip__label';
     label.textContent = '#' + tag;
     chip.appendChild(label);
+
+    const slot = document.createElement('span');
+    slot.className = 'tag-chip__slot';
+    slot.setAttribute('aria-hidden', 'true');
+    const count = document.createElement('span');
+    count.className = 'tag-chip__count';
+    count.textContent = '·';
+    slot.appendChild(count);
     const remove = document.createElement('span');
     remove.className = 'tag-chip__remove';
     remove.dataset['tagRemove'] = '';
@@ -524,10 +566,12 @@ if (isReadyToday && articles.length < 3) {
     remove.setAttribute('tabindex', '-1');
     remove.setAttribute('aria-label', `Remove ${tag} from your hashtags`);
     remove.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
       '<path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>' +
       '</svg>';
-    chip.appendChild(remove);
+    slot.appendChild(remove);
+    chip.appendChild(slot);
+
     // Insert before the [data-tag-add] button so the "+ add" stays last.
     const addButton = strip.querySelector<HTMLButtonElement>('[data-tag-add]');
     if (addButton !== null) strip.insertBefore(chip, addButton);
@@ -844,21 +888,45 @@ if (isReadyToday && articles.length < 3) {
     fell back to default button sizing and looked visibly bigger than
     the SSR'd ones until the next page reload. */}
 <style is:global>
+  /* Heatmap rail: single horizontal row, snap-scrolling on mobile so
+     the user never sees partially-clipped chips. The `+ add` ghost
+     chip sits trailing when the rail fits, and `position: sticky;
+     right: 0` when it overflows so adding a tag is always one tap
+     away without scrolling. */
   .tag-strip {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 0.5rem;
     align-items: center;
     padding: 0.75rem 1rem 0.25rem;
     margin-bottom: 0.5rem;
+    overflow-x: auto;
+    overflow-y: visible;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    /* Gradient fade on the right edge hints there's more off-screen
+       when the rail overflows. No-op when everything fits. */
+    mask-image: linear-gradient(
+      to right,
+      black calc(100% - 32px),
+      transparent
+    );
+    -webkit-mask-image: linear-gradient(
+      to right,
+      black calc(100% - 32px),
+      transparent
+    );
+  }
+  .tag-strip::-webkit-scrollbar {
+    display: none;
   }
 
   .tag-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0;
+    gap: 0.55rem;
     min-height: 32px;
-    padding: 0.25rem 0.75rem;
+    padding: 0.25rem 0.5rem 0.25rem 0.75rem;
     background: var(--surface);
     color: var(--text);
     border: 1px solid var(--border);
@@ -869,13 +937,13 @@ if (isReadyToday && articles.length < 3) {
     line-height: 1;
     letter-spacing: -0.01em;
     cursor: pointer;
-    overflow: hidden;
+    flex-shrink: 0;
+    scroll-snap-align: start;
     -webkit-tap-highlight-color: transparent;
     transition:
       background 150ms var(--ease, ease),
       color 150ms var(--ease, ease),
-      border-color 150ms var(--ease, ease),
-      padding-right 150ms var(--ease, ease);
+      border-color 150ms var(--ease, ease);
   }
   .tag-chip:hover {
     border-color: var(--text-muted);
@@ -884,42 +952,61 @@ if (isReadyToday && articles.length < 3) {
     display: inline-block;
     white-space: nowrap;
   }
-  /* REQ-SET-002 AC 2: selected chip adopts the inverted colour scheme
-     (same contrast as the primary button: black bg + white text in
-     light mode, white bg + black text in dark mode) and expands to
-     reveal the red remove affordance attached to the right edge. */
+
+  /* Right-edge slot — count and × live here stacked, swapped via
+     opacity. Fixed width prevents any chip-width jitter when a tag
+     is selected. `tabular-nums` keeps '3' and '12' the same width. */
+  .tag-chip__slot {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+  }
+  .tag-chip__count,
+  .tag-chip__remove {
+    position: absolute;
+    inset: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    transition: opacity 150ms var(--ease, ease);
+  }
+  .tag-chip__count {
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    opacity: 1;
+  }
+  .tag-chip__remove {
+    background: #dc2626;
+    color: #fff;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .tag-chip__remove:hover {
+    background: #b91c1c;
+  }
+
+  /* Selected chip: invert colours (matches the primary button
+     contrast) and swap the count slot for the red × via opacity
+     crossfade. Width stays constant because both count and × share
+     the same absolute-positioned slot. */
   .tag-chip.is-selected {
     background: var(--text);
     color: var(--bg);
     border-color: var(--text);
-    padding-right: 0.25rem;
   }
-  .tag-chip__remove {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 0;
-    height: 22px;
-    margin-left: 0;
-    background: #dc2626;
-    color: #fff;
-    border-radius: 9999px;
-    overflow: hidden;
+  .tag-chip.is-selected .tag-chip__count {
     opacity: 0;
-    transition:
-      width 150ms var(--ease, ease),
-      margin-left 150ms var(--ease, ease),
-      opacity 150ms var(--ease, ease);
-    pointer-events: none;
   }
   .tag-chip.is-selected .tag-chip__remove {
-    width: 22px;
-    margin-left: 0.4rem;
     opacity: 1;
     pointer-events: auto;
-  }
-  .tag-chip__remove:hover {
-    background: #b91c1c;
   }
 
   .tag-strip__nomatch {
@@ -931,13 +1018,16 @@ if (isReadyToday && articles.length < 3) {
     display: none;
   }
 
+  /* Ghost-chip "+ add": dashed outline, muted until hover. Sticks to
+     the right edge of the viewport once the rail overflows so adding
+     a tag is always reachable without scrolling. */
   .tag-add {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
     min-height: 32px;
     padding: 0.25rem 0.75rem;
-    background: transparent;
+    background: var(--bg);
     color: var(--text-muted);
     border: 1px dashed var(--border);
     border-radius: 9999px;
@@ -945,13 +1035,18 @@ if (isReadyToday && articles.length < 3) {
     font-family: inherit;
     font-size: var(--text-sm);
     font-weight: 500;
+    flex-shrink: 0;
+    position: sticky;
+    right: 0.5rem;
+    opacity: 0.75;
     -webkit-tap-highlight-color: transparent;
-    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    transition: color 150ms var(--ease, ease), border-color 150ms var(--ease, ease), background 150ms var(--ease, ease), opacity 150ms var(--ease, ease);
   }
   .tag-add:hover {
     color: var(--text);
     border-color: var(--text);
     background: var(--surface);
+    opacity: 1;
   }
   .tag-add__plus {
     font-size: var(--text-lg);
