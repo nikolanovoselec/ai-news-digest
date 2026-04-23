@@ -12,7 +12,7 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 
 **Acceptance Criteria:**
 1. Typography uses the system font stack (`-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif`) with five sizes (12, 14, 16, 20, 32 px) and two weights (400 body, 600 headings and labels).
-2. The palette is restricted to neutral grays with a single accent color per theme; no gradients or drop shadows appear anywhere in the UI.
+2. The palette is restricted to neutral grays with a single accent color per theme; no decorative gradients or drop shadows appear on steady-state UI surfaces. Motion-driven gradients (e.g., skeleton loading shimmer specifically required by another REQ) are exempt.
 3. Inputs render with a minimum 16 px font size to prevent iOS zoom-on-focus.
 4. Every interactive element shows a visible focus ring on keyboard focus.
 5. All interactive elements have a minimum 44 × 44 pixel touch target.

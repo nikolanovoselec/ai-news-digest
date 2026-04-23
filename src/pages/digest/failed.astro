@@ -14,8 +14,8 @@
 import Base from '~/layouts/Base.astro';
 import { loadSession } from '~/middleware/auth';
 
-// Load the authenticated user onto locals so the header (UserMenu +
-// History icon) renders. Mirror the auth pattern from digest.astro:
+// Load the authenticated user onto locals so the header (UserMenu)
+// renders. Mirror the auth pattern from digest.astro:
 // fail-closed with 500 when the OAUTH_JWT_SECRET is missing, route
 // unauth visitors through the OAuth flow.
 const env = Astro.locals.runtime.env;
@@ -64,7 +64,6 @@ const errorCode =
       >
         Try again
       </button>
-      <a class="failure-page__settings-link" href="/settings">Go to settings</a>
     </div>
     <p
       class="failure-page__status"
@@ -148,22 +147,27 @@ const errorCode =
     button.disabled = false;
   }
 
+  // Delegated click binding on <document>. The previous per-element
+  // binding inside init() could miss the button when View Transitions
+  // swapped the DOM before init() ran. Capture-phase delegation fires
+  // for any click that bubbles through a [data-retry-button], no
+  // matter when it enters the tree.
   function init(): void {
-    const button = document.querySelector<HTMLButtonElement>('[data-retry-button]');
-    const status = document.querySelector<HTMLElement>('[data-retry-status]');
-    if (button === null || status === null) return;
-    if (button.dataset['bound'] === '1') return;
-    button.dataset['bound'] = '1';
-    button.addEventListener('click', () => {
+    if (document.documentElement.dataset['retryBound'] === '1') return;
+    document.documentElement.dataset['retryBound'] = '1';
+    document.addEventListener('click', (e) => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest<HTMLButtonElement>('[data-retry-button]');
+      if (button === null) return;
+      const status = document.querySelector<HTMLElement>('[data-retry-status]');
+      if (status === null) return;
+      e.preventDefault();
       void handleRetry(button, status);
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init, { once: true });
-  } else {
-    init();
-  }
+  init();
   document.addEventListener('astro:page-load', init);
 </script>
 
@@ -218,16 +222,6 @@ const errorCode =
   .failure-page__retry-button:disabled {
     opacity: 0.6;
     cursor: wait;
-  }
-
-  .failure-page__settings-link {
-    color: var(--text-muted);
-    text-decoration: underline;
-    font-size: var(--text-sm);
-  }
-
-  .failure-page__settings-link:hover {
-    color: var(--text);
   }
 
   .failure-page__status {

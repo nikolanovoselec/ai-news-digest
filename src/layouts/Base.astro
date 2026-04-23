@@ -95,28 +95,10 @@ const initialTheme = cookieTheme ?? 'light';
       <nav class="site-header__nav" aria-label="Primary">
         {/* Anonymous pages (landing, logged-out error pages) keep the
             standalone toggle so signed-out users can still flip themes.
-            Authenticated pages move the toggle into the UserMenu below
-            to keep the header minimal (brand / history / avatar). */}
+            Authenticated pages move theme toggle + History into the
+            UserMenu dropdown to keep the header minimal (brand /
+            avatar only). */}
         {!Astro.locals.user && <ThemeToggle />}
-        {Astro.locals.user && !firstRun && (
-          <a
-            href="/history"
-            class="site-header__history focus-ring"
-            aria-label="History"
-            title="History"
-          >
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              fill="currentColor"
-            >
-              {/* MDI history icon — https://pictogrammers.com/library/mdi/icon/history/ */}
-              <path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3C8.03,3 4,7.03 4,12H1L4.96,16.03L9,12H6C6,8.14 9.14,5 13,5C16.86,5 20,8.14 20,12C20,15.86 16.86,19 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21C17.97,21 22,16.97 22,12C22,7.03 17.97,3 13,3Z" />
-            </svg>
-          </a>
-        )}
         {/* UserMenu is NOT hidden during firstRun — the user still needs
             a way to log out if they change their mind about onboarding,
             and the Settings link inside the menu points at the page
@@ -188,22 +170,6 @@ const initialTheme = cookieTheme ?? 'light';
         display: inline-flex;
         align-items: center;
         gap: 4px;
-      }
-
-      .site-header__history {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 44px;
-        min-height: 44px;
-        color: var(--text-muted);
-        border-radius: 9999px;
-        text-decoration: none;
-        -webkit-tap-highlight-color: transparent;
-      }
-      .site-header__history:hover {
-        color: var(--text);
-        background: var(--surface);
       }
 
       .site-main {

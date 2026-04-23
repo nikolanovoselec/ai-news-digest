@@ -104,6 +104,24 @@ const avatarUrl = `https://www.gravatar.com/avatar/${emailHash}?s=80&d=mp`;
         </svg>
       </span>
     </button>
+    <a
+      class="user-menu__item user-menu__row"
+      role="menuitem"
+      href="/history"
+    >
+      <span>History</span>
+      <span class="user-menu__row-icon" aria-hidden="true">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+        >
+          {/* MDI history — https://pictogrammers.com/library/mdi/icon/history/ */}
+          <path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3C8.03,3 4,7.03 4,12H1L4.96,16.03L9,12H6C6,8.14 9.14,5 13,5C16.86,5 20,8.14 20,12C20,15.86 16.86,19 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21C17.97,21 22,16.97 22,12C22,7.03 17.97,3 13,3Z" />
+        </svg>
+      </span>
+    </a>
     <a class="user-menu__item" role="menuitem" href="/settings">Settings</a>
     <form class="user-menu__logout" method="post" action={logoutHref}>
       <button
@@ -160,12 +178,11 @@ const avatarUrl = `https://www.gravatar.com/avatar/${emailHash}?s=80&d=mp`;
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
-    min-width: 180px;
+    min-width: 200px;
     padding: 4px;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -197,11 +214,17 @@ const avatarUrl = `https://www.gravatar.com/avatar/${emailHash}?s=80&d=mp`;
     padding: 0;
   }
 
-  .user-menu__theme {
+  .user-menu__theme,
+  .user-menu__row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+  }
+  .user-menu__row-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text);
   }
   .user-menu__theme-label {
     /* Match Settings / Log out colour — not muted. */

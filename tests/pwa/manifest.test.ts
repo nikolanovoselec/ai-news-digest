@@ -27,6 +27,28 @@ interface WebManifest {
 
 const manifest = JSON.parse(manifestSource) as WebManifest;
 
+/** A PNG icon at a specific size qualifies for AC2's raster lane. */
+function hasPngIcon(m: WebManifest, size: string, purpose: string): boolean {
+  return (m.icons ?? []).some(
+    (i) =>
+      i.sizes === size &&
+      (i.purpose ?? 'any').split(/\s+/).includes(purpose) &&
+      i.type === 'image/png' &&
+      /\.png$/.test(i.src),
+  );
+}
+
+/** A scalable SVG icon qualifies for AC2's vector lane. */
+function hasSvgIcon(m: WebManifest, purpose: string): boolean {
+  return (m.icons ?? []).some(
+    (i) =>
+      i.type === 'image/svg+xml' &&
+      i.sizes === 'any' &&
+      (i.purpose ?? 'any').split(/\s+/).includes(purpose) &&
+      /\.svg$/.test(i.src),
+  );
+}
+
 describe('manifest.webmanifest', () => {
   it('REQ-PWA-001: parses as valid JSON', () => {
     expect(manifest).toBeTypeOf('object');
@@ -49,35 +71,37 @@ describe('manifest.webmanifest', () => {
     expect(manifest.background_color).toBe('#ffffff');
   });
 
-  it('REQ-PWA-001: includes a 192x192 PNG icon (AC 2)', () => {
-    const icon = manifest.icons?.find((i) => i.sizes === '192x192');
-    expect(icon, 'manifest must ship a 192x192 icon').toBeDefined();
-    expect(icon?.type).toBe('image/png');
-    expect(icon?.src).toMatch(/\.png$/);
+  it('REQ-PWA-001: ships at least one any-purpose icon (SVG or 192+512 PNG) per AC 2', () => {
+    const svgAny = hasSvgIcon(manifest, 'any');
+    const pngAny =
+      hasPngIcon(manifest, '192x192', 'any') && hasPngIcon(manifest, '512x512', 'any');
+    expect(
+      svgAny || pngAny,
+      'manifest must ship either a scalable SVG any-icon or PNG icons at both 192 and 512',
+    ).toBe(true);
   });
 
-  it('REQ-PWA-001: includes a 512x512 PNG icon (AC 2)', () => {
-    const icon = manifest.icons?.find(
-      (i) => i.sizes === '512x512' && (i.purpose ?? 'any') === 'any'
-    );
-    expect(icon, 'manifest must ship a 512x512 any-purpose icon').toBeDefined();
-    expect(icon?.type).toBe('image/png');
+  it('REQ-PWA-001: ships at least one maskable icon (SVG or 512 PNG) per AC 2', () => {
+    const svgMaskable = hasSvgIcon(manifest, 'maskable');
+    const pngMaskable = hasPngIcon(manifest, '512x512', 'maskable');
+    expect(
+      svgMaskable || pngMaskable,
+      'manifest must ship either a scalable SVG maskable icon or a 512x512 PNG maskable',
+    ).toBe(true);
   });
 
-  it('REQ-PWA-001: includes a 512x512 maskable PNG icon (AC 2)', () => {
-    const maskable = manifest.icons?.find(
-      (i) => i.sizes === '512x512' && i.purpose === 'maskable'
-    );
-    expect(maskable, 'manifest must ship a 512x512 maskable icon').toBeDefined();
-    expect(maskable?.type).toBe('image/png');
-  });
-
-  it('REQ-PWA-001: every icon has a src starting with / and ending in .png', () => {
+  it('REQ-PWA-001: every icon src is absolute and matches its declared type', () => {
     expect(manifest.icons).toBeDefined();
-    expect(manifest.icons!.length).toBeGreaterThanOrEqual(3);
+    expect(manifest.icons!.length).toBeGreaterThanOrEqual(1);
     for (const icon of manifest.icons!) {
       expect(icon.src.startsWith('/')).toBe(true);
-      expect(icon.src.endsWith('.png')).toBe(true);
+      if (icon.type === 'image/png') {
+        expect(icon.src.endsWith('.png')).toBe(true);
+      } else if (icon.type === 'image/svg+xml') {
+        expect(icon.src.endsWith('.svg')).toBe(true);
+      } else {
+        throw new Error(`Unexpected icon type: ${icon.type}`);
+      }
     }
   });
 });

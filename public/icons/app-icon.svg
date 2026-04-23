@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- App icon / maskable icon for PWA install + splashscreen.
+       MDI `newspaper` (filled) centred inside a square with safe-zone
+       padding so adaptive-icon maskers (Android 8+) don't clip the
+       artwork. The solid background follows prefers-color-scheme so
+       the icon looks native in both light and dark launchers. -->
+  <style>
+    .bg { fill: #0a0a0a; }
+    .fg { fill: #fafafa; }
+    @media (prefers-color-scheme: light) {
+      .bg { fill: #fafafa; }
+      .fg { fill: #0a0a0a; }
+    }
+  </style>
+  <rect class="bg" width="512" height="512" rx="96" ry="96" />
+  <!-- Newspaper glyph scaled into a 256×256 safe zone centred in the
+       512×512 canvas. MDI `newspaper` path (24×24), scaled ×10.667 and
+       translated by (128, 128). -->
+  <g transform="translate(128 128) scale(10.6667)">
+    <path
+      class="fg"
+      d="M20,5H4C2.89,5 2,5.89 2,7V17A2,2 0 0,0 4,19H20A2,2 0 0,0 22,17V7A2,2 0 0,0 20,5M20,17H4V7H20V17M6,9H11V11H6V9M6,13H11V15H6V13M18,13H13V15H18V13M18,9H13V11H18V9Z"
+    />
+  </g>
+</svg>

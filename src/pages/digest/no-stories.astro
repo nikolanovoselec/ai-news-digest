@@ -9,8 +9,8 @@
 import Base from '~/layouts/Base.astro';
 import { loadSession } from '~/middleware/auth';
 
-// Load the authenticated user onto locals so the header (UserMenu +
-// History icon) renders. Mirror the auth pattern from digest.astro:
+// Load the authenticated user onto locals so the header (UserMenu)
+// renders. Mirror the auth pattern from digest.astro:
 // fail-closed with 500 when the OAUTH_JWT_SECRET is missing, route
 // unauth visitors through the OAuth flow.
 const env = Astro.locals.runtime.env;

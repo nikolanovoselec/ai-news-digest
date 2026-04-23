@@ -39,8 +39,8 @@ describe('MODELS catalog', () => {
 });
 
 describe('DEFAULT_MODEL_ID', () => {
-  it('REQ-SET-004: DEFAULT_MODEL_ID is the 128K-context Llama 3.3 70B fp8 variant', () => {
-    expect(DEFAULT_MODEL_ID).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+  it('REQ-SET-004: DEFAULT_MODEL_ID is the 128K-context OpenAI gpt-oss-120b', () => {
+    expect(DEFAULT_MODEL_ID).toBe('@cf/openai/gpt-oss-120b');
   });
 
   it('REQ-SET-004: DEFAULT_MODEL_ID is present in MODELS', () => {
@@ -66,23 +66,24 @@ describe('modelById', () => {
 
 describe('estimateCost', () => {
   it('REQ-SET-004: estimateCost computes USD from per-million-token prices', () => {
-    // Llama 3.3 70B Fast: input 0.293 / output 2.253 per Mtok.
-    // 1,000,000 in → $0.293; 1,000,000 out → $2.253; total $2.546.
+    // gpt-oss-120b: input 0.35 / output 0.35 per Mtok.
+    // 1,000,000 in → $0.35; 1,000,000 out → $0.35; total $0.70.
     const cost = estimateCost(DEFAULT_MODEL_ID, 1_000_000, 1_000_000);
-    expect(cost).toBeCloseTo(2.546, 6);
+    expect(cost).toBeCloseTo(0.70, 6);
   });
 
   it('REQ-SET-004: estimateCost scales linearly with token counts', () => {
-    // 2,000 input tokens × $0.293/Mtok → $0.000586
-    // 1,000 output tokens × $2.253/Mtok → $0.002253
-    // total ≈ $0.002839
+    // 2,000 input tokens × $0.35/Mtok → $0.0007
+    // 1,000 output tokens × $0.35/Mtok → $0.00035
+    // total ≈ $0.00105
     const cost = estimateCost(DEFAULT_MODEL_ID, 2_000, 1_000);
-    expect(cost).toBeCloseTo(0.002839, 9);
+    expect(cost).toBeCloseTo(0.00105, 9);
   });
 
-  it('REQ-SET-004: estimateCost returns 0 for Kimi models (prices unknown)', () => {
+  it('REQ-SET-004: estimateCost is non-zero for Kimi K2.6 (published pricing)', () => {
+    // Kimi K2.6: input 0.16 / output 0.56 per Mtok.
     const cost = estimateCost('@cf/moonshotai/kimi-k2.6', 1_000_000, 1_000_000);
-    expect(cost).toBe(0);
+    expect(cost).toBeCloseTo(0.72, 6);
   });
 
   it('REQ-SET-004: estimateCost returns 0 for an unknown model id', () => {
