@@ -141,6 +141,16 @@ check POST /api/auth/github/login           303
 
 # /api/auth/account — DELETE-only in production; GET is 405 or 404.
 check GET  /api/auth/account                404\|405
+# DELETE without a body is a bad request (400). This proves the JSON
+# path is alive without actually deleting the owner's account.
+check DELETE /api/auth/account              400 -H 'Content-Type: application/json'
+# DELETE with { confirm: "WRONG" } is still a 400 — confirmation_required.
+check DELETE /api/auth/account              400 -H 'Content-Type: application/json' --data '{"confirm":"WRONG"}'
+# POST (native-form path) with no confirm field is a 400 — regression
+# guard that the new form-encoded branch rejects before touching D1.
+check POST   /api/auth/account              400 -H 'Content-Type: application/x-www-form-urlencoded' --data ''
+# POST with wrong confirm literal — still a 400, no delete.
+check POST   /api/auth/account              400 -H 'Content-Type: application/x-www-form-urlencoded' --data 'confirm=delete'
 
 # /api/digest/today — global-feed response: { articles, last_scrape_run, next_scrape_at }.
 check GET  /api/digest/today                200
@@ -189,8 +199,25 @@ check POST /api/auth/set-tz 200 -H 'Content-Type: application/json' --data "$RES
 
 # POST /api/digest/refresh — triggers a manual digest. 202 = queued,
 # 409 = one already in progress, 429 = rate-limited. Any of these three
-# proves the route is alive.
-check POST /api/digest/refresh 202\|409\|429 -H 'Content-Type: application/json' --data '{}'
+# proves the route is alive. 410 is also accepted because the legacy
+# per-user refresh was retired and the route now returns Gone.
+check POST /api/digest/refresh 202\|409\|410\|429 -H 'Content-Type: application/json' --data '{}'
+
+# Stars lifecycle — pick any article id from /api/digest/today, then
+# POST → DELETE → POST again. Each transition idempotent.
+printf '\n=== stars lifecycle ===\n'
+ARTICLE_ID=$(curl -sS -b "$COOKIE_JAR" -c "$COOKIE_JAR" "$BASE/api/digest/today" \
+  | grep -oE '"id":"[0-9A-HJKMNP-TV-Z]{26}"' \
+  | head -1 | cut -d'"' -f4)
+if [ -n "$ARTICLE_ID" ]; then
+  check POST   /api/articles/$ARTICLE_ID/star 200\|201 -H 'Content-Type: application/json'
+  check_body GET /api/starred "$ARTICLE_ID"
+  check DELETE /api/articles/$ARTICLE_ID/star 200\|204 -H 'Content-Type: application/json'
+  # Re-star to leave the user's saved set in a non-empty state.
+  check POST   /api/articles/$ARTICLE_ID/star 200\|201 -H 'Content-Type: application/json'
+else
+  printf 'SKIP stars lifecycle — no article id returned by /api/digest/today\n'
+fi
 
 # POST /api/discovery/retry — requeue a specific tag. Needs a valid tag
 # from the user's hashtags_json. "llm" was just set via /api/tags above.

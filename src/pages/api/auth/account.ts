@@ -41,32 +41,40 @@ async function deleteUserKvEntries(kv: KVNamespace, userId: string): Promise<voi
   } while (cursor !== undefined);
 }
 
-export async function DELETE(context: APIContext): Promise<Response> {
+/**
+ * Shared core: run Origin + session checks + confirmation validation,
+ * cascade-delete the user row, best-effort KV cleanup, clear the
+ * session cookie. Called by both DELETE (JSON API path) and POST
+ * (native-form path).
+ *
+ * Returns either an errorResponse (not-ok) or an object with the
+ * userId so the caller can shape the final Response to the caller's
+ * preferred format (JSON vs 303 redirect).
+ */
+async function deleteAccountCore(
+  context: APIContext,
+  confirm: unknown,
+): Promise<
+  { ok: true; userId: string; clearCookie: string } | { ok: false; response: Response }
+> {
   const env = context.locals.runtime.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
-    return errorResponse('app_not_configured');
+    return { ok: false, response: errorResponse('app_not_configured') };
   }
   const appOrigin = originOf(env.APP_URL);
 
   const originResult = checkOrigin(context.request, appOrigin);
   if (!originResult.ok) {
-    return originResult.response!;
+    return { ok: false, response: originResult.response! };
   }
 
   const session = await loadSession(context.request, env.DB, env.OAUTH_JWT_SECRET);
   if (session === null) {
-    return errorResponse('unauthorized');
+    return { ok: false, response: errorResponse('unauthorized') };
   }
 
-  // Explicit confirmation required — AC 1.
-  let body: DeleteAccountBody;
-  try {
-    body = (await context.request.json()) as DeleteAccountBody;
-  } catch {
-    return errorResponse('bad_request');
-  }
-  if (body.confirm !== 'DELETE') {
-    return errorResponse('confirmation_required');
+  if (confirm !== 'DELETE') {
+    return { ok: false, response: errorResponse('confirmation_required') };
   }
 
   const userId = session.user.id;
@@ -90,7 +98,7 @@ export async function DELETE(context: APIContext): Promise<Response> {
       error_code: 'internal_error',
       detail: String(err).slice(0, 500),
     });
-    return errorResponse('internal_error');
+    return { ok: false, response: errorResponse('internal_error') };
   }
 
   // Best-effort KV cleanup (AC 4). Failure here is logged but does
@@ -108,13 +116,53 @@ export async function DELETE(context: APIContext): Promise<Response> {
 
   log('info', 'auth.account.delete', { user_id: userId });
 
+  return { ok: true, userId, clearCookie: buildClearSessionCookie() };
+}
+
+export async function DELETE(context: APIContext): Promise<Response> {
+  // JSON API path — fetch('/api/auth/account', { method: 'DELETE',
+  // body: JSON.stringify({ confirm: 'DELETE' }) }).
+  let body: DeleteAccountBody;
+  try {
+    body = (await context.request.json()) as DeleteAccountBody;
+  } catch {
+    return errorResponse('bad_request');
+  }
+
+  const result = await deleteAccountCore(context, body.confirm);
+  if (!result.ok) return result.response;
+
   const headers = new Headers({ 'Content-Type': 'application/json' });
-  headers.append('Set-Cookie', buildClearSessionCookie());
+  headers.append('Set-Cookie', result.clearCookie);
   return new Response(
-    JSON.stringify({
-      ok: true,
-      redirect: `/?account_deleted=1`,
-    }),
+    JSON.stringify({ ok: true, redirect: `/?account_deleted=1` }),
     { status: 200, headers },
   );
+}
+
+export async function POST(context: APIContext): Promise<Response> {
+  // Native-form path — <form method="post" action="/api/auth/account">
+  // with `<input name="confirm">`. Browser submits form-encoded body
+  // so the JS intercept layer (which was flaky across Samsung Browser
+  // and some in-app webviews) is bypassed entirely. Returns a 303
+  // redirect so the browser navigates to the landing page with a
+  // query param the UI can pick up to show "your account was
+  // deleted" confirmation.
+  let confirm: FormDataEntryValue | null = null;
+  try {
+    const form = await context.request.formData();
+    confirm = form.get('confirm');
+  } catch {
+    return errorResponse('bad_request');
+  }
+
+  const result = await deleteAccountCore(
+    context,
+    typeof confirm === 'string' ? confirm : null,
+  );
+  if (!result.ok) return result.response;
+
+  const headers = new Headers({ Location: '/?account_deleted=1' });
+  headers.append('Set-Cookie', result.clearCookie);
+  return new Response(null, { status: 303, headers });
 }

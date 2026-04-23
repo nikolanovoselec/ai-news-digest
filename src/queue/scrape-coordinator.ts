@@ -160,7 +160,16 @@ export async function runCoordinator(
       source_url: row.headline.url,
       source_name: row.headline.source_name,
       title: row.headline.title,
-      published_at: nowSec,
+      // Prefer the feed's real publication timestamp; fall back to
+      // ingestion time only when the feed omitted a parsable pubDate.
+      // Without this, every article was stamped "now" on ingest, so a
+      // 3-week-old Cloudflare blog post picked up by the cron looked
+      // like today's news on the digest card.
+      published_at:
+        typeof row.headline.published_at === 'number' &&
+        row.headline.published_at > 0
+          ? row.headline.published_at
+          : nowSec,
       ...(typeof row.headline.snippet === 'string' && row.headline.snippet !== ''
         ? { body_snippet: row.headline.snippet }
         : {}),

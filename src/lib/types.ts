@@ -27,6 +27,12 @@ export interface Headline {
    * Populated by fanOutForTags; extract() implementations don't need
    * to set it. */
   source_tags?: string[];
+  /** Unix-seconds publication timestamp parsed from the feed entry
+   * (RSS `<pubDate>`, Atom `<published>`/`<updated>`, JSON Feed
+   * `date_published`). Omitted when the feed did not supply a date
+   * or when parsing failed — the coordinator falls back to ingestion
+   * time so the article still lands with a usable value. */
+  published_at?: number;
 }
 
 export interface GeneratedArticle {

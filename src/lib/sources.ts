@@ -459,9 +459,39 @@ function extractJsonFeed(parsed: unknown, sourceName: string): Headline[] {
     const title = asString(item['title']);
     const url = asString(item['url']) ?? asString(item['external_url']);
     if (title === null || url === null) continue;
-    out.push({ title, url, source_name: sourceName });
+    const published_at = parseFeedDate(item['date_published']);
+    out.push({
+      title,
+      url,
+      source_name: sourceName,
+      ...(published_at !== null ? { published_at } : {}),
+    });
   }
   return out;
+}
+
+/**
+ * Parse a feed date string into unix seconds. Accepts RFC 2822 (RSS),
+ * ISO 8601 (Atom / JSON Feed), and anything else Date.parse()
+ * recognises. Returns null when the value is missing, not a string,
+ * or unparseable — callers should fall back to ingestion time.
+ *
+ * Clamp-forward guard: feeds occasionally emit a date in the future
+ * (clock skew on the producer, or a scheduled-post placeholder).
+ * Accept only dates ≤ now + 1 day so a malformed feed can't backdate
+ * a fresh article to last year by coincidence of a "1970" stamp
+ * either — reject < 2000-01-01 as invalid and fall back.
+ */
+function parseFeedDate(raw: unknown): number | null {
+  if (typeof raw !== 'string' || raw === '') return null;
+  const ms = Date.parse(raw);
+  if (Number.isNaN(ms)) return null;
+  const sec = Math.floor(ms / 1000);
+  const nowSec = Math.floor(Date.now() / 1000);
+  // Reject obvious garbage: pre-2000 epochs and future-dated > 1 day.
+  if (sec < 946_684_800) return null;
+  if (sec > nowSec + 86_400) return null;
+  return sec;
 }
 
 /** fxp emits a single child as an object and multiple as an array. */
@@ -476,7 +506,19 @@ function itemToHeadline(item: unknown, sourceName: string): Headline | null {
   const title = asString(item['title']);
   const link = asString(item['link']);
   if (title === null || link === null) return null;
-  return { title, url: link, source_name: sourceName };
+  // RSS `<pubDate>` is the canonical item-date field (RFC 2822). Some
+  // feeds emit ISO via Dublin Core `<dc:date>` — fxp exposes that as
+  // `dc:date` in the parsed object. Fall back in order.
+  const published_at =
+    parseFeedDate(item['pubDate']) ??
+    parseFeedDate(item['dc:date']) ??
+    parseFeedDate(item['published']);
+  return {
+    title,
+    url: link,
+    source_name: sourceName,
+    ...(published_at !== null ? { published_at } : {}),
+  };
 }
 
 function entryToHeadline(entry: unknown, sourceName: string): Headline | null {
@@ -487,7 +529,17 @@ function entryToHeadline(entry: unknown, sourceName: string): Headline | null {
   const linkNode = entry['link'];
   const url = atomLinkHref(linkNode);
   if (title === null || url === null) return null;
-  return { title, url, source_name: sourceName };
+  // Atom: `<published>` is the original publication time;
+  // `<updated>` is mandatory but shifts when the post is edited.
+  // Prefer published, fall back to updated.
+  const published_at =
+    parseFeedDate(entry['published']) ?? parseFeedDate(entry['updated']);
+  return {
+    title,
+    url,
+    source_name: sourceName,
+    ...(published_at !== null ? { published_at } : {}),
+  };
 }
 
 function atomLinkHref(node: unknown): string | null {

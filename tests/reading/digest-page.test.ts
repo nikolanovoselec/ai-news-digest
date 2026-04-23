@@ -99,6 +99,26 @@ describe('digest.astro — REQ-READ-001 grid', () => {
     expect(digestPageSource).toContain('data-tag-chip');
     expect(digestPageSource).toContain('wireTagStrip');
   });
+
+  it('REQ-READ-001: wireTagStrip queries the +add button and input from the wrapper, not the (now-mask-fading) inner strip', () => {
+    // Regression guard for the "clicking a tag doesn't select it"
+    // bug. The +add button and its input were hoisted OUT of
+    // `[data-tag-strip]` and are now siblings inside
+    // `[data-tag-strip-wrap]` so the mask fade on the strip doesn't
+    // paint them. If wireTagStrip queries addButton/input from
+    // `strip` instead of the wrapper, the null-guard early-returns
+    // and the whole chip/remove click handler never binds.
+    expect(digestPageSource).toMatch(/data-tag-strip-wrap/);
+    expect(digestPageSource).toMatch(
+      /const\s+wrap\s*=\s*strip\.closest<HTMLElement>\(['"]?\[data-tag-strip-wrap\]['"]?\)/,
+    );
+    expect(digestPageSource).toMatch(
+      /wrap\.querySelector<HTMLButtonElement>\(['"]?\[data-tag-add\]['"]?\)/,
+    );
+    expect(digestPageSource).toMatch(
+      /wrap\.querySelector<HTMLInputElement>\(['"]?\[data-tag-add-input\]['"]?\)/,
+    );
+  });
 });
 
 describe('DigestCard.astro — REQ-READ-001 AC 2/3', () => {

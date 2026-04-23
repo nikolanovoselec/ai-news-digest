@@ -3,7 +3,7 @@
 // clear) + REQ-AUTH-003 (Origin check).
 
 import { describe, it, expect, vi } from 'vitest';
-import { DELETE } from '~/pages/api/auth/account';
+import { DELETE, POST } from '~/pages/api/auth/account';
 import { SESSION_COOKIE_NAME } from '~/middleware/auth';
 import { signSession } from '~/lib/session-jwt';
 
@@ -271,5 +271,135 @@ describe('DELETE /api/auth/account', () => {
     const body = (await res.json()) as { ok: boolean; redirect: string };
     expect(body.ok).toBe(true);
     expect(body.redirect).toBe(`/?account_deleted=1`);
+  });
+});
+
+/**
+ * Build a native-form POST request — <form method="post"
+ * action="/api/auth/account"> with `<input name="confirm">`. The
+ * browser submits application/x-www-form-urlencoded, not JSON, so
+ * the POST handler consumes `request.formData()`.
+ */
+async function postRequest(
+  options: {
+    origin?: string | null;
+    cookie?: string | null;
+    confirm?: string | null;
+  } = {},
+): Promise<Request> {
+  const headers = new Headers({
+    'Content-Type': 'application/x-www-form-urlencoded',
+  });
+  if (options.origin !== null && options.origin !== undefined) {
+    headers.set('Origin', options.origin);
+  }
+  if (options.cookie !== null && options.cookie !== undefined) {
+    headers.set('Cookie', options.cookie);
+  }
+  const form = new URLSearchParams();
+  if (options.confirm !== null && options.confirm !== undefined) {
+    form.set('confirm', options.confirm);
+  }
+  return new Request(`${APP_URL}/api/auth/account`, {
+    method: 'POST',
+    headers,
+    body: form.toString(),
+  });
+}
+
+describe('POST /api/auth/account — native form path', () => {
+  it('REQ-AUTH-005: native POST with confirm=DELETE returns 303 to /?account_deleted=1', async () => {
+    const token = await signSession(
+      { sub: '12345', email: 'a@b.c', ghl: 'a', sv: 1 },
+      JWT_SECRET,
+    );
+    const { db, runCalls } = makeDb(baseRow());
+    const { kv } = makeKv();
+    const req = await postRequest({
+      origin: APP_ORIGIN,
+      cookie: `${SESSION_COOKIE_NAME}=${token}`,
+      confirm: 'DELETE',
+    });
+    const res = await POST(makeContext(req, env(db, kv)) as never);
+    expect(res.status).toBe(303);
+    expect(res.headers.get('Location')).toBe('/?account_deleted=1');
+    const del = runCalls.find((c) => c.sql.startsWith('DELETE FROM users'));
+    expect(del).toBeDefined();
+  });
+
+  it('REQ-AUTH-005: native POST clears the session cookie on 303', async () => {
+    const token = await signSession(
+      { sub: '12345', email: 'a@b.c', ghl: 'a', sv: 1 },
+      JWT_SECRET,
+    );
+    const { db } = makeDb(baseRow());
+    const { kv } = makeKv();
+    const req = await postRequest({
+      origin: APP_ORIGIN,
+      cookie: `${SESSION_COOKIE_NAME}=${token}`,
+      confirm: 'DELETE',
+    });
+    const res = await POST(makeContext(req, env(db, kv)) as never);
+    const clear = setCookiesOf(res).find(
+      (c) => c.startsWith(`${SESSION_COOKIE_NAME}=`) && c.includes('Max-Age=0'),
+    );
+    expect(clear).toBeDefined();
+  });
+
+  it('REQ-AUTH-005: native POST without confirm field returns 400', async () => {
+    const token = await signSession(
+      { sub: '12345', email: 'a@b.c', ghl: 'a', sv: 1 },
+      JWT_SECRET,
+    );
+    const { db } = makeDb(baseRow());
+    const { kv } = makeKv();
+    const req = await postRequest({
+      origin: APP_ORIGIN,
+      cookie: `${SESSION_COOKIE_NAME}=${token}`,
+      confirm: null,
+    });
+    const res = await POST(makeContext(req, env(db, kv)) as never);
+    expect(res.status).toBe(400);
+  });
+
+  it('REQ-AUTH-005: native POST with wrong confirm literal returns 400', async () => {
+    const token = await signSession(
+      { sub: '12345', email: 'a@b.c', ghl: 'a', sv: 1 },
+      JWT_SECRET,
+    );
+    const { db, runCalls } = makeDb(baseRow());
+    const { kv } = makeKv();
+    const req = await postRequest({
+      origin: APP_ORIGIN,
+      cookie: `${SESSION_COOKIE_NAME}=${token}`,
+      confirm: 'delete', // lowercase — must NOT match
+    });
+    const res = await POST(makeContext(req, env(db, kv)) as never);
+    expect(res.status).toBe(400);
+    // The row must NOT have been deleted on a rejected confirm.
+    const del = runCalls.find((c) => c.sql.startsWith('DELETE FROM users'));
+    expect(del).toBeUndefined();
+  });
+
+  it('REQ-AUTH-003: native POST rejects missing Origin', async () => {
+    const { db } = makeDb(baseRow());
+    const { kv } = makeKv();
+    const req = await postRequest({
+      origin: null,
+      confirm: 'DELETE',
+    });
+    const res = await POST(makeContext(req, env(db, kv)) as never);
+    expect(res.status).toBe(403);
+  });
+
+  it('REQ-AUTH-005: native POST returns 401 without a session cookie', async () => {
+    const { db } = makeDb(baseRow());
+    const { kv } = makeKv();
+    const req = await postRequest({
+      origin: APP_ORIGIN,
+      confirm: 'DELETE',
+    });
+    const res = await POST(makeContext(req, env(db, kv)) as never);
+    expect(res.status).toBe(401);
   });
 });

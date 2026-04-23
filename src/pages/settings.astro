@@ -254,8 +254,20 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
             <p class="settings__hint">
               Permanently deletes your account, digests, and all associated data.
             </p>
+            {/*
+              Native <form method="post" action="/api/auth/account"> —
+              the server also accepts the JSON DELETE path for API
+              callers, but the browser flow goes through POST so the
+              JS interceptor can't swallow the submit on flaky mobile
+              engines (Samsung Browser / in-app webviews). The HTML
+              `required` + `pattern` attributes enforce the "DELETE"
+              literal at the form-validation level before the browser
+              dispatches; the server still re-validates.
+            */}
             <form
               class="settings__delete"
+              method="post"
+              action="/api/auth/account"
               data-delete-account
               aria-label="Delete account"
             >
@@ -263,8 +275,11 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
                 <span class="settings__field-label">Type DELETE to confirm</span>
                 <input
                   type="text"
+                  name="confirm"
                   data-delete-confirm
                   autocomplete="off"
+                  required
+                  pattern="DELETE"
                   class="settings__delete-input"
                 />
               </label>
@@ -384,30 +399,12 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
     submitButton.disabled = false;
   }
 
-  async function deleteAccount(
-    form: HTMLFormElement,
-    status: HTMLElement,
-  ): Promise<void> {
-    const input = form.querySelector<HTMLInputElement>('[data-delete-confirm]');
-    const confirm = input?.value.trim() ?? '';
-    if (confirm !== 'DELETE') {
-      status.textContent = 'Type DELETE exactly to confirm.';
-      return;
-    }
-    status.textContent = 'Deleting…';
-    const res = await fetch('/api/auth/account', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirm: 'DELETE' }),
-      credentials: 'same-origin',
-    });
-    if (res.ok) {
-      const body = (await res.json()) as { redirect?: string };
-      window.location.assign(body.redirect ?? '/');
-      return;
-    }
-    status.textContent = 'Could not delete your account. Please try again.';
-  }
+  // deleteAccount() lived here as a JS submit interceptor that
+  // POSTed { confirm: 'DELETE' } via fetch. The form is now a native
+  // HTML <form method="post" action="/api/auth/account"> so the
+  // browser submits directly — no JS intercept, no race with mobile
+  // engines that eat the submit. The server's POST handler returns a
+  // 303 to /?account_deleted=1.
 
   function init(): void {
     // Restore + delete forms live OUTSIDE the main settings form (they
@@ -472,25 +469,24 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
     });
   }
 
-  /** Wire Delete-account handler. Same reasoning as wireRestoreForm —
-   * kept outside init() so a fresh settings DOM always binds. */
+  /** Wire the Delete-account button's progress indicator. The form
+   *  itself is a native POST so no submit intercept is needed — this
+   *  handler only flashes "Deleting…" on click so the user gets
+   *  immediate feedback while the browser navigates. */
   function wireDeleteForm(): void {
     const deleteForm = document.querySelector<HTMLFormElement>('[data-delete-account]');
     if (deleteForm === null) return;
     if (deleteForm.dataset['bound'] === '1') return;
     deleteForm.dataset['bound'] = '1';
-    // Dedicated status node so repeated clicks don't stack <p>s.
-    let deleteStatus = deleteForm.querySelector<HTMLElement>('[data-delete-status]');
-    if (deleteStatus === null) {
-      deleteStatus = document.createElement('p');
-      deleteStatus.setAttribute('aria-live', 'polite');
-      deleteStatus.setAttribute('data-delete-status', '');
-      deleteStatus.className = 'settings__status';
-      deleteForm.appendChild(deleteStatus);
-    }
-    deleteForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      void deleteAccount(deleteForm, deleteStatus as HTMLElement);
+    deleteForm.addEventListener('submit', () => {
+      const button = deleteForm.querySelector<HTMLButtonElement>(
+        'button[type="submit"]',
+      );
+      if (button !== null) {
+        button.disabled = true;
+        button.textContent = 'Deleting…';
+      }
+      // Fall through to native POST — browser follows the 303.
     });
   }
 

@@ -413,8 +413,15 @@ const sortedUserTags = [...userTags].sort((a, b) => {
     if (strip === null || strip.dataset['bound'] === '1') return;
     strip.dataset['bound'] = '1';
 
-    const addButton = strip.querySelector<HTMLButtonElement>('[data-tag-add]');
-    const input = strip.querySelector<HTMLInputElement>('[data-tag-add-input]');
+    // The +add button and its companion input were hoisted OUT of the
+    // scrolling `[data-tag-strip]` and are now SIBLINGS of it under
+    // `[data-tag-strip-wrap]` (so the mask-fade on the strip doesn't
+    // paint them). Query the wrapper so we can still find them —
+    // without this lookup, the null-guard below early-returns and the
+    // whole strip click handler (tag-select + tag-remove) never binds.
+    const wrap = strip.closest<HTMLElement>('[data-tag-strip-wrap]') ?? document;
+    const addButton = wrap.querySelector<HTMLButtonElement>('[data-tag-add]');
+    const input = wrap.querySelector<HTMLInputElement>('[data-tag-add-input]');
     if (addButton === null || input === null) return;
 
     const reveal = (): void => {
