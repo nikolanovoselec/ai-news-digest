@@ -320,6 +320,94 @@ for id in $ORIG_STARRED; do
   esac
 done
 
+# --- Full-cycle scrape verification ----------------------------------
+# Triggers a REAL scrape via /api/dev/trigger-scrape, polls
+# /api/scrape-status until status flips away from running, then
+# asserts that /api/digest/today returned articles with the shape we
+# expect (title non-empty, details carries ≥ 1 paragraph of ≥ 180
+# words summed). 404 on the trigger endpoint (no DEV_BYPASS_TOKEN in
+# env, or the endpoint was removed) cleanly skips this block so the
+# suite stays useful in reduced-permissions environments.
+#
+# Bounded by E2E_SCRAPE_TIMEOUT_SEC (default 600s = 10 min). Each
+# poll is one D1 SELECT + one KV GET — cheap enough to run every 10s.
+printf '\n=== full-cycle scrape ===\n'
+TRIGGER_CODE=$(curl -sS -o /tmp/e2e-trigger.json -w '%{http_code}' \
+  -X POST -H "Authorization: Bearer $DEV_BYPASS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  "$BASE/api/dev/trigger-scrape")
+case "$TRIGGER_CODE" in
+  202)
+    SCRAPE_RUN_ID=$(python3 -c "import json; print(json.load(open('/tmp/e2e-trigger.json'))['scrape_run_id'])" 2>/dev/null || echo '')
+    printf 'triggered scrape %s\n' "$SCRAPE_RUN_ID"
+    TIMEOUT_SEC=${E2E_SCRAPE_TIMEOUT_SEC:-600}
+    DEADLINE=$(($(date +%s) + TIMEOUT_SEC))
+    LAST_STATUS=''
+    while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+      sleep 10
+      curl -sS -o /tmp/e2e-scrape.json -b "$COOKIE_JAR" \
+        "$BASE/api/scrape-status" || true
+      IS_RUNNING=$(python3 -c "import json; print(json.load(open('/tmp/e2e-scrape.json')).get('running', False))" 2>/dev/null || echo 'False')
+      INGESTED=$(python3 -c "import json; print(json.load(open('/tmp/e2e-scrape.json')).get('articles_ingested', 0))" 2>/dev/null || echo '0')
+      printf '  poll: running=%s ingested=%s\n' "$IS_RUNNING" "$INGESTED"
+      if [ "$IS_RUNNING" = 'False' ]; then
+        LAST_STATUS='done'
+        break
+      fi
+    done
+    if [ "$LAST_STATUS" = 'done' ]; then
+      # Verify articles exist + carry real details.
+      ART_COUNT=$(curl -sS -b "$COOKIE_JAR" "$BASE/api/digest/today" \
+        | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('articles',[])))" 2>/dev/null || echo '0')
+      printf 'articles in /api/digest/today: %s\n' "$ART_COUNT"
+      if [ "$ART_COUNT" -gt 0 ]; then
+        PASSED=$((PASSED + 1))
+        printf 'PASS full-cycle scrape → %s articles ingested\n' "$ART_COUNT"
+
+        # Assert details length on the first article. The prompt
+        # floor is 180 words; counting whitespace-separated tokens
+        # across every details paragraph.
+        WORD_COUNT=$(curl -sS -b "$COOKIE_JAR" "$BASE/api/digest/today" \
+          | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+arts = d.get('articles', [])
+if not arts:
+    print(0); sys.exit()
+details = arts[0].get('details', [])
+joined = ' '.join(details) if isinstance(details, list) else str(details)
+print(len(joined.split()))
+" 2>/dev/null || echo '0')
+        printf 'first article details word count: %s\n' "$WORD_COUNT"
+        if [ "$WORD_COUNT" -ge 150 ]; then
+          PASSED=$((PASSED + 1))
+          printf 'PASS article details length ≥ 150 words\n'
+        else
+          FAILED=$((FAILED + 1))
+          FAIL_LINES+=("FAIL article details length — got $WORD_COUNT words, want ≥ 150 (prompt target 200-250)")
+          printf 'FAIL article details length — got %s words, want ≥ 150\n' "$WORD_COUNT"
+        fi
+      else
+        FAILED=$((FAILED + 1))
+        FAIL_LINES+=("FAIL full-cycle scrape — run finished but /api/digest/today returned 0 articles")
+        printf 'FAIL scrape produced zero articles\n'
+      fi
+    else
+      FAILED=$((FAILED + 1))
+      FAIL_LINES+=("FAIL full-cycle scrape — did not complete within ${TIMEOUT_SEC}s")
+      printf 'FAIL scrape did not complete within %ss\n' "$TIMEOUT_SEC"
+    fi
+    ;;
+  404)
+    printf 'SKIP full-cycle scrape — /api/dev/trigger-scrape returned 404 (DEV_BYPASS_TOKEN misconfigured or endpoint absent)\n'
+    ;;
+  *)
+    FAILED=$((FAILED + 1))
+    FAIL_LINES+=("FAIL /api/dev/trigger-scrape → HTTP $TRIGGER_CODE (expected 202 or 404)")
+    printf 'FAIL /api/dev/trigger-scrape → HTTP %s\n' "$TRIGGER_CODE"
+    ;;
+esac
+
 # /api/auth/github/logout — signing out should 303 back to `/`.
 check POST /api/auth/github/logout 303 -H 'Content-Type: application/json'
 
