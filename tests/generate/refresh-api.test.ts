@@ -205,7 +205,7 @@ describe('POST /api/digest/refresh', () => {
       rateStateRow: {
         last_refresh_at: now - 600, // cooldown already past
         refresh_window_start: now - 1000, // early in 24h window
-        refresh_count_24h: 10, // cap reached
+        refresh_count_24h: 1000, // cap reached (matches DAILY_CAP in refresh.ts)
       },
     });
     const { queue } = makeQueue();
@@ -268,7 +268,7 @@ describe('POST /api/digest/refresh', () => {
     expect(insert!.sql).toContain("'manual'");
   });
 
-  it('REQ-GEN-002: the rate-limit UPDATE binds the 5-min cooldown and 10/24h cap', async () => {
+  it('REQ-GEN-002: the rate-limit UPDATE binds the cooldown + daily-cap params', async () => {
     const cookie = await validSessionCookie();
     const { db, runCalls } = makeDb(baseRow(), {
       rateLimitRows: [{ refresh_count_24h: 1 }],
@@ -280,12 +280,10 @@ describe('POST /api/digest/refresh', () => {
 
     const rateUpdate = runCalls.find((c) => c.sql.startsWith('UPDATE users SET'));
     expect(rateUpdate).toBeDefined();
-    // Literal magic numbers flow via bound params so a schema-change
-    // smoke-test is easy.
     // params order in refresh.ts: [nowSec, WINDOW_SECONDS, userId, COOLDOWN_SECONDS, DAILY_CAP]
     expect(rateUpdate!.params[1]).toBe(86_400);
     expect(rateUpdate!.params[2]).toBe('user-1');
-    expect(rateUpdate!.params[3]).toBe(300);
-    expect(rateUpdate!.params[4]).toBe(10);
+    expect(rateUpdate!.params[3]).toBe(30);
+    expect(rateUpdate!.params[4]).toBe(1000);
   });
 });

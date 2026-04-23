@@ -62,7 +62,47 @@ const avatarUrl = `https://www.gravatar.com/avatar/${emailHash}?s=80&d=mp`;
       data-theme-toggle
       aria-label="Toggle color theme"
     >
-      <span class="user-menu__theme-label" data-theme-label>Theme: system</span>
+      <span class="user-menu__theme-label" data-theme-label>Dark Mode</span>
+      <span class="user-menu__theme-icon" aria-hidden="true">
+        <svg
+          class="user-menu__theme-svg user-menu__theme-svg--sun"
+          data-theme-icon="sun"
+          xmlns="http://www.w3.org/2000/svg"
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2"></path>
+          <path d="M12 20v2"></path>
+          <path d="m4.93 4.93 1.41 1.41"></path>
+          <path d="m17.66 17.66 1.41 1.41"></path>
+          <path d="M2 12h2"></path>
+          <path d="M20 12h2"></path>
+          <path d="m6.34 17.66-1.41 1.41"></path>
+          <path d="m19.07 4.93-1.41 1.41"></path>
+        </svg>
+        <svg
+          class="user-menu__theme-svg user-menu__theme-svg--moon"
+          data-theme-icon="moon"
+          xmlns="http://www.w3.org/2000/svg"
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+        </svg>
+      </span>
     </button>
     <a class="user-menu__item" role="menuitem" href="/settings">Settings</a>
     <form class="user-menu__logout" method="post" action={logoutHref}>
@@ -164,8 +204,27 @@ const avatarUrl = `https://www.gravatar.com/avatar/${emailHash}?s=80&d=mp`;
     gap: 8px;
   }
   .user-menu__theme-label {
-    color: var(--text-muted);
-    text-transform: capitalize;
+    /* Match Settings / Log out colour — not muted. */
+    color: var(--text);
+  }
+  .user-menu__theme-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text);
+  }
+  .user-menu__theme-svg {
+    display: inline-flex;
+  }
+  /* Default visibility: assume light theme until syncThemeLabel runs.
+     When light, the button offers "Dark Mode" → show the moon. */
+  .user-menu__theme-svg--sun {
+    display: none;
+  }
+  :global([data-theme='dark']) .user-menu__theme-svg--sun {
+    display: inline-flex;
+  }
+  :global([data-theme='dark']) .user-menu__theme-svg--moon {
+    display: none;
   }
 </style>
 
@@ -192,12 +251,24 @@ const avatarUrl = `https://www.gravatar.com/avatar/${emailHash}?s=80&d=mp`;
   // Close the <details> menu when clicking outside or pressing Escape.
   // Also keep the "Theme: light/dark" label in sync with the current theme
   // so the user sees the active state without a second click.
+  /**
+   * The menu item shows the *target* mode — what the user will get if
+   * they click. When currently dark, the button should read "Light Mode"
+   * (and show the sun); when currently light, "Dark Mode" (and show the
+   * moon). Sync the label text + which icon is visible whenever
+   * data-theme flips.
+   */
   function syncThemeLabel(): void {
-    const current = document.documentElement.dataset['theme'] === 'dark'
-      ? 'Dark'
-      : 'Light';
+    const isDark = document.documentElement.dataset['theme'] === 'dark';
+    const target = isDark ? 'Light Mode' : 'Dark Mode';
     document.querySelectorAll<HTMLElement>('[data-theme-label]').forEach((el) => {
-      el.textContent = `Theme: ${current}`;
+      el.textContent = target;
+    });
+    document.querySelectorAll<HTMLElement>('[data-theme-icon="sun"]').forEach((el) => {
+      el.style.display = isDark ? 'inline-flex' : 'none';
+    });
+    document.querySelectorAll<HTMLElement>('[data-theme-icon="moon"]').forEach((el) => {
+      el.style.display = isDark ? 'none' : 'inline-flex';
     });
   }
 
