@@ -47,7 +47,7 @@ import {
   type Cluster,
 } from '~/lib/dedupe';
 import { DEFAULT_HASHTAGS } from '~/lib/default-hashtags';
-import { DEFAULT_MODEL_ID, estimateCost } from '~/lib/models';
+import { DEFAULT_MODEL_ID, FALLBACK_MODEL_ID, estimateCost } from '~/lib/models';
 import { addChunkStats, finishRun } from '~/lib/scrape-run';
 import { generateUlid } from '~/lib/ulid';
 import { applyForeignKeysPragma, batch as batchExec } from '~/lib/db';
@@ -158,32 +158,52 @@ export async function processOneChunk(
     return base;
   });
 
-  // Call Workers AI. A transient model error throws up to the handler
-  // so the queue retries; parse errors below are also thrown so the
-  // queue can replay on a flaky JSON response.
+  // Call Workers AI with the primary model, then fall through to the
+  // OpenAI-native-JSON failover model if the primary returns malformed
+  // JSON. This preserves the cheap default (gemma-4) as the hot path
+  // while keeping a reliable safety net (gpt-oss-20b) for the runs
+  // where Google's JSON-prompt-following wobbles.
   const ai = env.AI as unknown as {
     run: (model: string, params: Record<string, unknown>) => Promise<AIRunResponse>;
   };
-  const aiResult = await ai.run(DEFAULT_MODEL_ID, {
-    messages: [
-      { role: 'system', content: PROCESS_CHUNK_SYSTEM },
-      { role: 'user', content: processChunkUserPrompt(promptCandidates, allowedTags) },
-    ],
-    ...LLM_PARAMS,
-  });
+  const runLLM = async (modelId: string): Promise<AIRunResponse> =>
+    ai.run(modelId, {
+      messages: [
+        { role: 'system', content: PROCESS_CHUNK_SYSTEM },
+        { role: 'user', content: processChunkUserPrompt(promptCandidates, allowedTags) },
+      ],
+      ...LLM_PARAMS,
+    });
 
-  const rawResponse = extractResponsePayload(aiResult);
-  const parsedDigestShape = parseLLMPayload(rawResponse);
-  // parseLLMPayload asserts {articles: [...]}. For the chunk pipeline
-  // we also want the optional `dedup_groups` field — re-narrow here.
-  const parsed = narrowChunkPayload(parsedDigestShape, rawResponse);
+  let modelUsed = DEFAULT_MODEL_ID;
+  let aiResult = await runLLM(modelUsed);
+  let rawResponse = extractResponsePayload(aiResult);
+  let parsed = narrowChunkPayload(parseLLMPayload(rawResponse), rawResponse);
+
   if (parsed === null) {
+    // Primary model returned unparseable output. Log the event and
+    // retry once with the fallback — gpt-oss-20b has OpenAI's native
+    // response_format: json_object which hard-guarantees valid JSON.
     log('warn', 'digest.generation', {
-      status: 'chunk_invalid_json',
+      status: 'chunk_invalid_json_fallback_try',
       scrape_run_id: body.scrape_run_id,
       chunk_index: body.chunk_index,
+      primary_model: DEFAULT_MODEL_ID,
+      fallback_model: FALLBACK_MODEL_ID,
     });
-    throw new Error('chunk_invalid_json');
+    modelUsed = FALLBACK_MODEL_ID;
+    aiResult = await runLLM(modelUsed);
+    rawResponse = extractResponsePayload(aiResult);
+    parsed = narrowChunkPayload(parseLLMPayload(rawResponse), rawResponse);
+    if (parsed === null) {
+      log('warn', 'digest.generation', {
+        status: 'chunk_invalid_json',
+        scrape_run_id: body.scrape_run_id,
+        chunk_index: body.chunk_index,
+        fallback_model: FALLBACK_MODEL_ID,
+      });
+      throw new Error('chunk_invalid_json');
+    }
   }
 
   const rawArticles = Array.isArray(parsed.articles) ? parsed.articles : [];
@@ -350,7 +370,10 @@ export async function processOneChunk(
   // Accumulate chunk stats into the scrape_runs row.
   const tokensIn = extractTokensIn(aiResult);
   const tokensOut = extractTokensOut(aiResult);
-  const costUsd = estimateCost(DEFAULT_MODEL_ID, tokensIn, tokensOut);
+  // Cost attribution uses the model that actually produced the output
+  // — `modelUsed` is DEFAULT_MODEL_ID on the happy path but flips to
+  // FALLBACK_MODEL_ID when the fallback retry succeeded.
+  const costUsd = estimateCost(modelUsed, tokensIn, tokensOut);
   // Deduped count = input candidates that ended up collapsed into a
   // primary plus input candidates that were dropped entirely (e.g. zero
   // valid tags after validation).

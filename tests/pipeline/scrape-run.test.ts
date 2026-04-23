@@ -44,7 +44,7 @@ describe('scrape-run helpers — REQ-PIPE-006', () => {
 
     await startRun(db, {
       id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
-      model_id: '@cf/openai/gpt-oss-120b',
+      model_id: '@cf/google/gemma-4-26b-a4b-it',
       chunk_count: 5,
     });
 
@@ -54,7 +54,7 @@ describe('scrape-run helpers — REQ-PIPE-006', () => {
     expect(call.sql).toContain("'running'");
     // Param order: id, model_id, started_at, chunk_count
     expect(call.params[0]).toBe('01ARZ3NDEKTSV4RRFFQ69G5FAV');
-    expect(call.params[1]).toBe('@cf/openai/gpt-oss-120b');
+    expect(call.params[1]).toBe('@cf/google/gemma-4-26b-a4b-it');
     expect(call.params[2]).toBe(nowSeconds);
     expect(call.params[3]).toBe(5);
   });
@@ -68,7 +68,7 @@ describe('scrape-run helpers — REQ-PIPE-006', () => {
     const db = makeDb(calls);
     await startRun(db, {
       id: 'run-id-2',
-      model_id: '@cf/openai/gpt-oss-120b',
+      model_id: '@cf/google/gemma-4-26b-a4b-it',
     });
 
     expect(calls).toHaveLength(1);

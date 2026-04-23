@@ -39,8 +39,8 @@ describe('MODELS catalog', () => {
 });
 
 describe('DEFAULT_MODEL_ID', () => {
-  it('REQ-SET-004: DEFAULT_MODEL_ID is the 128K-context OpenAI gpt-oss-120b', () => {
-    expect(DEFAULT_MODEL_ID).toBe('@cf/openai/gpt-oss-120b');
+  it('REQ-SET-004: DEFAULT_MODEL_ID is Google gemma-4-26b-a4b-it (cheapest large-context option)', () => {
+    expect(DEFAULT_MODEL_ID).toBe('@cf/google/gemma-4-26b-a4b-it');
   });
 
   it('REQ-SET-004: DEFAULT_MODEL_ID is present in MODELS', () => {
@@ -66,24 +66,24 @@ describe('modelById', () => {
 
 describe('estimateCost', () => {
   it('REQ-SET-004: estimateCost computes USD from per-million-token prices', () => {
-    // gpt-oss-120b: input 0.35 / output 0.35 per Mtok.
-    // 1,000,000 in → $0.35; 1,000,000 out → $0.35; total $0.70.
+    // gemma-4-26b-a4b-it: input $0.10 / output $0.30 per Mtok.
+    // 1,000,000 in → $0.10; 1,000,000 out → $0.30; total $0.40.
     const cost = estimateCost(DEFAULT_MODEL_ID, 1_000_000, 1_000_000);
-    expect(cost).toBeCloseTo(0.70, 6);
+    expect(cost).toBeCloseTo(0.40, 6);
   });
 
   it('REQ-SET-004: estimateCost scales linearly with token counts', () => {
-    // 2,000 input tokens × $0.35/Mtok → $0.0007
-    // 1,000 output tokens × $0.35/Mtok → $0.00035
-    // total ≈ $0.00105
+    // 2,000 input tokens × $0.10/Mtok → $0.0002
+    // 1,000 output tokens × $0.30/Mtok → $0.0003
+    // total ≈ $0.0005
     const cost = estimateCost(DEFAULT_MODEL_ID, 2_000, 1_000);
-    expect(cost).toBeCloseTo(0.00105, 9);
+    expect(cost).toBeCloseTo(0.0005, 9);
   });
 
-  it('REQ-SET-004: estimateCost is non-zero for Kimi K2.6 (published pricing)', () => {
-    // Kimi K2.6: input 0.16 / output 0.56 per Mtok.
-    const cost = estimateCost('@cf/moonshotai/kimi-k2.6', 1_000_000, 1_000_000);
-    expect(cost).toBeCloseTo(0.72, 6);
+  it('REQ-SET-004: estimateCost is non-zero for Kimi K2.5 (published pricing)', () => {
+    // Kimi K2.5: input $0.60 / output $3.00 per Mtok.
+    const cost = estimateCost('@cf/moonshotai/kimi-k2.5', 1_000_000, 1_000_000);
+    expect(cost).toBeCloseTo(3.60, 6);
   });
 
   it('REQ-SET-004: estimateCost returns 0 for an unknown model id', () => {
