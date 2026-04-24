@@ -12,19 +12,19 @@ Tech news for people who would rather read ten good summaries than three thousan
 
 Every hour, ~50 curated sources get scraped, ~500 candidates get fed into GPT-OSS-120B running on [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/), and the output lands in a shared pool. Your dashboard is a filter over that pool. The rest expires in seven days. Your inbox is left alone.
 
-## Features you will show your friends
+## Features
 
-- **One LLM run, every user benefits.** GPT-OSS-120B summarises the whole global pool once per hour. Each scrape costs roughly $0.07 — less than the coffee you were going to drink while ignoring Hacker News anyway.
-- **Tag-driven filtering everywhere.** Type `#cloudflare`, hit enter, it's persisted. Click the chip to filter. Same component on the dashboard and Search & History. No settings form, no onboarding wizard, no "check your email for the confirmation link".
-- **Composable filters.** Tag + search + date all AND together. *"cloudflare articles from this week that mention london"* is three taps and lives in the URL, so browser Back restores the exact view.
-- **Multi-source dedupe.** Hacker News, the vendor blog, and three aggregators all "discovered" the same announcement at 9am. You get one card with a `(+3)` chip. Click the chip, pick your outlet.
-- **Summaries that earn their word count.** 150–250 words per article, 2–3 paragraphs, structured as *what happened → how it works → why you care*. No "the article explores" filler. No "in today's rapidly evolving landscape" preamble. Just the facts and the angle.
-- **Defends itself from LLM hallucinations.** Every output article must echo its input candidate's index **and** share a meaningful word with the candidate title. A reordered or fabricated summary gets dropped before it can staple itself onto the wrong URL. You will never see a SageMaker story under a Cloudflare headline. (Ask how we learned this lesson.)
-- **Starred articles outlive the cron.** Retention cleanup drops anything older than seven days — unless a user starred it. Your saved pile is forever; your unread pile is a lie you're no longer telling yourself.
-- **Real newspaper drop-cap.** The article detail page uses CSS `initial-letter: 2` so the lead paragraph's first letter aligns to line 1's cap-top and line 2's baseline. For Firefox (which still doesn't support the property in 2026 — we checked) there's a tuned float fallback.
-- **Back-button that returns to where you were.** Opened an article from a tag filter? Back takes you back to that tag filter, not the dashboard. Opened it from Starred? Back takes you to Starred. The `document.referrer` check + `history.back()` works everywhere except on direct links, where it cleanly falls through to `/digest`.
-- **One Worker. No servers. No Docker. No Nginx that decides it wants to die at 3am.** D1 for the pool, KV for discovery, Queues for the pipeline, Workers AI for inference. Deploys in 30 seconds. Rolls back in 10.
-- **PWA-installable, dark mode out of the box, offline banner when the network drops, zero ads, zero cookie banners, zero newsletter pop-ups.** This is a list of things the internet convinced us to accept as inevitable. They are not inevitable.
+- **One LLM run, every user benefits.** GPT-OSS-120B summarises the whole pool once an hour. ~$0.07 per tick, billed directly to my Cloudflare account — less than the coffee I was going to drink while ignoring Hacker News anyway.
+- **20 tags out of the box.** New accounts land with a curated starter set (`#ai`, `#cloudflare`, `#postgres`, `#agenticai`…). Tap × on any chip to drop it. Tap `+ add` to add your own. No settings form, no onboarding wizard.
+- **Composable filters.** Tag + search + date all AND together and live in the URL, so browser Back restores the exact view. *"cloudflare articles this week mentioning london"* is three taps.
+- **Multi-source dedupe.** HN, the vendor blog, and three aggregators all "discovered" the same story at 9am. You get one card with a `(+3)` chip.
+- **Summaries that earn their word count.** 150–250 words in 2–3 paragraphs: *what happened → how it works → why you care*. No "the article explores" filler.
+- **LLM hallucinations dropped on sight.** Every output must echo its input index **and** share a meaningful token with the candidate title. A reordered or made-up summary never reaches the database. Ask me how I learned this lesson.
+- **Starred articles outlive the cron.** Seven-day retention — unless you starred it. Your saved pile is forever; your unread pile is a lie you're no longer telling yourself.
+- **Real newspaper drop-cap.** CSS `initial-letter: 2`, with a tuned float fallback for Firefox (which still doesn't ship it in 2026 — I checked).
+- **Back-button returns you to where you were.** Came from a tag filter? Back goes there. Came from Starred? Back goes there.
+- **One Worker. No servers, no Docker, no Nginx dying at 3 am.** D1 + KV + Queues + Workers AI. Ships in 30 seconds.
+- **PWA-installable, dark mode, offline banner, zero ads, zero cookie banners, zero newsletter pop-ups.** A list of things the internet taught us to tolerate and didn't need to.
 
 ## Why it exists
 
