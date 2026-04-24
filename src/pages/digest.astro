@@ -763,28 +763,27 @@ const todayLocalDate = localDateInTz(Math.floor(Date.now() / 1000), userTz);
 
   /* REQ-READ-001 AC 5 — the 30th grid slot is a tile that deep-links
      to /history?date=<today>. Same dimensions as a regular card so it
-     reads as part of the grid, just an icon centred inside. */
+     reads as part of the grid, but intentionally minimal: no surface
+     fill, no border, the page background flows through and the icon
+     uses the text colour so it reads as pure black on light mode and
+     pure white on dark mode. */
   .digest-page__more-card {
     display: flex;
     align-items: center;
     justify-content: center;
     min-height: 180px;
     padding: 1.5rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
+    background: transparent;
+    border: none;
     border-radius: 12px;
-    color: var(--text-muted);
+    color: var(--text);
     text-decoration: none;
-    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    transition: color 0.15s ease;
   }
   .digest-page__more-card:hover {
-    background: var(--bg);
-    border-color: var(--accent);
     color: var(--accent);
   }
   .digest-page__more-card:focus-visible {
-    background: var(--bg);
-    border-color: var(--accent);
     color: var(--accent);
     outline: 2px solid var(--accent);
     outline-offset: 2px;
