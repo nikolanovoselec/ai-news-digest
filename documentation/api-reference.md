@@ -248,6 +248,31 @@ Replaces the user's hashtag list with the curated default seed from `DEFAULT_HAS
 
 ---
 
+## Developer Tools
+
+### POST /api/dev/trigger-scrape
+
+Dev-only pipeline trigger. Kicks a real global-feed scrape (coordinator → chunks → LLM → D1) without waiting for the hourly cron or needing Cloudflare Access.
+
+**Access control:** Endpoint 404s when `DEV_BYPASS_TOKEN` is not configured. When the secret is set, the request must carry `Authorization: Bearer <DEV_BYPASS_TOKEN>` (timing-safe comparison). Any mismatch or missing header also returns `404` — the endpoint does not distinguish "wrong token" from "not found" to avoid enumeration.
+
+**Response (success):** `202`
+```json
+{
+  "ok": true,
+  "scrape_run_id": "string",
+  "status_url": "/api/scrape-status"
+}
+```
+
+The pipeline runs asynchronously via Queues. Poll `GET /api/scrape-status` to watch progress; the run transitions to `status='ready'` with `articles_ingested > 0` when complete.
+
+**Error responses:** `500 { ok: false, error: "start_run_failed" | "enqueue_failed" }` — if the D1 insert or queue send throws.
+
+**Used by:** `scripts/e2e-test.sh` full-cycle scrape section — triggers the real pipeline and asserts that at least one article is ingested and that the first article's `details` field is ≥ 150 words (target contract: 200–250 words).
+
+---
+
 ## Operator Tools
 
 ### POST /force-refresh (also GET)
