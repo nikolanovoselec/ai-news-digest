@@ -484,8 +484,16 @@ const articleDataset = {
     color: var(--text);
     padding: 0;
     margin-right: 0.1em;
-    -webkit-initial-letter: 2;
-    initial-letter: 2;
+    /* Two-value form: <size> <sink>.
+       size = 2.3 — the letter's cap-height spans 2.3 line-heights.
+                    Chromium sizes by em-box not cap-height, so
+                    plain `2` leaves the cap (~0.7× em-box) shorter
+                    than 2 lines and the top sits visibly below
+                    line 1's cap-height. Oversize to 2.3 so the
+                    cap-top lifts up onto line 1's cap-top.
+       sink = 2   — baseline stays anchored on line 2's baseline. */
+    -webkit-initial-letter: 2.3 2;
+    initial-letter: 2.3 2;
   }
 
   /* Firefox (and older Chromium) fallback — uses float + tight
