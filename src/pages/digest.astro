@@ -17,6 +17,7 @@
 import type { APIContext } from 'astro';
 import Base from '~/layouts/Base.astro';
 import DigestCard from '~/components/DigestCard.astro';
+import TagStrip from '~/components/TagStrip.astro';
 import { loadSession } from '~/middleware/auth';
 import { requireSettingsComplete } from '~/middleware/settings-gate';
 import { loadTodayPayload } from '~/pages/api/digest/today';
@@ -116,65 +117,14 @@ const todayLocalDate = localDateInTz(Math.floor(Date.now() / 1000), userTz);
     </div>
 
     {/*
-      Inline tag strip. Sole editor for the user's hashtags — there is
-      no tag configuration in /settings anymore. Empty state renders
-      just the "+ add" pill which expands into an input on click.
+      Tag strip — shared component with Search & History (TagStrip.astro).
+      Sole editor for the user's hashtags; no tag configuration in
+      /settings anymore. Empty state renders just the "+ add" pill
+      which expands into an input on click. Filter behaviour (click
+      to toggle `is-selected`, + add, remove) is wired in the page
+      script below against the data-* attributes the component ships.
     */}
-    <div class="tag-strip-wrap" data-tag-strip-wrap>
-      <div class="tag-strip" data-tag-strip>
-        {sortedUserTags.map((tag) => {
-          const count = tagCounts.get(tag) ?? 0;
-          return (
-            <button
-              type="button"
-              class="tag-chip"
-              data-tag-chip
-              data-tag={tag}
-              data-count={count}
-              aria-pressed="false"
-              aria-label={`${tag} — ${count} articles today. Click to filter, click again to deselect.`}
-            >
-              <span class="tag-chip__label">
-                <span class="tag-chip__hash" aria-hidden="true">#</span>{tag}
-              </span>
-              <span class="tag-chip__slot" aria-hidden="true">
-                <span class="tag-chip__count">{count > 0 ? count : ''}</span>
-                <span
-                  class="tag-chip__remove"
-                  data-tag-remove
-                  role="button"
-                  tabindex="-1"
-                  aria-label={`Remove ${tag} from your hashtags`}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
-                  </svg>
-                </span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      {/* The + add button + input are SIBLINGS of the scrolling strip,
-          not children. The strip has a mask-image fade on its right
-          edge so chips dissolve BEFORE reaching the button; the button
-          sits absolutely on top, unaffected by the fade. This was the
-          only reliable way to kill the "chips scrolling under +add"
-          overlap on mobile. */}
-      <button type="button" class="tag-add" data-tag-add aria-label="Add a hashtag">
-        <span class="tag-add__plus" aria-hidden="true">+</span>
-        <span class="tag-add__label">add</span>
-      </button>
-      <input
-        type="text"
-        class="tag-add-input"
-        data-tag-add-input
-        placeholder="type a tag"
-        autocomplete="off"
-        maxlength="33"
-        hidden
-      />
-    </div>
+    <TagStrip tags={sortedUserTags} counts={tagCounts} countNoun="articles today" />
     <p
       class="tag-strip__nomatch"
       data-tag-nomatch

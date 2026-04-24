@@ -1,0 +1,96 @@
+---
+// Implements REQ-READ-001
+// Implements REQ-HIST-001
+//
+// Shared tag-railing component. Renders the user's active hashtags
+// as chips (label + count + remove), followed by the "+ add" pill
+// and the hidden <input> the add flow reveals. Used on both the
+// dashboard (/digest) and Search & History (/history) so the two
+// surfaces look and feel identical — and so fixes to the chip
+// geometry, accessibility, or add/remove UX apply in one place.
+//
+// Behaviour (click-to-filter, + add / remove, URL sync, flat-grid
+// filter) lives in the HOST page — the component is DOM + styling
+// only. The host reads:
+//   [data-tag-chip][data-tag="<tag>"] — individual chips
+//   [data-tag-chip].is-selected      — which chips are active
+//   [data-tag-remove]                — × button inside a chip
+//   [data-tag-add], [data-tag-add-input] — + add pill + field
+// — exactly the same selectors both host pages already use.
+
+export interface Props {
+  /** Tags to render as chips, pre-sorted by the host. */
+  tags: string[];
+  /** Count to show in each chip's slot (e.g. articles today, or
+   *  articles in the 7-day window). Missing entries render blank. */
+  counts: Map<string, number>;
+  /** Chips whose tag appears in this set render pre-selected
+   *  (`is-selected` class + aria-pressed="true"). Optional; defaults
+   *  to nothing pre-selected. */
+  initialSelected?: Set<string>;
+  /** User-facing fragment appended to each chip's aria-label after
+   *  the tag name and count — e.g. "articles today" or "articles in
+   *  the last 7 days". */
+  countNoun: string;
+}
+
+const { tags, counts, initialSelected, countNoun } = Astro.props;
+const selected = initialSelected ?? new Set<string>();
+---
+
+<div class="tag-strip-wrap" data-tag-strip-wrap>
+  <div class="tag-strip" data-tag-strip>
+    {tags.map((tag) => {
+      const count = counts.get(tag) ?? 0;
+      const preselected = selected.has(tag);
+      return (
+        <button
+          type="button"
+          class={preselected ? 'tag-chip is-selected' : 'tag-chip'}
+          data-tag-chip
+          data-tag={tag}
+          data-count={count}
+          aria-pressed={preselected ? 'true' : 'false'}
+          aria-label={`${tag} — ${count} ${countNoun}. Click to filter, click again to deselect.`}
+        >
+          <span class="tag-chip__label">
+            <span class="tag-chip__hash" aria-hidden="true">#</span>{tag}
+          </span>
+          <span class="tag-chip__slot" aria-hidden="true">
+            <span class="tag-chip__count">{count > 0 ? count : ''}</span>
+            <span
+              class="tag-chip__remove"
+              data-tag-remove
+              role="button"
+              tabindex="-1"
+              aria-label={`Remove ${tag} from your hashtags`}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
+              </svg>
+            </span>
+          </span>
+        </button>
+      );
+    })}
+  </div>
+  {/* The + add button + input are SIBLINGS of the scrolling strip,
+      not children. The strip has a mask-image fade on its right edge
+      so chips dissolve BEFORE reaching the button; the button sits
+      absolutely on top, unaffected by the fade (on mobile). On
+      desktop the strip wraps and + add flows inline as the last
+      item — see the global tag-strip CSS in digest.astro. */}
+  <button type="button" class="tag-add" data-tag-add aria-label="Add a hashtag">
+    <span class="tag-add__plus" aria-hidden="true">+</span>
+    <span class="tag-add__label">add</span>
+  </button>
+  <input
+    type="text"
+    class="tag-add-input"
+    data-tag-add-input
+    placeholder="type a tag"
+    autocomplete="off"
+    maxlength="33"
+    hidden
+  />
+</div>

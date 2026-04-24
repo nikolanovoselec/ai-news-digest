@@ -15,6 +15,7 @@
 import type { APIContext } from 'astro';
 import Base from '~/layouts/Base.astro';
 import DigestCard from '~/components/DigestCard.astro';
+import TagStrip from '~/components/TagStrip.astro';
 import { loadSession } from '~/middleware/auth';
 import { slugify } from '~/lib/slug';
 import { GET as getHistory } from '~/pages/api/history';
@@ -189,54 +190,12 @@ function formatCostUsd(value: number | null | undefined): string {
     </header>
 
     {!isFocused && (
-      <div class="tag-strip-wrap history__tag-strip" data-tag-strip-wrap>
-        <div class="tag-strip" data-tag-strip>
-          {sortedUserTags.map((tag) => {
-            const count = tagCounts.get(tag) ?? 0;
-            const preselected = initialSelectedTagSet.has(tag);
-            return (
-              <button
-                type="button"
-                class={preselected ? 'tag-chip is-selected' : 'tag-chip'}
-                data-tag-chip
-                data-tag={tag}
-                data-count={count}
-                aria-pressed={preselected ? 'true' : 'false'}
-                aria-label={`${tag} — ${count} articles in the last 7 days. Click to filter, click again to deselect.`}
-              >
-                <span class="tag-chip__label">
-                  <span class="tag-chip__hash" aria-hidden="true">#</span>{tag}
-                </span>
-                <span class="tag-chip__slot" aria-hidden="true">
-                  <span class="tag-chip__count">{count > 0 ? count : ''}</span>
-                  <span
-                    class="tag-chip__remove"
-                    data-tag-remove
-                    role="button"
-                    tabindex="-1"
-                    aria-label={`Remove ${tag} from your hashtags`}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                      <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
-                    </svg>
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <button type="button" class="tag-add" data-tag-add aria-label="Add a hashtag">
-          <span class="tag-add__plus" aria-hidden="true">+</span>
-          <span class="tag-add__label">add</span>
-        </button>
-        <input
-          type="text"
-          class="tag-add-input"
-          data-tag-add-input
-          placeholder="type a tag"
-          autocomplete="off"
-          maxlength="33"
-          hidden
+      <div class="history__tag-strip-host">
+        <TagStrip
+          tags={sortedUserTags}
+          counts={tagCounts}
+          initialSelected={initialSelectedTagSet}
+          countNoun="articles in the last 7 days"
         />
       </div>
     )}
@@ -684,9 +643,9 @@ function formatCostUsd(value: number | null | undefined): string {
     display: flex;
   }
 
-  /* Tag railing on /history — same visual component as the
-     dashboard, inserted between the search input and the day list. */
-  .history__tag-strip {
+  /* Tag railing host on /history — the TagStrip component itself
+     ships no margins, so the surrounding page owns the spacing. */
+  .history__tag-strip-host {
     margin: 0.75rem 0 0.25rem;
   }
 
