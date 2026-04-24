@@ -99,7 +99,23 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail
-          npx --yes wrangler deploy 2>&1 | tee deploy.log
+          # Wrangler's esbuild pass re-bundles dist/_worker.js/ and
+          # emits "Duplicate key" warnings for legitimate HTML5 entity
+          # aliases in Astro's bundled `entities` dependency (nrarr,
+          # acute, euro, Vdash). They're harmless — later-declared
+          # keys win in the resulting object — but they flood the
+          # deploy log. Filter the whole warning block (header line
+          # + context up to the next blank line) out of the tee'd
+          # output; the raw log still lands in deploy.log for
+          # reference. We also drop any leftover "The original key"
+          # context lines so partial blocks don't bleed through.
+          npx --yes wrangler deploy 2>&1 | tee deploy.log | \
+            awk '
+              /^▲ \[WARNING\] Duplicate key ".*" in object literal \[duplicate-object-key\]/ { skip=1; next }
+              skip && /^$/ { skip=0; next }
+              skip { next }
+              { print }
+            '
           # Extract the workers.dev URL wrangler prints on success.
           WORKER_URL=$(grep -oE 'https://[^ ]+\.workers\.dev' deploy.log | head -n1 || true)
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
