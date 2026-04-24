@@ -223,4 +223,67 @@ describe('discoverTag', () => {
     const feeds = await discoverTag('ai', env);
     expect(feeds).toEqual([]);
   });
+
+  // REQ-DISC-001: regression guard for the production bug where every
+  // discovery call against gpt-oss-120b logged `empty_llm_response`
+  // because the OpenAI-envelope shape (`choices[0].message.content`)
+  // was not understood. Every @cf/openai/* Workers AI model returns
+  // this shape, so consumer/brand tags like #ikea never produced feeds
+  // until the discovery code picked the content out of the envelope.
+  it('REQ-DISC-001: parses OpenAI-envelope response (choices[0].message.content)', async () => {
+    mockFetch([
+      { urlMatch: 'blog.example.com/feed', contentType: 'application/rss+xml', body: rssBody() },
+    ]);
+    const aiRun = vi.fn().mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              feeds: [
+                { name: 'Example Blog', url: 'https://blog.example.com/feed', kind: 'rss' },
+              ],
+            }),
+          },
+        },
+      ],
+    });
+    const env = {
+      AI: { run: aiRun } as unknown as Ai,
+    } as unknown as Env;
+    const feeds = await discoverTag('ikea', env);
+    expect(feeds).toHaveLength(1);
+    expect(feeds[0]).toMatchObject({
+      name: 'Example Blog',
+      url: 'https://blog.example.com/feed',
+      kind: 'rss',
+    });
+  });
+
+  it('REQ-DISC-001: accepts already-parsed object payload (models honouring response_format: json_object)', async () => {
+    // Some Workers AI models return a pre-parsed object on
+    // `response` instead of a JSON string. Accept that path without
+    // round-tripping through JSON.parse.
+    mockFetch([
+      { urlMatch: 'blog.example.com/feed', contentType: 'application/rss+xml', body: rssBody() },
+    ]);
+    const aiRun = vi.fn().mockResolvedValue({
+      response: {
+        feeds: [{ name: 'Example Blog', url: 'https://blog.example.com/feed', kind: 'rss' }],
+      },
+    });
+    const env = {
+      AI: { run: aiRun } as unknown as Ai,
+    } as unknown as Env;
+    const feeds = await discoverTag('ikea', env);
+    expect(feeds).toHaveLength(1);
+  });
+
+  it('REQ-DISC-001: returns [] and logs empty_llm_response when neither envelope shape is present', async () => {
+    const aiRun = vi.fn().mockResolvedValue({ totally: 'different shape' });
+    const env = {
+      AI: { run: aiRun } as unknown as Ai,
+    } as unknown as Env;
+    const feeds = await discoverTag('ikea', env);
+    expect(feeds).toEqual([]);
+  });
 });

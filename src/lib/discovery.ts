@@ -26,6 +26,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import { DISCOVERY_SYSTEM, discoveryUserPrompt, LLM_PARAMS } from '~/lib/prompts';
 import { DEFAULT_MODEL_ID } from '~/lib/models';
+import { extractResponsePayload, type AIRunResponse } from '~/lib/generate';
 import { isUrlSafe } from '~/lib/ssrf';
 import { log } from '~/lib/log';
 import type { DiscoveredFeed, SourcesCacheValue } from '~/lib/types';
@@ -50,12 +51,6 @@ interface LLMDiscoveryPayload {
   }>;
 }
 
-/** Shape of a Workers AI `.run()` return value. */
-interface AIRunResponse {
-  response?: string;
-  [key: string]: unknown;
-}
-
 /**
  * Run one-shot discovery for {@link tag}. Returns every feed that passed
  * the full validation pipeline. The LLM call is wrapped in try/catch so a
@@ -68,7 +63,7 @@ export async function discoverTag(tag: string, env: Env): Promise<DiscoveredFeed
   // through `unknown` to hand it off — the return shape is also model-
   // dependent, so we narrow it at the usage site.
   const userPrompt = discoveryUserPrompt(tag);
-  let raw: string;
+  let payloadRaw: unknown;
   try {
     const runParams = {
       prompt: `${DISCOVERY_SYSTEM}\n\n${userPrompt}`,
@@ -81,14 +76,24 @@ export async function discoverTag(tag: string, env: Env): Promise<DiscoveredFeed
       run: (model: string, params: Record<string, unknown>) => Promise<AIRunResponse>;
     };
     const result = await ai.run(DEFAULT_MODEL_ID, runParams);
-    if (typeof result.response !== 'string' || result.response === '') {
+    // Workers AI returns two shapes: flat `{response: "..."}` for
+    // Llama/Mistral/Kimi, and the OpenAI envelope
+    // `{choices:[{message:{content:"..."}}]}` for every @cf/openai/*
+    // model. extractResponsePayload tolerates both. Without this,
+    // every discovery call on gpt-oss-120b (the current default)
+    // looked like an `empty_llm_response` to the cron loop.
+    payloadRaw = extractResponsePayload(result);
+    if (
+      payloadRaw === undefined ||
+      payloadRaw === null ||
+      (typeof payloadRaw === 'string' && payloadRaw === '')
+    ) {
       log('warn', 'discovery.completed', {
         tag,
         status: 'empty_llm_response',
       });
       return [];
     }
-    raw = result.response;
   } catch (err) {
     log('error', 'discovery.completed', {
       tag,
@@ -98,12 +103,24 @@ export async function discoverTag(tag: string, env: Env): Promise<DiscoveredFeed
     return [];
   }
 
-  // 2. Parse strict JSON. The model is instructed to return
-  // `{ feeds: [...] }` and nothing else (see DISCOVERY_SYSTEM).
+  // 2. Normalise to a parsed object. extractResponsePayload can return
+  // either the raw JSON string (text-generation models) or an already-
+  // parsed object (models that honour `response_format: json_object`
+  // by inlining the shape). Accept both paths.
   let payload: LLMDiscoveryPayload;
-  try {
-    payload = JSON.parse(raw) as LLMDiscoveryPayload;
-  } catch {
+  if (typeof payloadRaw === 'string') {
+    try {
+      payload = JSON.parse(payloadRaw) as LLMDiscoveryPayload;
+    } catch {
+      log('warn', 'discovery.completed', {
+        tag,
+        status: 'llm_invalid_json',
+      });
+      return [];
+    }
+  } else if (typeof payloadRaw === 'object' && payloadRaw !== null) {
+    payload = payloadRaw as LLMDiscoveryPayload;
+  } else {
     log('warn', 'discovery.completed', {
       tag,
       status: 'llm_invalid_json',
