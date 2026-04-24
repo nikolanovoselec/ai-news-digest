@@ -67,19 +67,20 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 ### REQ-DISC-004: Manual re-discover
 
-**Intent:** Users can force a fresh discovery attempt for a stubborn tag whose feeds the LLM failed to find.
+**Intent:** An operator can force a fresh discovery attempt for a stubborn tag whose feeds the LLM failed to find, without needing to go through a tag delete + re-add.
 
-**Applies To:** User
+**Applies To:** Admin
 
 **Acceptance Criteria:**
-1. `/settings` shows a "Re-discover" button next to any tag whose `sources:{tag}` value has an empty `feeds` array.
-2. `POST /api/discovery/retry` with body `{ tag }` validates that the tag is in the user's `hashtags_json`; returns HTTP 400 with code `unknown_tag` otherwise.
-3. The endpoint deletes the `sources:{tag}` and `discovery_failures:{tag}` KV entries and inserts a fresh `pending_discoveries` row for this `(user_id, tag)`.
-4. The next 5-minute cron invocation picks it up.
+1. The settings page renders a "Re-discover #{tag}" button for every user tag whose cached feed list is empty. A brand-new tag whose cache has not yet been written never surfaces the button — only the explicit "discovery gave up" state does. The Stuck tags section is absent entirely when no tag is stuck.
+2. The re-discover endpoint validates that the submitted tag is in the authenticated user's saved tag list; otherwise it refuses the request as an unknown tag. This prevents anyone with a session from triggering arbitrary LLM calls for strings they do not control.
+3. A valid re-discover request clears the tag's cached feeds and any per-tag discovery-failure counter, then enqueues a fresh discovery pass so the next discovery cron repopulates the tag.
+4. The endpoint accepts both a JSON body and a native HTML form submission; the form path returns the operator to the settings page with a visible confirmation, while the JSON path returns an API-shaped response for scripted callers.
+5. The route is additionally gated by Cloudflare Access at the zone level so only the admin account can reach it in production; other authenticated users never see a reachable endpoint even if the settings button were to be forged into their page.
 
 **Constraints:** None
 **Priority:** P2
-**Dependencies:** REQ-DISC-001
+**Dependencies:** REQ-DISC-001, REQ-DISC-003
 **Verification:** Integration test
 **Status:** Implemented
 

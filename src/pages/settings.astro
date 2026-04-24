@@ -1,5 +1,5 @@
 ---
-// Implements REQ-SET-001, REQ-SET-002, REQ-SET-003, REQ-SET-004, REQ-SET-005, REQ-SET-006, REQ-SET-007
+// Implements REQ-SET-001, REQ-SET-002, REQ-SET-003, REQ-SET-004, REQ-SET-005, REQ-SET-006, REQ-SET-007, REQ-DISC-004
 //
 // Unified onboarding + edit form. The `first_run` query param swaps the
 // hero copy and the primary CTA label; the form fields are identical in
@@ -106,6 +106,54 @@ const showRestoreButton = DEFAULT_HASHTAGS.some((t) => !userHashtagSet.has(t));
 // completely custom set. Hides only when the list is already empty,
 // because clearing nothing is a no-op.
 const showDeleteAllButton = userHashtags.length > 0;
+
+// REQ-DISC-004 — identify user tags whose discovered feed list is
+// empty so the Re-discover button can surface for each. An empty
+// `sources:{tag}` entry means one of:
+//   a) Initial LLM discovery gave up (tag-level eviction after 2
+//      consecutive failed LLM calls — see REQ-DISC-001 / discovery.ts),
+//   b) The self-healing eviction path (REQ-DISC-003) removed every
+//      feed after sustained fetch failures,
+//   c) The entry was never written (new tag — discovery still pending).
+// Case (c) is excluded by checking `feeds` is defined AND length 0.
+// KV reads run in parallel; failures fall back to "not stuck" so a
+// transient KV blip never turns every tag into a stuck-tags row.
+const emptyFeedTags: string[] = [];
+if (userHashtags.length > 0) {
+  const results = await Promise.all(
+    userHashtags.map(async (tag) => {
+      try {
+        const raw = await env.KV.get(`sources:${tag}`);
+        if (raw === null) return null;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          return null;
+        }
+        if (parsed === null || typeof parsed !== 'object') return null;
+        const feeds = (parsed as { feeds?: unknown }).feeds;
+        if (Array.isArray(feeds) && feeds.length === 0) {
+          return tag;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  for (const tag of results) {
+    if (typeof tag === 'string' && tag !== '') emptyFeedTags.push(tag);
+  }
+}
+
+// Optional confirmation banner shown after a form-POST returns 303
+// back to /settings?rediscover=ok&tag=X. Purely cosmetic; the heavy
+// lift happened in the POST handler.
+const rediscoverConfirmedTag =
+  url.searchParams.get('rediscover') === 'ok'
+    ? url.searchParams.get('tag')
+    : null;
 
 const heroTitle = isFirstRun
   ? 'Welcome — pick a time, we handle the rest'
@@ -275,6 +323,50 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
               </form>
             )}
             <p class="settings__status" data-restore-status aria-live="polite"></p>
+          </div>
+        </fieldset>
+      )
+    }
+
+    {
+      !isFirstRun && emptyFeedTags.length > 0 && (
+        /* Implements REQ-DISC-004 — Re-discover button surfaces for any
+           user tag whose `sources:{tag}` entry has an empty feeds list.
+           Native <form method="post"> → 303 redirect back to /settings,
+           chosen over a JS handler because form POSTs work reliably on
+           Samsung Browser + in-app webviews. The endpoint itself is
+           additionally gated by Cloudflare Access at the zone level so
+           only the admin email can execute it in production. */
+        <fieldset class="settings__section settings__section--standalone">
+          <legend class="settings__legend">Stuck tags</legend>
+          <p class="settings__hint">
+            These tags have no working feeds right now. Re-discover asks
+            the LLM for a fresh set of sources.
+          </p>
+          {rediscoverConfirmedTag !== null && (
+            <p class="settings__status" data-rediscover-status>
+              Queued re-discovery for <strong>#{rediscoverConfirmedTag}</strong>. The
+              next discovery tick (≤5 minutes) will refresh the sources.
+            </p>
+          )}
+          <div class="settings__actions-row" data-rediscover-actions>
+            {emptyFeedTags.map((tag) => (
+              <form
+                method="post"
+                action="/api/discovery/retry"
+                class="settings__rediscover-form"
+                data-rediscover-form
+              >
+                <input type="hidden" name="tag" value={tag} />
+                <button
+                  type="submit"
+                  class="settings__secondary-button"
+                  data-rediscover-tag={tag}
+                >
+                  Re-discover #{tag}
+                </button>
+              </form>
+            ))}
           </div>
         </fieldset>
       )

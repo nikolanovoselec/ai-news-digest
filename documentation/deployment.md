@@ -86,6 +86,22 @@ Dependabot is configured (`.github/dependabot.yml`) to open weekly PRs every Mon
 
 CI workflows use `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'` at the workflow level so all actions run under Node.js 24 regardless of the action's bundled Node version.
 
+## Admin-only routes (Cloudflare Access gating)
+
+The manual discovery-retry endpoint at `/api/discovery/retry` drives LLM calls on demand — a budget-sensitive operation that must be reachable only by the site operator. Authentication via the site session is not sufficient: any signed-in user could forge a form POST against the endpoint from a script. The endpoint is instead gated at the zone level by **Cloudflare Access**, so only the configured admin email can reach it regardless of session state.
+
+### Setup (one-time, operator console)
+
+1. Cloudflare dashboard → Zero Trust → **Access** → Applications → Add an application → Self-hosted.
+2. Application domain: `news.graymatter.ch`, path: `/api/discovery/retry`. Include both `POST` and `GET` — Access gates the whole route.
+3. Identity provider: any already-configured IdP that supports email assertion (Google, GitHub, One-Time PIN).
+4. Access policy: **Include** → Emails → `<admin@example>` (replace with the operator's email). Session lifetime: 24h or shorter per operator preference.
+5. Save. The Access edge now issues a `CF_Authorization` JWT cookie on successful auth; requests to `/api/discovery/retry` without it are redirected to the Access login page.
+
+The page containing the Re-discover buttons (`/settings`) is **not** gated by Access — every authenticated user can render it. The buttons post to the gated endpoint, so a non-admin clicking one sees the Access login prompt rather than the re-queue succeeding. This matches REQ-DISC-004 AC 5: the surface is shown, but execution is restricted.
+
+No worker-side admin detection is performed — Cloudflare Access is the only gate. Disabling or misconfiguring the Access policy silently opens the endpoint; keep its configuration in sync with deploys.
+
 ## Resend domain verification
 
 1. Log in to Resend dashboard.
