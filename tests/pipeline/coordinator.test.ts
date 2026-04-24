@@ -222,9 +222,14 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
     // old" bug. The coordinator used to stamp every candidate with
     // nowSec; it must now read <pubDate> and thread it through to the
     // chunk message.
-    const oldIso = '2026-04-02T10:00:00Z';
-    const oldSec = Math.floor(Date.parse(oldIso) / 1000);
-    const pubDateRfc = new Date(oldIso).toUTCString();
+    //
+    // The pubDate is 12 hours ago — comfortably newer than the
+    // coordinator's 48-hour freshness cutoff so the candidate
+    // survives that filter. The assertion below confirms the parsed
+    // value is threaded through unchanged.
+    const oldMs = Date.now() - 12 * 60 * 60 * 1000;
+    const oldSec = Math.floor(oldMs / 1000);
+    const pubDateRfc = new Date(oldMs).toUTCString();
     const rss =
       `<rss><channel><item>` +
       `<title>Old story</title>` +
@@ -296,6 +301,46 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
       expect(c.published_at).toBeGreaterThanOrEqual(before);
       expect(c.published_at).toBeLessThanOrEqual(after + 1);
     }
+  });
+
+  it('REQ-PIPE-001: drops candidates whose feed pubDate is older than 48 hours', async () => {
+    // Regression guard for the "HashiCorp Vault pinned to the top of
+    // the dashboard for 8 hours" bug. A feed that emits a backlog
+    // item from 3 weeks ago should NOT survive the coordinator's
+    // freshness filter — LLM budget is wasted summarising it and the
+    // stale pubDate clutters the dashboard below genuinely fresh
+    // stories. A 12-hour-old item in the same feed must still survive.
+    const staleMs = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days ago
+    const freshMs = Date.now() - 12 * 60 * 60 * 1000; // 12h ago
+    const staleRfc = new Date(staleMs).toUTCString();
+    const freshRfc = new Date(freshMs).toUTCString();
+    const rss =
+      `<rss><channel>` +
+      `<item><title>Stale backlog</title><link>https://feed0.example.com/stale</link><pubDate>${staleRfc}</pubDate></item>` +
+      `<item><title>Fresh story</title><link>https://feed0.example.com/fresh</link><pubDate>${freshRfc}</pubDate></item>` +
+      `</channel></rss>`;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(rss, {
+          status: 200,
+          headers: { 'content-type': 'application/rss+xml' },
+        }),
+      ),
+    );
+
+    const { db } = makeDb();
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+    await runCoordinator(env, { scrape_run_id: 'run-freshness' });
+
+    const allCandidates = (sends as Array<{
+      candidates: Array<{ source_url: string }>;
+    }>).flatMap((m) => m.candidates);
+    const urls = allCandidates.map((c) => c.source_url);
+    expect(urls).toContain('https://feed0.example.com/fresh');
+    expect(urls).not.toContain('https://feed0.example.com/stale');
   });
 
   it('REQ-PIPE-001: when pool is empty, finishRun(ready) is called immediately', async () => {

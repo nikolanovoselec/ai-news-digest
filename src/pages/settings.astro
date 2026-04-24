@@ -18,7 +18,11 @@ import { loadSession } from '~/middleware/auth';
 import { requireSettingsComplete } from '~/middleware/settings-gate';
 import { DEFAULT_TZ } from '~/lib/tz';
 import { DEFAULT_MODEL_ID } from '~/lib/models';
-import { RESTORE_DEFAULTS_LABEL } from '~/lib/default-hashtags';
+import {
+  DEFAULT_HASHTAGS,
+  DELETE_INITIALS_LABEL,
+  RESTORE_DEFAULTS_LABEL,
+} from '~/lib/default-hashtags';
 
 
 const env = Astro.locals.runtime.env;
@@ -68,6 +72,34 @@ const emailEnabled = user.email_enabled === 1;
 // `showModelSelect` back to `true` is a one-line re-enable without a
 // schema change. `currentModelId` is preserved above for the same reason.
 const showModelSelect = false;
+
+// Parse the user's current hashtag list so we can compute which of
+// the Restore / Delete buttons to surface. Corrupt JSON or a
+// non-array payload is treated as an empty list so the form still
+// renders. REQ-SET-002 AC 8.
+let userHashtags: string[] = [];
+if (typeof user.hashtags_json === 'string' && user.hashtags_json !== '') {
+  try {
+    const parsed = JSON.parse(user.hashtags_json) as unknown;
+    if (Array.isArray(parsed)) {
+      userHashtags = parsed.filter((v): v is string => typeof v === 'string');
+    }
+  } catch {
+    userHashtags = [];
+  }
+}
+const defaultHashtagSet = new Set<string>(DEFAULT_HASHTAGS);
+const userHashtagSet = new Set<string>(userHashtags);
+// Restore is shown when at least one default tag is missing — the
+// button would actually add something.
+const showRestoreButton = DEFAULT_HASHTAGS.some((t) => !userHashtagSet.has(t));
+// Delete is shown only when the user has both defaults AND customs.
+// If they have only defaults, deleting wipes them to zero (we don't
+// want that; that's what the restore-initials flow exists for).
+// If they have only customs, there are no initials to strip.
+const userHasAnyDefault = DEFAULT_HASHTAGS.some((t) => userHashtagSet.has(t));
+const userHasAnyCustom = userHashtags.some((t) => !defaultHashtagSet.has(t));
+const showDeleteInitialsButton = userHasAnyDefault && userHasAnyCustom;
 
 const heroTitle = isFirstRun
   ? 'Welcome — pick a time, we handle the rest'
@@ -185,21 +217,57 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
               <form>s are invalid HTML and the browser submits the
               outer one on click, which redirected users to
               /settings?time=08:30 instead of calling the endpoint.
+              Shown only when at least one default tag is MISSING from
+              the user's list; when they already have every default,
+              Restore is a no-op, so we hide it.
             */}
-            <form
-              method="post"
-              action="/api/tags/restore"
-              class="settings__restore-form"
-              data-restore-form
-            >
-              <button
-                type="submit"
-                class="settings__secondary-button"
-                data-restore-tags
+            {showRestoreButton && (
+              <form
+                method="post"
+                action="/api/tags/restore"
+                class="settings__restore-form"
+                data-restore-form
               >
-                {RESTORE_DEFAULTS_LABEL}
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  class="settings__secondary-button"
+                  data-restore-tags
+                >
+                  {RESTORE_DEFAULTS_LABEL}
+                </button>
+              </form>
+            )}
+            {/*
+              Companion POST to /api/tags/delete-initial. Strips just
+              the DEFAULT_HASHTAGS entries from the user's list so any
+              custom tags they've added survive. Shown only when the
+              user has BOTH defaults AND customs — deleting the
+              initials when the user has only defaults would wipe them
+              to zero; deleting when the user has only customs is a
+              no-op. Visibility rules (REQ-SET-002 AC 8):
+                - Restore + Delete both shown → user has a mix
+                - Restore only → user is missing some defaults and
+                  has no defaults to strip
+                - Delete only → user has all defaults + customs
+                - Neither → user's list is identical to the initials
+                  (or empty AND would leave them empty)
+            */}
+            {showDeleteInitialsButton && (
+              <form
+                method="post"
+                action="/api/tags/delete-initial"
+                class="settings__delete-initial-form"
+                data-delete-initial-form
+              >
+                <button
+                  type="submit"
+                  class="settings__secondary-button"
+                  data-delete-initial-tags
+                >
+                  {DELETE_INITIALS_LABEL}
+                </button>
+              </form>
+            )}
             <p class="settings__status" data-restore-status aria-live="polite"></p>
           </div>
         </fieldset>

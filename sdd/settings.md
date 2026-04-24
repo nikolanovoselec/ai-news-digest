@@ -38,7 +38,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 5. Each hashtag must be 2–32 characters long, is normalised to lowercase with any leading `#` stripped, and may contain only characters in `[a-z0-9-]`; other characters are stripped server-side before storage.
 6. At least one hashtag is required for a digest to generate, a maximum of 20 total hashtags is enforced server-side, and duplicates are collapsed before storage.
 7. While one or more tags are selected, the reading surface filters its visible articles to those whose stored tag list intersects the selection. When every article is filtered out, the reading surface shows a short message naming the selected tags and inviting the user to deselect.
-8. Brand-new accounts are seeded with a curated default hashtag list so the first digest has meaningful input before the user touches the strip. The settings page exposes a "Restore initial tags" action that replaces the current list with the same default seed, letting the user reset to a known good starting point at any time.
+8. Brand-new accounts are seeded with a curated default hashtag list so the first digest has meaningful input before the user touches the strip. The settings page exposes two paired actions side-by-side: "Restore initial tags" replaces the current list with the full default seed, and "Delete initial tags" strips just the default entries from the current list, keeping any custom tags the user has added. Each action is only visible when it would do something useful — Restore when at least one default is missing from the user's list, Delete when the user has both defaults and at least one custom tag — so a list identical to the initials, or empty, hides the relevant button.
 
 **Constraints:** None
 **Priority:** P0
@@ -133,17 +133,19 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 ### REQ-SET-007: Timezone change detection
 
-**Intent:** When a user's browser timezone changes from the stored value (e.g., they traveled), they're offered a one-click update without forcing a re-login.
+**Intent:** When a user's browser timezone differs from the stored value (e.g., they traveled, or they signed up on a device whose timezone was never set), the server-stored timezone is corrected automatically so downstream behaviour (scheduled-email dispatch, today-local date deep-links) always matches the user's real location.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. On every authenticated page load, the browser's current timezone is compared to the stored `users.tz`.
-2. If different, a non-blocking banner offers "Detected {new_tz} — update your setting?" with an accept/dismiss control.
-3. Accepting persists the new timezone to the user row; dismissing hides the banner for 24 hours.
+1. On every authenticated page load, the browser's resolved IANA timezone is compared to the stored timezone value for the session user.
+2. When the two differ, the browser silently posts the new timezone to the timezone-update endpoint and the server persists it to the user row. No confirmation banner or dialog is shown — the correction is invisible to the user.
+3. The correction runs on every route (not just the settings page), so users who sign up and go straight to the reading surface never miss the update.
+4. A failed correction request is non-fatal: the page continues to render and the next page load retries.
 
 **Constraints:** None
 **Priority:** P2
 **Dependencies:** REQ-SET-003
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Partial
+**Notes:** Silent auto-correct ships in code (src/layouts/Base.astro) but no automated test verifies the cross-page behaviour or the stale-value retry.
