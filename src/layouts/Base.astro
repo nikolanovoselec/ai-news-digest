@@ -270,6 +270,52 @@ const initialTheme = cookieTheme ?? 'light';
       }
     </script>
 
+    {/* Per-path scroll save/restore across navigations. Astro's
+        ClientRouter default is scroll-to-top on every transition
+        which breaks the natural "back from article detail returns
+        you to where you were scrolling on /digest" behaviour. We
+        save on before-swap and restore on page-load (deferred one
+        frame so any filter-hydration DOM work has settled first).
+        sessionStorage is keyed by pathname so forward navs to a
+        page the user hasn't visited yet scroll to 0 cleanly. */}
+    <script>
+      const KEY = (): string => `scroll:${window.location.pathname}`;
+      function saveScroll(): void {
+        try {
+          sessionStorage.setItem(KEY(), String(window.scrollY));
+        } catch { /* storage quota / disabled — nothing to do */ }
+      }
+      function restoreScroll(): void {
+        try {
+          const raw = sessionStorage.getItem(KEY());
+          if (raw === null) return;
+          const y = Number.parseInt(raw, 10);
+          if (!Number.isFinite(y) || y <= 0) return;
+          // Defer so page-specific init (filter hydration, tag-
+          // chip DOM reorder, etc.) has settled before we scroll.
+          // A single rAF is enough in practice; two-rAF would be
+          // belt-and-suspenders if layout depends on images loading.
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              window.scrollTo(0, y);
+            });
+          });
+        } catch { /* ditto */ }
+      }
+      if (document.documentElement.dataset['scrollRestoreBound'] !== '1') {
+        document.documentElement.dataset['scrollRestoreBound'] = '1';
+        // Override Astro ClientRouter's scroll-to-top so our per-path
+        // sessionStorage restore wins.
+        if ('scrollRestoration' in window.history) {
+          window.history.scrollRestoration = 'manual';
+        }
+        document.addEventListener('astro:before-swap', saveScroll);
+        window.addEventListener('pagehide', saveScroll);
+        document.addEventListener('astro:page-load', restoreScroll);
+        restoreScroll();
+      }
+    </script>
+
     <style>
       /* Sticky header with a tasteful backdrop blur on scroll — no solid
          rule across the page. The horizontal line is implied by a tight
