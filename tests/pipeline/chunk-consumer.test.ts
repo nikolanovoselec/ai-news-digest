@@ -517,6 +517,73 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     expect(rowB!.params).not.toContain('Summary of A');
   });
 
+  it('REQ-PIPE-002: drops articles whose LLM title shares zero tokens with the candidate title (prod bug: cf-cli summary → SageMaker URL)', async () => {
+    // The LLM correctly echoes index=0 but writes a summary about an
+    // entirely different story (different title). Defense-in-depth
+    // must drop this rather than staple the wrong content onto the
+    // candidate's canonical_url.
+    //
+    // Setup: 3 candidates, all matching on index, but candidate[1]'s
+    // LLM entry is about a totally unrelated topic (Postgres, while
+    // the candidate is about AWS Lambda). Other two should survive.
+    const aiResponse = {
+      response: JSON.stringify({
+        articles: [
+          { index: 0, title: 'Cloudflare ships Workers update', details: 'body.', tags: ['cloudflare'] },
+          { index: 1, title: 'Postgres 18 announces pluggable storage', details: 'body.', tags: ['postgres'] },
+          { index: 2, title: 'AI coding assistant benchmarks improve', details: 'body.', tags: ['ai'] },
+        ],
+        dedup_groups: [],
+      }),
+      usage: { input_tokens: 10, output_tokens: 10 },
+    };
+    const { db, records } = makeDb();
+    const { kv } = makeKv({ chunksRemaining: '1' });
+    const env = makeEnv(db, kv, aiResponse);
+    const chunk = makeChunk({
+      candidates: [
+        {
+          canonical_url: 'https://blog.cloudflare.com/workers',
+          source_url: 'https://blog.cloudflare.com/workers',
+          source_name: 'Cloudflare Blog',
+          title: 'Cloudflare Workers v4 release notes',
+          published_at: 100,
+        },
+        {
+          canonical_url: 'https://aws.amazon.com/lambda',
+          source_url: 'https://aws.amazon.com/lambda',
+          source_name: 'AWS News',
+          title: 'AWS Lambda adds Python 3.13 runtime',
+          published_at: 200,
+        },
+        {
+          canonical_url: 'https://example.com/ai',
+          source_url: 'https://example.com/ai',
+          source_name: 'AI Benchmark Blog',
+          title: 'AI coding benchmarks show gains',
+          published_at: 300,
+        },
+      ],
+    });
+    await processOneChunk(env, chunk);
+
+    const articleInserts = records.filter(
+      (r) =>
+        r.via === 'batch' &&
+        r.sql.startsWith('INSERT OR IGNORE INTO articles'),
+    );
+    // candidate[0] survives (cloudflare/workers overlap), candidate[2]
+    // survives (coding/benchmarks overlap), candidate[1] is dropped
+    // (postgres vs lambda share zero meaningful tokens).
+    expect(articleInserts.length).toBe(2);
+    // And the Lambda canonical_url must NOT appear in any insert — the
+    // whole point is no more wrong-URL-right-summary pairings.
+    const anyLambdaRow = articleInserts.find((r) =>
+      r.params.includes('https://aws.amazon.com/lambda'),
+    );
+    expect(anyLambdaRow).toBeUndefined();
+  });
+
   it('REQ-PIPE-002: drops articles whose echoed `index` matches no input candidate', async () => {
     // The LLM hallucinates an extra entry with index=99. The consumer
     // must drop it silently rather than staple its summary to an

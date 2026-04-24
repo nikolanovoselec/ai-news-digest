@@ -351,6 +351,7 @@ export async function processOneChunk(
   // change.
   const articleByIndex = new Map<number, LLMChunkArticle>();
   let articlesWithEchoedIndex = 0;
+  let duplicateEchoedIndex = 0;
   for (let i = 0; i < rawArticles.length; i += 1) {
     const art = rawArticles[i];
     if (art === undefined) continue;
@@ -362,16 +363,24 @@ export async function processOneChunk(
       echoed < perInputClusters.length
     ) {
       articlesWithEchoedIndex += 1;
-      if (!articleByIndex.has(echoed)) {
+      if (articleByIndex.has(echoed)) {
+        duplicateEchoedIndex += 1;
+      } else {
         articleByIndex.set(echoed, art);
       }
     }
   }
-  // If no article echoed an index (old model/prompt), fall back to
-  // positional alignment — strictly worse, but keeps the pipeline
-  // flowing until the model adopts the new contract.
-  const useEchoedIndex = articlesWithEchoedIndex > 0;
+  // Enable strict index-echo alignment only when the model demonstrably
+  // adopted the contract on this chunk. A single echoed entry out of
+  // 50 is likely a fluke — falling into strict mode there would drop
+  // the other 49 positionally-aligned articles. Require a majority OR
+  // an absolute floor of 3 echoed entries.
+  const useEchoedIndex =
+    articlesWithEchoedIndex >= 3 ||
+    (rawArticles.length > 0 &&
+      articlesWithEchoedIndex * 2 >= rawArticles.length);
   let droppedForMissingAlignment = 0;
+  let droppedForTitleMismatch = 0;
 
   let clusterCursor = 0;
   for (const merged of mergedClusters) {
@@ -382,6 +391,25 @@ export async function processOneChunk(
       : rawArticles[anchor];
     if (llmArticle === undefined) {
       droppedForMissingAlignment += 1;
+      continue;
+    }
+    // Defense-in-depth: even when the LLM echoes the right index, it
+    // could still write content for a different candidate. Compare the
+    // LLM title against the source candidate title for at least one
+    // shared non-trivial word. Zero overlap on two long titles signals
+    // the LLM got its wires crossed (the "CF CLI Local Explorer"
+    // summary on a SageMaker URL bug had exactly zero shared tokens).
+    const llmTitle = typeof llmArticle.title === 'string' ? llmArticle.title : '';
+    if (!titlesShareAnyToken(llmTitle, merged.primary.title)) {
+      droppedForTitleMismatch += 1;
+      log('warn', 'digest.generation', {
+        status: 'chunk_article_dropped_title_mismatch',
+        scrape_run_id: body.scrape_run_id,
+        chunk_index: body.chunk_index,
+        anchor_index: anchor,
+        candidate_title: merged.primary.title.slice(0, 120),
+        llm_title: llmTitle.slice(0, 120),
+      });
       continue;
     }
     survivors.push({ cluster: merged, articleIdx: anchor, llmArticle });
@@ -550,12 +578,57 @@ export async function processOneChunk(
     estimated_cost_usd: costUsd,
     alignment_mode: useEchoedIndex ? 'echoed_index' : 'positional_fallback',
     articles_with_echoed_index: articlesWithEchoedIndex,
+    duplicate_echoed_index: duplicateEchoedIndex,
     dropped_for_missing_alignment: droppedForMissingAlignment,
+    dropped_for_title_mismatch: droppedForTitleMismatch,
   });
 
   // Suppress unused-variable warning for collapsedSet; kept for future
   // per-alternative source attribution refinements.
   void collapsedSet;
+}
+
+/** Very cheap token-overlap check for defense-in-depth against LLM
+ * summaries that echo the correct candidate index but describe a
+ * different candidate's story. Returns true when the two titles share
+ * at least one non-trivial token (alnum, length ≥ 4, case-insensitive,
+ * common English stopwords excluded). Returns true trivially when
+ * either title is empty or very short (we only reject when BOTH titles
+ * are substantial enough to compare meaningfully — never drop on a
+ * short headline). */
+function titlesShareAnyToken(a: string, b: string): boolean {
+  const tokensA = tokenizeTitle(a);
+  const tokensB = tokenizeTitle(b);
+  // Be conservative: if either side has fewer than 2 meaningful tokens
+  // the overlap signal is too noisy — accept rather than drop.
+  if (tokensA.size < 2 || tokensB.size < 2) return true;
+  for (const t of tokensA) {
+    if (tokensB.has(t)) return true;
+  }
+  return false;
+}
+
+const TITLE_STOPWORDS = new Set([
+  'the', 'that', 'this', 'with', 'from', 'into', 'over', 'your', 'their',
+  'have', 'will', 'been', 'were', 'what', 'when', 'about', 'after',
+  'announce', 'announces', 'announced', 'release', 'released', 'launches',
+  'launch', 'update', 'updates', 'updated', 'says', 'said', 'introduces',
+  'introduced', 'adds', 'added', 'gets', 'gains', 'makes', 'made',
+  'using', 'uses', 'based', 'new', 'via', 'now', 'for', 'and',
+]);
+
+/** Extract meaningful tokens from a title for the overlap check:
+ *  lowercase, alnum only, length ≥ 4, not in the small stopword list. */
+function tokenizeTitle(title: string): Set<string> {
+  const out = new Set<string>();
+  const lowered = title.toLowerCase();
+  const words = lowered.split(/[^a-z0-9]+/);
+  for (const w of words) {
+    if (w.length < 4) continue;
+    if (TITLE_STOPWORDS.has(w)) continue;
+    out.add(w);
+  }
+  return out;
 }
 
 /** Load the tag allowlist: DEFAULT_HASHTAGS ∪ any tag whose
