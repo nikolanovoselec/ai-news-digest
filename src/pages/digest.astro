@@ -525,14 +525,34 @@ const todayLocalDate = localDateInTz(Math.floor(Date.now() / 1000), userTz);
       }, 150);
     });
 
+    /** Sync selected tags into the URL via replaceState so browser
+     *  Back from an article detail page (or a tab reload) restores
+     *  the exact filter the user left. replaceState avoids clogging
+     *  the history stack — each chip click overwrites the same entry
+     *  rather than pushing a new one. */
+    const syncUrlTags = (selected: string[]): void => {
+      const url = new URL(window.location.href);
+      if (selected.length > 0) {
+        url.searchParams.set('tags', selected.join(','));
+      } else {
+        url.searchParams.delete('tags');
+      }
+      const next = url.pathname + (url.search === '' ? '' : url.search);
+      if (next !== window.location.pathname + window.location.search) {
+        window.history.replaceState({}, '', next);
+      }
+    };
+
     const applyFilter = (): void => {
-      const selected = new Set<string>();
+      const selectedList: string[] = [];
       strip
         .querySelectorAll<HTMLElement>('[data-tag-chip].is-selected')
         .forEach((el) => {
           const t = el.dataset['tag'];
-          if (t !== undefined && t !== '') selected.add(t);
+          if (t !== undefined && t !== '') selectedList.push(t);
         });
+      const selected = new Set(selectedList);
+      syncUrlTags(selectedList);
       const cards = document.querySelectorAll<HTMLElement>('[data-digest-card]');
       let visible = 0;
       cards.forEach((card) => {
@@ -556,6 +576,26 @@ const todayLocalDate = localDateInTz(Math.floor(Date.now() / 1000), userTz);
         noMatch.hidden = !(selected.size > 0 && visible === 0);
       }
     };
+
+    /** Hydrate the chip selection from the URL on load. Called
+     *  before the first applyFilter() so the initial render reflects
+     *  whatever tag filter the user had active when they left. */
+    const hydrateFromUrl = (): void => {
+      const raw = new URL(window.location.href).searchParams.get('tags');
+      if (raw === null || raw === '') return;
+      const tokens = new Set(
+        raw.split(',').map((t) => t.trim()).filter((t) => t !== ''),
+      );
+      strip.querySelectorAll<HTMLElement>('[data-tag-chip]').forEach((chip) => {
+        const tag = chip.dataset['tag'];
+        if (tag !== undefined && tokens.has(tag)) {
+          chip.classList.add('is-selected');
+          chip.setAttribute('aria-pressed', 'true');
+        }
+      });
+    };
+    hydrateFromUrl();
+    applyFilter();
 
     strip.addEventListener('click', (e) => {
       const target = e.target as HTMLElement | null;
