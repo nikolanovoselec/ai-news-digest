@@ -373,7 +373,11 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
       (r) =>
         r.sql.includes('UPDATE articles') &&
         r.sql.includes('ingested_at') &&
-        (r.params as unknown[]).includes(reSeenUrl),
+        // Array-element equality check (NOT a URL-substring check).
+        // Using `.some(p => p === url)` instead of `.includes(url)`
+        // so CodeQL's js/incomplete-url-substring-sanitization rule
+        // doesn't false-positive on a test-only membership assertion.
+        (r.params as unknown[]).some((p) => p === reSeenUrl),
     );
     expect(update).toBeDefined();
     expect(typeof (update!.params as unknown[])[0]).toBe('number');
