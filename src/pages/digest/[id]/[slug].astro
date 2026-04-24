@@ -469,51 +469,42 @@ const articleDataset = {
     text-wrap: pretty;
   }
 
-  /* Lead paragraph drop cap — spans 2 body lines with the cap-top
-     aligned to line 1's cap-top and the baseline on line 2's
-     baseline.
+  /* Lead paragraph drop cap — plain float, no initial-letter.
+     Samsung Browser implements `initial-letter` but with a
+     size/position offset that floats the cap visibly above line 1
+     on mobile (reported via screenshot). Chromium, Safari, and
+     Firefox each have their own quirks with the property too.
+     Skip the spec path entirely and hand-tune a float so every
+     browser lands the cap in the same place.
 
-     Uses the CSS `initial-letter` property — the spec was literally
-     written for this exact alignment, and the browser handles all
-     the font-metric math internally. Support as of 2026 (caniuse):
-       - Chrome / Edge 110+  → `initial-letter: 2` (unflagged)
-       - Safari 9+ / iOS 9+  → `-webkit-initial-letter: 2`
-       - Firefox             → still no support — needs the fallback below
+     Geometry target:
+       - cap-top aligns with line 1's cap-top (not the line-box top)
+       - baseline sits on line 2's baseline
+       - spans 2 body lines total
 
-     The @supports block below handles Firefox (and any Chromium
-     build without initial-letter) via a tuned float.
-  */
+     Math (body line-height 1.65, cap-height ≈ 0.7 × font-size):
+       - line-1 cap-top sits ~0.49em below the paragraph top
+         ((1.65 - 1)/2 half-leading + 0.15em ascender padding)
+       - distance line-1 cap-top → line-2 baseline = 1.65 + 0.7
+         = 2.35em of cap-height span
+       - drop-cap font-size = 2.35 / 0.7 ≈ 3.4em
+       - at line-height 1, drop-cap's ascender padding above cap is
+         0.15 × 3.4 ≈ 0.51em
+       - so float top = paragraph top + (body_cap_top − drop_cap_pad)
+                      = 0 + (0.49 − 0.51) = ~-0.02em → margin-top: 0
+       - in practice browsers round the font-metric layout by ±1-2px;
+         margin-top 0 is the cleanest starting point and looked
+         correct on desktop Chrome + Firefox. If this regresses on
+         a specific browser, nudge margin-top in 0.02em steps. */
   .article-detail__paragraph--lead::first-letter {
+    float: left;
     font-family: var(--font-serif);
     font-weight: 700;
     color: var(--text);
+    font-size: 3.4em;
+    line-height: 1;
+    margin: 0 0.1em 0 0;
     padding: 0;
-    margin-right: 0.1em;
-    /* Two-value form: <size> <sink>.
-       size = 2.3 — the letter's cap-height spans 2.3 line-heights.
-                    Chromium sizes by em-box not cap-height, so
-                    plain `2` leaves the cap (~0.7× em-box) shorter
-                    than 2 lines and the top sits visibly below
-                    line 1's cap-height. Oversize to 2.3 so the
-                    cap-top lifts up onto line 1's cap-top.
-       sink = 2   — baseline stays anchored on line 2's baseline. */
-    -webkit-initial-letter: 2.3 2;
-    initial-letter: 2.3 2;
-  }
-
-  /* Firefox (and older Chromium) fallback — uses float + tight
-     line-height so the cap-top sinks to line 1's cap-top
-     naturally. Math: body line-height 1.65 × 2 lines = 3.3em of
-     vertical room; a 3.4em serif font with line-height 1 puts the
-     cap-top at the paragraph top and baseline at line 2's baseline,
-     within ~1px. */
-  @supports not ((initial-letter: 2) or (-webkit-initial-letter: 2)) {
-    .article-detail__paragraph--lead::first-letter {
-      float: left;
-      font-size: 3.4em;
-      line-height: 1;
-      margin: 0 0.1em 0 0;
-    }
   }
 
   /* Primary source link — stays solid-inverted like the other primary
