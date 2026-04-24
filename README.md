@@ -18,7 +18,7 @@ Pick your hashtags. An LLM reads the news so you don't have to. You get the stor
 - **Summaries that earn their word count** — 150–250 words: *what happened → how it works → why you care*.
 - **Hallucinations dropped on sight** — every LLM output echoes its candidate index AND shares a real token with the source title. A fabricated summary never reaches the database. (Ask me how I learned that.)
 - **Starred articles outlive the cron** — 7-day retention, unless you starred it. Your saved list is forever; your unread list was a lie anyway.
-- **One Worker, no servers** — Cloudflare D1 + KV + Queues + Workers AI. Ships in 30 seconds. Rolls back in ten, not that I'd ever need to.
+- **One Worker, no servers** — Cloudflare D1 + KV + Queues + Workers AI. Ships in 30 seconds. Rollback is `wrangler rollback`, which I've used more times than I'd like to admit.
 
 ## What's *not* in it
 
