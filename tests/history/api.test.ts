@@ -71,6 +71,10 @@ function fakeArticle(id: string, publishedAt: number, tags: string[]): ArticleRo
     primary_source_name: 'HN',
     primary_source_url: `https://news.example.com/${id}`,
     published_at: publishedAt,
+    // Tests default ingested_at = published_at; individual cases
+    // can override to verify the grouping split after the shift
+    // from published_at to ingested_at in the history API.
+    ingested_at: publishedAt,
     details_json: JSON.stringify(['details']),
     tags_json: JSON.stringify(tags),
   };
