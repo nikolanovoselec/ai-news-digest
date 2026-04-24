@@ -849,13 +849,20 @@ const todayLocalDate = localDateInTz(Math.floor(Date.now() / 1000), userTz);
       transparent 100%
     );
   }
-  /* Desktop layout — strip wraps, + add sits at end of flow instead
-     of floating absolutely. Gate on viewport width, NOT input
-     capability (hover: hover): Samsung Browser and other hybrid
-     devices sometimes report hover:none on a wide desktop viewport,
-     which left the absolute + add button anchored at `top: 50%` of
-     a tall wrapped strip, landing it visibly in the middle of the
-     card grid. Width-based gating is deterministic across browsers. */
+  /* Desktop layout — strip wraps to multiple lines and the + add
+     button sits inline at the natural end of flow. The .tag-add
+     override MUST live at the bottom of the stylesheet (after the
+     base .tag-add rule further down) because the cascade walks
+     source order when specificity ties — a media-query rule with
+     the same specificity still loses to a later rule defined
+     outside the query. The earlier version of this block lived
+     here and was silently overridden by the base rule below,
+     leaving the + add button absolutely positioned at `top: 50%`
+     of the wrapped strip, which landed it visibly inside the
+     card grid on desktop. The override is now split: .tag-strip
+     layout stays here; the .tag-add position override moves to
+     the very end of this stylesheet (see "Desktop tag-add
+     override" block). */
   @media (min-width: 768px) {
     .tag-strip-wrap {
       position: static;
@@ -866,9 +873,6 @@ const todayLocalDate = localDateInTz(Math.floor(Date.now() / 1000), userTz);
       padding-right: 1rem;
       mask-image: none;
       -webkit-mask-image: none;
-    }
-    .tag-add {
-      position: static;
     }
   }
   .tag-strip::-webkit-scrollbar {
@@ -1055,5 +1059,20 @@ const todayLocalDate = localDateInTz(Math.floor(Date.now() / 1000), userTz);
     font-size: var(--text-sm);
     margin-left: 0.5rem;
     transition: opacity 0.2s ease;
+  }
+
+  /* Desktop tag-add override — MUST live here, below the base
+     .tag-add rule (`position: absolute; top: 50%; right: 0.75rem`),
+     so the cascade resolves in the intended direction when the
+     desktop breakpoint is active. See the comment on the
+     companion @media (min-width: 768px) block up near .tag-strip
+     for the full rationale. */
+  @media (min-width: 768px) {
+    .tag-add {
+      position: static;
+      top: auto;
+      right: auto;
+      transform: none;
+    }
   }
 </style>
