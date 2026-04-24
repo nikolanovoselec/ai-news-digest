@@ -1,6 +1,6 @@
 # News Digest
 
-Tech news is a firehose. This is a tap. Pick your hashtags — an LLM reads the ten thousand things they wrote today and hands you the ones worth finishing. The rest vanishes quietly, never auditioning for your attention.
+Keeping up with tech news is a part-time job. I didn't want it. I hired an LLM instead. Pick your hashtags; it reads the industry; you read the summaries of what actually mattered today.
 
 **Live:** <https://news.graymatter.ch> · GitHub sign-in · pick your hashtags · done.
 
