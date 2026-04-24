@@ -594,7 +594,27 @@ const todayLocalDate = localDateInTz(Math.floor(Date.now() / 1000), userTz);
         }
       });
     };
+    /** Pin selected chips to the front of the strip. On mobile the
+     *  strip is horizontally scrollable and the browser resets the
+     *  scroll to 0 on every navigation — if the user's selected
+     *  chip lived at position 15, they'd have to scroll to find it
+     *  again. Moving selected chips to scroll-position 0 means the
+     *  filter is always visible without any re-scrolling. DOM
+     *  reorder preserves each chip's state + event listeners. */
+    const pinSelectedToFront = (): void => {
+      const selected = Array.from(
+        strip.querySelectorAll<HTMLElement>('[data-tag-chip].is-selected'),
+      );
+      // Prepend in reverse so the first selected chip ends up
+      // leftmost — prepend(node) on an element inserts at index 0,
+      // so reversed iteration yields the intended order-of-appearance.
+      for (let i = selected.length - 1; i >= 0; i -= 1) {
+        strip.prepend(selected[i]!);
+      }
+    };
+
     hydrateFromUrl();
+    pinSelectedToFront();
     applyFilter();
 
     strip.addEventListener('click', (e) => {
@@ -632,6 +652,12 @@ const todayLocalDate = localDateInTz(Math.floor(Date.now() / 1000), userTz);
       if (tag === '') return;
       const nowSelected = chip.classList.toggle('is-selected');
       chip.setAttribute('aria-pressed', nowSelected ? 'true' : 'false');
+      if (nowSelected) {
+        // Move the just-selected chip to scroll-position 0 so the
+        // filter chip is always visible without the user having to
+        // scroll the mobile tag strip back to find it.
+        strip.prepend(chip);
+      }
       applyFilter();
     });
   }

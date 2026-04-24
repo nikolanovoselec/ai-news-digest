@@ -449,6 +449,13 @@ function formatCostUsd(value: number | null | undefined): string {
       const wasSelected = chip.classList.contains('is-selected');
       chip.classList.toggle('is-selected', !wasSelected);
       chip.setAttribute('aria-pressed', wasSelected ? 'false' : 'true');
+      if (!wasSelected) {
+        // Pin the just-selected chip to scroll-position 0 of the
+        // (mobile-scrollable) strip so it stays visible without the
+        // user having to scroll back to find it.
+        const thisStrip = chip.closest<HTMLElement>('[data-tag-strip]');
+        if (thisStrip !== null) thisStrip.prepend(chip);
+      }
       apply();
     };
     // Bind ONCE per page load. `reinit` runs this function on every
@@ -480,6 +487,15 @@ function formatCostUsd(value: number | null | undefined): string {
             chip.setAttribute('aria-pressed', 'true');
           }
         });
+        // Pin the now-selected chips to the front so the user lands
+        // on the filter chip(s) at scroll-position 0 without having
+        // to scroll the mobile strip back to find them.
+        const selected = Array.from(
+          strip.querySelectorAll<HTMLElement>('[data-tag-chip].is-selected'),
+        );
+        for (let i = selected.length - 1; i >= 0; i -= 1) {
+          strip.prepend(selected[i]!);
+        }
       }
       needsApply = true;
     }
