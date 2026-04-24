@@ -343,6 +343,42 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
     expect(urls).not.toContain('https://feed0.example.com/stale');
   });
 
+  it('REQ-PIPE-001: re-seen canonical URLs get their ingested_at bumped so live-feed freshness drives dashboard order', async () => {
+    // AC 4 extension: when the coordinator finds a candidate whose
+    // canonical URL already exists in the article pool, it UPDATEs
+    // that row's ingested_at to now. Without this bump, a 4-hour-old
+    // article still actively emitted by its source feed would stay
+    // frozen at the top of the dashboard after force-refresh because
+    // nothing newer had been net-ingested for the user's tag set.
+    const reSeenUrl = 'https://feed0.example.com/already-known';
+    const rss =
+      `<rss><channel>` +
+      `<item><title>Already known</title><link>${reSeenUrl}</link><pubDate>${new Date(Date.now() - 2 * 60 * 60 * 1000).toUTCString()}</pubDate></item>` +
+      `</channel></rss>`;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(rss, {
+          status: 200,
+          headers: { 'content-type': 'application/rss+xml' },
+        }),
+      ),
+    );
+    const { db, records } = makeDb({ existingCanonicals: [reSeenUrl] });
+    const { kv } = makeKv();
+    const { queue } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+    await runCoordinator(env, { scrape_run_id: 'run-refresh' });
+    const update = records.find(
+      (r) =>
+        r.sql.includes('UPDATE articles') &&
+        r.sql.includes('ingested_at') &&
+        (r.params as unknown[]).includes(reSeenUrl),
+    );
+    expect(update).toBeDefined();
+    expect(typeof (update!.params as unknown[])[0]).toBe('number');
+  });
+
   it('REQ-PIPE-001: when pool is empty, finishRun(ready) is called immediately', async () => {
     stubFetchEmpty();
     const { db, records } = makeDb();
