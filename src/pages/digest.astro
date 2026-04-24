@@ -849,30 +849,35 @@ const todayLocalDate = localDateInTz(Math.floor(Date.now() / 1000), userTz);
       transparent 100%
     );
   }
-  /* Desktop layout — strip wraps to multiple lines and the + add
-     button sits inline at the natural end of flow. The .tag-add
-     override MUST live at the bottom of the stylesheet (after the
-     base .tag-add rule further down) because the cascade walks
-     source order when specificity ties — a media-query rule with
-     the same specificity still loses to a later rule defined
-     outside the query. The earlier version of this block lived
-     here and was silently overridden by the base rule below,
-     leaving the + add button absolutely positioned at `top: 50%`
-     of the wrapped strip, which landed it visibly inside the
-     card grid on desktop. The override is now split: .tag-strip
-     layout stays here; the .tag-add position override moves to
-     the very end of this stylesheet (see "Desktop tag-add
-     override" block). */
+  /* Desktop layout — strip chips + the + add button flow as a
+     single wrapping line. The + add button is a SIBLING of
+     .tag-strip in the DOM (the strip has a mask-image fade on the
+     right edge for mobile scroll, and the button sits over it), so
+     on desktop we need to collapse .tag-strip's layout role and
+     promote .tag-strip-wrap to be the actual flex container — then
+     chips and + add live at the same level and wrap together. This
+     is the fix for the '+ add appears on its own line below all
+     chips' report. The .tag-add `position: static` override MUST
+     live at the bottom of the stylesheet (see "Desktop tag-add
+     override" block) because source-order cascade beats a later
+     same-specificity rule inside this media query. */
   @media (min-width: 768px) {
     .tag-strip-wrap {
       position: static;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.25rem 1rem;
     }
     .tag-strip {
-      flex-wrap: wrap;
-      overflow: visible;
-      padding-right: 1rem;
-      mask-image: none;
-      -webkit-mask-image: none;
+      /* display: contents dissolves .tag-strip's own layout box so
+         its chip children become direct flex items of
+         .tag-strip-wrap above. padding / flex / mask / overflow on
+         .tag-strip become inert on desktop — which is exactly what
+         we want, since the desktop layout needs wrap + inline-
+         flowing + add, not a scrolling masked strip. */
+      display: contents;
     }
   }
   .tag-strip::-webkit-scrollbar {
