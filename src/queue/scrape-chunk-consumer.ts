@@ -174,17 +174,13 @@ export async function processOneChunk(
 
   // Build candidates in the LLM-expected shape. Order is preserved so
   // output array indices line up with input indices for cluster + dedup
-  // lookups.
+  // lookups. For each candidate we keep whichever snippet is longer:
+  // the fetched HTML body, or the feed's own <content:encoded>.
   const promptCandidates = body.candidates.map((c, idx) => {
-    const fetched = fetchedBodies.get(c.source_url);
+    const fetched = fetchedBodies.get(c.source_url) ?? '';
     const feedSnippet = c.body_snippet ?? '';
-    // Take whichever is longer — feeds like blog.cloudflare.com ship
-    // <content:encoded> with the full body, so don't clobber with a
-    // shorter <article>-extracted fetch.
     const bestSnippet =
-      fetched !== undefined && fetched.length > feedSnippet.length
-        ? fetched
-        : feedSnippet;
+      fetched.length > feedSnippet.length ? fetched : feedSnippet;
     const base = {
       index: idx,
       title: c.title,
@@ -192,11 +188,24 @@ export async function processOneChunk(
       source_name: c.source_name,
       published_at: c.published_at,
     };
-    if (bestSnippet !== '') {
-      return { ...base, body_snippet: bestSnippet };
-    }
+    if (bestSnippet !== '') return { ...base, body_snippet: bestSnippet };
     return base;
   });
+  // Observability: log how many candidates fell through with NO
+  // snippet of any kind so we can find feeds + URLs where our
+  // extractor is failing and improve the heuristic.
+  const noSnippetCount = promptCandidates.filter(
+    (p) => !('body_snippet' in p) || p.body_snippet === undefined || p.body_snippet === '',
+  ).length;
+  if (noSnippetCount > 0) {
+    log('warn', 'digest.generation', {
+      status: 'chunk_candidates_without_snippet',
+      scrape_run_id: body.scrape_run_id,
+      chunk_index: body.chunk_index,
+      no_snippet: noSnippetCount,
+      total: promptCandidates.length,
+    });
+  }
 
   // Call Workers AI with the primary model, then fall through to the
   // OpenAI-native-JSON failover model if the primary returns malformed
