@@ -13,7 +13,7 @@ import {
 
 describe('LLM_PARAMS', () => {
   it('LLM_PARAMS pins inference parameters', () => {
-    expect(LLM_PARAMS.temperature).toBe(0.2);
+    expect(LLM_PARAMS.temperature).toBe(0.5);
     expect(LLM_PARAMS.max_tokens).toBe(50_000);
     expect(LLM_PARAMS.response_format.type).toBe('json_object');
   });
