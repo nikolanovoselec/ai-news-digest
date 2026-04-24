@@ -12,6 +12,16 @@ Tech news for people who would rather read ten good summaries than three thousan
 
 Every 4 hours, ~50 curated sources get scraped, ~500 fresh candidates get batched into ~10 chunks and fed to GPT-OSS-120B on [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/), and the output lands in a shared pool. Your dashboard is a filter over that pool. The rest expires in seven days. Your inbox is left alone.
 
+## The feature I'm the most proud of: nothing is trying to sell you anything
+
+**No ads. Zero. Not one. Not "display ads that respect your privacy", not "sponsored content clearly labelled", not "a gentle reminder from our partners". Nothing.**
+
+Also missing: cookie banners, "accept all" dark patterns that pretend a red X is a close button, newsletter pop-ups from a LinkedIn thought leader whose last nine posts are variations of "AGI is closer than you think", paywalls that let you read three articles a month and call it generosity, "we value your privacy" preambles quoted directly above a list of 487 advertising partners who value it slightly less, auto-playing video ads that hijack the scroll position, exit-intent promo-code modals, chat widgets pinned to the bottom-right corner asking if you'd like a demo, and "you've read 3 of your 4 free articles this month" breadcrumbs trained on your cortisol levels.
+
+Also: PWA-installable, dark mode out of the box, and an offline banner when the network drops.
+
+The internet became a dark-pattern theme park. News Digest is one ride that still just runs.
+
 ## Features
 
 - **One global LLM run, every user benefits.** GPT-OSS-120B summarises the whole pool every 4 hours, billed to my Cloudflare account, not yours, and way cheaper than the coffee I was going to drink while ignoring Hacker News anyway.
@@ -22,7 +32,6 @@ Every 4 hours, ~50 curated sources get scraped, ~500 fresh candidates get batche
 - **LLM hallucinations dropped on sight.** Every output must echo its input index **and** share a meaningful token with the candidate title. A reordered or fabricated summary never reaches the database. Ask me how I learned this lesson.
 - **Starred articles outlive the cron.** Seven-day retention, unless you starred it. Your saved pile is forever; your unread pile is a lie you're no longer telling yourself.
 - **One Worker. No servers, no Docker, no Nginx dying at 3 am.** Cloudflare D1 + Cloudflare KV + Cloudflare Queues + Cloudflare Workers AI. Ships in 30 seconds.
-- **No ads. None. Zero.** Also no cookie banners, no newsletter pop-ups, no "accept all" dark patterns, no paywall that promises "just one free article this month". PWA-installable, dark mode, offline banner. A list of things the internet taught us to tolerate and didn't need to.
 
 ## Why it exists
 
