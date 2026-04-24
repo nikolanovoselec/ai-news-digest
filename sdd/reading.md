@@ -16,7 +16,7 @@ The heart of the product. Overview grid of today's digest, detail view per artic
 3. No manual Refresh button is rendered and no live-state skeleton cards are shown — the pool is always populated so the grid renders directly.
 4. When the user has no tag filters selected, the grid shows every article whose tags intersect the user's full tag list; when one or more filter tags are selected, the grid narrows to articles matching those filters.
 5. The grid shows the 29 newest articles ordered by published-at descending.
-6. The grid's final slot (slot 30) is a "see all of today's articles in Search & History" tile containing a centred gradient-vertical icon; activating it navigates the user to the Search & History page scoped to today's local date.
+6. The grid's final slot (slot 30) is a "see all of today's articles in Search & History" tile containing a centred list-style icon; activating it navigates the user to the Search & History page scoped to today's local date.
 
 **Constraints:** CON-A11Y-001
 **Priority:** P0
