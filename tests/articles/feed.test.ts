@@ -3,8 +3,11 @@
 // Contract:
 //   GET /api/digest/today (authenticated) returns
 //   { articles: WireArticle[], last_scrape_run: ScrapeRunRow | null, next_scrape_at: number }.
-//   articles is the 29 newest rows from the GLOBAL article pool whose
-//   tag list intersects the user's hashtags, ORDER BY published_at DESC.
+//   articles is the 29 most-recently-ingested rows from the GLOBAL
+//   article pool whose tag list intersects the user's hashtags,
+//   ORDER BY ingested_at DESC, published_at DESC. Primary sort is
+//   ingested_at so a new scrape always bubbles its articles to the
+//   top of the dashboard; published_at breaks ties within a batch.
 
 import { describe, it, expect, vi } from 'vitest';
 import { GET } from '~/pages/api/digest/today';
@@ -115,7 +118,17 @@ function makeDb(opts: MockOpts): D1Database {
               const matching = opts.articles.filter((a) =>
                 a.tags.some((t) => tagSet.has(t)),
               );
-              matching.sort((a, b) => (b.published_at ?? 0) - (a.published_at ?? 0));
+              // Mirror the production SQL's `ORDER BY ingested_at
+              // DESC, published_at DESC`. ingested_at is the primary
+              // key so a newer-scraped article with an older pubDate
+              // surfaces above an older-scraped article with a newer
+              // pubDate. published_at breaks ties within a single
+              // ingest batch.
+              matching.sort((a, b) => {
+                const iDelta = (b.ingested_at ?? 0) - (a.ingested_at ?? 0);
+                if (iDelta !== 0) return iDelta;
+                return (b.published_at ?? 0) - (a.published_at ?? 0);
+              });
               const limited = matching.slice(0, 29);
               const results = limited.map((a) => ({
                 id: a.id,

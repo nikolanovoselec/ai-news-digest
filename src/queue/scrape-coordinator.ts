@@ -208,18 +208,23 @@ export async function runCoordinator(
   const FRESHNESS_WINDOW_SEC = 48 * 60 * 60;
   const staleCutoff = nowSec - FRESHNESS_WINDOW_SEC;
   let droppedStale = 0;
+  let missingPubdateKept = 0;
   for (const row of rawHeadlines) {
     if (!isSafeWebUrl(row.headline.url)) continue;
     const canonical = canonicalize(row.headline.url);
     if (!isSafeWebUrl(canonical)) continue;
-    const pub =
-      typeof row.headline.published_at === 'number' &&
-      row.headline.published_at > 0
-        ? row.headline.published_at
-        : nowSec;
-    if (pub < staleCutoff) {
+    const hasParsedPub =
+      typeof row.headline.published_at === 'number' && row.headline.published_at > 0;
+    const pub = hasParsedPub ? (row.headline.published_at as number) : nowSec;
+    if (hasParsedPub && pub < staleCutoff) {
       droppedStale += 1;
       continue;
+    }
+    if (!hasParsedPub) {
+      // Counter so operators can see how often backlog items with no
+      // pubDate slip through the freshness filter — a blind spot of
+      // the 'missing date is not stale date' decision.
+      missingPubdateKept += 1;
     }
     candidates.push({
       canonical_url: canonical,
@@ -232,11 +237,12 @@ export async function runCoordinator(
         : {}),
     });
   }
-  if (droppedStale > 0) {
+  if (droppedStale > 0 || missingPubdateKept > 0) {
     log('info', 'digest.generation', {
-      op: 'coordinator_drop_stale',
+      op: 'coordinator_freshness',
       scrape_run_id,
       dropped_stale_backlog: droppedStale,
+      missing_pubdate_kept: missingPubdateKept,
       freshness_window_hours: 48,
     });
   }

@@ -423,7 +423,12 @@ function formatCostUsd(value: number | null | undefined): string {
     // from firing on the dashboard (which has its own click
     // handler) when the user navigates via ClientRouter.
     const historyClickHandler = (e: MouseEvent): void => {
-      if (document.querySelector('[data-history-search]') === null) return;
+      // Scope by pathname — the listener is bound to `document` once
+      // per session and survives View-Transition navigations, so a
+      // DOM-selector check ('[data-history-search]') would fire on any
+      // page that happens to share the selector. pathname is the
+      // cheapest, least-entangled guard.
+      if (window.location.pathname !== '/history') return;
       const target = e.target;
       if (!(target instanceof Element)) return;
       if (target.closest('[data-tag-strip-wrap]') === null) return;

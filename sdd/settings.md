@@ -133,17 +133,19 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 ### REQ-SET-007: Timezone change detection
 
-**Intent:** When a user's browser timezone changes from the stored value (e.g., they traveled), they're offered a one-click update without forcing a re-login.
+**Intent:** When a user's browser timezone differs from the stored value (e.g., they traveled, or they signed up on a device whose timezone was never set), the server-stored timezone is corrected automatically so downstream behaviour (scheduled-email dispatch, today-local date deep-links) always matches the user's real location.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. On every authenticated page load, the browser's current timezone is compared to the stored `users.tz`.
-2. If different, a non-blocking banner offers "Detected {new_tz} — update your setting?" with an accept/dismiss control.
-3. Accepting persists the new timezone to the user row; dismissing hides the banner for 24 hours.
+1. On every authenticated page load, the browser's resolved IANA timezone is compared to the stored timezone value for the session user.
+2. When the two differ, the browser silently posts the new timezone to the timezone-update endpoint and the server persists it to the user row. No confirmation banner or dialog is shown — the correction is invisible to the user.
+3. The correction runs on every route (not just the settings page), so users who sign up and go straight to the reading surface never miss the update.
+4. A failed correction request is non-fatal: the page continues to render and the next page load retries.
 
 **Constraints:** None
 **Priority:** P2
 **Dependencies:** REQ-SET-003
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Partial
+**Notes:** Silent auto-correct ships in code (src/layouts/Base.astro) but no automated test verifies the cross-page behaviour or the stale-value retry.
