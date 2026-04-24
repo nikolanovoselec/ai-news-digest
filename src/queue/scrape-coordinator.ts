@@ -32,9 +32,17 @@ import { log } from '~/lib/log';
 import type { DiscoveredFeed, SourcesCacheValue, Headline } from '~/lib/types';
 
 /** Max candidates per chunk. Matches the LLM's ~8K input-token budget
- * at the `@cf/openai/gpt-oss-120b` default: ~100 candidate headlines
- * leave headroom for PROCESS_CHUNK_SYSTEM + response. */
-const CHUNK_SIZE = 100;
+ * at the gpt-oss-20b default: ~25 candidate headlines per chunk
+ * leave per-article budget at ~1200 output tokens (enough for the
+ * 200-250-word prompt contract), plus headroom for
+ * PROCESS_CHUNK_SYSTEM + JSON overhead. Shrunk from 100 → 25
+ * because gpt-oss-20b was budget-dividing across bigger chunks
+ * and emitting 55-140-word summaries regardless of the prompt's
+ * hard word-count contract. Smaller chunks = more output per
+ * article. Trade-off: more chunks = more LLM invocations per run
+ * (~10-20 vs ~5), marginally higher fixed-cost (system prompt
+ * is re-sent), but worth it for quality. */
+const CHUNK_SIZE = 25;
 
 /** 10-worker semaphore cap for the fetch fan-out, mirroring
  * src/lib/sources.ts#GLOBAL_CONCURRENCY. The curated registry (~50
@@ -59,10 +67,13 @@ const PER_SOURCE_ITEM_CAP = 10;
 
 /** Upper bound on chunks enqueued per tick. Guards against a discovered-
  * tag explosion inflating the candidate pool to unsafe levels. Normal
- * load: 52 curated × 10 items = 520 candidates → 6 chunks. Cap at
- * 20 gives headroom for a reasonable discovered-tag set while keeping
- * the per-tick LLM cost bounded. */
-const MAX_CHUNKS_PER_TICK = 20;
+ * load: 52 curated × 10 items = 520 candidates / 25 per chunk =
+ * 21 chunks. After the CHUNK_SIZE 100→25 shrink the cap went up
+ * 20→80 to preserve the same per-tick candidate headroom. Cost
+ * stays bounded because gpt-oss-20b only pays for actual tokens,
+ * and a chunk with fewer articles emits proportionally fewer
+ * output tokens. */
+const MAX_CHUNKS_PER_TICK = 80;
 
 /** Return true if the URL is a plain http(s) URL. Rejects
  * `javascript:`, `data:`, `file:`, mailto:, etc. at the coordinator
