@@ -1,6 +1,6 @@
 # News Digest
 
-Keeping up with tech news is a part-time job. I didn't want it. I hired an LLM instead. Pick your hashtags; it reads the industry; you read the summaries of what actually mattered today.
+Keeping up with tech news was a part-time job I didn't sign up for — no pay, no promotion, no definition of "done". I outsourced it to an LLM. Pick your hashtags: it reads the industry, you read the summaries, and nobody opens Hacker News at 2 a.m. anymore.
 
 **Live:** <https://news.graymatter.ch> · GitHub sign-in · pick your hashtags · done.
 
