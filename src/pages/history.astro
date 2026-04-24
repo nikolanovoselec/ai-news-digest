@@ -391,12 +391,17 @@ function formatCostUsd(value: number | null | undefined): string {
     border-radius: 8px;
     background: var(--surface);
   }
-  .history__back:hover,
+  .history__back:hover {
+    background: var(--bg);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
   .history__back:focus-visible {
     background: var(--bg);
     border-color: var(--accent);
     color: var(--accent);
-    outline: none;
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
   .history__title {
