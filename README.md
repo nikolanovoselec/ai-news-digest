@@ -10,16 +10,16 @@ Tech news for people who would rather read ten good summaries than three thousan
   <img alt="Article detail"    src="docs/screenshots/article-detail.png"    height="260">
 </p>
 
-Every hour, ~50 curated sources get scraped, ~500 candidates get fed into GPT-OSS-120B running on [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/), and the output lands in a shared pool. Your dashboard is a filter over that pool. The rest expires in seven days. Your inbox is left alone.
+Every 4 hours, ~50 curated sources get scraped, ~500 fresh candidates get batched into ~10 chunks and fed to GPT-OSS-120B on [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/), and the output lands in a shared pool. Your dashboard is a filter over that pool. The rest expires in seven days. Your inbox is left alone.
 
 ## Features
 
-- **One LLM run, every user benefits.** GPT-OSS-120B summarises the whole pool once an hour. ~$0.07 per tick, billed directly to my Cloudflare account — less than the coffee I was going to drink while ignoring Hacker News anyway.
-- **20 tags out of the box.** New accounts land with a curated starter set (`#ai`, `#cloudflare`, `#postgres`, `#agenticai`…). Tap × on any chip to drop it. Tap `+ add` to add your own. No settings form, no onboarding wizard.
-- **Composable filters.** Tag + search + date all AND together and live in the URL, so browser Back restores the exact view. *"cloudflare articles this week mentioning london"* is three taps.
+- **One global LLM run, every user benefits.** GPT-OSS-120B summarises the whole pool every 4 hours — billed to my Cloudflare account, not yours, and way cheaper than the coffee I was going to drink while ignoring Hacker News anyway.
+- **20 tags preloaded.** New accounts land with a curated starter set (`#ai`, `#cloudflare`, `#postgres`, `#agenticai`…). Tap × on any chip to drop it. Tap `+ add` to add your own. No settings form, no onboarding wizard.
+- **Composable filters on Search & History.** Tag + search + date all AND together and live in the URL, so browser Back restores the exact view. *"cloudflare articles this week mentioning london"* is three taps.
 - **Multi-source dedupe.** HN, the vendor blog, and three aggregators all "discovered" the same story at 9am. You get one card with a `(+3)` chip.
 - **Summaries that earn their word count.** 150–250 words in 2–3 paragraphs: *what happened → how it works → why you care*. No "the article explores" filler.
-- **LLM hallucinations dropped on sight.** Every output must echo its input index **and** share a meaningful token with the candidate title. A reordered or made-up summary never reaches the database. Ask me how I learned this lesson.
+- **LLM hallucinations dropped on sight.** Every output must echo its input index **and** share a meaningful token with the candidate title. A reordered or fabricated summary never reaches the database. Ask me how I learned this lesson.
 - **Starred articles outlive the cron.** Seven-day retention — unless you starred it. Your saved pile is forever; your unread pile is a lie you're no longer telling yourself.
 - **Real newspaper drop-cap.** CSS `initial-letter: 2`, with a tuned float fallback for Firefox (which still doesn't ship it in 2026 — I checked).
 - **Back-button returns you to where you were.** Came from a tag filter? Back goes there. Came from Starred? Back goes there.
@@ -35,7 +35,7 @@ Tech news in 2026 has four shapes, all broken:
 - **Social feeds** — outrage optimised for engagement, which is not the same thing as information.
 - **Asking an LLM** — requires remembering to ask. If remembering were the user's strong suit, none of this would be a problem.
 
-News Digest hires the LLM instead. Once an hour. On its own clock.
+News Digest hires the LLM instead. Every 4 hours. On its own clock.
 
 ## Built with Codeflare SDD
 
