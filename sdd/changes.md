@@ -6,6 +6,7 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 ## 2026-04-24
 
+- REQ-DISC-003 un-deprecated and rewritten as a self-healing system: each discovered feed carries a per-URL fetch-failure counter, a URL is evicted from its tag's cache after 30 consecutive failures (about five days at the six-times-daily scrape cadence), and a tag whose cache empties is automatically re-queued for a fresh discovery pass — users never see a permanently empty tag when a feed goes dark.
 - REQ-DISC-001 Intent and AC 3 broadened: the discovery prompt now names a Google News query-RSS fallback for tags without a first-party feed, so consumer/brand tags (ikea, tesla, netflix, etc.) produce at least one working source instead of looping through Re-discover with zero results.
 - REQ-SET-002 AC 8 rewrote the second settings action as "Delete all tags" (not "Delete initial tags"): one click clears the whole list so a user can build a completely custom set without removing 20 default chips one-by-one. Visibility simplified to "show whenever the user has at least one tag".
 - REQ-SET-002 AC 6 raised the hashtag cap from 20 to 25 so a new account, seeded with the 20-default set, has 5 slots of headroom to add custom interests immediately without having to delete a default first.

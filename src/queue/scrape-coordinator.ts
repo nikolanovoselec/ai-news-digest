@@ -1,4 +1,5 @@
 // Implements REQ-PIPE-001
+// Implements REQ-DISC-003
 //
 // Coordinator for the hourly global-feed scrape. Receives one message
 // per :00 cron tick containing `{scrape_run_id}`; fans out across
@@ -22,14 +23,20 @@ import {
 } from '~/lib/curated-sources';
 import {
   adaptersForDiscoveredFeeds,
-  fetchFromSource,
+  fetchFromSourceWithResult,
   type SourceAdapter,
 } from '~/lib/sources';
 import { canonicalize } from '~/lib/canonical-url';
 import { clusterByCanonical, type Candidate } from '~/lib/dedupe';
 import { finishRun } from '~/lib/scrape-run';
+import { clearHealth, recordFetchResult } from '~/lib/feed-health';
 import { log } from '~/lib/log';
 import type { DiscoveredFeed, SourcesCacheValue, Headline } from '~/lib/types';
+
+/** User id stamped on system-queued re-discovery rows. Distinguished
+ *  from real user ids (ULIDs) by the leading double underscore so
+ *  downstream queries that scope to a real user naturally exclude it. */
+const SYSTEM_USER_ID = '__system__';
 
 /** Max candidates per chunk. Matches the LLM's ~8K input-token budget
  * at the gpt-oss-20b default: ~50 candidate headlines per chunk
@@ -178,12 +185,28 @@ export async function runCoordinator(
     ...CURATED_SOURCES.map((s) => ({
       adapter: curatedToAdapter(s),
       sourceName: s.name,
+      feedUrl: s.feed_url,
+      discoveredTag: null,
     })),
     ...discoveredSources,
   ];
 
   // --- Step 2: Fetch all sources in parallel (10-worker semaphore) ----
-  const rawHeadlines = await fetchAllSources(env.KV, allSources);
+  // Health accounting (REQ-DISC-003): every per-source fetch records a
+  // success or failure against `source_health:{url}` in KV. After the
+  // fan-out completes, `fetchAllSources` returns the URLs whose counters
+  // crossed the eviction threshold so the coordinator can act on them.
+  const { rawHeadlines, evictions } = await fetchAllSources(env, allSources);
+
+  // --- Step 2b: Apply evictions (REQ-DISC-003 AC 2-3) ----------------
+  // For each URL that reached the fetch-failure threshold and was
+  // attached to a `sources:{tag}` KV entry, remove the URL from that
+  // tag's feed list. If the removal empties the feed list, enqueue a
+  // system-owned re-discovery row so the next discovery cron repopulates
+  // the tag with a fresh LLM suggestion.
+  if (evictions.length > 0) {
+    await applyEvictions(env, evictions, scrape_run_id);
+  }
 
   // --- Step 3: Build candidate records (canonicalize + carry source) --
   //
@@ -391,16 +414,33 @@ export async function runCoordinator(
 
 // ---------- internals ----------------------------------------------------
 
-/** A source entry ready for fetchFromSource — pairs an adapter with the
- * pretty name that will land in `articles.primary_source_name`. */
+/** A source entry ready for fetchFromSourceWithResult — pairs an adapter
+ * with the pretty name that will land in `articles.primary_source_name`,
+ * the feed URL (used as the health-counter key), and the tag that owns
+ * the URL in KV (null for curated sources, which have no runtime
+ * eviction path). */
 interface SourceForFetch {
   adapter: SourceAdapter;
   sourceName: string;
+  feedUrl: string;
+  /** Non-null only for URLs that originated from a `sources:{tag}` KV
+   * entry — the coordinator can remove the URL from that entry if its
+   * fetch-failure counter crosses the eviction threshold. */
+  discoveredTag: string | null;
+}
+
+/** One evicted feed — emitted by fetchAllSources when a URL's health
+ * counter crosses the threshold. Only discovered feeds participate
+ * (curated URLs have `discoveredTag = null` and are skipped upstream). */
+interface FeedEviction {
+  tag: string;
+  url: string;
+  failureCount: number;
 }
 
 /** Convert a CuratedSource entry to a SourceAdapter that
- * fetchFromSource() can drive. The adapter's URL is constant (it
- * ignores the `tag` argument) and the extract routes into the same
+ * fetchFromSourceWithResult() can drive. The adapter's URL is constant
+ * (it ignores the `tag` argument) and the extract routes into the same
  * XMLParser / JSON-Feed path as discovered feeds. */
 function curatedToAdapter(curated: CuratedSource): SourceAdapter {
   // Reuse adaptersForDiscoveredFeeds to get the extract() behaviour for
@@ -463,12 +503,24 @@ async function loadDiscoveredSources(
           if (kind !== 'rss' && kind !== 'atom' && kind !== 'json') continue;
           discoveredFeeds.push({ name, url, kind });
         }
+        // Key of this KV entry is `sources:{tag}` — strip the prefix
+        // to identify which tag owns these feeds, so an evicted URL
+        // can be removed from the right entry later.
+        const tag = key.name.startsWith('sources:')
+          ? key.name.slice('sources:'.length)
+          : '';
+        if (tag === '') continue;
         const adapters = adaptersForDiscoveredFeeds(discoveredFeeds);
         for (let i = 0; i < adapters.length; i++) {
           const adapter = adapters[i];
           const feed = discoveredFeeds[i];
           if (adapter === undefined || feed === undefined) continue;
-          out.push({ adapter, sourceName: feed.name });
+          out.push({
+            adapter,
+            sourceName: feed.name,
+            feedUrl: feed.url,
+            discoveredTag: tag,
+          });
         }
       }
       cursor = result.list_complete ? undefined : result.cursor;
@@ -486,17 +538,34 @@ async function loadDiscoveredSources(
  * the Workers runtime's CPU budget under control. Headlines are tagged
  * with their originating pretty source_name so the canonical-dedupe
  * downstream can preserve it. Fetch failures log and yield []; the
- * whole pass never rejects. */
+ * whole pass never rejects.
+ *
+ * Feed-health accounting (REQ-DISC-003): after each per-source fetch,
+ * the outcome (`success`) is recorded against the URL via
+ * `recordFetchResult`. When a discovered-tag URL crosses the eviction
+ * threshold, the URL is emitted as an eviction signal so the
+ * coordinator can remove it from its `sources:{tag}` entry and,
+ * potentially, re-queue the tag for a fresh discovery pass. Curated
+ * URLs run through the same health counter but never emit evictions
+ * because there is no runtime path to mutate the hard-coded registry. */
 async function fetchAllSources(
-  kv: KVNamespace,
+  env: Env,
   sources: SourceForFetch[],
-): Promise<Array<{ headline: Headline }>> {
+): Promise<{
+  rawHeadlines: Array<{ headline: Headline }>;
+  evictions: FeedEviction[];
+}> {
+  const kv = env.KV;
   const jobs: Array<SourceForFetch & { idx: number }> = sources.map(
     (s, idx) => ({ ...s, idx }),
   );
   // Index-addressed so a straggling source doesn't reorder the pool.
   const results: Array<Array<{ headline: Headline }> | undefined> = [];
-  for (let i = 0; i < jobs.length; i++) results.push(undefined);
+  const evictionSlots: Array<FeedEviction | undefined> = [];
+  for (let i = 0; i < jobs.length; i++) {
+    results.push(undefined);
+    evictionSlots.push(undefined);
+  }
 
   let cursor = 0;
   const worker = async (): Promise<void> => {
@@ -511,7 +580,11 @@ async function fetchAllSources(
       // loop going; the logged event gives operators enough signal
       // to swap the URL later.
       try {
-        const headlines = await fetchFromSource(job.adapter, '', kv);
+        const { headlines, fetched, success } = await fetchFromSourceWithResult(
+          job.adapter,
+          '',
+          kv,
+        );
         const capped = headlines.slice(0, PER_SOURCE_ITEM_CAP).map((h) => ({
           headline: {
             ...h,
@@ -519,12 +592,46 @@ async function fetchAllSources(
           },
         }));
         results[i] = capped;
+
+        // Only record health for live fetches — cache hits are neither
+        // a liveness signal nor a failure.
+        if (fetched) {
+          const health = await recordFetchResult(env, job.feedUrl, success);
+          if (
+            health.evicted &&
+            job.discoveredTag !== null &&
+            job.discoveredTag !== ''
+          ) {
+            evictionSlots[i] = {
+              tag: job.discoveredTag,
+              url: job.feedUrl,
+              failureCount: health.count,
+            };
+          }
+        }
       } catch (err) {
         log('warn', 'source.fetch.failed', {
           source_name: job.sourceName,
           detail: String(err).slice(0, 200),
         });
         results[i] = [];
+        // Unexpected throw still counts as a failure against the URL.
+        try {
+          const health = await recordFetchResult(env, job.feedUrl, false);
+          if (
+            health.evicted &&
+            job.discoveredTag !== null &&
+            job.discoveredTag !== ''
+          ) {
+            evictionSlots[i] = {
+              tag: job.discoveredTag,
+              url: job.feedUrl,
+              failureCount: health.count,
+            };
+          }
+        } catch {
+          // health tracking is best-effort — swallow.
+        }
       }
     }
   };
@@ -534,12 +641,123 @@ async function fetchAllSources(
   for (let w = 0; w < workerCount; w++) workers.push(worker());
   await Promise.all(workers);
 
-  const out: Array<{ headline: Headline }> = [];
+  const rawHeadlines: Array<{ headline: Headline }> = [];
   for (const r of results) {
     if (r === undefined) continue;
-    for (const entry of r) out.push(entry);
+    for (const entry of r) rawHeadlines.push(entry);
   }
-  return out;
+  const evictions: FeedEviction[] = [];
+  for (const e of evictionSlots) {
+    if (e !== undefined) evictions.push(e);
+  }
+  return { rawHeadlines, evictions };
+}
+
+/**
+ * Apply feed-level evictions: remove each evicted URL from its
+ * `sources:{tag}` entry, clear the per-URL health counter, and — if
+ * the tag's feed list has been emptied — enqueue a system-owned
+ * re-discovery row so the 5-minute discovery cron repopulates the tag.
+ *
+ * Evictions are coalesced by tag so multiple URLs removed from the
+ * same tag only produce one KV write and one re-discovery row.
+ * All work is best-effort: a failure on one tag never aborts the rest.
+ *
+ * Implements REQ-DISC-003 AC 2-3.
+ */
+async function applyEvictions(
+  env: Env,
+  evictions: FeedEviction[],
+  scrape_run_id: string,
+): Promise<void> {
+  // Group eviction URLs by tag so each `sources:{tag}` entry is read
+  // and rewritten at most once per tick.
+  const byTag = new Map<string, Set<string>>();
+  for (const ev of evictions) {
+    const set = byTag.get(ev.tag) ?? new Set<string>();
+    set.add(ev.url);
+    byTag.set(ev.tag, set);
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  for (const [tag, evictedUrls] of byTag) {
+    try {
+      const raw = await env.KV.get(`sources:${tag}`, 'text');
+      if (raw === null) {
+        // Entry already cleared (likely via /api/discovery/retry between
+        // ticks); still clear the per-URL counter and move on.
+        for (const url of evictedUrls) await clearHealth(env, url);
+        continue;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        // Corrupt entry — overwrite with an empty feeds list so the
+        // tag re-queues rather than staying stuck.
+        parsed = null;
+      }
+      const existingFeeds = Array.isArray((parsed as Partial<SourcesCacheValue>)?.feeds)
+        ? (parsed as SourcesCacheValue).feeds
+        : [];
+
+      const survivingFeeds: DiscoveredFeed[] = existingFeeds.filter(
+        (f) => typeof f?.url === 'string' && !evictedUrls.has(f.url),
+      );
+      const nextCache: SourcesCacheValue = {
+        feeds: survivingFeeds,
+        discovered_at: Date.now(),
+      };
+      await env.KV.put(`sources:${tag}`, JSON.stringify(nextCache));
+
+      // Clear the per-URL health counters so a re-discovered URL at
+      // the same address starts from a clean slate.
+      for (const url of evictedUrls) await clearHealth(env, url);
+
+      log('warn', 'discovery.completed', {
+        status: 'feed_evicted',
+        scrape_run_id,
+        tag,
+        evicted_count: evictedUrls.size,
+        remaining_feeds: survivingFeeds.length,
+      });
+
+      if (survivingFeeds.length === 0) {
+        // Last feed for this tag is gone — enqueue a re-discovery pass.
+        // The system-owned row carries `user_id = SYSTEM_USER_ID` so
+        // real-user queries (scoped `WHERE user_id = ?`) naturally
+        // exclude it, while the discovery cron (which GROUPs BY tag)
+        // picks it up on the next invocation.
+        try {
+          await env.DB
+            .prepare(
+              'INSERT OR IGNORE INTO pending_discoveries (user_id, tag, added_at) VALUES (?1, ?2, ?3)',
+            )
+            .bind(SYSTEM_USER_ID, tag, nowSec)
+            .run();
+          log('warn', 'discovery.queued', {
+            status: 'system_requeue',
+            scrape_run_id,
+            tag,
+          });
+        } catch (err) {
+          log('error', 'discovery.queued', {
+            status: 'system_requeue_failed',
+            scrape_run_id,
+            tag,
+            detail: String(err).slice(0, 200),
+          });
+        }
+      }
+    } catch (err) {
+      log('error', 'discovery.completed', {
+        status: 'eviction_failed',
+        scrape_run_id,
+        tag,
+        detail: String(err).slice(0, 200),
+      });
+    }
+  }
 }
 
 /** Look up which of the supplied canonical URLs already exist in
