@@ -173,28 +173,44 @@ export const GENERIC_SOURCES: SourceAdapter[] = [HACKER_NEWS, GOOGLE_NEWS, REDDI
 // ---------- Fetch one source for one tag ---------------------------------
 
 /**
- * Fetch headlines for `tag` from `source`, checking the shared KV cache
- * first. On a cache miss, a live fetch is performed with 5s timeout and
- * 1MB body cap; successful results are written back to the cache with
- * a 10-minute TTL (see `headline-cache.ts`). Errors — network, HTTP,
- * parse, extract — are logged and surfaced as an empty array so the
- * caller can carry on with other sources.
+ * Outcome of a single source fetch. `headlines` mirrors the legacy
+ * return shape; `success` distinguishes "fetch reached a parseable
+ * body" (even if the feed was empty) from "fetch never got there"
+ * (HTTP error, network failure, unparseable body). Cache hits are
+ * reported as `success: true` with `fetched: false` so the caller can
+ * skip health updates when no live fetch took place.
+ *
+ * Implements REQ-DISC-003 — the coordinator consumes `success` to
+ * drive the per-feed health counter.
  */
-export async function fetchFromSource(
+export interface SourceFetchResult {
+  headlines: Headline[];
+  /** True iff a live fetch was attempted (cache miss). */
+  fetched: boolean;
+  /** True iff the fetch reached a parseable response body. */
+  success: boolean;
+}
+
+/**
+ * Fetch headlines for `tag` from `source`, returning both the
+ * parsed headline list and the liveness outcome. Cache hits short-
+ * circuit with `fetched: false, success: true`. Live fetches report
+ * `success` based on whether we reached a parseable body — an empty
+ * but valid feed is still a success.
+ */
+export async function fetchFromSourceWithResult(
   source: SourceAdapter,
   tag: string,
   kv: KVNamespace,
-): Promise<Headline[]> {
+): Promise<SourceFetchResult> {
   const cached = await readCachedHeadlines(kv, source.name, tag);
   if (cached !== null) {
-    return cached;
+    return { headlines: cached, fetched: false, success: true };
   }
 
   const url = source.url(tag);
   let response: Response;
   try {
-    // exactOptionalPropertyTypes: passing `headers: undefined` explicitly
-    // would be a type error, so only set it when the adapter has one.
     const init: RequestInit =
       source.headers === undefined
         ? { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
@@ -210,7 +226,7 @@ export async function fetchFromSource(
       reason: 'network',
       detail: String(err).slice(0, 200),
     });
-    return [];
+    return { headlines: [], fetched: true, success: false };
   }
 
   if (!response.ok) {
@@ -220,7 +236,7 @@ export async function fetchFromSource(
       reason: 'http',
       status: response.status,
     });
-    return [];
+    return { headlines: [], fetched: true, success: false };
   }
 
   let body: string;
@@ -233,7 +249,7 @@ export async function fetchFromSource(
       reason: 'body',
       detail: String(err).slice(0, 200),
     });
-    return [];
+    return { headlines: [], fetched: true, success: false };
   }
 
   let parsed: unknown;
@@ -246,7 +262,7 @@ export async function fetchFromSource(
       reason: 'parse',
       detail: String(err).slice(0, 200),
     });
-    return [];
+    return { headlines: [], fetched: true, success: false };
   }
 
   let headlines: Headline[];
@@ -259,11 +275,31 @@ export async function fetchFromSource(
       reason: 'extract',
       detail: String(err).slice(0, 200),
     });
-    return [];
+    return { headlines: [], fetched: true, success: false };
   }
 
   await writeCachedHeadlines(kv, source.name, tag, headlines);
-  return headlines;
+  return { headlines, fetched: true, success: true };
+}
+
+/**
+ * Fetch headlines for `tag` from `source`, checking the shared KV cache
+ * first. On a cache miss, a live fetch is performed with 5s timeout and
+ * 1MB body cap; successful results are written back to the cache with
+ * a 10-minute TTL (see `headline-cache.ts`). Errors — network, HTTP,
+ * parse, extract — are logged and surfaced as an empty array so the
+ * caller can carry on with other sources.
+ *
+ * Thin compatibility shim over {@link fetchFromSourceWithResult} for
+ * callers that only need the headline list.
+ */
+export async function fetchFromSource(
+  source: SourceAdapter,
+  tag: string,
+  kv: KVNamespace,
+): Promise<Headline[]> {
+  const result = await fetchFromSourceWithResult(source, tag, kv);
+  return result.headlines;
 }
 
 // ---------- Fan-out ------------------------------------------------------

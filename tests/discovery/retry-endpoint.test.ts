@@ -250,4 +250,154 @@ describe('POST /api/discovery/retry', () => {
     );
     expect(insert!.params[1]).toBe('ai');
   });
+
+  // ---- REQ-DISC-004 form-POST branch -------------------------------------
+  //
+  // A native <form method="post" enctype="application/x-www-form-urlencoded">
+  // submission must be accepted, queue the tag identically to the JSON
+  // path, and return a 303 redirect to /settings so the browser navigates
+  // back with a visible confirmation rather than seeing a raw JSON body.
+
+  async function retryFormRequest(options: {
+    origin?: string | null;
+    cookie?: string | null;
+    tag?: string | null;
+  }): Promise<Request> {
+    const headers = new Headers({
+      'Content-Type': 'application/x-www-form-urlencoded',
+    });
+    if (options.origin !== null && options.origin !== undefined) {
+      headers.set('Origin', options.origin);
+    }
+    if (options.cookie !== null && options.cookie !== undefined) {
+      headers.set('Cookie', options.cookie);
+    }
+    const params = new URLSearchParams();
+    if (options.tag !== null && options.tag !== undefined) {
+      params.set('tag', options.tag);
+    }
+    return new Request(`${APP_URL}/api/discovery/retry`, {
+      method: 'POST',
+      headers,
+      body: params.toString(),
+    });
+  }
+
+  it('REQ-DISC-004: form-encoded POST returns 303 redirect to /settings', async () => {
+    const cookie = await validSessionCookie();
+    const { db, runCalls } = makeDb(baseRow('["ikea"]'));
+    const { kv, deletes } = makeKv();
+    const req = await retryFormRequest({
+      origin: APP_ORIGIN,
+      cookie,
+      tag: 'ikea',
+    });
+    const res = await POST(makeContext(req, envWith(db, kv)) as never);
+    expect(res.status).toBe(303);
+    const location = res.headers.get('Location');
+    expect(location).toBe('/settings?rediscover=ok&tag=ikea');
+
+    // Same side effects as the JSON path.
+    expect(deletes).toContain('sources:ikea');
+    expect(deletes).toContain('discovery_failures:ikea');
+    const insert = runCalls.find(
+      (c) =>
+        typeof c.sql === 'string' &&
+        c.sql.startsWith('INSERT OR IGNORE INTO pending_discoveries'),
+    );
+    expect(insert).toBeDefined();
+    expect(insert!.params[1]).toBe('ikea');
+  });
+
+  it('REQ-DISC-004: form-encoded POST still rejects tags outside hashtags_json', async () => {
+    const cookie = await validSessionCookie();
+    const { db } = makeDb(baseRow('["ai"]'));
+    const { kv } = makeKv();
+    const req = await retryFormRequest({
+      origin: APP_ORIGIN,
+      cookie,
+      tag: 'netflix',
+    });
+    const res = await POST(makeContext(req, envWith(db, kv)) as never);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('unknown_tag');
+  });
+
+  it('REQ-DISC-004: form-encoded POST still rejects missing Origin header', async () => {
+    const cookie = await validSessionCookie();
+    const { db } = makeDb(baseRow('["ikea"]'));
+    const { kv } = makeKv();
+    const req = await retryFormRequest({ origin: null, cookie, tag: 'ikea' });
+    const res = await POST(makeContext(req, envWith(db, kv)) as never);
+    expect(res.status).toBe(403);
+  });
+
+  it('REQ-DISC-004: form-encoded POST without a session returns 401', async () => {
+    const { db } = makeDb(baseRow('["ikea"]'));
+    const { kv } = makeKv();
+    const req = await retryFormRequest({ origin: APP_ORIGIN, tag: 'ikea' });
+    const res = await POST(makeContext(req, envWith(db, kv)) as never);
+    expect(res.status).toBe(401);
+  });
+
+  it('REQ-DISC-004: form-encoded POST URL-encodes the tag in the redirect location', async () => {
+    const cookie = await validSessionCookie();
+    const { db } = makeDb(baseRow('["my-tag"]'));
+    const { kv } = makeKv();
+    const req = await retryFormRequest({
+      origin: APP_ORIGIN,
+      cookie,
+      tag: 'my-tag',
+    });
+    const res = await POST(makeContext(req, envWith(db, kv)) as never);
+    expect(res.status).toBe(303);
+    const location = res.headers.get('Location') ?? '';
+    // encodeURIComponent('my-tag') = 'my-tag' (no special chars) — but the
+    // invariant we want to pin is that the redirect URL is well-formed.
+    expect(location.startsWith('/settings?rediscover=ok&tag=')).toBe(true);
+  });
+
+  it('REQ-DISC-004: tag membership is case-insensitive (legacy mixed-case storage)', async () => {
+    // Regression guard: a legacy row stored as `["#AI"]` must still
+    // accept a button click posting `tag=ai` (the on-disk format was
+    // case-sensitive before the settings write path lowercased).
+    const cookie = await validSessionCookie();
+    const { db, runCalls } = makeDb(baseRow('["#AI"]'));
+    const { kv, deletes } = makeKv();
+    const req = await retryRequest({
+      origin: APP_ORIGIN,
+      cookie,
+      body: { tag: 'ai' },
+    });
+    const res = await POST(makeContext(req, envWith(db, kv)) as never);
+    expect(res.status).toBe(200);
+    // KV keys are always the normalised lowercase form, matching the
+    // chunk consumer + coordinator's view of sources:{tag}.
+    expect(deletes).toContain('sources:ai');
+    const insert = runCalls.find(
+      (c) =>
+        typeof c.sql === 'string' &&
+        c.sql.startsWith('INSERT OR IGNORE INTO pending_discoveries'),
+    );
+    expect(insert!.params[1]).toBe('ai');
+  });
+
+  it('REQ-DISC-004: JSON POST response shape unchanged (regression guard)', async () => {
+    // The form-encoded branch must not accidentally shadow the JSON
+    // contract. A JSON POST still returns 200 with {ok: true}.
+    const cookie = await validSessionCookie();
+    const { db } = makeDb(baseRow('["ai"]'));
+    const { kv } = makeKv();
+    const req = await retryRequest({
+      origin: APP_ORIGIN,
+      cookie,
+      body: { tag: 'ai' },
+    });
+    const res = await POST(makeContext(req, envWith(db, kv)) as never);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toMatch(/application\/json/);
+    const body = (await res.json()) as { ok: boolean };
+    expect(body.ok).toBe(true);
+  });
 });

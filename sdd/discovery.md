@@ -1,6 +1,6 @@
 # Source Discovery
 
-Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues new tags; the 5-minute cron processes up to 3 pending tags per invocation and caches validated feeds globally (shared across all users who selected that tag). Feeds evict themselves from the cache after repeated fetch failures.
+Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues new tags; the 5-minute cron processes up to 3 pending tags per invocation and caches validated feeds globally (shared across all users who selected that tag). Feeds repair themselves: a URL that fails continuously across a configurable streak is evicted from the tag's cache, and when a tag's cache empties the tag is automatically re-queued for a fresh discovery pass.
 
 ---
 
@@ -45,43 +45,42 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 ---
 
-### REQ-DISC-003: Feed health tracking and auto-eviction
+### REQ-DISC-003: Self-healing feed health tracking
 
-**Intent:** Feeds that stop working are removed from the cache automatically, without manual intervention or a scheduled re-validation job.
+**Intent:** Broken feeds repair themselves without manual intervention. A feed that stops returning valid responses is tolerated through short outages but is eventually replaced by a fresh discovery pass, so users see new sources for a tag whose original feeds have gone dark rather than a permanently empty section.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. During every digest generation, each feed fetch that fails (non-2xx, parse error, timeout) increments the `source_health:{url}` KV counter.
-2. When a feed's consecutive failure count reaches 2, the feed is removed from its `sources:{tag}` KV entry.
-3. If all feeds for a tag are evicted, the tag is re-queued in `pending_discoveries` so it can be rediscovered on the next cron.
-4. A successful fetch resets the counter for that URL.
-5. `source_health:{url}` entries expire after 7 days to prevent unbounded KV growth.
+1. Every per-feed fetch in the global scrape pipeline records its outcome against a per-URL health counter. A successful fetch — any HTTP 200 response with a parseable feed body, even if the feed lists zero items — resets the counter. A failed fetch (network error, non-2xx status, body cap exceeded, unparseable content) increments it. The counter is stored in a shared cache with a seven-day expiry so stale entries never accumulate.
+2. When the counter for a URL reaches thirty consecutive failed fetches, the URL is evicted from the tag's feed list on the next scrape tick. Thirty aligns with the six-times-daily scrape cadence: a feed must fail continuously for roughly five days before it is removed, absorbing day-long outages without thrashing.
+3. When eviction empties a tag's feed list, the tag is automatically enqueued for a fresh discovery pass so the next discovery cron repopulates it with new sources. The re-queue path is identical whether the tag was seeded by the default list on sign-up or added by a user — the system treats both as "a tag whose feeds need replacement".
+4. Hard-coded curated feeds (the operator-maintained global registry) participate in the same counter so operators see failing URLs in logs, but they are never mutated at runtime — their replacement is a code change, not a runtime eviction.
 
 **Constraints:** None
 **Priority:** P2
 **Dependencies:** REQ-DISC-001
 **Verification:** Integration test
-**Status:** Deprecated
-**Removed In:** 2026-04-24
+**Status:** Implemented
 
 ---
 
 ### REQ-DISC-004: Manual re-discover
 
-**Intent:** Users can force a fresh discovery attempt for a stubborn tag whose feeds the LLM failed to find.
+**Intent:** An operator can force a fresh discovery attempt for a stubborn tag whose feeds the LLM failed to find, without needing to go through a tag delete + re-add.
 
-**Applies To:** User
+**Applies To:** Admin
 
 **Acceptance Criteria:**
-1. `/settings` shows a "Re-discover" button next to any tag whose `sources:{tag}` value has an empty `feeds` array.
-2. `POST /api/discovery/retry` with body `{ tag }` validates that the tag is in the user's `hashtags_json`; returns HTTP 400 with code `unknown_tag` otherwise.
-3. The endpoint deletes the `sources:{tag}` and `discovery_failures:{tag}` KV entries and inserts a fresh `pending_discoveries` row for this `(user_id, tag)`.
-4. The next 5-minute cron invocation picks it up.
+1. The settings page renders a "Re-discover #{tag}" button for every user tag whose cached feed list is empty. A brand-new tag whose cache has not yet been written never surfaces the button — only the explicit "discovery gave up" state does. The Stuck tags section is absent entirely when no tag is stuck.
+2. The re-discover endpoint validates that the submitted tag is in the authenticated user's saved tag list; otherwise it refuses the request as an unknown tag. This prevents anyone with a session from triggering arbitrary LLM calls for strings they do not control.
+3. A valid re-discover request clears the tag's cached feeds and any per-tag discovery-failure counter, then enqueues a fresh discovery pass so the next discovery cron repopulates the tag.
+4. The endpoint accepts both a JSON body and a native HTML form submission; the form path returns the operator to the settings page with a visible confirmation, while the JSON path returns an API-shaped response for scripted callers.
+5. The route is additionally gated by Cloudflare Access at the zone level so only the admin account can reach it in production; other authenticated users never see a reachable endpoint even if the settings button were to be forged into their page.
 
 **Constraints:** None
 **Priority:** P2
-**Dependencies:** REQ-DISC-001
+**Dependencies:** REQ-DISC-001, REQ-DISC-003
 **Verification:** Integration test
 **Status:** Implemented
 

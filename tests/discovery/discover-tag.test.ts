@@ -223,4 +223,128 @@ describe('discoverTag', () => {
     const feeds = await discoverTag('ai', env);
     expect(feeds).toEqual([]);
   });
+
+  // REQ-DISC-001: regression guard for the production bug where every
+  // discovery call against gpt-oss-120b logged `empty_llm_response`
+  // because the OpenAI-envelope shape (`choices[0].message.content`)
+  // was not understood. Every @cf/openai/* Workers AI model returns
+  // this shape, so consumer/brand tags like #ikea never produced feeds
+  // until the discovery code picked the content out of the envelope.
+  it('REQ-DISC-001: parses OpenAI-envelope response (choices[0].message.content)', async () => {
+    mockFetch([
+      { urlMatch: 'blog.example.com/feed', contentType: 'application/rss+xml', body: rssBody() },
+    ]);
+    const aiRun = vi.fn().mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              feeds: [
+                { name: 'Example Blog', url: 'https://blog.example.com/feed', kind: 'rss' },
+              ],
+            }),
+          },
+        },
+      ],
+    });
+    const env = {
+      AI: { run: aiRun } as unknown as Ai,
+    } as unknown as Env;
+    const feeds = await discoverTag('ikea', env);
+    expect(feeds).toHaveLength(1);
+    expect(feeds[0]).toMatchObject({
+      name: 'Example Blog',
+      url: 'https://blog.example.com/feed',
+      kind: 'rss',
+    });
+  });
+
+  it('REQ-DISC-001: accepts already-parsed object payload (models honouring response_format: json_object)', async () => {
+    // Some Workers AI models return a pre-parsed object on
+    // `response` instead of a JSON string. Accept that path without
+    // round-tripping through JSON.parse.
+    mockFetch([
+      { urlMatch: 'blog.example.com/feed', contentType: 'application/rss+xml', body: rssBody() },
+    ]);
+    const aiRun = vi.fn().mockResolvedValue({
+      response: {
+        feeds: [{ name: 'Example Blog', url: 'https://blog.example.com/feed', kind: 'rss' }],
+      },
+    });
+    const env = {
+      AI: { run: aiRun } as unknown as Ai,
+    } as unknown as Env;
+    const feeds = await discoverTag('ikea', env);
+    expect(feeds).toHaveLength(1);
+  });
+
+  it('REQ-DISC-001: returns [] when neither envelope shape is present', async () => {
+    const aiRun = vi.fn().mockResolvedValue({ totally: 'different shape' });
+    const env = {
+      AI: { run: aiRun } as unknown as Ai,
+    } as unknown as Env;
+    const feeds = await discoverTag('ikea', env);
+    expect(feeds).toEqual([]);
+  });
+
+  // The new `llm_missing_feeds_field` branch fires when
+  // extractResponsePayload resolves to a non-null object whose `feeds`
+  // key is missing or not an array — e.g. the model returns
+  // `{feeds_list: [...]}` or `{feeds: "not-an-array"}`. Exercise both
+  // shapes and assert the log breadcrumb is emitted so the silent
+  // no-op that preceded afe61dd can't regress.
+  it('REQ-DISC-001: object payload without a `feeds` array logs llm_missing_feeds_field and returns []', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const aiRun = vi.fn().mockResolvedValue({
+      response: { feeds_list: [{ name: 'x', url: 'https://x', kind: 'rss' }] },
+    });
+    const env = {
+      AI: { run: aiRun } as unknown as Ai,
+    } as unknown as Env;
+
+    const feeds = await discoverTag('ikea', env);
+    expect(feeds).toEqual([]);
+    // Every log() call stringifies one JSON record. Find the one that
+    // matches the new breadcrumb.
+    const logged = logSpy.mock.calls
+      .map((args) => args[0])
+      .filter((s): s is string => typeof s === 'string')
+      .map((s) => {
+        try {
+          return JSON.parse(s) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      })
+      .filter((r): r is Record<string, unknown> => r !== null);
+    const match = logged.find(
+      (r) => r.event === 'discovery.completed' && r.status === 'llm_missing_feeds_field',
+    );
+    expect(match).toBeDefined();
+    expect(match?.tag).toBe('ikea');
+  });
+
+  it('REQ-DISC-001: object payload with `feeds` set to a non-array still returns [] and logs llm_missing_feeds_field', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const aiRun = vi.fn().mockResolvedValue({
+      response: { feeds: 'not an array' },
+    });
+    const env = {
+      AI: { run: aiRun } as unknown as Ai,
+    } as unknown as Env;
+
+    const feeds = await discoverTag('ikea', env);
+    expect(feeds).toEqual([]);
+    const anyMatch = logSpy.mock.calls.some((args) => {
+      const s = args[0];
+      if (typeof s !== 'string') return false;
+      try {
+        const r = JSON.parse(s) as Record<string, unknown>;
+        return r.event === 'discovery.completed' && r.status === 'llm_missing_feeds_field';
+      } catch {
+        return false;
+      }
+    });
+    expect(anyMatch).toBe(true);
+  });
 });
