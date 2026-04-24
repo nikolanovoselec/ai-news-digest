@@ -222,9 +222,14 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
     // old" bug. The coordinator used to stamp every candidate with
     // nowSec; it must now read <pubDate> and thread it through to the
     // chunk message.
-    const oldIso = '2026-04-02T10:00:00Z';
-    const oldSec = Math.floor(Date.parse(oldIso) / 1000);
-    const pubDateRfc = new Date(oldIso).toUTCString();
+    //
+    // The pubDate is 12 hours ago — comfortably newer than the
+    // coordinator's 48-hour freshness cutoff so the candidate
+    // survives that filter. The assertion below confirms the parsed
+    // value is threaded through unchanged.
+    const oldMs = Date.now() - 12 * 60 * 60 * 1000;
+    const oldSec = Math.floor(oldMs / 1000);
+    const pubDateRfc = new Date(oldMs).toUTCString();
     const rss =
       `<rss><channel><item>` +
       `<title>Old story</title>` +

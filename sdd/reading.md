@@ -15,7 +15,7 @@ The heart of the product. Overview grid of today's digest, detail view per artic
 2. The top of the page shows "Last updated at HH:MM" with the most-recent scrape time, and a live "Next update in Xm" countdown (formatted "Xh Ym" when more than an hour remains, "Xm" otherwise) that counts down toward the next scheduled scrape tick and is visibly updated as time passes.
 3. No manual Refresh button is rendered and no live-state skeleton cards are shown — the pool is always populated so the grid renders directly.
 4. When the user has no tag filters selected, the grid shows every article whose tags intersect the user's full tag list; when one or more filter tags are selected, the grid narrows to articles matching those filters.
-5. The grid shows the 29 newest articles ordered by published-at descending.
+5. The grid shows the 29 most-recently-ingested articles matching the user's active tags, ordered by ingested-at descending with published-at as a tiebreaker. "Ingested" wins over "published" so a new scrape always bubbles its articles to the top of the dashboard, and an older-pubDate article that was ingested after a newer-pubDate one never overtakes it.
 6. The grid's final slot (slot 30) is a "see all of today's articles in Search & History" tile containing a centred list-style icon; activating it navigates the user to the Search & History page scoped to today's local date. Per-tag filtering that reaches beyond the newest-29 window lives on Search & History, not on the dashboard.
 
 **Constraints:** CON-A11Y-001
