@@ -359,6 +359,60 @@ const initialTheme = cookieTheme ?? 'light';
           requestAnimationFrame(tick);
         } catch { /* ditto */ }
       }
+      // astro:before-swap listener that PRE-APPLIES the tag filter to
+      // the incoming `event.newDocument` before the body swap. Load-
+      // bearing for scroll + animation correctness when `?tags=` is
+      // active in the URL on /digest or /history: without this, the
+      // new body arrives from the server with every card visible, the
+      // ViewTransitions API captures the incoming snapshot against
+      // that unfiltered DOM, Astro's own scrollTo(historyState.scrollY)
+      // lands on the unfiltered layout, and only AFTER astro:page-load
+      // does the page script's applyFilter() set display:none on
+      // non-matching cards — collapsing the grid AFTER the snapshot +
+      // scroll-restore were committed. Result: browser clamps scroll
+      // to the now-shorter doc and the transition morphs between
+      // incompatible geometries ("animation feels wrong").
+      //
+      // Mutating newDocument during before-swap is supported by the
+      // Astro event type (TransitionBeforeSwapEvent.newDocument is
+      // writable per packages/astro/src/transitions/events.ts) and is
+      // the only place early enough to make the snapshot see the
+      // filtered state.
+      interface BeforeSwapEvent extends Event {
+        newDocument: Document;
+        to: URL;
+      }
+      function preFilterIncomingDocument(e: Event): void {
+        const ev = e as BeforeSwapEvent;
+        const path = ev.to?.pathname ?? '';
+        if (path !== '/digest' && path !== '/history') return;
+        const raw = ev.to.searchParams.get('tags');
+        if (raw === null || raw === '') return;
+        const selected = new Set(
+          raw.split(',').map((t) => t.trim()).filter((t) => t !== ''),
+        );
+        if (selected.size === 0) return;
+        const doc = ev.newDocument;
+        if (doc === undefined) return;
+        doc
+          .querySelectorAll<HTMLElement>('[data-digest-card]')
+          .forEach((card) => {
+            const cardTags = (card.dataset['tags'] ?? '')
+              .split(',')
+              .filter((t) => t !== '');
+            const match = cardTags.some((t) => selected.has(t));
+            if (!match) card.dataset['filterHide'] = '1';
+          });
+        doc
+          .querySelectorAll<HTMLElement>('[data-tag-chip]')
+          .forEach((chip) => {
+            const tag = chip.dataset['tag'];
+            if (tag !== undefined && selected.has(tag)) {
+              chip.classList.add('is-selected');
+              chip.setAttribute('aria-pressed', 'true');
+            }
+          });
+      }
       if (document.documentElement.dataset['scrollRestoreBound'] !== '1') {
         document.documentElement.dataset['scrollRestoreBound'] = '1';
         // Override Astro ClientRouter's scroll-to-top so our per-path
@@ -366,6 +420,7 @@ const initialTheme = cookieTheme ?? 'light';
         if ('scrollRestoration' in window.history) {
           window.history.scrollRestoration = 'manual';
         }
+        document.addEventListener('astro:before-swap', preFilterIncomingDocument);
         document.addEventListener('astro:before-swap', saveScroll);
         window.addEventListener('pagehide', saveScroll);
         document.addEventListener('astro:page-load', restoreScroll);
