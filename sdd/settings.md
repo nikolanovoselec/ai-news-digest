@@ -86,8 +86,8 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 **Priority:** P1
 **Dependencies:** REQ-SET-003
 **Verification:** Integration test
-**Status:** Partial
-**Notes:** ModelSelect hidden while the global pipeline uses a single default model; UI code preserved to simplify re-enable.
+**Status:** Deprecated
+**Removed In:** 2026-04-24
 
 ---
 
@@ -147,5 +147,4 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 **Priority:** P2
 **Dependencies:** REQ-SET-003
 **Verification:** Integration test
-**Status:** Partial
-**Notes:** Silent auto-correct ships in code (src/layouts/Base.astro) but no automated test verifies the cross-page behaviour or the stale-value retry.
+**Status:** Implemented

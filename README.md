@@ -1,6 +1,6 @@
 # News Digest
 
-Pick your hashtags. An LLM reads the news so you don't have to. You get the stories worth reading, summarised; the rest expires quietly, never having wasted your attention. The attention economy made an offer. I told it no.
+Keeping up with tech news was a part-time job I didn't sign up for, didn't get paid for, and couldn't quit. So I fired myself and hired an LLM — 99% pay cut, zero complaints. Pick your hashtags: it does the reading, you take the credit. You're welcome.
 
 **Live:** <https://news.graymatter.ch> · GitHub sign-in · pick your hashtags · done.
 
