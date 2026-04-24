@@ -256,7 +256,7 @@ const todayLocalDate = localDateInTz(Math.floor(Date.now() / 1000), userTz);
     if (el === null || textEl === null) return;
     // If we've been told a scrape is running (via data-running on the
     // countdown wrapper set by the status poll), skip the countdown
-    // math entirely — the label ALREADY reads "Update in progress".
+    // math entirely — the label ALREADY reads "Update in progress…".
     if (el.dataset['running'] === '1') return;
     const raw = el.dataset['nextAt'];
     if (raw === undefined || raw === '') return;
@@ -295,11 +295,13 @@ const todayLocalDate = localDateInTz(Math.floor(Date.now() / 1000), userTz);
       if (el === null || textEl === null || headerEl === null) return;
       if (body.running) {
         el.dataset['running'] = '1';
-        headerEl.textContent = 'Update in progress';
-        // Dashboard shows only the status line — no chunk numbers
-        // (the per-chunk math belongs on /settings, not in the
-        // user's reading-surface header).
-        textEl.textContent = '';
+        // Split across the header + countdown spans so the
+        // "in progress…" half inherits the bolded
+        // .digest-page__meta-countdown style already used for the
+        // countdown number, matching the "Next update in <2h 14m>"
+        // treatment where the back half is visually emphasised.
+        headerEl.textContent = 'Update ';
+        textEl.textContent = 'in progress…';
       } else if (el.dataset['running'] === '1') {
         // Run just finished — pull in fresh articles + next_scrape_at.
         delete el.dataset['running'];
