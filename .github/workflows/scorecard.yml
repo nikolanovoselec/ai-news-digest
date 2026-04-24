@@ -9,12 +9,10 @@ on:
 
 permissions: read-all
 
-# Opt every JS action in this workflow into Node.js 24 — silences
-# the Node-20 deprecation warning on actions/checkout@v4 +
-# actions/upload-artifact@v4 until those ship a v5 with Node-24
-# bundles of their own.
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+# NOTE: no top-level `env:` or `defaults:` blocks — ossf/scorecard-action
+# rejects workflows that carry global env vars or defaults (see
+# https://github.com/ossf/scorecard-action#workflow-restrictions).
+# If a step needs an env var, put it in that step's own `env:` block.
 
 concurrency:
   group: scorecard-${{ github.ref }}
@@ -33,6 +31,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
       - name: Run Scorecard
         uses: ossf/scorecard-action@v2.4.0
@@ -47,8 +47,12 @@ jobs:
           name: SARIF file
           path: results.sarif
           retention-days: 5
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
       - name: Upload to code-scanning
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
