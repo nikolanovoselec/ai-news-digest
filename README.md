@@ -1,6 +1,8 @@
 # News Digest
 
-Try it live: **<https://news.graymatter.ch>** — sign in with GitHub, pick a few hashtags, wait for the next hourly tick.
+Tech news for people who would rather read ten good summaries than three thousand unread RSS items.
+
+**Live:** <https://news.graymatter.ch> · GitHub sign-in · pick your hashtags · wait for the next tick · done.
 
 <p align="center">
   <img alt="Mobile dashboard"  src="docs/screenshots/dashboard-mobile.jpg"  height="260">
@@ -8,39 +10,44 @@ Try it live: **<https://news.graymatter.ch>** — sign in with GitHub, pick a fe
   <img alt="Article detail"    src="docs/screenshots/article-detail.png"    height="260">
 </p>
 
-AI-summarised tech news keyed to the hashtags you actually care about. One global pipeline scrapes ~50 curated sources every hour, runs ~500 fresh candidates through Workers AI, and serves the result as a shared pool. Your dashboard is a filter over that pool, keyed to your tags. You see the stories worth reading; the rest vanish after seven days and you don't have to feel bad about it.
+Every hour, ~50 curated sources get scraped, ~500 candidates get fed into GPT-OSS-120B running on [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/), and the output lands in a shared pool. Your dashboard is a filter over that pool. The rest expires in seven days. Your inbox is left alone.
 
-The tag strip is the sole editor for your hashtags — no tag form in settings. Type a tag, hit enter, it's persisted. Tap the × on a chip to drop it. Tap the chip itself to filter. The same strip lives on Search & History with counts scoped to the 7-day window, so you can narrow *"cloudflare articles from this week that mention 'london'"* in three taps.
+## Features you will show your friends
 
-Articles show a 2–3 paragraph summary (150–250 words, structured as *what happened / how it works / why you care*), a star toggle, and a tag count badge. Multi-source stories (vendor blog + Hacker News mirror + aggregator) collapse into one card with a `(+N)` chip; the detail-page `Read at source` button fans them out in a modal when tapped. The lead paragraph on the detail page gets a newspaper-style drop-cap via CSS `initial-letter: 2`, with a tuned float fallback for browsers that don't support it yet. The back control returns you to wherever you came from — search results, starred list, history day view — not always `/digest`.
+- **One LLM run, every user benefits.** GPT-OSS-120B summarises the whole global pool once per hour. Each scrape costs roughly $0.07 — less than the coffee you were going to drink while ignoring Hacker News anyway.
+- **Tag-driven filtering everywhere.** Type `#cloudflare`, hit enter, it's persisted. Click the chip to filter. Same component on the dashboard and Search & History. No settings form, no onboarding wizard, no "check your email for the confirmation link".
+- **Composable filters.** Tag + search + date all AND together. *"cloudflare articles from this week that mention london"* is three taps and lives in the URL, so browser Back restores the exact view.
+- **Multi-source dedupe.** Hacker News, the vendor blog, and three aggregators all "discovered" the same announcement at 9am. You get one card with a `(+3)` chip. Click the chip, pick your outlet.
+- **Summaries that earn their word count.** 150–250 words per article, 2–3 paragraphs, structured as *what happened → how it works → why you care*. No "the article explores" filler. No "in today's rapidly evolving landscape" preamble. Just the facts and the angle.
+- **Defends itself from LLM hallucinations.** Every output article must echo its input candidate's index **and** share a meaningful word with the candidate title. A reordered or fabricated summary gets dropped before it can staple itself onto the wrong URL. You will never see a SageMaker story under a Cloudflare headline. (Ask how we learned this lesson.)
+- **Starred articles outlive the cron.** Retention cleanup drops anything older than seven days — unless a user starred it. Your saved pile is forever; your unread pile is a lie you're no longer telling yourself.
+- **Real newspaper drop-cap.** The article detail page uses CSS `initial-letter: 2` so the lead paragraph's first letter aligns to line 1's cap-top and line 2's baseline. For Firefox (which still doesn't support the property in 2026 — we checked) there's a tuned float fallback.
+- **Back-button that returns to where you were.** Opened an article from a tag filter? Back takes you back to that tag filter, not the dashboard. Opened it from Starred? Back takes you to Starred. The `document.referrer` check + `history.back()` works everywhere except on direct links, where it cleanly falls through to `/digest`.
+- **One Worker. No servers. No Docker. No Nginx that decides it wants to die at 3am.** D1 for the pool, KV for discovery, Queues for the pipeline, Workers AI for inference. Deploys in 30 seconds. Rolls back in 10.
+- **PWA-installable, dark mode out of the box, offline banner when the network drops, zero ads, zero cookie banners, zero newsletter pop-ups.** This is a list of things the internet convinced us to accept as inevitable. They are not inevitable.
 
-## Why it was built
+## Why it exists
 
-Tech-news discovery in 2026 is broken in specific ways:
+Tech news in 2026 has four shapes, all broken:
 
-- Newsletters arrive on someone else's schedule with someone else's interests.
-- RSS readers turn into 3,000-item graveyards that judge you from the sidebar.
-- Social feeds reward outrage over information.
-- Asking an LLM requires remembering to ask, which defeats the point.
+- **Newsletters** — someone else's interests, someone else's schedule, someone else's Monday-morning anxiety delivered on their clock.
+- **RSS readers** — 3,218 unread items side-eyeing you from the sidebar. Each one is a tiny "I told you so".
+- **Social feeds** — outrage optimised for engagement, which is not the same thing as information.
+- **Asking an LLM** — requires remembering to ask. If remembering were the user's strong suit, none of this would be a problem.
 
-News Digest flips the contract. You declare what you want to follow; the pipeline does the rest, once an hour, on its clock. You read what matters; the rest expires. There's no "unread count" to feel guilty about — if an article's still around in seven days and nobody starred it, it gets swept.
+News Digest hires the LLM instead. Once an hour. On its own clock.
 
-## About this repo — Codeflare SDD test run
+## Built with Codeflare SDD
 
-This project is a test drive of [Codeflare](https://codeflare.ch)'s spec-driven development framework. Every feature landed via the same loop:
+This repo is a test drive of [Codeflare](https://codeflare.ch)'s spec-driven development framework. Every feature travels through the same loop:
 
-1. **Spec edit first** — `sdd/{domain}.md` gets a REQ with Intent + Acceptance Criteria, committed before any code touches `src/`.
-2. **Failing test** — a `tests/{domain}/*.test.ts` names the REQ ID in its `describe` block and asserts the AC.
-3. **Minimal implementation** — source files carry a `// Implements REQ-X-NNN` annotation so `spec-reviewer` can match code to spec by grep.
-4. **Review agents on push** — `code-reviewer`, `spec-reviewer`, and `doc-updater` run in the background after every push; findings auto-commit in `unleashed` mode.
-5. **CI + auto-deploy** — PR Checks + CodeQL + Scorecard gate every commit; deploy fires on green `main`.
+1. **Spec first.** A REQ with Intent + Acceptance Criteria lands in `sdd/{domain}.md` before any code touches `src/`.
+2. **Failing test.** `tests/{domain}/*.test.ts` names the REQ ID and asserts the AC.
+3. **Minimal code.** Source files carry `// Implements REQ-X-NNN` so `spec-reviewer` can grep code against spec.
+4. **Review agents on every push.** `code-reviewer`, `spec-reviewer`, `doc-updater` run in the background. Findings auto-commit in `unleashed` mode.
+5. **Auto-deploy on green.** PR Checks + CodeQL + Scorecard gate every commit. Deploy fires on a green `main`.
 
-40+ REQs across 10 domains, with `enforce_tdd: true`. Nothing is hand-waved. The three review agents are the enforcement layer: `spec-reviewer` keeps `sdd/` honest, `code-reviewer` catches quality and security regressions, `doc-updater` keeps `documentation/` in sync with what shipped. A finding that's HIGH or CRITICAL blocks a green main; everything else auto-fixes on the next push.
-
-- Codeflare: <https://codeflare.ch>
-- Specification: [sdd/README.md](sdd/README.md)
-- Architecture: [documentation/architecture.md](documentation/architecture.md)
-- Changelog: [sdd/changes.md](sdd/changes.md)
+40+ REQs across 10 domains, `enforce_tdd: true`, nothing hand-waved. [Spec](sdd/README.md) · [Architecture](documentation/architecture.md) · [Changelog](sdd/changes.md)
 
 ## Stack
 
@@ -49,19 +56,10 @@ This project is a test drive of [Codeflare](https://codeflare.ch)'s spec-driven 
 | Framework | [Astro 5](https://astro.build) on [Cloudflare Workers](https://workers.cloudflare.com) |
 | Database | [Cloudflare D1](https://developers.cloudflare.com/d1/) |
 | Cache | [Cloudflare KV](https://developers.cloudflare.com/kv/) |
-| Job queues | [Cloudflare Queues](https://developers.cloudflare.com/queues/) — `scrape-coordinator` + `scrape-chunks` |
-| LLM | [Workers AI](https://developers.cloudflare.com/workers-ai/) — `@cf/openai/gpt-oss-120b` primary, `gpt-oss-20b` fallback |
+| Job queues | [Cloudflare Queues](https://developers.cloudflare.com/queues/) |
+| LLM | [Workers AI](https://developers.cloudflare.com/workers-ai/) — `gpt-oss-120b` primary, `gpt-oss-20b` fallback |
 | Email | [Resend](https://resend.com) |
-| Auth | Custom GitHub OAuth + HMAC-SHA256 JWT |
-
-## Pipeline
-
-1. Cron `0 * * * *` → coordinator queue message.
-2. Coordinator fetches all curated sources in parallel (10-worker semaphore), canonical-dedupes URLs, filters out candidates already in D1, chunks survivors into ~50-per-message, enqueues to `scrape-chunks`.
-3. Chunk consumer calls Workers AI once per chunk with a JSON-mode prompt. Each output article echoes its input candidate's index; the consumer aligns LLM output to input by that echoed value plus a title-overlap check — so a reordered or hallucinated entry can never staple the wrong summary onto the wrong canonical URL.
-4. Articles land in a single D1 batch. Dedup groups collapse "same story, different outlet" into one primary + alt sources.
-5. Dashboard + Search & History query this shared pool filtered by each user's hashtags.
-6. Daily `0 3 * * *` cleanup drops articles older than 7 days unless any user has starred them.
+| Auth | GitHub OAuth + HMAC-SHA256 JWT |
 
 ## Local development
 
@@ -71,7 +69,7 @@ npx wrangler d1 migrations apply DB --local
 npm run dev
 ```
 
-Dev server at <http://localhost:4321>. Copy `.dev.vars.example` to `.dev.vars` and fill in a GitHub OAuth App client ID/secret plus a random `OAUTH_JWT_SECRET` (≥32 bytes).
+Dev server at <http://localhost:4321>. Copy `.dev.vars.example` to `.dev.vars`, drop in a GitHub OAuth App client ID + secret and a random `OAUTH_JWT_SECRET` (≥32 bytes).
 
 ## License
 
