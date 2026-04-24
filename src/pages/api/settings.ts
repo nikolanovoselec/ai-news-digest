@@ -6,7 +6,7 @@
 //
 // Validation invariants (REQ-SET-002/003/004/005):
 //   - hashtags: array of strings, each matching /^[a-z0-9-]{2,32}$/,
-//     non-empty, max 20, deduplicated.
+//     non-empty, max 25, deduplicated.
 //   - digest_hour: integer 0..23.
 //   - digest_minute: integer 0..59.
 //   - tz: valid IANA timezone per `isValidTz`.
@@ -34,8 +34,11 @@ import { checkOrigin, originOf } from '~/middleware/origin-check';
  */
 export const HASHTAG_REGEX = /^[a-z0-9-]{2,32}$/;
 
-/** Maximum hashtags per user (REQ-SET-002 AC 4). */
-export const MAX_HASHTAGS = 20;
+/** Maximum hashtags per user (REQ-SET-002 AC 6).
+ *  Bumped from 20 to 25 so new accounts — seeded with the 20 defaults —
+ *  have 5 slots of headroom for custom tags without having to delete
+ *  a default first. */
+export const MAX_HASHTAGS = 25;
 
 /** Shape accepted from the PUT body. All fields are `unknown` because the
  *  body arrives untyped — validation narrows types field-by-field. */
