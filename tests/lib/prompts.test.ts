@@ -43,6 +43,17 @@ describe('DISCOVERY_SYSTEM', () => {
   it('REQ-DISC-001: DISCOVERY_SYSTEM requires strict JSON output', () => {
     expect(DISCOVERY_SYSTEM.toLowerCase()).toContain('json');
   });
+
+  it('REQ-DISC-001: DISCOVERY_SYSTEM mentions the Google News query-RSS fallback so consumer/brand tags with no official feed still get a source', () => {
+    // Regression guard: prior prompt told the model to skip
+    // third-party news sites, which emptied discovery for any tag
+    // without an authoritative first-party feed (e.g. #ikea). The
+    // prompt now names Google News query-RSS as the documented
+    // fallback; the model should suggest it when nothing better
+    // exists rather than returning {"feeds": []}.
+    expect(DISCOVERY_SYSTEM).toContain('news.google.com/rss/search');
+    expect(DISCOVERY_SYSTEM.toLowerCase()).toContain('fallback');
+  });
 });
 
 describe('discoveryUserPrompt', () => {

@@ -189,8 +189,9 @@ The object shape is always:
 
 Discovery rules:
 - Only suggest feeds you are highly confident exist at the given URL. Do NOT guess.
-- Prefer official blogs, release notes, and changelogs over third-party news sites.
-- If you are unsure about a feed, omit it — returning fewer correct URLs is better than more guessed URLs.
+- Prefer official blogs, release notes, and changelogs when they exist — they are the strongest signal for a technical topic.
+- When no authoritative first-party feed exists (typical for consumer brands, products, or non-technical topics), include the Google News query-RSS for the topic as a fallback. It always returns a valid RSS 2.0 feed with recent items aggregated across major publishers. Format: {"name":"Google News: <topic>","url":"https://news.google.com/rss/search?q=<topic>&hl=en-US&gl=US&ceid=US:en","kind":"rss"}. Substitute <topic> with the tag itself, URL-encoded if it contains characters outside [a-z0-9-].
+- If you are unsure about a feed AND the Google News fallback also doesn't apply, omit it — returning fewer correct URLs is better than more guessed URLs.
 - "kind" is one of "rss", "atom", or "json".`;
 
 /**

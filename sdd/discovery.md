@@ -6,14 +6,14 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 ### REQ-DISC-001: LLM-assisted per-tag feed discovery
 
-**Intent:** When a user adds a hashtag, the system finds authoritative first-party feeds for that tag without requiring a hand-curated catalog.
+**Intent:** When a user adds a hashtag, the system finds working feeds for that tag without requiring a hand-curated catalog — first-party sources when they exist, and a documented third-party aggregator fallback when they don't, so that consumer/brand tags (where no official feed is available) still produce at least one source.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
 1. On settings save, any submitted tag without a `sources:{tag}` KV entry triggers an `INSERT OR IGNORE` into the `pending_discoveries` D1 table keyed by `(user_id, tag)`.
 2. The 5-minute cron picks up to 3 distinct tags from `pending_discoveries` per invocation, ordered by the earliest `added_at` for each tag.
-3. For each tag, a Workers AI call asks for up to 5 authoritative RSS, Atom, or JSON feed URLs; the prompt explicitly instructs the model to return fewer URLs rather than guess.
+3. For each tag, a Workers AI call asks for up to 5 RSS, Atom, or JSON feed URLs. The prompt prefers first-party blogs, release notes, and changelogs where they exist, and names a Google News query-RSS fallback that the model must include for tags without a first-party feed so a consumer/brand tag never returns zero sources. The model is instructed to omit a suggestion only when neither a first-party feed nor the fallback applies.
 4. Each suggested URL is validated: HTTPS-only, passes the SSRF filter (no private ranges, loopback, link-local, Cloudflare internal), HTTP 200, content-type matches the declared kind, parseable, and returns at least one item with a title and URL.
 5. Valid feeds are persisted to `sources:{tag}` as `{ feeds: [{ name, url, kind }], discovered_at }` with no TTL; rows for this tag are deleted from `pending_discoveries` regardless of success.
 
