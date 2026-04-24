@@ -4,6 +4,10 @@ Semantic changes to the specification. Git history captures diffs; this file cap
 
 Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verification pass" entries. No spec cleanup or format fixes (those live in git history).
 
+## 2026-04-24
+
+- REQ-PIPE-002 AC 3 tightens the summary length contract from "1–3 paragraphs" to "200–250 words in exactly 3 paragraphs (WHAT / HOW / IMPACT)" to match the restructured chunk prompt and the raised LLM temperature (0.2 → 0.5) that gives the model room to hit the word target. Observable as richer, more specific per-article summaries with no 50-word stubs.
+
 ## 2026-04-23
 
 - REQ-AUTH-001 gains AC 6: new sign-ins land directly on the reading surface with sensible defaults (08:00 scheduled time, UTC timezone that the browser overwrites on first load, email notifications enabled) so a brand-new user sees real articles immediately instead of being detoured through the settings form. REQ-PIPE-006 extended with AC 5 and auto-demoted to Partial: a lightweight scrape-status signal now drives an "Update in progress — X/Y chunks" indicator on both the reading and settings surfaces, replacing the static countdown while a run is in flight; the new AC ships in code but has no automated test yet.
