@@ -22,7 +22,7 @@ Every 4 hours, ~50 curated sources get scraped, ~500 fresh candidates get batche
 - **LLM hallucinations dropped on sight.** Every output must echo its input index **and** share a meaningful token with the candidate title. A reordered or fabricated summary never reaches the database. Ask me how I learned this lesson.
 - **Starred articles outlive the cron.** Seven-day retention, unless you starred it. Your saved pile is forever; your unread pile is a lie you're no longer telling yourself.
 - **One Worker. No servers, no Docker, no Nginx dying at 3 am.** Cloudflare D1 + Cloudflare KV + Cloudflare Queues + Cloudflare Workers AI. Ships in 30 seconds.
-- **PWA-installable, dark mode, offline banner, zero ads, zero cookie banners, zero newsletter pop-ups.** A list of things the internet taught us to tolerate and didn't need to.
+- **No ads. None. Zero.** Also no cookie banners, no newsletter pop-ups, no "accept all" dark patterns, no paywall that promises "just one free article this month". PWA-installable, dark mode, offline banner. A list of things the internet taught us to tolerate and didn't need to.
 
 ## Why it exists
 
