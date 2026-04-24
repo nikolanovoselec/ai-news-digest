@@ -24,3 +24,4 @@ Canonical definitions for terms used across the spec, code, and documentation. U
 | **Out-of-band generation** | A digest triggered by `/settings` first-run save that runs immediately (not at the scheduled hour) so the user lands on a real digest. |
 | **Workers AI** | The Cloudflare LLM inference platform used for digest summarization and source discovery; model selected from the hardcoded `MODELS` list. |
 | **ULID** | 26-character Crockford-base32 identifier used for `digests.id` and `articles.id`; sortable by creation time. |
+| **Last feed sighting** | The most recent scrape tick at which an article's canonical URL was emitted by any source feed. A newly summarised article's last-feed-sighting equals its first ingestion; re-seen articles are re-stamped on every subsequent tick. The dashboard orders by this value so live feed freshness, not first discovery, drives visibility. |
