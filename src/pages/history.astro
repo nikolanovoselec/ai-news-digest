@@ -413,31 +413,45 @@ function formatCostUsd(value: number | null | undefined): string {
     }
 
     // Tag chip click handlers — toggle is-selected and re-run the
-    // combined filter. Tag remove (× inside chip) and + add pill are
-    // handled separately below.
-    if (strip !== null) {
-      strip.addEventListener('click', (e) => {
-        const target = e.target;
-        if (!(target instanceof Element)) return;
-        // Remove (×) takes precedence — it's inside the chip.
-        const removeHit = target.closest<HTMLElement>('[data-tag-remove]');
-        if (removeHit !== null) {
-          e.preventDefault();
-          e.stopPropagation();
-          const chip = removeHit.closest<HTMLElement>('[data-tag-chip]');
-          const tag = chip?.dataset['tag'];
-          if (tag !== undefined && tag !== '') {
-            void removeTag(tag);
-          }
-          return;
+    // combined filter. Delegate from `document` rather than binding
+    // to the strip element: (a) it survives View-Transition DOM
+    // replacements without a rebind step, (b) a document-level
+    // listener keeps working even when a client-added chip gets
+    // appended after the strip was first scanned. Scoped to clicks
+    // inside a [data-tag-strip-wrap] that's ON THIS PAGE by checking
+    // `[data-history-search]` exists — this prevents the handler
+    // from firing on the dashboard (which has its own click
+    // handler) when the user navigates via ClientRouter.
+    const historyClickHandler = (e: MouseEvent): void => {
+      if (document.querySelector('[data-history-search]') === null) return;
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('[data-tag-strip-wrap]') === null) return;
+      // Remove (×) takes precedence — it's inside the chip.
+      const removeHit = target.closest<HTMLElement>('[data-tag-remove]');
+      if (removeHit !== null) {
+        e.preventDefault();
+        e.stopPropagation();
+        const chip = removeHit.closest<HTMLElement>('[data-tag-chip]');
+        const tag = chip?.dataset['tag'];
+        if (tag !== undefined && tag !== '') {
+          void removeTag(tag);
         }
-        const chip = target.closest<HTMLElement>('[data-tag-chip]');
-        if (chip === null) return;
-        const wasSelected = chip.classList.contains('is-selected');
-        chip.classList.toggle('is-selected', !wasSelected);
-        chip.setAttribute('aria-pressed', wasSelected ? 'false' : 'true');
-        apply();
-      });
+        return;
+      }
+      const chip = target.closest<HTMLElement>('[data-tag-chip]');
+      if (chip === null) return;
+      const wasSelected = chip.classList.contains('is-selected');
+      chip.classList.toggle('is-selected', !wasSelected);
+      chip.setAttribute('aria-pressed', wasSelected ? 'false' : 'true');
+      apply();
+    };
+    // Bind ONCE per page load. `reinit` runs this function on every
+    // View Transition, but the document-level listener set on the
+    // first call is reused; the flag below prevents stacking.
+    if (document.documentElement.dataset['historyTagStripBound'] !== '1') {
+      document.documentElement.dataset['historyTagStripBound'] = '1';
+      document.addEventListener('click', historyClickHandler);
     }
 
     // Hydrate from URL on load: restore q + tag selections so that
