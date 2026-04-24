@@ -17,17 +17,18 @@
 
 /**
  * Shared inference parameters for every Workers AI call.
- * - `temperature: 0.5` — enough creative room to write full 3-paragraph
- *   summaries instead of collapsing to minimum-entropy 1-paragraph
- *   stubs. 0.2 (the prior value) was starving the model's verbosity.
+ * - `temperature: 0.7` — high enough to push the model past its default
+ *   minimum-entropy behaviour where it collapses to short 1-paragraph
+ *   replies. 0.5 was still too cold; 0.7 lets the model generate the
+ *   250-400 word summaries the prompt asks for.
  * - `max_tokens: 50000` — budget for ~50 articles per chunk at
- *   200-250 words each (~350 toks/article → ~18K total). Input side
+ *   300-400 words each (~500 toks/article → ~25K total). Input side
  *   is ~8K tokens for the prompt + candidate list, so 50K out plus
- *   8K in fits comfortably inside gpt-oss-20b's 128K context.
+ *   8K in fits comfortably inside the 128K model context.
  * - `response_format` — force JSON output on models that support it.
  */
 export const LLM_PARAMS = {
-  temperature: 0.5,
+  temperature: 0.7,
   max_tokens: 50_000,
   response_format: { type: 'json_object' },
 } as const;
@@ -67,24 +68,31 @@ Shape:
 
 # DETAILS RULES — THIS IS THE CORE TASK
 
-Every "details" value is a plaintext string with THIS EXACT STRUCTURE:
+Write a THOROUGH, SUBSTANTIAL summary. Short summaries are the worst failure mode of this task — a 100-word reply is a bug, not a feature.
 
-  - 3 paragraphs.
-  - Each paragraph: 3-4 full sentences.
-  - Paragraphs separated by the JSON escape sequence \\n (one backslash + n).
-  - Total length: 200-250 words.
+LENGTH REQUIREMENT — MINIMUM 250 WORDS, TARGET 300-400 WORDS:
 
-Paragraph roles, in order:
+  - Under 200 words is REJECTED. The consumer will drop it and log a failure.
+  - 250-400 words is the acceptable range.
+  - When in doubt, WRITE MORE. You have a 50K-token output budget — use it.
 
-  1. WHAT happened — the concrete facts the candidate's snippet reports: who announced what, what shipped, what changed, when.
-  2. HOW it works — the technical substance: architecture, API, mechanism, numbers.
-  3. IMPACT for the reader — what the change means for someone working in this space: cost, migration effort, security posture, performance.
+STRUCTURE — 3 PARAGRAPHS, EACH SUBSTANTIAL:
 
-Every paragraph MUST be grounded in the candidate's snippet field. The snippet carries the article body; read it and compress it. Do not state facts that contradict the snippet.
+  - Paragraph breaks use the JSON escape sequence \\n (one backslash + n).
+  - Each paragraph is 80-130 words (about 5-8 full sentences, not 3).
+  - No bullet lists, no Markdown, no HTML, plaintext only.
 
-Format example — the EXACT format your output must follow (3 paragraphs, \\n separators, 200-250 words total):
+PARAGRAPH ROLES, IN ORDER:
 
-  "Cloudflare released Emdash, an open-source WordPress-inspired platform for Workers. The announcement lands with a public GitHub repo, a curated plugin compatibility layer, and a managed D1-backed content schema. Emdash targets small teams that want the WordPress authoring UX without the self-hosted maintenance burden.\\nTechnically, Emdash replaces PHP + MySQL with a TypeScript runtime and an R2-backed media store. The editor is a Gutenberg-style block editor in the browser; every block serializes to structured JSON and renders at the edge. A compatibility layer imports Yoast, Advanced Custom Fields, and a curated set of popular plugins, giving migrating sites a realistic path forward.\\nFor developers, the practical effect is a WordPress-grade editing UI without the PHP tax. Sites deploy as a single Worker with sub-100ms TTFB globally, the managed schema removes the 'plugin updated, site broke' Sunday-morning operations, and hashed-asset CDN caching happens automatically. Teams already running WordPress for marketing sites can pilot Emdash on a single domain without giving up the editor their marketing team trained on."
+  1. WHAT happened — unpack every concrete fact in the snippet: who, what, when, where, the numbers, the versions, the specific products, the names of the people involved. Spell out acronyms. Include dates, amounts, percentages. Do not just state the top-line announcement — list the subsidiary facts that make it real.
+  2. HOW it works — the technical substance. Architecture, APIs, protocols, algorithms, data flow, mechanisms, configuration, dependencies. If the snippet mentions a specific technology, explain what the technology is and why it matters in this context. If numbers are present (latency, throughput, cost), quote and contextualise them.
+  3. IMPACT for the reader — what someone working in this space should do or think about: migration effort, cost implications, security posture, performance ceiling, developer experience, competitive pressure. Two to four concrete use-cases or scenarios where this change matters.
+
+GROUNDING: Every paragraph MUST be grounded in the candidate's snippet field. The snippet carries the article body; read it CAREFULLY and compress it FAITHFULLY. Do not state facts that contradict the snippet. If the snippet is thin, EXPAND on the technical context and practical implications of what IS present — do not shorten your output.
+
+Format example — a concrete 3-paragraph, 320-word summary in the exact format your output must follow:
+
+  "Cloudflare released Emdash on 2026-04-18, an open-source WordPress-inspired content platform that runs natively on Cloudflare Workers. The announcement landed with a public GitHub repository, a curated plugin compatibility layer, and a managed D1-backed content schema. Emdash targets small teams and marketing sites that want the familiar WordPress authoring experience without the self-hosted maintenance burden of traditional PHP + MySQL deployments. The launch includes six built-in themes, a block editor, and turnkey hosting at sub-100ms global TTFB through Cloudflare's edge network.\\nTechnically, Emdash replaces PHP and MySQL with a TypeScript runtime that executes inside the Workers sandbox, while R2 handles media storage and D1 holds structured content. The editor is a Gutenberg-style block editor in the browser; every block serialises to structured JSON and renders at the edge via per-route Worker handlers. A compatibility layer imports configuration from Yoast SEO, Advanced Custom Fields, and a curated set of popular WordPress plugins, giving migrating sites a realistic path forward. Custom themes compile through Vite and ship as bundled ES modules, so designers can iterate without touching the runtime.\\nFor developers, the practical effect is a WordPress-grade editing UI without the PHP operational tax. Sites deploy as a single Worker with global low-latency serving, the managed schema removes the Sunday-morning 'plugin updated, site broke' incident class, and hashed-asset CDN caching happens automatically on every deploy. Teams already running WordPress for marketing sites can pilot Emdash on a single domain without retraining their marketing users, and agencies can offer a turnkey stack that removes patch-management overhead. The trade-off is the usual Cloudflare lock-in — the runtime and storage layer are proprietary to the platform, so migrations off Emdash require full re-platforming."
 
 # TAGS RULES
 
