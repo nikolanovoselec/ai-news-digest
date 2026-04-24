@@ -11,6 +11,7 @@
 
 import { describe, it, expect } from 'vitest';
 import digestPage from '../../src/pages/digest.astro?raw';
+import tagStrip from '../../src/components/TagStrip.astro?raw';
 import settingsPage from '../../src/pages/settings.astro?raw';
 import digestCard from '../../src/components/DigestCard.astro?raw';
 import { RESTORE_DEFAULTS_LABEL } from '~/lib/default-hashtags';
@@ -18,25 +19,32 @@ import { RESTORE_DEFAULTS_LABEL } from '~/lib/default-hashtags';
 describe('tag strip selection — REQ-SET-002 AC 2', () => {
   it('REQ-SET-002: every tag chip starts with aria-pressed="false" for a11y toggle semantics', () => {
     // aria-pressed is the screen-reader-visible toggle marker; any
-    // chip lacking it won't announce its selected-ness.
-    expect(digestPage).toMatch(/data-tag-chip[\s\S]{0,300}aria-pressed="false"/);
+    // chip lacking it won't announce its selected-ness. The chip
+    // markup lives in the shared TagStrip component — on initial
+    // render (no pre-selected set passed in) every chip starts with
+    // aria-pressed="false".
+    expect(tagStrip).toMatch(/data-tag-chip[\s\S]{0,500}aria-pressed/);
+    // The literal "false" branch of the preselection ternary must
+    // also be present so chips without an initialSelected entry
+    // render with aria-pressed="false".
+    expect(tagStrip).toContain("'false'");
   });
 
   it('REQ-SET-002: chip has a separate data-tag-remove affordance for the × click', () => {
     // AC 2 requires two distinct click targets on the same chip:
     // body → toggle selection, × → delete. The × MUST be its own
     // element so stopPropagation + the two handlers are unambiguous.
-    expect(digestPage).toMatch(/data-tag-remove/);
+    expect(tagStrip).toMatch(/data-tag-remove/);
     // And the CSS class the red × uses so the style selector stays
     // discoverable after refactors.
-    expect(digestPage).toMatch(/tag-chip__remove/);
+    expect(tagStrip).toMatch(/tag-chip__remove/);
   });
 
   it('REQ-SET-002: selected-state is toggled via the `is-selected` class', () => {
     // The selected-state has a named class the CSS keys on for the
     // inverted paint. A refactor that drops the `.is-selected` name
     // silently regresses the inverted colour scheme.
-    expect(digestPage).toMatch(/is-selected/);
+    expect(tagStrip).toMatch(/is-selected/);
   });
 
   it('REQ-SET-002: click handler flips aria-pressed and is-selected together', () => {
