@@ -33,3 +33,8 @@ export const DEFAULT_HASHTAGS: readonly string[] = [
 /** Label used by the settings-page restore button. Single-source-of-
  * truth so UI + tests never drift. */
 export const RESTORE_DEFAULTS_LABEL = 'Restore initial tags';
+
+/** Label used by the settings-page delete-initials button. Shown
+ * alongside Restore; strips just the default tags from the user's
+ * list, keeping any custom tags they've added. */
+export const DELETE_INITIALS_LABEL = 'Delete initial tags';
