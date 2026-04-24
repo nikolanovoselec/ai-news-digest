@@ -380,28 +380,42 @@ case "$TRIGGER_CODE" in
         PASSED=$((PASSED + 1))
         printf 'PASS full-cycle scrape → %s articles ingested\n' "$ART_COUNT"
 
-        # Assert details length on the first article. The prompt
-        # floor is 180 words; counting whitespace-separated tokens
-        # across every details paragraph.
-        WORD_COUNT=$(curl -sS -b "$COOKIE_JAR" "$BASE/api/digest/today" \
+        # Assert AVERAGE details length across all articles in the
+        # response. The prompt target is 200-250 words per article;
+        # we set the floor at 180 on the mean. Checking the mean
+        # (not the first article) smooths over individual articles
+        # with thin source snippets that justifiably produce shorter
+        # output.
+        WORD_STATS=$(curl -sS -b "$COOKIE_JAR" "$BASE/api/digest/today" \
           | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
 arts = d.get('articles', [])
 if not arts:
-    print(0); sys.exit()
-details = arts[0].get('details', [])
-joined = ' '.join(details) if isinstance(details, list) else str(details)
-print(len(joined.split()))
-" 2>/dev/null || echo '0')
-        printf 'first article details word count: %s\n' "$WORD_COUNT"
-        if [ "$WORD_COUNT" -ge 150 ]; then
+    print('0 0 0 0'); sys.exit()
+counts = []
+for a in arts:
+    details = a.get('details', [])
+    joined = ' '.join(details) if isinstance(details, list) else str(details)
+    counts.append(len(joined.split()))
+counts.sort()
+n = len(counts)
+mean = sum(counts) // n
+p50 = counts[n // 2]
+lo = counts[0]
+hi = counts[-1]
+print(f'{n} {mean} {p50} {lo} {hi}')
+" 2>/dev/null || echo '0 0 0 0 0')
+        set -- $WORD_STATS
+        N=$1; MEAN=$2; P50=$3; LO=$4; HI=$5
+        printf 'article details word-count stats: n=%s mean=%s p50=%s min=%s max=%s\n' "$N" "$MEAN" "$P50" "$LO" "$HI"
+        if [ "$MEAN" -ge 180 ]; then
           PASSED=$((PASSED + 1))
-          printf 'PASS article details length ≥ 150 words\n'
+          printf 'PASS mean article details length ≥ 180 words (target 200-250)\n'
         else
           FAILED=$((FAILED + 1))
-          FAIL_LINES+=("FAIL article details length — got $WORD_COUNT words, want ≥ 150 (prompt target 200-250)")
-          printf 'FAIL article details length — got %s words, want ≥ 150\n' "$WORD_COUNT"
+          FAIL_LINES+=("FAIL mean article details length — got $MEAN words, want ≥ 180 (target 200-250)")
+          printf 'FAIL mean article details length — got %s words, want ≥ 180\n' "$MEAN"
         fi
       else
         FAILED=$((FAILED + 1))
