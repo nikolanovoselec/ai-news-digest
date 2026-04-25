@@ -1,4 +1,4 @@
-# AI News Digest
+# News Digest — curated by an LLM
 
 Keeping up with tech news was a part-time job I didn't sign up for, didn't get paid for, and couldn't quit. So I fired myself and hired an LLM. 99% pay cut, zero complaints. Pick your hashtags: it does the reading, you take the credit. You're welcome.
 
