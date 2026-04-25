@@ -234,7 +234,7 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
           the sole editor for the user's hashtags. Settings controls
           schedule, model, and delivery only. */}
       <fieldset class="settings__section">
-        <legend class="settings__legend">Schedule</legend>
+        <legend class="settings__legend">Schedule &amp; Notifications</legend>
         <label class="settings__field">
           <span class="settings__field-label">Daily digest time</span>
           <input
@@ -261,10 +261,6 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
           </select>
           <span class="settings__tz-hint">pre-selected from your browser; change if it's wrong</span>
         </label>
-      </fieldset>
-
-      <fieldset class="settings__section">
-        <legend class="settings__legend">Notifications</legend>
         {showModelSelect ? (
           <label class="settings__field">
             {/* Implements REQ-SET-004 — hidden while the global pipeline
