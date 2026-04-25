@@ -57,7 +57,7 @@ export const CURATED_SOURCES: readonly CuratedSource[] = [
     name: 'Cloudflare Workers',
     feed_url: 'https://blog.cloudflare.com/tag/workers/rss/',
     kind: 'rss',
-    tags: ['workers', 'serverless', 'cloudflare'],
+    tags: ['cloudflareworkers', 'workers', 'serverless', 'cloudflare'],
   },
   {
     slug: 'aws-whats-new',
@@ -99,14 +99,14 @@ export const CURATED_SOURCES: readonly CuratedSource[] = [
     name: 'Cloudflare Release Notes',
     feed_url: 'https://blog.cloudflare.com/tag/release-notes/rss/',
     kind: 'rss',
-    tags: ['cloudflare', 'workers', 'cloud'],
+    tags: ['cloudflareworkers', 'cloudflare', 'workers', 'cloud'],
   },
   {
     slug: 'cloudflare-product-news',
     name: 'Cloudflare Product News',
     feed_url: 'https://blog.cloudflare.com/tag/product-news/rss/',
     kind: 'rss',
-    tags: ['cloudflare', 'workers', 'cloud'],
+    tags: ['cloudflareworkers', 'cloudflare', 'workers', 'cloud'],
   },
   {
     slug: 'railway-blog',
