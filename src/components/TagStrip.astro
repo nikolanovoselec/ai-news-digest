@@ -373,8 +373,8 @@ const selected = initialSelected ?? new Set<string>();
      The class is added by flipChipToFront() the moment a chip is
      tapped (before the FLIP cascade kicks off) and removed after
      PULSE_HOLD_MS so subsequent taps re-trigger cleanly. The
-     keyframe uses box-shadow (no layout impact) so it composites
-     on the GPU and never re-flows the strip. */
+     keyframe uses box-shadow only (paint, no layout) so the strip
+     never reflows during the pulse. */
   @keyframes tagChipPulse {
     0%   { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.18); }
     70%  { box-shadow: 0 0 0 8px rgba(0, 0, 0, 0); }
