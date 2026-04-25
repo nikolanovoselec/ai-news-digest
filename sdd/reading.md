@@ -55,10 +55,10 @@ The heart of the product. Overview grid of the freshest articles read from the s
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. On first view of `/digest/:id/:slug`, the page loader runs `UPDATE articles SET read_at = :now WHERE id = :id AND digest_id IN (SELECT id FROM digests WHERE user_id = :session_user_id) AND read_at IS NULL` atomically.
-2. The update is scoped by user through the subquery so a user cannot mark another user's articles as read.
-3. Clicking the source link does not update `read_at`; only opening the detail view counts.
-4. Re-visiting an already-read detail page is idempotent.
+1. On first view of an article's detail page, the page loader atomically records that this user has read this article. Articles are global and shared across users; the read mark is scoped per (user, article) pair, never per digest.
+2. A user can only mark their own reads — one user's read activity never appears under another user's account, and one user cannot cause another user's article to be marked read.
+3. Clicking the source link does not record a read; only opening the detail view counts.
+4. Re-visiting an already-read detail page is idempotent — the original read timestamp is preserved and no duplicate read is recorded.
 
 **Constraints:** CON-DATA-001
 **Priority:** P1
