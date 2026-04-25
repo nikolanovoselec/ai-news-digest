@@ -793,9 +793,28 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
           };
           status.textContent = map[errorCode] ?? 'Could not save your settings.';
         }
-        if (saved !== null || errorCode !== null) {
+        // Force-refresh round-trip — the admin endpoint 303-redirects to
+        // /settings?force_refresh=ok|reused|error after the operator
+        // clicks the button (or after the Cloudflare Access SSO bounce
+        // returns as a GET). Surface the outcome on the Force-refresh
+        // section's status node so the operator gets visible feedback.
+        const forceRefresh = params.get('force_refresh');
+        if (forceRefresh !== null && forceRefresh !== '') {
+          const fr = document.querySelector<HTMLElement>('[data-scrape-progress]');
+          if (fr !== null) {
+            fr.hidden = false;
+            fr.textContent =
+              forceRefresh === 'ok' ? 'Scrape kicked.' :
+              forceRefresh === 'reused' ? 'Scrape already running; reused that run.' :
+              forceRefresh === 'error' ? 'Force refresh failed; check logs.' :
+              `Force refresh: ${forceRefresh}`;
+          }
+        }
+        if (saved !== null || errorCode !== null || forceRefresh !== null) {
           params.delete('saved');
           params.delete('error');
+          params.delete('force_refresh');
+          params.delete('run_id');
           const next = params.toString();
           const newUrl = window.location.pathname + (next === '' ? '' : '?' + next);
           window.history.replaceState({}, '', newUrl);
