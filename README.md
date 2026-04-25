@@ -2,7 +2,7 @@
 
 Keeping up with tech news was a part-time job I didn't sign up for, didn't get paid for, and couldn't quit. So I fired myself and hired an LLM. 99% pay cut, zero complaints. Pick your hashtags: it does the reading, you take the credit. You're welcome.
 
-**Live at** [news.graymatter.ch](https://news.graymatter.ch). Sign in with GitHub or Google, edit your hashtags, done.
+**Live at** [news.graymatter.ch](https://news.graymatter.ch). Sign in with GitHub or Google, edit your hashtags (or dont), done.
 
 <p align="center">
   <img alt="Mobile dashboard"  src="docs/screenshots/dashboard-mobile.jpg"  height="260">
