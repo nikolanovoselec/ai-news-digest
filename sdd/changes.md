@@ -6,7 +6,7 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 ## 2026-04-25
 
-- REQ-SET-007 AC 6 generalised: the silent timezone auto-correct now respects ANY non-empty stored zone, including a deliberate manual `'UTC'` pick. New users are seeded with `tz=''` (empty sentinel) and the silent path fires only while the stored value is empty — once the user explicitly picks any zone (or an earlier silent correction populated one), the value is authoritative and never overwritten. The previous gate `stored !== 'UTC'` would re-overwrite users who genuinely lived in UTC on every page load.
+- REQ-SET-007 AC 6 generalised: new users are seeded with an empty timezone sentinel and the silent auto-correct fires only while that sentinel is in place — any non-empty stored zone (including a deliberate manual UTC pick) is now authoritative and never overwritten. The previous gate keyed on the literal value `UTC` would re-overwrite users who genuinely lived in UTC on every page load.
 
 - REQ-READ-007 cascade easing finalised at `linear` (no more pending-UX-evaluation TODOs). The earlier per-chip ease-IN / ease-OUT logic and its commented-out fallback have been removed; uniform linear easing feels more consistent across chips travelling different distances.
 
