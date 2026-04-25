@@ -49,9 +49,9 @@
 //
 // Total wall-clock from tap to settled state for a near chip:
 //   ~500ms pop (overlapping the hold) + remaining hold to 1000ms
-//     + 400ms cascade  ≈ 1400 ms.
-// Far chips (low visibleFraction) extend the cascade up to 1500ms,
-// pushing wall clock to ~2500ms. Earlier 220ms / 450ms tunings
+//     + 200ms cascade  ≈ 1200 ms.
+// Far chips (low visibleFraction) extend the cascade up to 750ms,
+// pushing wall clock to ~1750ms. Earlier 220ms / 450ms tunings
 // looked like teleportation on real hardware; the current numbers
 // are tuned for snappy-but-trackable.
 // Two classes carry distinct concerns so JS can manage them
@@ -76,9 +76,9 @@ const HOLD_BEFORE_CASCADE_MS = 1000;
 // distance. Linear-velocity scaling (the prior approach) optimised
 // for *physical* velocity uniformity, but the eye only ever sees
 // the visible slice — so far chips still flashed past as a blur.
-const MIN_CASCADE_MS = 400;
-const MAX_CASCADE_MS = 1500;
-const TARGET_VISIBLE_CROSSING_MS = 400;
+const MIN_CASCADE_MS = 200;
+const MAX_CASCADE_MS = 750;
+const TARGET_VISIBLE_CROSSING_MS = 200;
 // Floor on visibleFraction prevents a 0-divide when the chip is
 // entirely off-screen at FIRST capture (which would imply the user
 // somehow tapped a chip they couldn't see — defensive).

@@ -6,6 +6,8 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 ## 2026-04-25
 
+- REQ-READ-007 polish (no AC change): cascade animation duration halved across the board (target/floor/cap all 50% lower) so the slide feels snappier without changing the pop or the hold beat. Total tap-to-settled wall clock drops from ~1400ms to ~1200ms for near chips, and from ~2500ms to ~1750ms for far chips.
+
 - REQ-READ-007 polish (no AC change): cascade animation temporarily uses constant velocity ('linear' easing) instead of the slow-start-fast-end ease-IN curve, pending user evaluation of which feels better.
 
 - REQ-READ-007 polish (no AC change): pop and cascade durations tuned shorter so the tap-to-settled wall clock is roughly halved — pop 700ms→500ms, cascade target/min/max 700/800/3500ms→400/400/1500ms. Same pop/hold/cascade choreography, same easing, just snappier.
