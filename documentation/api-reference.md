@@ -315,9 +315,13 @@ Operator-only endpoint that kicks the global-feed coordinator on demand — iden
 
 **Concurrency guard (120-second reuse window):** Before creating a new run, the handler queries for any `scrape_runs` row with `status='running'` started within the last 120 seconds. If one is found it is reused instead of dispatching a second coordinator. This absorbs double-clicks and link-preview bot refetches. Note: two truly concurrent requests can both pass the SELECT before either INSERT commits — the ULIDs are unique so no PK collision collapses the race; for an operator-only endpoint the tradeoff is acceptable.
 
-**POST response:** `303` redirect to `/settings?force_refresh={ok|reused}&run_id={ulid}`.
+**POST response:** `303` redirect to `/settings?force_refresh=ok` (new run) or `/settings?force_refresh=reused` (concurrency guard hit). The `/settings` page reads `?force_refresh=` in `init()` and renders the result in `[data-scrape-progress]`.
 
-**GET response:** `200 { ok: true, scrape_run_id: string, reused: bool }`.
+**GET response (content-negotiated):**
+- Browser or any client without `Accept: application/json` → `303` redirect to `/settings?force_refresh={ok|reused}`.
+- `Accept: application/json` → `200 { ok: true, scrape_run_id: string, reused: bool }`.
+
+Scripts and `curl` callers must send `Accept: application/json` to receive the JSON payload; omitting it triggers a redirect.
 
 **Error response (both methods):** `500 "Failed to dispatch coordinator"` when the D1 INSERT or queue send throws.
 
