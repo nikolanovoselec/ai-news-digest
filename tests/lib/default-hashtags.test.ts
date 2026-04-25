@@ -12,7 +12,10 @@ const ORIGINAL_TWELVE = [
   'aws',
   'cloud',
   'serverless',
-  'workers',
+  // 'workers' was renamed to 'cloudflareworkers' on 2026-04-25 because
+  // the bare 'workers' tag surfaced articles about people working
+  // (HR / labour stories) instead of Cloudflare Workers technology.
+  'cloudflareworkers',
   'azure',
   'zero-trust',
   'microsegmentation',

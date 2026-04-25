@@ -16,7 +16,7 @@ export const DEFAULT_HASHTAGS: readonly string[] = [
   'aws',
   'cloud',
   'serverless',
-  'workers',
+  'cloudflareworkers',
   'azure',
   'zero-trust',
   'microsegmentation',
