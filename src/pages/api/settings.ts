@@ -341,3 +341,104 @@ export async function PUT(context: APIContext): Promise<Response> {
     { status: 200, headers },
   );
 }
+
+/**
+ * Native form-POST fallback for /api/settings.
+ *
+ * The settings page primarily POSTs JSON via fetch from a JS submit
+ * handler, but if that handler ever fails to bind (CSP block, mobile
+ * webview quirks, ClientRouter race), the browser would default to a
+ * GET on the form's current URL with values as query params — silently
+ * losing every save. The form now declares `method="post"
+ * action="/api/settings"`, so the unhandled native submit hits this
+ * POST path with a `application/x-www-form-urlencoded` body.
+ *
+ * This handler reads the form fields, coerces them to the same shape
+ * PUT validates, runs the same persistence logic, and returns a 303
+ * redirect back to /settings so the page reloads with the new values.
+ */
+export async function POST(context: APIContext): Promise<Response> {
+  const env = context.locals.runtime.env;
+  // Native form submissions can't render JSON error bodies — the browser
+  // would navigate to the JSON and show raw text. Every error path here
+  // 303-redirects back to /settings?error=<code> so the page can render
+  // the error inline and the user keeps editing without re-typing.
+  const fail = (code: string): Response =>
+    new Response(null, {
+      status: 303,
+      headers: { Location: `/settings?error=${encodeURIComponent(code)}` },
+    });
+
+  if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
+    return fail('app_not_configured');
+  }
+  const appOrigin = originOf(env.APP_URL);
+
+  const originResult = checkOrigin(context.request, appOrigin);
+  if (!originResult.ok) {
+    return fail('forbidden_origin');
+  }
+
+  const session = await loadSession(context.request, env.DB, env.OAUTH_JWT_SECRET);
+  if (session === null) {
+    // Unauthenticated users can't see /settings, so the redirect target
+    // would itself bounce to /. That's the right answer: send them
+    // somewhere they can re-authenticate, not to a JSON blob.
+    return new Response(null, { status: 303, headers: { Location: '/' } });
+  }
+
+  let form: FormData;
+  try {
+    form = await context.request.formData();
+  } catch {
+    return fail('bad_request');
+  }
+
+  // The form's `time` field is a single HH:MM string; split it into
+  // the hour/minute integers the validation block below expects.
+  const timeRaw = form.get('time');
+  const tzRaw = form.get('tz');
+  const modelIdRaw = form.get('model_id');
+  // Native HTML form checkboxes only appear in the FormData when checked.
+  const emailEnabled = form.get('email_enabled') !== null;
+  const [hourStr, minuteStr] =
+    typeof timeRaw === 'string' ? timeRaw.split(':') : ['', ''];
+  const digestHour = Number.parseInt(hourStr ?? '', 10);
+  const digestMinute = Number.parseInt(minuteStr ?? '', 10);
+
+  if (!isIntegerInRange(digestHour, 0, 23) || !isIntegerInRange(digestMinute, 0, 59)) {
+    return fail('invalid_time');
+  }
+  if (typeof tzRaw !== 'string' || tzRaw === '' || !isValidTz(tzRaw)) {
+    return fail('invalid_tz');
+  }
+  if (typeof modelIdRaw !== 'string' || !MODELS.some((m) => m.id === modelIdRaw)) {
+    return fail('invalid_model_id');
+  }
+
+  const tz = tzRaw;
+  const modelId = modelIdRaw;
+  const emailEnabledInt = emailEnabled ? 1 : 0;
+
+  try {
+    await env.DB.prepare(
+      'UPDATE users SET digest_hour = ?1, digest_minute = ?2, tz = ?3, model_id = ?4, email_enabled = ?5 WHERE id = ?6',
+    )
+      .bind(digestHour, digestMinute, tz, modelId, emailEnabledInt, session.user.id)
+      .run();
+  } catch (err) {
+    log('error', 'settings.update.failed', {
+      user_id: session.user.id,
+      op: 'write',
+      error_code: 'internal_error',
+      detail: String(err).slice(0, 500),
+    });
+    return fail('internal_error');
+  }
+
+  const headers = new Headers({ Location: '/settings?saved=ok' });
+  if (session.refreshCookie !== null) {
+    headers.append('Set-Cookie', session.refreshCookie);
+  }
+  return new Response(null, { status: 303, headers });
+}
