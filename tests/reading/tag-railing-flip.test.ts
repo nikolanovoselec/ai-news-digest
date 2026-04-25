@@ -35,7 +35,7 @@ describe('tag-railing FLIP reorder — REQ-READ-007', () => {
     // collapses to the broken jump-cut behaviour the bug report
     // described.
     expect(flipHelper).toContain('getBoundingClientRect');
-    expect(flipHelper).toMatch(/insertBefore\([^)]*firstChild/);
+    expect(flipHelper).toMatch(/insertBefore\([^)]*beforeNode/);
     expect(flipHelper).toMatch(/transform\s*=/);
   });
 
