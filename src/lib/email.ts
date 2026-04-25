@@ -139,12 +139,22 @@ export async function sendEmail(
   // arrive here as undefined / empty. We return a clean
   // not_configured outcome instead of issuing a fetch with an empty
   // Bearer token (which would 401 and noise up the logs).
+  //
+  // Log once per send so a fork operator who expects emails to land
+  // (but forgot to set the secrets) can see WHY no message went out
+  // in `wrangler tail`. Severity is `info` — this is configuration,
+  // not failure.
   if (
     typeof env.RESEND_API_KEY !== 'string' ||
     env.RESEND_API_KEY === '' ||
     typeof env.RESEND_FROM !== 'string' ||
     env.RESEND_FROM === ''
   ) {
+    log('info', 'email.send.failed', {
+      to: params.to,
+      status: null,
+      error: 'resend_not_configured',
+    });
     return { sent: false, error_code: 'resend_not_configured' };
   }
 

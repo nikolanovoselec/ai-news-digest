@@ -17,9 +17,13 @@
 //   3. Enumerate the user's saved hashtags.
 //   4. For each tag, read `sources:{tag}` from KV. Collect the tags
 //      whose feeds list parses to an explicitly empty array.
-//   5. For each stuck tag: clear the KV entries and INSERT OR IGNORE a
-//      `pending_discoveries` row. Single batched D1 statement so all
-//      inserts commit or fail together.
+//   5. For each stuck tag: INSERT OR IGNORE a `pending_discoveries`
+//      row in a single D1 batch FIRST, then clear the KV entries.
+//      Order matters — if D1 throws we return 500 without altering
+//      KV, so a retry is a no-op repeat; if KV cleanup throws after
+//      the D1 commit, the cron's own write replaces the stale entry
+//      on its next pass. See the inline comment in the try block for
+//      the partial-failure rationale.
 //   6. Return 303 → /settings?rediscover=ok&count=N.
 //
 // Authorisation beyond the session check is gated externally:
