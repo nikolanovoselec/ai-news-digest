@@ -91,12 +91,16 @@ function makeContext(request: Request, env: Partial<Env>): unknown {
 
 function refreshRequest(
   verb: 'POST' | 'GET',
-  options: { origin?: string | null } = {},
+  options: { origin?: string | null; accept?: string } = {},
 ): Request {
   const headers = new Headers({ 'Content-Type': 'application/json' });
   if (options.origin != null) {
     headers.set('Origin', options.origin);
   }
+  // GET path content-negotiates: Accept: application/json returns JSON;
+  // browsers (no/text-html Accept) get a 303 to /settings. Tests assert
+  // the JSON shape, so they opt in via the header.
+  headers.set('Accept', options.accept ?? 'application/json');
   return new Request(`${APP_URL}/api/admin/force-refresh`, { method: verb, headers });
 }
 
