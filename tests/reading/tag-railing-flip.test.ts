@@ -59,13 +59,35 @@ describe('tag-railing FLIP reorder — REQ-READ-007', () => {
     // The cascade plays in place. The chip may slide off-screen-left
     // when the strip is horizontally scrolled — that's intentional.
     // Regression guard against accidentally re-introducing
-    // strip.scrollTo() or any other auto-scroll path.
+    // strip.scrollTo() in the cascade path.
     expect(flipHelper).not.toContain('scrollTo');
-    expect(flipHelper).not.toContain('animateScrollTo');
     // The scrollLeft snapshot/restore around insertBefore is allowed
     // and necessary — it defeats the browser's IMPLICIT auto-scroll
     // on focus / scroll-snap mutation. Verify it's still there.
     expect(flipHelper).toContain('savedScrollLeft');
+  });
+
+  it('REQ-READ-007: cascade duration scales with chip travel distance (AC 3)', () => {
+    // The play-phase duration is derived from the tapped chip's dx
+    // so far hops don't race past the eye in a blink. The factor +
+    // clamp must both appear so a future refactor that drops the
+    // scaling fails CI loudly.
+    expect(flipHelper).toContain('PX_PER_MS');
+    expect(flipHelper).toContain('MIN_CASCADE_MS');
+    expect(flipHelper).toContain('MAX_CASCADE_MS');
+    expect(flipHelper).toMatch(/tappedDx\s*\*\s*PX_PER_MS/);
+  });
+
+  it('REQ-READ-007: arms a one-shot scroll-down reveal after the cascade (AC 6)', () => {
+    // After the cascade settles, the next downward window-scroll
+    // smooth-animates strip.scrollLeft → 0 so the user sees the
+    // just-selected chip docked at slot 0 as they begin to read
+    // the dashboard. One-shot per cascade; cancellable on user
+    // swipe of the strip.
+    expect(flipHelper).toContain('armScrollDownReveal');
+    expect(flipHelper).toMatch(/window\.addEventListener\(['"]scroll['"]/);
+    expect(flipHelper).toMatch(/delta\s*<=\s*0/);
+    expect(flipHelper).toContain('animateStripScrollTo');
   });
 
   it('REQ-READ-007: helper bails to instant reorder when prefers-reduced-motion is set (AC 8)', () => {

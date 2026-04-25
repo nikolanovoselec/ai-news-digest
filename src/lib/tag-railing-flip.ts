@@ -41,9 +41,11 @@
 //      chip stays slightly elevated (z-index lift via the pop class)
 //      while the user's eye lands on it, so they know which chip is
 //      about to move before the cascade starts.
-//   3. CASCADE: the FLIP reorder plays at SLOW_CASCADE_MS — long
-//      enough that the eye can track the chip across the railing
-//      and see the displaced chips slide right to fill the gap.
+//   3. CASCADE: the FLIP reorder plays at a distance-proportional
+//      duration (see PX_PER_MS / MIN_CASCADE_MS / MAX_CASCADE_MS) so
+//      the chip's perceived velocity stays uniform whether it
+//      travels 200px or 1500px. The eye can track the chip across
+//      the railing without it racing past as a blur.
 //
 // Total wall-clock from tap to settled state:
 //   ~700ms pop (overlapping the hold) + remaining hold to 1000ms
@@ -62,18 +64,33 @@
 const POP_CLASS = 'tag-chip--just-tapped';
 const LIFT_CLASS = 'tag-chip--in-flight';
 const HOLD_BEFORE_CASCADE_MS = 1000;
-const SLOW_CASCADE_MS = 800;
-// LIFT_CLASS lives slightly longer than the cascade so the elevated
-// look settles back to flat AFTER the slide ends.
-const LIFT_HOLD_MS = HOLD_BEFORE_CASCADE_MS + SLOW_CASCADE_MS + 100;
-const DEFAULT_DURATION_MS = SLOW_CASCADE_MS;
+// Cascade duration scales with the tapped chip's travel distance so
+// the perceived velocity stays roughly uniform across short and long
+// hops. Without scaling, a chip that travels 1500px in 800ms races
+// past the eye in ~200ms of visible time, while a 200px chip strolls.
+// MIN keeps short hops from feeling abrupt; MAX keeps long hops from
+// feeling ponderous.
+const MIN_CASCADE_MS = 800;
+const MAX_CASCADE_MS = 1500;
+const PX_PER_MS = 1.2; // ~833 px/s — comfortable eye-tracking velocity
+// LIFT_CLASS lives slightly longer than the longest possible cascade
+// so the elevated look settles back to flat AFTER the slide ends,
+// regardless of how far the tapped chip had to travel.
+const LIFT_HOLD_MS = HOLD_BEFORE_CASCADE_MS + MAX_CASCADE_MS + 100;
 const ANIM_LOCK_ATTR = 'data-tag-flip-locked';
+// One-shot scroll-down reveal: after a cascade settles, the next
+// downward window scroll smooth-animates strip.scrollLeft → 0 so the
+// user sees the just-selected chip docked at slot 0 as they begin to
+// scroll the dashboard. Lives ~600ms with easeOutQuint matching the
+// FLIP cascade's curve. Cancelled if the user manually swipes the
+// strip during the animation.
+const SCROLL_REVEAL_DURATION_MS = 600;
 
 export interface FlipChipOptions {
-  /** Cascade animation duration in ms. Defaults to SLOW_CASCADE_MS
-   *  (800). The pop and hold phases above the cascade are not
-   *  configurable via this option — adjust the module-level
-   *  constants if you need to retune them together. */
+  /** Override for the cascade animation duration in ms. When unset,
+   *  the helper computes a distance-proportional duration clamped
+   *  between MIN_CASCADE_MS and MAX_CASCADE_MS so velocity feels
+   *  uniform across short and long hops. */
   durationMs?: number;
 }
 
@@ -94,7 +111,9 @@ export async function flipChipToFront(
   options: FlipChipOptions = {},
 ): Promise<void> {
   if (isFlipLocked(strip)) return;
-  const durationMs = options.durationMs ?? DEFAULT_DURATION_MS;
+  // The play-phase duration is computed adaptively from the tapped
+  // chip's travel distance — see adaptiveDuration in the cascade
+  // block. options.durationMs is honoured there as an override.
 
   // (AC 8) Bail to instant reorder when motion is suppressed. The
   // pop + hold + cascade choreography is purely chrome — when the
@@ -182,6 +201,7 @@ export async function flipChipToFront(
     // class still emitting a `transform: scale(...)` from its
     // keyframe — the inline transform overrides it.
     const playing: HTMLElement[] = [];
+    let tappedDx = 0;
     for (const chip of chips) {
       const first = firstRects.get(chip);
       if (first === undefined) continue;
@@ -192,7 +212,15 @@ export async function flipChipToFront(
       chip.style.transition = 'none';
       chip.style.transform = `translate(${dx}px, ${dy}px)`;
       playing.push(chip);
+      if (chip === tappedChip) tappedDx = Math.abs(dx);
     }
+
+    // Distance-proportional cascade duration (see PX_PER_MS comment
+    // above). Caller-provided `durationMs` overrides this — used by
+    // tests that want deterministic timing.
+    const adaptiveDuration =
+      options.durationMs ??
+      Math.max(MIN_CASCADE_MS, Math.min(MAX_CASCADE_MS, tappedDx * PX_PER_MS));
 
     // Fast-exit when nothing actually moved (e.g., the user tapped
     // the chip already in slot 0). Otherwise we'd burn the full
@@ -237,7 +265,7 @@ export async function flipChipToFront(
         requestAnimationFrame(() => resolve());
       });
       for (const chip of playing) {
-        chip.style.transition = `transform ${durationMs}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
+        chip.style.transition = `transform ${adaptiveDuration}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
         // Explicit identity transform rather than '' (inline removal).
         // CSS Transitions L1 §3 interpolates between two computed
         // <transform-list> values cleanly when both endpoints are
@@ -264,7 +292,7 @@ export async function flipChipToFront(
           }
         };
         tappedChip.addEventListener('transitionend', onEnd);
-        setTimeout(settle, durationMs + 100);
+        setTimeout(settle, adaptiveDuration + 100);
       });
 
       // Cleanup inline transition + transform styles so subsequent
@@ -281,6 +309,15 @@ export async function flipChipToFront(
     // Restore scroll-snap (AFTER the cascade — re-enabling it
     // mid-transition would re-snap during the slide).
     strip.style.scrollSnapType = prevSnap;
+
+    // Arm a one-shot scroll-down reveal: the next downward window
+    // scroll will smooth-animate the strip's scrollLeft → 0 so the
+    // user sees the just-selected chip docked at slot 0 as they
+    // begin to read the dashboard. Only fires when the strip is
+    // overflow-scrollable AND not already at scrollLeft=0.
+    if (strip.scrollWidth > strip.clientWidth && strip.scrollLeft > 0) {
+      armScrollDownReveal(strip);
+    }
   } finally {
     // Keyboard-accessibility safety: restore focus in finally so
     // even an unexpected throw mid-cascade doesn't leave the user
@@ -289,5 +326,70 @@ export async function flipChipToFront(
     if (hadFocus) tappedChip.focus({ preventScroll: true });
     strip.removeAttribute(ANIM_LOCK_ATTR);
   }
+}
+
+/** Install a one-shot window scroll listener that fires on the first
+ *  downward page scroll and smooth-animates the strip's `scrollLeft`
+ *  back to 0 — revealing the just-selected chip at slot 0 as the
+ *  user starts to read the dashboard. Only one listener is armed per
+ *  strip at a time (subsequent calls before the first fires are
+ *  no-ops). The animation cancels if the user manually swipes the
+ *  strip during it. */
+function armScrollDownReveal(strip: HTMLElement): void {
+  if (strip.dataset['scrollRevealArmed'] === '1') return;
+  strip.dataset['scrollRevealArmed'] = '1';
+
+  let lastScrollY = window.scrollY;
+  const onScroll = (): void => {
+    const currentY = window.scrollY;
+    const delta = currentY - lastScrollY;
+    lastScrollY = currentY;
+    if (delta <= 0) return; // only fire on downward scroll
+    window.removeEventListener('scroll', onScroll);
+    delete strip.dataset['scrollRevealArmed'];
+    if (strip.scrollLeft <= 0) return;
+    animateStripScrollTo(strip, 0, SCROLL_REVEAL_DURATION_MS);
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+}
+
+/** Smooth scrollLeft easing with user-input cancellation. Same shape
+ *  as the helper that lived inline before PR #49 removed it. */
+function animateStripScrollTo(
+  strip: HTMLElement,
+  target: number,
+  durationMs: number,
+): void {
+  const start = strip.scrollLeft;
+  if (Math.abs(target - start) < 0.5) return;
+  let cancelled = false;
+  const cancel = (): void => {
+    cancelled = true;
+  };
+  const opts: AddEventListenerOptions = { once: true, passive: true };
+  strip.addEventListener('wheel', cancel, opts);
+  strip.addEventListener('touchstart', cancel, opts);
+  strip.addEventListener('pointerdown', cancel, opts);
+  const cleanup = (): void => {
+    strip.removeEventListener('wheel', cancel);
+    strip.removeEventListener('touchstart', cancel);
+    strip.removeEventListener('pointerdown', cancel);
+  };
+  const t0 = performance.now();
+  const tick = (now: number): void => {
+    if (cancelled) {
+      cleanup();
+      return;
+    }
+    const t = Math.min(1, (now - t0) / durationMs);
+    const eased = 1 - Math.pow(1 - t, 5);
+    strip.scrollLeft = start + (target - start) * eased;
+    if (t < 1) {
+      requestAnimationFrame(tick);
+    } else {
+      cleanup();
+    }
+  };
+  requestAnimationFrame(tick);
 }
 
