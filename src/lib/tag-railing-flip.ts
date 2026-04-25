@@ -32,8 +32,8 @@
 //
 //   1. POP: the tapped chip scales up with a bounce so the user gets
 //      unmistakable feedback that the tap was received. The pop
-//      animation runs for POP_DURATION_MS and is the only motion on
-//      screen for the first beat.
+//      keyframe in TagStrip.astro runs for ~700ms and is the only
+//      motion on screen for the first beat.
 //   2. HOLD: a one-second pause where nothing else moves. The popped
 //      chip stays slightly elevated (z-index lift via the pop class)
 //      while the user's eye lands on it, so they know which chip is
@@ -42,9 +42,9 @@
 //      enough that the eye can track the chip across the railing
 //      and see the displaced chips slide right to fill the gap.
 //
-// Total wall-clock from tap to settled state is roughly:
-//   POP_DURATION_MS + (HOLD_BEFORE_CASCADE_MS - POP_DURATION_MS)
-//     + SLOW_CASCADE_MS  ≈ 1700 ms.
+// Total wall-clock from tap to settled state:
+//   ~700ms pop (overlapping the hold) + remaining hold to 1000ms
+//     + 800ms cascade  ≈ 1800 ms.
 // This is intentionally long. Earlier 220ms / 450ms tunings looked
 // like teleportation on real hardware.
 const POP_CLASS = 'tag-chip--just-tapped';
@@ -73,7 +73,7 @@ export interface FlipChipOptions {
 /** True iff a flip animation is currently mid-flight on the given
  *  strip. Host-page tap handlers should consult this and bail out
  *  early so a double-tap doesn't queue a second reorder on top of
- *  the first one (AC 4). */
+ *  the first one (AC 5). */
 export function isFlipLocked(strip: HTMLElement): boolean {
   return strip.hasAttribute(ANIM_LOCK_ATTR);
 }
@@ -90,7 +90,7 @@ export async function flipChipToFront(
   const durationMs = options.durationMs ?? DEFAULT_DURATION_MS;
   const followScroll = options.followScroll ?? true;
 
-  // (AC 7) Bail to instant reorder when motion is suppressed. The
+  // (AC 8) Bail to instant reorder when motion is suppressed. The
   // pop + hold + cascade choreography is purely chrome — when the
   // user has asked for reduced motion we skip it entirely and just
   // commit the new order silently.
@@ -157,7 +157,7 @@ export async function flipChipToFront(
     // the chip already in slot 0). Otherwise we'd burn the full
     // backstop window waiting for a transitionend that will never
     // fire, blocking the strip for ~durationMs+100ms with no visual
-    // payoff. AC 5 scroll-follow still runs below the try block.
+    // payoff. AC 6 scroll-follow still runs below the try block.
     if (playing.length > 0) {
       // PLAY: next animation frame, transition transforms back to
       // zero so the cascade plays out.
@@ -197,7 +197,7 @@ export async function flipChipToFront(
       }
     }
 
-    // (AC 5) Conditional scroll-follow. We need scroll when:
+    // (AC 6) Conditional scroll-follow. We need scroll when:
     //   a) the strip is overflow-scrollable (scrollWidth > clientWidth),
     //   b) the tapped chip's first rect was outside the strip's
     //      visible horizontal range (off-screen left or right).
