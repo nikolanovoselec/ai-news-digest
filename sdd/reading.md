@@ -133,6 +133,29 @@ Superseded by REQ-PIPE-001 in the 2026-04-23 global-feed rework. The per-user di
 
 ---
 
+### REQ-READ-007: Tag railing reorder animation
+
+**Intent:** When the user taps a chip in the shared tag railing on the dashboard or Search & History, the chip animates into the leftmost slot and the chips that previously sat between it and the front cascade right to fill the slot it left. The visual confirms what the user just did, no chip ever vanishes mid-motion, and the railing as a whole never resets to an arbitrary scroll position.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. Tapping a chip applies a brief highlight pulse to that chip so the user has immediate visual confirmation of the input even before the railing reorders.
+2. The tapped chip slides leftward to the start of the railing along a smooth path; chips that previously sat to its left in the new order slide rightward to fill the slot it vacated, all on the same duration so the motion reads as one continuous cascade.
+3. No chip is hidden, removed, or repainted mid-flight — every chip remains visible and identifiable throughout the animation.
+4. While the cascade is in flight, additional taps on any chip are ignored until the motion settles, so a rapid double-tap never desynchronises the data order from the visual order.
+5. On a viewport that scrolls the railing horizontally, the railing follows the moving chip until the chip docks at the railing's leftmost visible edge — and only when the chip was outside the visible area to begin with. A chip that was already on-screen when tapped does not trigger any auto-scroll.
+6. On a viewport that wraps the railing into multiple rows, the railing does not scroll at all; the user sees the entire cascade play out across whatever rows the chips occupy.
+7. When the runtime does not support the animation primitives, the reorder still happens (the tapped chip ends up at slot 0 and the data order is correct) — only the in-between motion is skipped.
+
+**Constraints:** CON-SEC-001
+**Priority:** P2
+**Dependencies:** REQ-READ-001, REQ-HIST-001
+**Verification:** Integration test
+**Status:** Planned
+
+---
+
 ### REQ-STAR-001: Star and unstar articles
 
 **Intent:** Users can mark articles worth keeping by starring them from the dashboard grid or the article detail page, and remove the star with the same affordance.
