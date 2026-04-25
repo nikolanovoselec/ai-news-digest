@@ -718,12 +718,17 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
     const submit = form.querySelector<HTMLButtonElement>('[data-settings-submit]');
     const tzSelect = form.querySelector('[data-tz-select]') as HTMLSelectElement | null;
 
-    // REQ-SET-007 AC 5 — browser-detected pre-select. Server rendered
-    // the dropdown with the stored tz selected; on load, swap the
-    // selection to whatever the browser thinks the user is in. The
-    // user can still change it before saving. Saving the form persists
-    // the chosen value via the existing /api/settings PUT path.
-    if (tzSelect !== null) {
+    // REQ-SET-007 AC 5 + AC 6 — browser-detected pre-select. Server
+    // rendered the dropdown with the stored tz selected. We only swap
+    // to the browser-resolved zone while the stored value is still the
+    // seeded UTC default (same gate as Base.astro's syncBrowserTz).
+    // Once the user (or an earlier silent correction) has set anything
+    // else, the manual picker preserves the stored value — otherwise a
+    // privacy-masked browser whose Intl returns a UTC alias like
+    // Africa/Abidjan would re-stamp a deliberate manual choice every
+    // time the user opened /settings, and the next form save would
+    // POST that wrong value back to /api/settings.
+    if (tzSelect !== null && tzSelect.value === 'UTC') {
       try {
         const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         if (

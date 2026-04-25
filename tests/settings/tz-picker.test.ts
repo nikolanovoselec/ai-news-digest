@@ -42,6 +42,15 @@ describe('settings.astro manual tz picker — REQ-SET-007 AC 5', () => {
     );
   });
 
+  it("REQ-SET-007 AC 6: dropdown swap is gated on stored tz === 'UTC'", () => {
+    // Mirror of the Base.astro silent-path gate. Once the user has
+    // explicitly set a non-default tz, the picker must NOT overwrite
+    // the visible selection on every page load — otherwise a privacy-
+    // masked browser whose Intl returns Africa/Abidjan would silently
+    // re-stamp the user's deliberate choice on the next save.
+    expect(settingsPage).toMatch(/tzSelect\.value\s*===\s*['"]UTC['"]/);
+  });
+
   it('REQ-SET-007: form submit reads the picked value from the <select> (not from textContent)', () => {
     // The submitSettings handler must source `tz` from the select's
     // `.value`, not from the old <output>'s textContent. Regression

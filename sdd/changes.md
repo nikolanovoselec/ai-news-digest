@@ -6,6 +6,8 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 ## 2026-04-25
 
+- REQ-SET-007 AC 6 extended to the manual picker: the settings dropdown's browser-detected pre-select now also stops once the stored timezone is anything other than the seeded UTC default. Previously the silent server path was gated correctly but the dropdown UI still flipped to the browser-resolved zone on every page load, so a privacy-masked browser whose Intl returns Africa/Abidjan as a UTC alias would silently re-stamp a deliberate manual choice the next time the user clicked Save.
+
 - SEO + LLM-discovery metadata refresh: page description, og:image:alt, twitter:image:alt, llms.txt and llms-full.txt all updated to reflect the shipped reality (federated GitHub + Google sign-in, every-four-hours scrape cadence instead of hourly, 29-article dashboard cap, accurate cost figure of ~$1.20/day). The browser-tab title for the dashboard is now "Your feed" instead of the legacy "Today's digest" — the global pool is continuous, not date-scoped.
 
 - REQ-READ-003 amended (AC 1–4 reconciliation): read-tracking is now described as a per-(user, article) mark on the global article pool rather than a per-digest UPDATE, matching the shipped behaviour after migration 0003 dropped the digests table.
