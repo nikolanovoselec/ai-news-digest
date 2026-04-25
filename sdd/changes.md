@@ -6,6 +6,8 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 ## 2026-04-25
 
+- Admin force-refresh GET now content-negotiates: browsers (and the Cloudflare Access post-auth callback that lands users back as a GET) are redirected to `/settings` with an outcome banner, while scripts that send `Accept: application/json` still receive the JSON status body. Operators no longer land on a raw JSON page after clicking Force refresh.
+
 - REQ-SET-001 AC 5 reworded: the native-form save outcome (success "Saved" or named error) now surfaces inline next to the Save button instead of as a top-of-form banner, and the carrying query parameters are stripped after display so a refresh does not re-show stale text. The 303-redirect contract is unchanged.
 
 - REQ-SET-001 AC 5 extended: native form-POST failures now redirect back to the settings page with an inline error banner naming what went wrong, instead of returning a raw JSON error body the browser would render as plain text on a blank page. Unauthenticated native POSTs redirect to the site root since the settings page would itself bounce them away.
