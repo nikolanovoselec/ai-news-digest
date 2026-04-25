@@ -6,6 +6,8 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 ## 2026-04-25
 
+- REQ-SET-001 AC 5 added: the settings save endpoint now accepts a native HTML form submission alongside the JSON API path, so clicking Save persists the user's settings even on browsers where the in-page submit handler has not finished binding (mobile in-app webviews, client-router swap races). Both paths share the same validation and the same Origin check from REQ-AUTH-003.
+
 - REQ-SET-007 AC 6 generalised: new users are seeded with an empty timezone sentinel and the silent auto-correct fires only while that sentinel is in place — any non-empty stored zone (including a deliberate manual UTC pick) is now authoritative and never overwritten. The previous gate keyed on the literal value `UTC` would re-overwrite users who genuinely lived in UTC on every page load.
 
 - REQ-READ-007 cascade easing finalised at `linear` (no more pending-UX-evaluation TODOs). The earlier per-chip ease-IN / ease-OUT logic and its commented-out fallback have been removed; uniform linear easing feels more consistent across chips travelling different distances.
