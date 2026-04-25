@@ -112,29 +112,43 @@ export async function POST(context: APIContext): Promise<Response> {
 }
 
 export async function GET(context: APIContext): Promise<Response> {
-  // GET path exists so the operator can trigger from a bookmark or
-  // curl without needing a form. Cloudflare Access is the sole gate
-  // — no Origin check here (there's no state-changing browser flow).
-  // The REUSE_WINDOW_SECONDS guard below prevents accidental storms
-  // from link-preview bots refetching the URL.
+  // GET path exists for two callers:
+  //   1. Browsers landing here via the Cloudflare Access post-auth
+  //      callback — Access intercepts the form's POST, bounces through
+  //      SSO, and returns the user as a GET to the original URL. They
+  //      should never see raw JSON; redirect them back to /settings.
+  //   2. Scripts/curl that explicitly want JSON — they opt in by
+  //      sending `Accept: application/json`.
+  // Cloudflare Access is the sole authn gate (no Origin check needed).
   const env = context.locals.runtime.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
     return new Response('Application not configured', { status: 500 });
   }
+  const appOrigin = originOf(env.APP_URL);
+  const wantsJson = (context.request.headers.get('Accept') ?? '').includes('application/json');
   try {
     const { run_id, reused } = await kickCoordinator(env);
-    return new Response(
-      JSON.stringify({ ok: true, scrape_run_id: run_id, reused }, null, 2),
-      {
-        status: 200,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      },
-    );
+    if (wantsJson) {
+      return new Response(
+        JSON.stringify({ ok: true, scrape_run_id: run_id, reused }, null, 2),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        },
+      );
+    }
+    return redirectToSettings(appOrigin, run_id, reused);
   } catch (err) {
     log('error', 'digest.generation', {
       status: 'force_refresh_failed',
       detail: String(err).slice(0, 500),
     });
-    return new Response('Failed to dispatch coordinator', { status: 500 });
+    if (wantsJson) {
+      return new Response('Failed to dispatch coordinator', { status: 500 });
+    }
+    return new Response(null, {
+      status: 303,
+      headers: { Location: `${appOrigin}/settings?force_refresh=error` },
+    });
   }
 }
