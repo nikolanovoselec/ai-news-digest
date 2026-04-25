@@ -230,13 +230,19 @@ function isCardHidden(articleTags: readonly string[]): boolean {
 
 <script>
   // Implements REQ-READ-001
+  // Implements REQ-READ-007
   //
   // Three responsibilities:
   //   1. Tick the "Next update in Xm" (or "Xh Ym") countdown every 10s from
   //      the server-rendered next_scrape_at; refetch /api/digest/today
   //      when the countdown hits zero and re-render the header+grid.
   //   2. Toggle the offline banner based on navigator.onLine.
-  //   3. Wire the tag-strip filter (add / remove / toggle-select).
+  //   3. Wire the tag-strip filter (add / remove / toggle-select);
+  //      reorder selected chip to slot 0 via the shared FLIP cascade
+  //      (REQ-READ-007) so the motion confirms the tap and the chip
+  //      never "disappears" mid-flight.
+
+  import { flipChipToFront, isFlipLocked } from '~/lib/tag-railing-flip';
 
   let countdownHandle: number | null = null;
 
@@ -663,6 +669,15 @@ function isCardHidden(articleTags: readonly string[]): boolean {
     strip.addEventListener('click', (e) => {
       const target = e.target as HTMLElement | null;
       if (target === null) return;
+      // REQ-READ-007 AC 4 — drop taps received while a cascade is
+      // mid-flight. Without this guard a rapid double-tap can flip a
+      // chip's selected state twice while the FLIP transforms are
+      // still settling, leaving data and DOM order desynced.
+      if (isFlipLocked(strip)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const removeHit = target.closest<HTMLElement>('[data-tag-remove]');
       if (removeHit !== null) {
         e.preventDefault();
@@ -696,12 +711,12 @@ function isCardHidden(articleTags: readonly string[]): boolean {
       const nowSelected = chip.classList.toggle('is-selected');
       chip.setAttribute('aria-pressed', nowSelected ? 'true' : 'false');
       if (nowSelected) {
-        // Move the just-selected chip to scroll-position 0 so the
-        // filter chip is always visible without the user having to
-        // scroll the mobile tag strip back to find it. insertBefore
-        // at firstChild avoids the prepend-overload collision between
-        // DOM and Workers types.
-        strip.insertBefore(chip, strip.firstChild);
+        // REQ-READ-007 — cascade the chip to slot 0 with the FLIP
+        // helper. The helper handles tap-pulse, in-flight lockout,
+        // and conditional mobile scroll-follow. applyFilter runs
+        // immediately so the grid updates without waiting on the
+        // animation; the visual cascade is just the chrome.
+        void flipChipToFront(strip, chip);
       }
       applyFilter();
     });
