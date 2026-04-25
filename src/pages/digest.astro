@@ -669,7 +669,7 @@ function isCardHidden(articleTags: readonly string[]): boolean {
     strip.addEventListener('click', (e) => {
       const target = e.target as HTMLElement | null;
       if (target === null) return;
-      // REQ-READ-007 AC 4 — drop taps received while a cascade is
+      // REQ-READ-007 AC 5 — drop taps received while a cascade is
       // mid-flight. Without this guard a rapid double-tap can flip a
       // chip's selected state twice while the FLIP transforms are
       // still settling, leaving data and DOM order desynced.

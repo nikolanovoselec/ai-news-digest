@@ -43,7 +43,7 @@ describe('tag-railing FLIP reorder — REQ-READ-007', () => {
     expect(flipHelper).toContain('tag-chip--just-tapped');
   });
 
-  it('REQ-READ-007: helper locks the strip while the cascade is in flight (AC 4)', () => {
+  it('REQ-READ-007: helper locks the strip while the cascade is in flight (AC 5)', () => {
     // Lock attribute set before reorder, removed after the play
     // phase resolves. Subsequent calls return early via isFlipLocked.
     // The literal attribute name lives in a module-level constant
@@ -55,7 +55,7 @@ describe('tag-railing FLIP reorder — REQ-READ-007', () => {
     expect(flipHelper).toContain('isFlipLocked');
   });
 
-  it('REQ-READ-007: helper scroll-follows only when the chip was off-screen (AC 5)', () => {
+  it('REQ-READ-007: helper scroll-follows only when the chip was off-screen (AC 6)', () => {
     // The off-screen guard uses the chip's first rect (captured
     // before the DOM reorder) compared against the strip's visible
     // rect. Auto-scrolling otherwise would fight users who tapped a
@@ -64,11 +64,11 @@ describe('tag-railing FLIP reorder — REQ-READ-007', () => {
     expect(flipHelper).toContain('scrollTo');
   });
 
-  it('REQ-READ-007: helper bails to instant reorder when prefers-reduced-motion is set (AC 7)', () => {
+  it('REQ-READ-007: helper bails to instant reorder when prefers-reduced-motion is set (AC 8)', () => {
     expect(flipHelper).toContain('prefers-reduced-motion');
   });
 
-  it('REQ-READ-007: TagStrip.astro ships the pulse keyframe used by the just-tapped class (AC 1)', () => {
+  it('REQ-READ-007: TagStrip.astro ships the pop keyframe used by the just-tapped class (AC 1)', () => {
     expect(tagStrip).toMatch(/@keyframes\s+tagChipPop/);
     expect(tagStrip).toContain('.tag-chip--just-tapped');
   });

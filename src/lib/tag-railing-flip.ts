@@ -1,29 +1,31 @@
 // Implements REQ-READ-007
 //
-// Shared FLIP-pattern helper for the tag railing on /digest and
-// /history. The host pages call `flipChipToFront(strip, chip)` from
-// their chip-click handlers; the helper:
+// Shared three-phase choreography for the tag railing on /digest
+// and /history. The host pages call `flipChipToFront(strip, chip)`
+// from their chip-click handlers; the helper plays:
 //
-//   1. Adds a brief pulse class on the tapped chip for input
-//      confirmation (AC 1).
-//   2. Captures every chip's bounding rect BEFORE mutating the DOM
-//      (the FLIP "First" phase).
-//   3. Moves the tapped chip to slot 0 via insertBefore (the FLIP
-//      "Last" phase).
-//   4. For each chip whose position changed, applies an inverse
-//      translate so visually nothing moved (the FLIP "Invert" phase),
-//      then on the next animation frame transitions the transform
-//      back to zero so the cascade plays out (the FLIP "Play" phase).
-//   5. Locks the strip via `data-tag-flip-locked` while the cascade
-//      is in flight, so a rapid second tap can't desync data order
-//      from visual order (AC 4).
-//   6. After the motion settles, conditionally scrolls the strip to
-//      the start, but ONLY when the strip is overflow-scrollable AND
-//      the tapped chip's first rect was outside the strip's visible
-//      box (AC 5). A chip already in view triggers no scroll.
-//   7. When the runtime advertises `prefers-reduced-motion: reduce`,
-//      the helper performs the reorder instantly and skips all
-//      transform animation (AC 7).
+//   PHASE 1 — POP (AC 1): scale-bounce class on the tapped chip for
+//     immediate input confirmation. The chip is also lifted via
+//     z-index + drop-shadow so it visibly rises above neighbours.
+//   PHASE 2 — HOLD (AC 2): a deliberate ~1-second pause where the
+//     popped chip sits elevated and nothing else moves, giving the
+//     user's eye time to land on the chip before the cascade starts.
+//   PHASE 3 — CASCADE (AC 3): classic FLIP — capture rects, move
+//     the tapped chip to slot 0, invert displaced chips with an
+//     inline transform, then on the next animation frame transition
+//     the transform back to zero so the cascade plays out.
+//
+// The strip is locked via `data-tag-flip-locked` for the full
+// pop+hold+cascade so re-entrant taps anywhere in the sequence are
+// dropped (AC 5). After the motion settles, the railing
+// conditionally scrolls to the start — but ONLY when the strip is
+// overflow-scrollable AND the tapped chip's first rect was outside
+// the strip's visible box (AC 6). A chip already in view triggers
+// no scroll.
+//
+// When the runtime advertises `prefers-reduced-motion: reduce`,
+// the helper performs the reorder instantly and skips the pop,
+// hold, and cascade entirely (AC 8).
 
 // Three-phase choreography (deliberately slow so the user sees each
 // step distinctly):
@@ -46,7 +48,10 @@
 // This is intentionally long. Earlier 220ms / 450ms tunings looked
 // like teleportation on real hardware.
 const POP_CLASS = 'tag-chip--just-tapped';
-const POP_DURATION_MS = 700;
+// The pop keyframe (700ms) lives in TagStrip.astro CSS — JS only
+// needs to know how long to keep the class on so the keyframe runs
+// to completion AND the chip stays elevated for the rest of the
+// hold + cascade.
 const HOLD_BEFORE_CASCADE_MS = 1000;
 const SLOW_CASCADE_MS = 800;
 const POP_CLASS_HOLD_MS = HOLD_BEFORE_CASCADE_MS + SLOW_CASCADE_MS + 100;
@@ -54,7 +59,10 @@ const DEFAULT_DURATION_MS = SLOW_CASCADE_MS;
 const ANIM_LOCK_ATTR = 'data-tag-flip-locked';
 
 export interface FlipChipOptions {
-  /** Animation duration in ms. Defaults to 220. */
+  /** Cascade animation duration in ms. Defaults to SLOW_CASCADE_MS
+   *  (800). The pop and hold phases above the cascade are not
+   *  configurable via this option — adjust the module-level
+   *  constants if you need to retune them together. */
   durationMs?: number;
   /** Whether to follow the moved chip with a scroll on overflow
    *  viewports. Defaults to true. Pass false to disable scroll
