@@ -13,7 +13,6 @@ Keeping up with tech news was a part-time job I didn't sign up for, didn't get p
 ## What's in it
 
 - **20 tags preloaded** (`#ai`, `#cloudflare`, `#postgres`, `#agenticai`…). My opinions, helpfully pre-formed for you. Tap × to drop, `+ add` to add.
-- **60+ curated sources, AI-heavy** — vendor blogs (OpenAI, DeepMind, Anthropic via Google News, Microsoft AI, NVIDIA, Google AI), research outlets (BAIR, MIT News AI, The Gradient), and the usual suspects (HN, Lobsters). Adding a tag the registry doesn't cover triggers an LLM-driven feed-discovery pass.
 - **Composable filters on Search & History** — tag + search + date AND together, all in the URL.
 - **Multi-source dedupe** — HN, vendor blog, and three aggregators "discovered" the same story? One card, `(+3)` chip.
 - **Summaries that earn their word count** — 150–200 words: *what happened → how it works → why you care*.
