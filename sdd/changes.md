@@ -6,6 +6,8 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 ## 2026-04-25
 
+- REQ-READ-007 amended (AC 3 + AC 6 polish): cascade duration now scales with the tapped chip's travel distance so far hops no longer race past the eye in a blink — short hops stay quick, long hops stretch to a comfortable trackable pace. Plus, the next downward page scroll after a tap smoothly slides the railing back to its leftmost position so the just-selected chip is revealed at the start as the user begins to read the dashboard.
+
 - REQ-READ-007 amended (AC 6 reshape): the tag railing no longer auto-scrolls when the user taps a chip — the chip cascades to data-position 0 in place, so on a horizontally-scrolled mobile viewport the chip may visually exit off the left edge until the user swipes the railing back. The railing's scroll position is preserved across the tap regardless of how it got there.
 
 - REQ-READ-007 amended (AC 1/2 reshape): the tag-railing tap now plays a three-phase choreography — instant scale-bounce pop on the tapped chip, ~1-second hold with the chip visually elevated, then the slow cascade — instead of the prior single fast pulse. The earlier fast pulse looked like teleportation; the deliberate pop + hold + slow slide gives the user time to understand which chip is moving and where it's going.
