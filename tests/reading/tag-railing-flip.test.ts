@@ -46,8 +46,12 @@ describe('tag-railing FLIP reorder — REQ-READ-007', () => {
   it('REQ-READ-007: helper locks the strip while the cascade is in flight (AC 4)', () => {
     // Lock attribute set before reorder, removed after the play
     // phase resolves. Subsequent calls return early via isFlipLocked.
-    expect(flipHelper).toMatch(/setAttribute\([^,]*data-tag-flip-locked/);
-    expect(flipHelper).toMatch(/removeAttribute\([^,]*data-tag-flip-locked/);
+    // The literal attribute name lives in a module-level constant
+    // (ANIM_LOCK_ATTR), so we verify both the constant's value and
+    // that it's used with set/removeAttribute.
+    expect(flipHelper).toContain("'data-tag-flip-locked'");
+    expect(flipHelper).toMatch(/setAttribute\(ANIM_LOCK_ATTR/);
+    expect(flipHelper).toMatch(/removeAttribute\(ANIM_LOCK_ATTR/);
     expect(flipHelper).toContain('isFlipLocked');
   });
 
