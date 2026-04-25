@@ -17,11 +17,14 @@
 //
 // The strip is locked via `data-tag-flip-locked` for the full
 // pop+hold+cascade so re-entrant taps anywhere in the sequence are
-// dropped (AC 5). After the motion settles, the railing
-// conditionally scrolls to the start — but ONLY when the strip is
-// overflow-scrollable AND the tapped chip's first rect was outside
-// the strip's visible box (AC 6). A chip already in view triggers
-// no scroll.
+// dropped (AC 5). The railing's scroll position is preserved
+// across the cascade — the helper does not auto-scroll. On a
+// horizontally-scrolled mobile viewport the tapped chip may slide
+// off the left edge as it travels to data-position 0; the user
+// navigates the railing manually to see the new arrangement
+// (AC 6). The scroll-snap and focus defenses around `insertBefore`
+// only suppress the browser's *implicit* scroll — they don't
+// initiate any scroll of their own.
 //
 // When the runtime advertises `prefers-reduced-motion: reduce`,
 // the helper performs the reorder instantly and skips the pop,
@@ -72,10 +75,6 @@ export interface FlipChipOptions {
    *  configurable via this option — adjust the module-level
    *  constants if you need to retune them together. */
   durationMs?: number;
-  /** Whether to follow the moved chip with a scroll on overflow
-   *  viewports. Defaults to true. Pass false to disable scroll
-   *  entirely (e.g., wrap layouts already render every chip). */
-  followScroll?: boolean;
 }
 
 /** True iff a flip animation is currently mid-flight on the given
@@ -96,7 +95,6 @@ export async function flipChipToFront(
 ): Promise<void> {
   if (isFlipLocked(strip)) return;
   const durationMs = options.durationMs ?? DEFAULT_DURATION_MS;
-  const followScroll = options.followScroll ?? true;
 
   // (AC 8) Bail to instant reorder when motion is suppressed. The
   // pop + hold + cascade choreography is purely chrome — when the
@@ -200,7 +198,7 @@ export async function flipChipToFront(
     // the chip already in slot 0). Otherwise we'd burn the full
     // backstop window waiting for a transitionend that will never
     // fire, blocking the strip for ~durationMs+100ms with no visual
-    // payoff. AC 6 scroll-follow still runs below the try block.
+    // payoff.
     if (playing.length > 0) {
       // CRITICAL — force the browser to commit the inverse-transform
       // styles BEFORE we set up the transition. Without this synchronous
@@ -222,14 +220,15 @@ export async function flipChipToFront(
       tappedChip.classList.remove(POP_CLASS);
 
       // PLAY: next animation frame, transition transforms back to
-      // zero so the cascade plays out. Simultaneously animate
-      // strip.scrollLeft from its current value down to 0 in lockstep
-      // with the cascade — without this the tapped chip slides into
-      // viewport pixel `slot0_offset - scrollLeft` (off-screen-left
-      // when scrollLeft > 0) and the user perceives it as
-      // disappearing. Manual rAF easing matches the cascade's
-      // cubic-bezier(0.2, 0.8, 0.2, 1) timing so chip motion and
-      // scroll motion settle together.
+      // zero so the cascade plays out. The strip's scrollLeft is
+      // intentionally NOT touched — on a horizontally-scrolled
+      // mobile viewport the tapped chip's destination at DOM slot 0
+      // sits at viewport pixel `slot0_offset - scrollLeft`, which
+      // is off-screen-left when scrollLeft > 0. The chip slides
+      // visibly off the left edge during the cascade. This is the
+      // intended behaviour: per REQ-READ-007 AC 6 the railing's
+      // scroll position is preserved across the cascade and the
+      // user navigates manually to see the new arrangement.
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => resolve());
       });
@@ -237,7 +236,6 @@ export async function flipChipToFront(
         chip.style.transition = `transform ${durationMs}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
         chip.style.transform = '';
       }
-      animateScrollTo(strip, 0, durationMs);
 
       // Wait for the longest-moving chip's transitionend (which is
       // the tapped chip — it traverses the most distance) with a
@@ -267,26 +265,6 @@ export async function flipChipToFront(
       }
     }
 
-    // (AC 6) Conditional scroll-follow. We need scroll when:
-    //   a) the strip is overflow-scrollable (scrollWidth > clientWidth),
-    //   b) the tapped chip's first rect was outside the strip's
-    //      visible horizontal range (off-screen left or right).
-    // Otherwise the user tapped a chip that's already visible and an
-    // auto-scroll would feel jarring.
-    if (followScroll) {
-      const isOverflowing = strip.scrollWidth > strip.clientWidth;
-      const tappedFirst = firstRects.get(tappedChip);
-      if (isOverflowing && tappedFirst !== undefined) {
-        const stripRect = strip.getBoundingClientRect();
-        const wasOffScreen =
-          tappedFirst.left < stripRect.left ||
-          tappedFirst.right > stripRect.right;
-        if (wasOffScreen) {
-          strip.scrollTo({ left: 0, behavior: 'smooth' });
-        }
-      }
-    }
-
     // Restore scroll-snap (AFTER the cascade — re-enabling it
     // mid-transition would re-snap during the slide).
     strip.style.scrollSnapType = prevSnap;
@@ -300,54 +278,3 @@ export async function flipChipToFront(
   }
 }
 
-/** Fire-and-forget rAF easing for `scrollLeft`. We can't use the
- *  native `scrollTo({behavior: 'smooth'})` because its duration is
- *  browser-defined (~200-500ms typically) and would fall out of step
- *  with our 800ms cascade — chip motion and scroll motion would
- *  desynchronise visibly. Manual easing keeps both curves locked
- *  together and matches the cascade's cubic-bezier(0.2, 0.8, 0.2, 1)
- *  via an inline easeOutQuint approximation. */
-function animateScrollTo(
-  strip: HTMLElement,
-  target: number,
-  durationMs: number,
-): void {
-  const start = strip.scrollLeft;
-  if (Math.abs(target - start) < 0.5) return;
-  // User-scroll cancellation: if the user manually scrolls (wheel,
-  // touch, pointer) during our rAF easing, abort immediately so we
-  // don't fight their input. One-shot passive listeners keep the
-  // overhead trivial.
-  let cancelled = false;
-  const cancel = (): void => {
-    cancelled = true;
-  };
-  const opts: AddEventListenerOptions = { once: true, passive: true };
-  strip.addEventListener('wheel', cancel, opts);
-  strip.addEventListener('touchstart', cancel, opts);
-  strip.addEventListener('pointerdown', cancel, opts);
-  const cleanup = (): void => {
-    strip.removeEventListener('wheel', cancel);
-    strip.removeEventListener('touchstart', cancel);
-    strip.removeEventListener('pointerdown', cancel);
-  };
-  const t0 = performance.now();
-  const tick = (now: number): void => {
-    if (cancelled) {
-      cleanup();
-      return;
-    }
-    const elapsed = now - t0;
-    const t = Math.min(1, elapsed / durationMs);
-    // easeOutQuint — close enough to cubic-bezier(0.2, 0.8, 0.2, 1)
-    // for the eye, no curve-library dependency.
-    const eased = 1 - Math.pow(1 - t, 5);
-    strip.scrollLeft = start + (target - start) * eased;
-    if (t < 1) {
-      requestAnimationFrame(tick);
-    } else {
-      cleanup();
-    }
-  };
-  requestAnimationFrame(tick);
-}
