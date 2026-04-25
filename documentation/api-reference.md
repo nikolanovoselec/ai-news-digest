@@ -366,6 +366,8 @@ The `/history` page also reads `?q=` (search query, ≥3 chars) and `?tags=` (co
 
 All fields are user-scoped via the session. Article queries JOIN through `digests` on `user_id` (IDOR protection by construction). Queries run in parallel via `Promise.all` — no sequential round-trips. `digests_generated` counts only `status='ready'` rows. Defaults to `0` for each field if no data exists.
 
+`articles_total` counts articles in the pool whose tags intersect the session user's currently-active tag list. `articles_read` is scoped to that same active-tag pool — reads on articles whose only tag the user has since deselected drop out of both numerator and denominator, so the ratio always describes "of the articles you can see right now, how many have you read" (see [REQ-HIST-002](../sdd/history.md#req-hist-002-user-stats-widget) AC 3).
+
 **Implements:** [REQ-HIST-002](../sdd/history.md#req-hist-002-user-stats-widget)
 
 ---
