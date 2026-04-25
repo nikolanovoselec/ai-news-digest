@@ -1,6 +1,7 @@
 ---
 // Implements REQ-READ-001
 // Implements REQ-HIST-001
+// Implements REQ-READ-007
 //
 // Shared tag-railing component. Renders the user's active hashtags
 // as chips (label + count + remove), followed by the "+ add" pill
@@ -365,6 +366,26 @@ const selected = initialSelected ?? new Set<string>();
       top: auto;
       right: auto;
       transform: none;
+    }
+  }
+
+  /* REQ-READ-007 AC 1 — brief tap-pulse for input confirmation.
+     The class is added by flipChipToFront() the moment a chip is
+     tapped (before the FLIP cascade kicks off) and removed after
+     PULSE_HOLD_MS so subsequent taps re-trigger cleanly. The
+     keyframe uses box-shadow only (paint, no layout) so the strip
+     never reflows during the pulse. */
+  @keyframes tagChipPulse {
+    0%   { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.18); }
+    70%  { box-shadow: 0 0 0 8px rgba(0, 0, 0, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+  }
+  .tag-chip.tag-chip--just-tapped {
+    animation: tagChipPulse 320ms ease-out;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tag-chip.tag-chip--just-tapped {
+      animation: none;
     }
   }
 </style>
