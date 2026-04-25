@@ -101,13 +101,23 @@ Native-form transport path for account deletion. Accepts a `application/x-www-fo
 
 ### PUT /api/settings
 
-**Request:** `{ hashtags: string[], digest_hour: int, digest_minute: int, model_id: string, email_enabled: bool }`
+**Request (JSON):** `{ hashtags: string[], digest_hour: int, digest_minute: int, model_id: string, email_enabled: bool }`
 
 **Response:** `200 { ok: true, discovering: string[] }` — `discovering` lists any newly-added tags that will trigger discovery on the next cron.
 
 **Error codes:** `invalid_hashtags`, `invalid_time`, `invalid_model_id`, `invalid_email_enabled`.
 
 **Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation), [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection) *(Deprecated 2026-04-24)*, [REQ-SET-005](../sdd/settings.md#req-set-005-email-notification-preference)
+
+### POST /api/settings
+
+Native form-encoded fallback for the same settings update. Used when the JS fetch handler does not bind (Samsung Browser, in-app webviews, JS disabled). The `/settings` form declares `method="post" action="/api/settings"`.
+
+**Request:** `application/x-www-form-urlencoded` — same fields as PUT.
+
+**Response:** `303` redirect to `/settings` on success. On validation failure, redirects to `/settings?error=<code>` where `<code>` is one of `invalid_hashtags`, `invalid_time`, `invalid_email_enabled`; the settings page renders an inline error banner from the query param.
+
+**Implements:** [REQ-SET-001](../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation), [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-SET-005](../sdd/settings.md#req-set-005-email-notification-preference)
 
 ---
 
