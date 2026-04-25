@@ -54,20 +54,16 @@ Test drive of [Codeflare](https://codeflare.ch) ([repo](https://github.com/nikol
 
 Three steps. The Deploy workflow handles D1, KV, queues, migrations, and secret push — no `wrangler deploy` from your laptop.
 
-### 1. Fork
+1. **Fork the repo.** You know how.
 
-You know how.
+2. **Set repo secrets.** In your fork: `Settings` > `Secrets and variables` > `Actions` > `New repository secret`. Four required, plus at least one OAuth provider pair (GitHub or Google or both — the landing page renders one button per configured provider, alphabetical).
 
-### 2. Set repo secrets
+   - `CLOUDFLARE_API_TOKEN` — see [token scopes](#api-token-scopes) below
+   - `CLOUDFLARE_ACCOUNT_ID` — find it on any zone overview in the Cloudflare dashboard
+   - `OAUTH_JWT_SECRET` — HMAC key for session cookies. Generate: `openssl rand -base64 32`
+   - `APP_URL` — canonical origin (your `*.workers.dev` URL or custom domain)
 
-In your fork: `Settings` > `Secrets and variables` > `Actions` > `New repository secret`. Four required:
-
-- `CLOUDFLARE_API_TOKEN` — see [token scopes](#api-token-scopes) below
-- `CLOUDFLARE_ACCOUNT_ID` — find it on any zone overview in the Cloudflare dashboard
-- `OAUTH_JWT_SECRET` — HMAC key for session cookies. Generate: `openssl rand -base64 32`
-- `APP_URL` — canonical origin (your `*.workers.dev` URL or custom domain)
-
-Plus **at least one OAuth provider pair** (GitHub or Google or both). The landing page renders one button per configured provider, listed alphabetically.
+3. **Run the Deploy workflow.** `Actions` > `Deploy` > `Run workflow` > Branch: `main` > **Run workflow**. Takes ~2 minutes. Future pushes to `main` deploy automatically.
 
 <details>
 <summary><strong>Full secret reference (OAuth providers, optional integrations)</strong></summary>
@@ -105,10 +101,6 @@ Custom token via [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflar
 The Zone scopes are skipped automatically when `APP_URL` is a `*.workers.dev` URL.
 
 </details>
-
-### 3. Deploy
-
-`Actions` > `Deploy` > `Run workflow` > Branch: `main` > **Run workflow**. Takes ~2 minutes. Future pushes to `main` deploy automatically.
 
 <details>
 <summary><strong>What the workflow does</strong></summary>
