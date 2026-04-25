@@ -23,6 +23,7 @@ import {
   DELETE_ALL_TAGS_LABEL,
   RESTORE_DEFAULTS_LABEL,
 } from '~/lib/default-hashtags';
+import { CURATED_SOURCES } from '~/lib/curated-sources';
 
 
 const env = Astro.locals.runtime.env;
@@ -121,38 +122,51 @@ const showRestoreButton = DEFAULT_HASHTAGS.some((t) => !userHashtagSet.has(t));
 // because clearing nothing is a no-op.
 const showDeleteAllButton = userHashtags.length > 0;
 
-// REQ-DISC-004 — identify user tags whose discovered feed list is
-// empty so the Re-discover button can surface for each. An empty
-// `sources:{tag}` entry means one of:
-//   a) Initial LLM discovery gave up (tag-level eviction after 2
-//      consecutive failed LLM calls — see REQ-DISC-001 / discovery.ts),
-//   b) The self-healing eviction path (REQ-DISC-003) removed every
-//      feed after sustained fetch failures,
-//   c) The entry was never written (new tag — discovery still pending).
-// Case (c) is excluded by checking `feeds` is defined AND length 0.
-// KV reads run in parallel; failures fall back to "not stuck" so a
-// transient KV blip never turns every tag into a stuck-tags row.
+// REQ-DISC-004 — identify user tags that have no working source so the
+// "Discover missing sources" button can re-trigger discovery. A tag is
+// stuck when:
+//   - it has no entry in the curated registry (CURATED_SOURCES) AND
+//   - either its `sources:{tag}` KV entry is missing, unparseable, or
+//     resolves to a feeds array of length 0
+//
+// Tags that DO have a curated source are never stuck — even if discovery
+// hasn't run for them yet, the curated feeds keep the dashboard fed.
+//
+// Pre-2026-04-25 behaviour: a missing KV entry was treated as "discovery
+// still pending" and the tag stayed hidden, so a manually-added tag with
+// no curated source AND no successful discovery never surfaced — the
+// user had no way to trigger re-discovery for it.
+//
+// KV reads run in parallel; transient KV failures fall back to "not
+// stuck" so a flaky read never lights up every tag at once.
+const curatedTagSet = new Set<string>();
+for (const src of CURATED_SOURCES) {
+  for (const tag of src.tags) curatedTagSet.add(tag);
+}
 const emptyFeedTags: string[] = [];
 if (userHashtags.length > 0) {
   const results = await Promise.all(
     userHashtags.map(async (tag) => {
+      // Tags with curated sources always have feeds; never flag stuck.
+      if (curatedTagSet.has(tag)) return null;
       try {
         const raw = await env.KV.get(`sources:${tag}`);
-        if (raw === null) return null;
+        // No KV entry: stuck (discovery never wrote anything for this
+        // tag, and there's no curated fallback). The user needs to
+        // trigger discovery to populate the cache.
+        if (raw === null) return tag;
         let parsed: unknown;
         try {
           parsed = JSON.parse(raw);
         } catch {
-          return null;
+          return tag; // unparseable — treat as stuck
         }
-        if (parsed === null || typeof parsed !== 'object') return null;
+        if (parsed === null || typeof parsed !== 'object') return tag;
         const feeds = (parsed as { feeds?: unknown }).feeds;
-        if (Array.isArray(feeds) && feeds.length === 0) {
-          return tag;
-        }
+        if (!Array.isArray(feeds) || feeds.length === 0) return tag;
         return null;
       } catch {
-        return null;
+        return null; // transient KV blip — don't false-flag
       }
     }),
   );
