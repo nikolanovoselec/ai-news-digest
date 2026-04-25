@@ -789,6 +789,7 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
             forbidden_origin: 'Origin check failed; reload and try again.',
             bad_request: 'Could not parse the form; reload and try again.',
             internal_error: 'Save failed on the server; please try again.',
+            app_not_configured: 'Server is misconfigured; contact the admin.',
           };
           status.textContent = map[errorCode] ?? 'Could not save your settings.';
         }
