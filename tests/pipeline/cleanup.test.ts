@@ -363,15 +363,82 @@ describe('cleanup cron — REQ-PIPE-007 orphan-tag sweep', () => {
     expect(result.orphanTagsDeleted).toBe(0);
   });
 
-  it('REQ-PIPE-007: failure in the article-retention pass does not block orphan sweep (independent halves)', async () => {
-    // Seed an orphan; article retention has nothing to do (no stale
-    // articles). The orphan sweep should still fire and report 1.
+  it('REQ-PIPE-007: thrown error in the article-retention DB call does not block orphan sweep', async () => {
+    // Real failure injection (AC 5): wrap env.DB so the article-retention
+    // DELETE throws. The orphan sweep must still execute, delete the
+    // orphan KV entry, and report it in the result.
+    await env.DB.exec('DELETE FROM users');
+    await insertUser(env.DB, USER_ID);
     await setUserHashtags(env.DB, USER_ID, ['ai']);
     await seedSources('ikea');
 
-    const result = await runCleanup(env);
+    const wrappedEnv = wrapDbToThrowOn(env, (sql) =>
+      sql.includes('DELETE FROM articles'),
+    );
 
-    expect(result.articlesDeleted).toBe(0);
-    expect(result.orphanTagsDeleted).toBe(1);
+    const result = await runCleanup(wrappedEnv);
+
+    expect(result.articlesDeleted).toBe(0); // pass failed, returns 0
+    expect(result.orphanTagsDeleted).toBe(1); // pass succeeded
+    expect(await env.KV.get('sources:ikea')).toBeNull();
+  });
+
+  it('REQ-PIPE-007: thrown error in the orphan-sweep DB call does not block article retention', async () => {
+    // Inverse of the test above (AC 5 in both directions). Seed a stale
+    // article and an orphan KV entry. Throw on the orphan-sweep SELECT
+    // and verify the stale article was still deleted while the orphan
+    // KV entry was preserved (sweep aborted before deletion).
+    await env.DB.exec('DELETE FROM article_reads');
+    await env.DB.exec('DELETE FROM article_stars');
+    await env.DB.exec('DELETE FROM article_tags');
+    await env.DB.exec('DELETE FROM article_sources');
+    await env.DB.exec('DELETE FROM articles');
+    await env.DB.exec('DELETE FROM users');
+    await insertUser(env.DB, USER_ID);
+    await setUserHashtags(env.DB, USER_ID, ['ai']);
+
+    const staleId = '01JCLEAN000000000000000099';
+    await insertArticle(env.DB, {
+      id: staleId,
+      canonicalUrl: 'https://example.com/stale-iso',
+      publishedAt: daysAgo(10),
+    });
+    await seedSources('ikea');
+
+    const wrappedEnv = wrapDbToThrowOn(env, (sql) =>
+      sql.includes('SELECT hashtags_json'),
+    );
+
+    const result = await runCleanup(wrappedEnv);
+
+    expect(result.articlesDeleted).toBe(1); // pass succeeded
+    expect(result.orphanTagsDeleted).toBe(0); // pass failed
+    expect(await articleExists(env.DB, staleId)).toBe(false);
+    expect(await env.KV.get('sources:ikea')).not.toBeNull();
   });
 });
+
+/** Returns a Proxy-wrapped env whose DB.prepare throws synchronously when
+ *  the provided predicate matches the SQL string. Used to simulate D1
+ *  outage in one half of runCleanup so the other half's isolation can be
+ *  verified end-to-end. */
+function wrapDbToThrowOn(
+  baseEnv: Env,
+  predicate: (sql: string) => boolean,
+): Env {
+  const realDb = baseEnv.DB;
+  const wrappedDb = new Proxy(realDb, {
+    get(target, prop, receiver) {
+      if (prop === 'prepare') {
+        return (sql: string) => {
+          if (predicate(sql)) {
+            throw new Error('simulated D1 outage');
+          }
+          return Reflect.get(target, prop, receiver).call(target, sql);
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+  return { ...baseEnv, DB: wrappedDb as D1Database };
+}

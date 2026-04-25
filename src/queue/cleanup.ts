@@ -117,6 +117,7 @@ async function runOrphanTagSweep(env: Env): Promise<number> {
         status: 'orphan_tag_sweep_completed',
         deleted: 0,
         scanned_owned_tags: owned.size,
+        sample_tags: [],
       });
       return 0;
     }
