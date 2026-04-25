@@ -10,6 +10,14 @@ Keeping up with tech news was a part-time job I didn't sign up for, didn't get p
   <img alt="Article detail"    src="docs/screenshots/article-detail.png"    height="260">
 </p>
 
+## Why
+
+Honestly? I wanted to read news like it's 1995 — before ads outnumbered words and every outlet copy-pasted the same wire story under a different headline. The internet promised choice. It delivered the same article, twelve times, behind twelve cookie banners.
+
+Newsletters arrive on someone else's clock. RSS readers turn into 3,000-item guilt-trips. Social feeds optimise for outrage. Asking an LLM requires remembering to ask.
+
+News Digest hires the LLM. It remembers so you don't. This isn't enlightenment. This is delegation.
+
 ## What's in it
 
 - **20 tags preloaded** (`#ai`, `#cloudflare`, `#postgres`, `#agenticai`…). My opinions, helpfully pre-formed for you. Tap × to drop, `+ add` to add.
@@ -27,14 +35,6 @@ No ads. No cookie banner. No paywall. No newsletter pop-up. No auto-playing vide
 No fake news either. The LLM summarises real sources and links straight back. If the source is lying, the source is lying — I just put fewer adjectives on it.
 
 The bar for "doesn't spy on you or sell you anything" is, in fairness, embarrassingly low. I cleared it.
-
-## Why
-
-Honestly? I wanted to read news like it's 1995 — before ads outnumbered words and every outlet copy-pasted the same wire story under a different headline. The internet promised choice. It delivered the same article, twelve times, behind twelve cookie banners.
-
-Newsletters arrive on someone else's clock. RSS readers turn into 3,000-item guilt-trips. Social feeds optimise for outrage. Asking an LLM requires remembering to ask.
-
-News Digest hires the LLM. It remembers so you don't. This isn't enlightenment. This is delegation.
 
 ## Built with Codeflare's spec-driven development framework
 
