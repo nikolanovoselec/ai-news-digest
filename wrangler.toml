@@ -34,6 +34,13 @@ queue = "scrape-coordinator"
 binding = "SCRAPE_CHUNKS"
 queue = "scrape-chunks"
 
+# REQ-PIPE-008: cross-chunk semantic dedup pass. The chunk consumer that
+# closes the run enqueues exactly one finalize message; this consumer
+# runs the post-merge LLM call over the run's surviving article titles.
+[[queues.producers]]
+binding = "SCRAPE_FINALIZE"
+queue = "scrape-finalize"
+
 [[queues.consumers]]
 queue = "scrape-coordinator"
 max_batch_size = 1
@@ -41,6 +48,11 @@ max_retries = 3
 
 [[queues.consumers]]
 queue = "scrape-chunks"
+max_batch_size = 1
+max_retries = 3
+
+[[queues.consumers]]
+queue = "scrape-finalize"
 max_batch_size = 1
 max_retries = 3
 

@@ -122,6 +122,7 @@ function makeEnv(
     } as unknown as Ai,
     SCRAPE_COORDINATOR: { send: vi.fn() } as unknown as Queue<unknown>,
     SCRAPE_CHUNKS: { send: vi.fn() } as unknown as Queue<unknown>,
+    SCRAPE_FINALIZE: { send: vi.fn() } as unknown as Queue<unknown>,
     DIGEST_JOBS: { send: vi.fn(), sendBatch: vi.fn() } as unknown as Queue<unknown>,
     ASSETS: {} as Fetcher,
     GH_OAUTH_CLIENT_ID: 'x',
@@ -434,6 +435,35 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
         (r.params as unknown[])[1] === 'ready',
     );
     expect(finish).toBeUndefined();
+  });
+
+  it('REQ-PIPE-008: last chunk enqueues exactly one SCRAPE_FINALIZE message after finishRun', async () => {
+    const aiResponse = {
+      response: JSON.stringify({ articles: [{ title: 'A', details: 'a.', tags: ['cloudflare'] }], dedup_groups: [] }),
+      usage: { input_tokens: 10, output_tokens: 10 },
+    };
+    const { db } = makeDb();
+    const { kv } = makeKv({ chunksRemaining: '1' });
+    const env = makeEnv(db, kv, aiResponse);
+    await processOneChunk(env, makeChunk());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(sendMock).toHaveBeenCalledWith({ scrape_run_id: 'test-run' });
+  });
+
+  it('REQ-PIPE-008: non-last chunks do NOT enqueue SCRAPE_FINALIZE', async () => {
+    const aiResponse = {
+      response: JSON.stringify({ articles: [{ title: 'A', details: 'a.', tags: ['cloudflare'] }], dedup_groups: [] }),
+      usage: { input_tokens: 10, output_tokens: 10 },
+    };
+    const { db } = makeDb();
+    const { kv } = makeKv({ chunksRemaining: '3' });
+    const env = makeEnv(db, kv, aiResponse);
+    await processOneChunk(env, makeChunk());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;
+    expect(sendMock).not.toHaveBeenCalled();
   });
 
   it('REQ-PIPE-002: updates scrape_runs stats (tokens, cost, ingested, deduped)', async () => {
