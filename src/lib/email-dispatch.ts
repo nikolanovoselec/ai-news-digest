@@ -28,9 +28,16 @@
 //   same bucket (the `last_emailed_local_date` gate absorbs any
 //   double-fire from cron jitter).
 
-import { localDateInTz, localHourMinuteInTz } from '~/lib/tz';
+import { localDateInTz, localHourMinuteInTz, localMidnightUnixInTz } from '~/lib/tz';
 import { log } from '~/lib/log';
 import { renderDigestReadyEmail, sendEmail } from '~/lib/email';
+import {
+  selectUnreadHeadlinesForUser,
+  tagTallySinceMidnight,
+  type Headline,
+  type TagTally,
+} from '~/lib/email-data';
+import { parseHashtags } from '~/lib/hashtags';
 
 /** User row subset needed for dispatch. All columns are non-null in
  *  practice for email-enabled users, but `last_emailed_local_date`
@@ -39,8 +46,10 @@ interface DispatchUserRow {
   id: string;
   email: string;
   gh_login: string;
+  tz: string;
   digest_hour: number;
   digest_minute: number;
+  hashtags_json: string | null;
   last_emailed_local_date: string | null;
 }
 
@@ -89,7 +98,8 @@ export async function dispatchDailyEmails(env: Env): Promise<void> {
     let users: DispatchUserRow[];
     try {
       const res = await env.DB.prepare(
-        `SELECT id, email, gh_login, digest_hour, digest_minute, last_emailed_local_date
+        `SELECT id, email, gh_login, tz, digest_hour, digest_minute,
+                hashtags_json, last_emailed_local_date
            FROM users
           WHERE email_enabled = 1
             AND tz = ?1
@@ -110,11 +120,60 @@ export async function dispatchDailyEmails(env: Env): Promise<void> {
       continue;
     }
 
+    // Pre-compute the local-midnight cutoff once per tz — every user in
+    // this loop iteration shares it (their tz column matches the loop's
+    // `tz`).
+    const sinceMidnightUnix = localMidnightUnixInTz(now, tz);
+
     for (const user of users) {
       try {
+        const userTags = parseHashtags(user.hashtags_json);
+
+        // Fetch headlines + tally per user. Failure here falls through
+        // to the static-fallback render path below — we still send the
+        // email AND stamp the date so the per-day gate holds and the
+        // user always gets at least the bare notification.
+        let headlines: Headline[] = [];
+        let tally: TagTally[] = [];
+        let totalSinceMidnight = 0;
+        // Fetch headlines + tally independently (Promise.allSettled,
+        // not Promise.all) so a failure in one doesn't collapse the
+        // other. A user might still get a useful headline list even
+        // when the tally query trips on a missing index, or vice
+        // versa. Distinct event name from `email.send.failed` so an
+        // operator grepping `wrangler tail` for delivery failures
+        // doesn't conflate "Resend rejected our POST" with "D1 read
+        // errored before we even composed the body".
+        const [hSettled, tSettled] = await Promise.allSettled([
+          selectUnreadHeadlinesForUser(env.DB, user.id, userTags, 5),
+          tagTallySinceMidnight(env.DB, userTags, sinceMidnightUnix),
+        ]);
+        if (hSettled.status === 'fulfilled') {
+          headlines = hSettled.value;
+        } else {
+          log('error', 'email.dispatch.degraded', {
+            to: user.email,
+            error: `headlines_fetch_failed: ${String(hSettled.reason).slice(0, 200)}`,
+          });
+        }
+        if (tSettled.status === 'fulfilled') {
+          tally = tSettled.value.tally;
+          totalSinceMidnight = tSettled.value.totalArticles;
+        } else {
+          log('error', 'email.dispatch.degraded', {
+            to: user.email,
+            error: `tally_fetch_failed: ${String(tSettled.reason).slice(0, 200)}`,
+          });
+        }
+
         const { subject, text, html } = renderDigestReadyEmail({
           appUrl: env.APP_URL,
           userDisplayName: user.gh_login !== '' ? user.gh_login : user.email,
+          headlines,
+          tagTally: tally,
+          totalSinceMidnight,
+          sentLocal: { hour: user.digest_hour, minute: user.digest_minute, tz: user.tz },
+          nextDigestLocal: { hour: user.digest_hour, minute: user.digest_minute },
         });
 
         const result = await sendEmail(env, {

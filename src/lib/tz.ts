@@ -1,4 +1,6 @@
 // Implements REQ-SET-003
+// Implements REQ-MAIL-001 (`localMidnightUnixInTz` is the cutoff source
+// for the email's "Since midnight" tag tally).
 // Timezone helpers for the cron dispatcher's local-time matching and the
 // daily per-user local_date bookkeeping. All conversions use the runtime's
 // built-in IANA tz database via Intl.DateTimeFormat — no tz data is bundled
@@ -67,6 +69,56 @@ export function localHourMinuteInTz(
     }
   }
   return { hour, minute };
+}
+
+/**
+ * Return the unix-seconds timestamp of "00:00 local time" in {@link tz}
+ * on the same local date as {@link unixSeconds}. Used by the email
+ * dispatcher to compute the "Since midnight: N articles" cutoff.
+ *
+ * Implementation: start from midnight UTC on the target local date,
+ * then walk by the *signed* delta between the candidate's local
+ * wall-clock and the target (target localDate at 00:00). The signed
+ * walk handles both eastward (UTC+) and westward (UTC-) timezones —
+ * for UTC-NY the initial candidate is 20:00 the day BEFORE the target
+ * locally, so we ADD 4h; for UTC+Tokyo it's 09:00 the SAME local day
+ * already, so we SUBTRACT 9h. The loop runs ≤3 passes; in practice
+ * pass 2 always converges, even across DST transitions.
+ */
+export function localMidnightUnixInTz(unixSeconds: number, tz: string): number {
+  const localDate = localDateInTz(unixSeconds, tz);
+  const [yearStr, monthStr, dayStr] = localDate.split('-');
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  let candidate = Math.floor(Date.UTC(year, month - 1, day, 0, 0, 0) / 1000);
+  let bestOnTargetDate: number | null = null;
+  for (let pass = 0; pass < 4; pass++) {
+    const candidateLocalDate = localDateInTz(candidate, tz);
+    const hm = localHourMinuteInTz(candidate, tz);
+    if (candidateLocalDate === localDate) {
+      // Track the smallest candidate whose local date matches the
+      // target — we fall back to it when the loop exhausts (the
+      // pathological case is a tz where 00:00 wall-clock doesn't
+      // exist on `localDate` because a DST transition skipped it,
+      // e.g. historical Africa/Cairo midnight starts).
+      if (bestOnTargetDate === null || candidate < bestOnTargetDate) {
+        bestOnTargetDate = candidate;
+      }
+    }
+    let dayDelta = 0;
+    if (candidateLocalDate < localDate) dayDelta = 1;       // candidate is one day behind target
+    else if (candidateLocalDate > localDate) dayDelta = -1; // candidate is one day ahead of target
+    const deltaSeconds = dayDelta * 86400 - hm.hour * 3600 - hm.minute * 60;
+    if (deltaSeconds === 0) return candidate;
+    candidate += deltaSeconds;
+  }
+  // Loop didn't converge to {hour:0, minute:0} on the target date —
+  // happens only when 00:00 local was skipped by DST. Return the
+  // smallest seen on-target candidate (semantically: "first instant
+  // of the target local day that exists"). If we never even saw the
+  // target date in 4 passes, fall back to the last candidate.
+  return bestOnTargetDate ?? candidate;
 }
 
 /**
