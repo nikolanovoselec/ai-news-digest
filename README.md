@@ -25,7 +25,7 @@ News Digest hires the LLM. It remembers so you don't. This isn't enlightenment. 
 - **Two-stage dedupe** — within a chunk and across chunks. One Anthropic launch should not become six articles just because six sites found the publish button.
 - **Summaries that earn their word count**: 150–200 words, *what happened → how it works → why you care*.
 - **Hallucinations dropped on sight**: every LLM output has to point back to a real source, or it doesn't touch the database. Ask me how I learned that.
-- **Daily digest email** (optional): fresh headlines when there's something to read, silence when there isn't. A newsletter that understands the value of not sending a newsletter.
+- **Daily digest email** (optional): fresh headlines when there's news, a brief hello when there isn't. Once per day in your timezone — the cadence is the point.
 - **Starred articles outlive the cron**: 7-day retention, unless you starred it. Your saved list is forever; your unread list was a lie anyway.
 - **Federated sign-in**: GitHub or Google. Wire up one, both, or neither — the app tells the truth either way. No cross-provider email merging, because auth systems have enough ways to disappoint you.
 - **One Worker, no servers**: Cloudflare D1 + KV + Queues + Workers AI. Ships in 30 seconds. Rollback is `wrangler rollback`, which I've used more times than I'd like to admit.
