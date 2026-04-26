@@ -227,7 +227,7 @@ export function renderDigestReadyEmail(params: DigestReadyEmailParams): Rendered
   const greetingRow = headlines.length === 0
     ? `<tr><td style="padding-bottom:24px; font-size:18px; line-height:1.5;">Your news digest is ready.</td></tr>`
     : `<tr><td style="padding-bottom:16px; font-size:18px; line-height:1.5;">
-         Your news digest is ready — ${headlines.length} new articles to read.
+         Your news digest is ready — ${headlines.length} new ${articleNoun} to read.
        </td></tr>`;
 
   const html = `<!doctype html>

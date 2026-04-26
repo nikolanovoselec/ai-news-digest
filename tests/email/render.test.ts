@@ -86,6 +86,18 @@ describe('renderDigestReadyEmail subject — REQ-MAIL-001 AC 3', () => {
     expect(subject).toBe('1 new article · mcp');
     expect(subject).not.toContain('1 new articles');
   });
+
+  it('REQ-MAIL-001 AC 3: HTML and plain-text greeting also pluralise correctly when N=1', () => {
+    const single: Headline = FIVE_HEADLINES[0]!;
+    const { html, text } = renderDigestReadyEmail(makeParams({
+      headlines: [single],
+      tagTally: [{ tag: 'mcp', count: 1 }],
+    }));
+    expect(html).toContain('1 new article to read');
+    expect(html).not.toContain('1 new articles to read');
+    expect(text).toContain('1 new article to read');
+    expect(text).not.toContain('1 new articles to read');
+  });
 });
 
 // ---------- Preheader ----------

@@ -136,25 +136,34 @@ export async function dispatchDailyEmails(env: Env): Promise<void> {
         let headlines: Headline[] = [];
         let tally: TagTally[] = [];
         let totalSinceMidnight = 0;
-        try {
-          const [hRes, tRes] = await Promise.all([
-            selectUnreadHeadlinesForUser(env.DB, user.id, userTags, 5),
-            tagTallySinceMidnight(env.DB, userTags, sinceMidnightUnix),
-          ]);
-          headlines = hRes;
-          tally = tRes.tally;
-          totalSinceMidnight = tRes.totalArticles;
-        } catch (err) {
-          // Distinct event name from `email.send.failed` so an operator
-          // grepping `wrangler tail` for delivery failures doesn't
-          // conflate "Resend rejected our POST" with "D1 read errored
-          // before we even composed the body". The send still happens
-          // below — degraded to the static fallback.
+        // Fetch headlines + tally independently (Promise.allSettled,
+        // not Promise.all) so a failure in one doesn't collapse the
+        // other. A user might still get a useful headline list even
+        // when the tally query trips on a missing index, or vice
+        // versa. Distinct event name from `email.send.failed` so an
+        // operator grepping `wrangler tail` for delivery failures
+        // doesn't conflate "Resend rejected our POST" with "D1 read
+        // errored before we even composed the body".
+        const [hSettled, tSettled] = await Promise.allSettled([
+          selectUnreadHeadlinesForUser(env.DB, user.id, userTags, 5),
+          tagTallySinceMidnight(env.DB, userTags, sinceMidnightUnix),
+        ]);
+        if (hSettled.status === 'fulfilled') {
+          headlines = hSettled.value;
+        } else {
           log('error', 'email.dispatch.degraded', {
             to: user.email,
-            error: `data_fetch_failed: ${String(err).slice(0, 200)}`,
+            error: `headlines_fetch_failed: ${String(hSettled.reason).slice(0, 200)}`,
           });
-          // headlines/tally stay empty → renderer emits static fallback.
+        }
+        if (tSettled.status === 'fulfilled') {
+          tally = tSettled.value.tally;
+          totalSinceMidnight = tSettled.value.totalArticles;
+        } else {
+          log('error', 'email.dispatch.degraded', {
+            to: user.email,
+            error: `tally_fetch_failed: ${String(tSettled.reason).slice(0, 200)}`,
+          });
         }
 
         const { subject, text, html } = renderDigestReadyEmail({
