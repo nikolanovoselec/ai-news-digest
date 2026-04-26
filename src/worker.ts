@@ -1,5 +1,6 @@
 // Implements REQ-PIPE-001
 // Implements REQ-PIPE-005
+// Implements REQ-PIPE-008
 // Implements REQ-MAIL-001
 //
 // Module Worker entry point for the global-feed pipeline. Exports
@@ -22,9 +23,10 @@
 //                     digest scheduler (REQ-GEN-001, pre-rework) has
 //                     been deleted from this path.
 //
-// Queue dispatch (wrangler.toml: two consumers):
+// Queue dispatch (wrangler.toml: three consumers):
 //   - `scrape-coordinator` → handleCoordinatorBatch (REQ-PIPE-001).
 //   - `scrape-chunks`      → handleChunkBatch (REQ-PIPE-002).
+//   - `scrape-finalize`    → handleFinalizeBatch (REQ-PIPE-008).
 //
 // The Astro Cloudflare adapter's generated `_worker.js` owns the HTTP
 // fetch handler in production (`main` in wrangler.toml). This file's
@@ -45,6 +47,10 @@ import {
   handleChunkBatch,
   type ChunkJobMessage,
 } from '~/queue/scrape-chunk-consumer';
+import {
+  handleFinalizeBatch,
+  type FinalizeJobMessage,
+} from '~/queue/scrape-finalize-consumer';
 import { runCleanup } from '~/queue/cleanup';
 import { dispatchDailyEmails } from '~/lib/email-dispatch';
 
@@ -161,6 +167,12 @@ export async function queue(
       return;
     case 'scrape-chunks':
       await handleChunkBatch(batch as MessageBatch<ChunkJobMessage>, env);
+      return;
+    case 'scrape-finalize':
+      await handleFinalizeBatch(
+        batch as MessageBatch<FinalizeJobMessage>,
+        env,
+      );
       return;
     default:
       log('error', 'digest.generation', {

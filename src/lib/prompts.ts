@@ -175,6 +175,69 @@ Return JSON:
 }`;
 }
 
+// Implements REQ-PIPE-008
+//
+// Cross-chunk dedup pass. Runs once per scrape tick AFTER all chunks
+// have written their articles to D1. Sees only title + source + pub-ts
+// (no body snippet — far cheaper than the chunk pass). Output is the
+// same `dedup_groups: number[][]` JSON contract as PROCESS_CHUNK_SYSTEM
+// so the parsing path can be reused; we deliberately drop the
+// `articles` field so the model doesn't waste tokens echoing back
+// summaries the consumer already has.
+
+export const FINALIZE_DEDUP_SYSTEM = `You receive scraped news articles and identify pairs/groups that describe the same news event.
+
+# OUTPUT FORMAT
+
+Return ONE JSON object, nothing else. No prose, no code fences, no text before "{" or after "}".
+
+Shape:
+{"dedup_groups":[[0,3],[1,2,5]]}
+
+- "dedup_groups": arrays of input-candidate indices that describe the same news event (e.g. TechCrunch and The Verge both covering the same vendor announcement; vendor blog and HN mirror; press release and reporter's write-up). Only include groups of size >= 2.
+- Use [] when no groups describe the same event.
+- Be CONSERVATIVE: only group items when you are confident they describe the SAME news event, not just the same broad topic. Two unrelated stories about Kubernetes are NOT a group; two articles about the same Kubernetes 1.34 release announcement ARE.
+
+# WHAT COUNTS AS THE SAME EVENT
+
+- Same vendor + same product launch / version release / feature announcement.
+- Same incident / outage / security disclosure.
+- Same acquisition / funding round / partnership.
+- Same paper / research finding / benchmark result.
+
+# WHAT DOES NOT COUNT
+
+- Two stories about the same product but covering different features / different versions.
+- Two stories about the same vendor but unrelated launches.
+- Two opinion pieces on the same topic from different angles.`;
+
+/**
+ * Build the user message for the cross-chunk dedup call. Each candidate
+ * is rendered as `[N] title — source (pub-ts)` so the model has a clean
+ * mapping between input index and output dedup-group index. No body
+ * snippets — the title + source pair is enough signal at finalize time
+ * and keeps the prompt small enough that 250 candidates fit comfortably
+ * inside the LLM's input budget.
+ */
+export function finalizeDedupUserPrompt(
+  candidates: ReadonlyArray<{
+    index: number;
+    title: string;
+    source_name: string;
+    published_at: number;
+  }>,
+): string {
+  const lines = candidates.map(
+    (c) => `[${c.index}] ${c.title} — ${c.source_name} (${c.published_at})`,
+  );
+  return `Candidates (${candidates.length} entries, 0-indexed):
+\`\`\`
+${lines.join('\n')}
+\`\`\`
+
+Return JSON: {"dedup_groups":[[idx, idx, ...], ...]} or {"dedup_groups":[]} when none describe the same event.`;
+}
+
 export const DISCOVERY_SYSTEM = `You are a JSON API. You suggest authoritative, stable, publicly accessible RSS/Atom/JSON feed URLs for a given technology or topic, and output JSON.
 
 CRITICAL OUTPUT CONTRACT:
