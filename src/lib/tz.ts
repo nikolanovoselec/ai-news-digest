@@ -76,11 +76,14 @@ export function localHourMinuteInTz(
  * on the same local date as {@link unixSeconds}. Used by the email
  * dispatcher to compute the "Since midnight: N articles" cutoff.
  *
- * Implementation detail: `Date.UTC(y, m, d)` gives midnight UTC on the
- * target date. We then walk back by the candidate's local hour/minute
- * to land on local-midnight. The walk runs twice because in DST
- * fall-back zones the first subtraction can land at the duplicated
- * 01:00 hour rather than 00:00; the second pass settles the residual.
+ * Implementation: start from midnight UTC on the target local date,
+ * then walk by the *signed* delta between the candidate's local
+ * wall-clock and the target (target localDate at 00:00). The signed
+ * walk handles both eastward (UTC+) and westward (UTC-) timezones —
+ * for UTC-NY the initial candidate is 20:00 the day BEFORE the target
+ * locally, so we ADD 4h; for UTC+Tokyo it's 09:00 the SAME local day
+ * already, so we SUBTRACT 9h. The loop runs ≤3 passes; in practice
+ * pass 2 always converges, even across DST transitions.
  */
 export function localMidnightUnixInTz(unixSeconds: number, tz: string): number {
   const localDate = localDateInTz(unixSeconds, tz);
@@ -89,12 +92,15 @@ export function localMidnightUnixInTz(unixSeconds: number, tz: string): number {
   const month = Number(monthStr);
   const day = Number(dayStr);
   let candidate = Math.floor(Date.UTC(year, month - 1, day, 0, 0, 0) / 1000);
-  for (let pass = 0; pass < 2; pass++) {
+  for (let pass = 0; pass < 3; pass++) {
+    const candidateLocalDate = localDateInTz(candidate, tz);
     const hm = localHourMinuteInTz(candidate, tz);
-    if (hm.hour === 0 && hm.minute === 0 && localDateInTz(candidate, tz) === localDate) {
-      return candidate;
-    }
-    candidate -= hm.hour * 3600 + hm.minute * 60;
+    let dayDelta = 0;
+    if (candidateLocalDate < localDate) dayDelta = 1;       // candidate is one day behind target
+    else if (candidateLocalDate > localDate) dayDelta = -1; // candidate is one day ahead of target
+    const deltaSeconds = dayDelta * 86400 - hm.hour * 3600 - hm.minute * 60;
+    if (deltaSeconds === 0) return candidate;
+    candidate += deltaSeconds;
   }
   return candidate;
 }
