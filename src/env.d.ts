@@ -15,6 +15,7 @@ interface Env {
   KV: KVNamespace;
   SCRAPE_COORDINATOR: Queue<import('./queue/scrape-coordinator').CoordinatorMessage>;
   SCRAPE_CHUNKS: Queue<import('./queue/scrape-chunk-consumer').ChunkJobMessage>;
+  SCRAPE_FINALIZE: Queue<import('./queue/scrape-finalize-consumer').FinalizeJobMessage>;
   AI: Ai;
   ASSETS: Fetcher;
 
