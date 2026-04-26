@@ -184,9 +184,15 @@ interface DispatchUserRow {
   id: string;
   email: string;
   gh_login: string;
+  tz: string;
   digest_hour: number;
   digest_minute: number;
+  hashtags_json: string | null;
   last_emailed_local_date: string | null;
+  /** Optional in fixtures — defaults to `1` (enabled) when omitted so
+   *  pre-existing tests don't have to set it. AC 9 tests set `0` to
+   *  exercise the opt-out path end-to-end. */
+  email_enabled?: 0 | 1;
 }
 
 interface PreparedCall {
@@ -213,7 +219,12 @@ function makeDispatchDb(users: DispatchUserRow[]): {
       },
       all: vi.fn().mockImplementation(async () => {
         if (sql.includes('SELECT DISTINCT tz')) {
-          const tzs = new Set(users.map(() => 'UTC'));
+          // Simulate the SQL's WHERE email_enabled = 1 predicate so a
+          // user with email_enabled = 0 never even contributes a tz to
+          // the loop.
+          const tzs = new Set(
+            users.filter((u) => (u.email_enabled ?? 1) === 1).map((u) => u.tz),
+          );
           return { results: [...tzs].map((tz) => ({ tz })) };
         }
         if (sql.startsWith('SELECT id, email, gh_login')) {
@@ -224,8 +235,13 @@ function makeDispatchDb(users: DispatchUserRow[]): {
             number,
             string,
           ];
+          // Same predicate as the dispatcher's per-user SQL — including
+          // email_enabled = 1 so the AC 9 opt-out test exercises the
+          // exclusion behaviourally, not just by string-matching the
+          // SQL.
           const filtered = users.filter(
             (u) =>
+              (u.email_enabled ?? 1) === 1 &&
               u.digest_hour === hour &&
               u.digest_minute >= bucketStart &&
               u.digest_minute < bucketEnd &&
@@ -234,6 +250,9 @@ function makeDispatchDb(users: DispatchUserRow[]): {
           );
           return { results: filtered };
         }
+        // Headlines query (unread headlines for the user) — empty pool
+        // is fine for these gating tests; the renderer will fall back
+        // to the static-subject form, which sendEmail doesn't care about.
         return { results: [] };
       }),
       run: vi.fn().mockImplementation(async () => {
@@ -247,7 +266,11 @@ function makeDispatchDb(users: DispatchUserRow[]): {
         }
         return { success: true, meta: { changes: 1 } };
       }),
-      first: vi.fn().mockResolvedValue(null),
+      first: vi.fn().mockImplementation(async () => {
+        // tagTallySinceMidnight totals query — fine to return zero.
+        if (sql.includes('COUNT(DISTINCT a.id)')) return { total: 0 };
+        return null;
+      }),
     };
     return stmt;
   });
@@ -286,8 +309,10 @@ describe('dispatchDailyEmails — REQ-MAIL-001 once-per-day gating', () => {
         id: 'user-1',
         email: 'alice@example.com',
         gh_login: 'alice',
+        tz: 'UTC',
         digest_hour: hour,
         digest_minute: minute - (minute % 5), // inside the current 5-min bucket
+        hashtags_json: null,
         last_emailed_local_date: today,
       },
     ];
@@ -316,8 +341,10 @@ describe('dispatchDailyEmails — REQ-MAIL-001 once-per-day gating', () => {
         id: 'user-2',
         email: 'bob@example.com',
         gh_login: 'bob',
+        tz: 'UTC',
         digest_hour: hour,
         digest_minute: minute - (minute % 5),
+        hashtags_json: null,
         last_emailed_local_date: stale,
       },
     ];
@@ -338,6 +365,115 @@ describe('dispatchDailyEmails — REQ-MAIL-001 once-per-day gating', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('REQ-MAIL-001 AC 9: a user with email_enabled = 0 never receives an email even when their schedule matches', async () => {
+    // Behavioural check (not SQL-string match): seed two users in the
+    // same tz/hour/minute bucket, one opted-in and one opted-out, and
+    // assert that exactly one fetch fires and it targets the opted-in
+    // recipient. The stub's filter mirrors the dispatcher's SQL
+    // predicate including `email_enabled = 1`.
+    const now = Math.floor(Date.now() / 1000);
+    const { hour, minute } = localHourMinuteInTz(now, 'UTC');
+    const users: DispatchUserRow[] = [
+      {
+        id: 'user-optin',
+        email: 'optin@example.com',
+        gh_login: 'optin',
+        tz: 'UTC',
+        digest_hour: hour,
+        digest_minute: minute - (minute % 5),
+        hashtags_json: null,
+        last_emailed_local_date: '1970-01-01',
+        email_enabled: 1,
+      },
+      {
+        id: 'user-optout',
+        email: 'optout@example.com',
+        gh_login: 'optout',
+        tz: 'UTC',
+        digest_hour: hour,
+        digest_minute: minute - (minute % 5),
+        hashtags_json: null,
+        last_emailed_local_date: '1970-01-01',
+        email_enabled: 0,
+      },
+    ];
+    const { db } = makeDispatchDb(users);
+    await dispatchDailyEmails(makeEnv({ DB: db }));
+
+    const recipients = fetchMock.mock.calls
+      .map((c) => JSON.parse((c[1] as RequestInit).body as string) as { to: string[] })
+      .map((b) => b.to[0]);
+    expect(recipients).toEqual(['optin@example.com']);
+    expect(recipients).not.toContain('optout@example.com');
+  });
+
+  it('REQ-MAIL-001 AC 9: per-user SELECT carries the email_enabled = 1 predicate (opt-out filter)', async () => {
+    // AC 9 — "Users who turn off email_enabled in settings receive
+    // no email." The dispatcher enforces this at the SQL layer; the
+    // test asserts the predicate's literal presence in BOTH the
+    // distinct-tz probe and the per-user scan, since either path
+    // omitting it would silently start emailing opt-out users.
+    const now = Math.floor(Date.now() / 1000);
+    const today = localDateInTz(now, 'UTC');
+    const { hour, minute } = localHourMinuteInTz(now, 'UTC');
+    const users: DispatchUserRow[] = [
+      {
+        id: 'user-ac9',
+        email: 'ac9@example.com',
+        gh_login: 'ac9',
+        tz: 'UTC',
+        digest_hour: hour,
+        digest_minute: minute - (minute % 5),
+        hashtags_json: null,
+        last_emailed_local_date: today === '2099-01-01' ? null : '1970-01-01',
+      },
+    ];
+    const { db } = makeDispatchDb(users);
+    const prepareSpy = vi.spyOn(db, 'prepare');
+    await dispatchDailyEmails(makeEnv({ DB: db }));
+
+    const sqls = prepareSpy.mock.calls.map((c) => c[0] as string);
+    const tzProbe = sqls.find((s) => s.includes('SELECT DISTINCT tz'));
+    const userScan = sqls.find((s) => s.startsWith('SELECT id, email, gh_login'));
+    expect(tzProbe).toBeDefined();
+    expect(tzProbe).toContain('email_enabled = 1');
+    expect(userScan).toBeDefined();
+    expect(userScan).toContain('email_enabled = 1');
+  });
+
+  it('REQ-MAIL-001: dispatcher SELECTs hashtags_json and tz from users', async () => {
+    // Regression guard for the rich-email design — the dispatcher must
+    // pull `hashtags_json` (for headlines + tally) and `tz` (for the
+    // local-time line + the local-midnight cutoff) on the per-user
+    // SELECT. If a refactor drops either column, the renderer falls
+    // through to the static fallback for everyone.
+    const now = Math.floor(Date.now() / 1000);
+    const today = localDateInTz(now, 'UTC');
+    const { hour, minute } = localHourMinuteInTz(now, 'UTC');
+    const users: DispatchUserRow[] = [
+      {
+        id: 'user-cols',
+        email: 'cols@example.com',
+        gh_login: 'cols',
+        tz: 'UTC',
+        digest_hour: hour,
+        digest_minute: minute - (minute % 5),
+        hashtags_json: '["mcp"]',
+        last_emailed_local_date: today === '2099-01-01' ? null : '1970-01-01',
+      },
+    ];
+    const { db } = makeDispatchDb(users);
+    const prepareSpy = vi.spyOn(db, 'prepare');
+    await dispatchDailyEmails(makeEnv({ DB: db }));
+
+    const userSelectSql = prepareSpy.mock.calls
+      .map((c) => c[0] as string)
+      .find((s) => s.startsWith('SELECT id, email, gh_login'));
+    expect(userSelectSql).toBeDefined();
+    expect(userSelectSql).toContain('hashtags_json');
+    expect(userSelectSql).toContain('tz');
+  });
+
   it('REQ-MAIL-001: does not stamp last_emailed_local_date when the send fails', async () => {
     const now = Math.floor(Date.now() / 1000);
     const { hour, minute } = localHourMinuteInTz(now, 'UTC');
@@ -347,8 +483,10 @@ describe('dispatchDailyEmails — REQ-MAIL-001 once-per-day gating', () => {
         id: 'user-3',
         email: 'carol@example.com',
         gh_login: 'carol',
+        tz: 'UTC',
         digest_hour: hour,
         digest_minute: minute - (minute % 5),
+        hashtags_json: null,
         last_emailed_local_date: null,
       },
     ];
