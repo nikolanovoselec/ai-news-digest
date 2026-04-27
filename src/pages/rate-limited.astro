@@ -51,58 +51,10 @@ const initialLabel = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m ${secs}s
 </Base>
 
 <script>
-  // Live countdown + button re-enable.
-
-  function formatRemaining(seconds: number): string {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m ${s}s`;
-  }
-
-  function init(): void {
-    const root = document.querySelector<HTMLElement>('[data-rate-limited]');
-    if (root === null) return;
-    if (root.dataset['bound'] === '1') return;
-    root.dataset['bound'] = '1';
-
-    const raw = root.dataset['seconds'];
-    if (raw === undefined || raw === '') return;
-    const initial = Number.parseInt(raw, 10);
-    if (Number.isNaN(initial)) return;
-
-    const countdown = root.querySelector<HTMLElement>('[data-countdown]');
-    const button = root.querySelector<HTMLButtonElement>('[data-retry-button]');
-
-    const deadline = Math.floor(Date.now() / 1000) + initial;
-    const tick = (): void => {
-      const remaining = Math.max(0, deadline - Math.floor(Date.now() / 1000));
-      if (countdown !== null) countdown.textContent = formatRemaining(remaining);
-      if (remaining <= 0) {
-        if (button !== null) button.disabled = false;
-        window.clearInterval(handle);
-      }
-    };
-
-    const handle = window.setInterval(tick, 1000);
-    tick();
-
-    if (button !== null) {
-      button.addEventListener('click', () => {
-        if (!button.disabled) {
-          window.location.assign('/digest');
-        }
-      });
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init, { once: true });
-  } else {
-    init();
-  }
-  document.addEventListener('astro:page-load', init);
+  // Logic moved to src/scripts/rate-limited.ts so Astro emits an
+  // external bundle (CSP `script-src 'self'` blocks the inline
+  // bundle Astro would otherwise produce for small scripts).
+  import '~/scripts/rate-limited';
 </script>
 
 <style>

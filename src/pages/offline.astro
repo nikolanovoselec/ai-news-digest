@@ -35,29 +35,10 @@ import Base from '~/layouts/Base.astro';
 </Base>
 
 <script>
-  function init(): void {
-    const button = document.querySelector<HTMLButtonElement>('[data-offline-retry]');
-    if (button === null) return;
-    if (button.dataset['bound'] === '1') return;
-    button.dataset['bound'] = '1';
-    button.addEventListener('click', () => {
-      if (window.navigator.onLine) {
-        window.location.assign('/digest');
-      }
-    });
-    // When the browser signals connectivity restored, hop back to
-    // /digest automatically.
-    window.addEventListener('online', () => {
-      window.location.assign('/digest');
-    });
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init, { once: true });
-  } else {
-    init();
-  }
-  document.addEventListener('astro:page-load', init);
+  // Logic moved to src/scripts/offline.ts so Astro emits an
+  // external bundle (CSP `script-src 'self'` blocks the inline
+  // bundle Astro would otherwise produce for small scripts).
+  import '~/scripts/offline';
 </script>
 
 <style>
