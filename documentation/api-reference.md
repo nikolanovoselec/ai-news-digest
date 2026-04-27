@@ -335,7 +335,7 @@ Dev-only session minter. Bypasses the OAuth round-trip and writes a pre-baked se
 
 **Response (success):** `204` with `Set-Cookie: oauth_session=...` (HttpOnly, Secure, SameSite=Lax). `401` if Bearer header is missing/malformed. `404` if disabled or token mismatch.
 
-**Implements:** [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-dev-bypass-for-end-to-end-testing) (when present); otherwise the endpoint exists purely as a test scaffold and is not part of the user-facing contract.
+**Implements:** No product REQ — this endpoint is a dev/e2e test scaffold gated by `DEV_BYPASS_TOKEN`. Production deployments leave the secret unset, which makes the endpoint return 404. Documented here so operators forking the repo know it exists.
 
 ---
 
