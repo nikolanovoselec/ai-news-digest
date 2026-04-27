@@ -70,7 +70,7 @@ New accounts are inserted with complete onboarding defaults at the moment of fir
 
 Provider-agnostic. Bumps `session_version`, clears cookie, redirects to `/?logged_out=1`. The session JWT carries the canonical user id; logout doesn't care which provider issued it.
 
-**Implements:** [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-session-cookie-and-instant-revocation)
+**Implements:** [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation)
 
 ### POST /api/auth/set-tz
 
@@ -201,7 +201,7 @@ Both the `running: false` and `running: true` responses carry a `Set-Cookie` ref
 - `/digest` — swaps the "Next update in Xm" countdown for "Update in progress" while `running=true`.
 - `/settings` Force Refresh section — polls every 5s after form submission to show live `articles_ingested` and `chunks_remaining`.
 
-**Implements:** [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-session-cookie-and-instant-revocation)
+**Implements:** [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation)
 
 ---
 
