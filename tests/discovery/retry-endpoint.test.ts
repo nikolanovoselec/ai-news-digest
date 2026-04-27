@@ -134,9 +134,14 @@ describe('POST /api/admin/discovery/retry', () => {
   });
 
   it('REQ-AUTH-003: rejects request with missing Origin header', async () => {
+    const cookie = await validSessionCookie();
     const { db } = makeDb(baseRow('["ai"]'));
     const { kv } = makeKv();
-    const req = await retryRequest({ origin: null, body: { tag: 'ai' } });
+    const req = await retryRequest({
+      origin: null,
+      cookie,
+      body: { tag: 'ai' },
+    });
     const res = await POST(makeContext(req, envWith(db, kv)) as never);
     expect(res.status).toBe(403);
   });
@@ -205,6 +210,7 @@ describe('POST /api/admin/discovery/retry', () => {
         'Content-Type': 'application/json',
         Origin: APP_ORIGIN,
         Cookie: cookie,
+        'Cf-Access-Jwt-Assertion': 'placeholder.jwt.sig',
       },
       body: 'not json',
     });
@@ -272,6 +278,7 @@ describe('POST /api/admin/discovery/retry', () => {
     origin?: string | null;
     cookie?: string | null;
     tag?: string | null;
+    accessJwt?: string | null;
   }): Promise<Request> {
     const headers = new Headers({
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -281,6 +288,11 @@ describe('POST /api/admin/discovery/retry', () => {
     }
     if (options.cookie !== null && options.cookie !== undefined) {
       headers.set('Cookie', options.cookie);
+    }
+    const access =
+      options.accessJwt === undefined ? 'placeholder.jwt.sig' : options.accessJwt;
+    if (access !== null) {
+      headers.set('Cf-Access-Jwt-Assertion', access);
     }
     const params = new URLSearchParams();
     if (options.tag !== null && options.tag !== undefined) {
