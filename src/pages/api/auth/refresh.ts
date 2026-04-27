@@ -88,14 +88,15 @@ export async function POST(context: APIContext): Promise<Response> {
   // random-cookie spam and bounds DOS without paying for a DB lookup
   // per request. Shared bucket with the inline middleware refresh path
   // so attackers can't pivot between the two.
+  const requestIp = clientIp(context.request);
   const ipRate = await enforceRateLimit(
     env,
     RATE_LIMIT_RULES.AUTH_REFRESH_IP,
-    `ip:${clientIp(context.request)}`,
+    `ip:${requestIp}`,
   );
   if (!ipRate.ok) {
     log('warn', 'auth.refresh.rate_limited', {
-      ip: clientIp(context.request),
+      ip: requestIp,
       bucket: 'ip',
       via: 'explicit_refresh',
       retry_after_seconds: ipRate.retryAfter,
@@ -210,7 +211,6 @@ export async function POST(context: APIContext): Promise<Response> {
     log('warn', 'auth.refresh.rate_limited', {
       user_id: row.user_id,
       bucket: 'user',
-      path: 'rotation',
       via: 'explicit_refresh',
       retry_after_seconds: userRate.retryAfter,
     });
