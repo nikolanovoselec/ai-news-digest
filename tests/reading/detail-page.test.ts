@@ -110,9 +110,15 @@ describe('detail page source contract — REQ-READ-002', () => {
     // executes, the in-UI back arrow's hijack works, and the
     // href="/digest" fallback only fires for genuine direct-link
     // visits.
-    expect(detailSource).toMatch(
-      /<script\s+is:inline\s+type="module"\s+src="\/scripts\/article-detail\.js"\s*>\s*<\/script>/,
-    );
+    //
+    // Pin attributes independently so a prettier or hand reorder
+    // (alphabetical, etc.) doesn't break the test on a no-op format
+    // commit.
+    const tag = detailSource.match(/<script\b[^>]*src="\/scripts\/article-detail\.js"[^>]*>\s*<\/script>/);
+    expect(tag, 'expected a <script src="/scripts/article-detail.js"> tag in [slug].astro').not.toBeNull();
+    const t = tag?.[0] ?? '';
+    expect(t).toMatch(/\bis:inline\b/);
+    expect(t).toMatch(/type="module"/);
   });
 
   it('REQ-READ-002: article-detail.ts back-button hijack uses both SPA-nav and same-origin signals', () => {
