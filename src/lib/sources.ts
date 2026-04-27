@@ -23,6 +23,8 @@ import { isUrlSafe } from '~/lib/ssrf';
 import { readCachedHeadlines, writeCachedHeadlines } from '~/lib/headline-cache';
 import { log } from '~/lib/log';
 import { mapConcurrent } from '~/lib/concurrency';
+import { stripHtmlToText } from '~/lib/html-text';
+import { FEED_FETCH_TIMEOUT_MS as FETCH_TIMEOUT_MS } from '~/lib/fetch-policy';
 
 /** Hard-cap returned by `fanOutForTags`. 300 overflowed
  * llama-3.1-8b-instruct-fp8-fast's 30K token context window: ~24K
@@ -32,8 +34,7 @@ import { mapConcurrent } from '~/lib/concurrency';
  * just means a tighter candidate pool, which raises the bar for what
  * gets summarized. */
 const MAX_COMBINED_HEADLINES = 100;
-/** 5-second per-fetch timeout. */
-const FETCH_TIMEOUT_MS = 5_000;
+/** 5-second per-fetch timeout (FEED_FETCH_TIMEOUT_MS in ~/lib/fetch-policy). */
 /** 1 MB cap on the response body. */
 const FETCH_MAX_BYTES = 1_024 * 1_024;
 /** Source-fetch concurrency cap across every {tag × source} pair.
@@ -591,30 +592,14 @@ function extractNodeText(node: unknown): string | null {
 }
 
 /**
- * Strip HTML tags + collapse whitespace + HTML-entity-decode a small
- * set of common sequences. Intended for feed-snippet cleanup before
- * the text lands in the LLM prompt — not a full HTML sanitizer (the
- * output is never rendered as HTML anywhere). Caps at 1200 characters
- * so a giant `<content:encoded>` body can't blow up the chunk prompt
- * budget.
+ * Strip HTML tags + collapse whitespace + HTML-entity-decode for
+ * feed-snippet cleanup before the text lands in the LLM prompt. Caps
+ * at 1200 characters so a giant `<content:encoded>` body can't blow
+ * up the chunk prompt budget. Wraps the shared `stripHtmlToText`
+ * helper in `~/lib/html-text`.
  */
 function htmlSnippetToText(raw: string): string {
-  const noTags = raw.replace(/<[^>]+>/g, ' ');
-  const decoded = noTags
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_m, n: string) => {
-      const code = Number.parseInt(n, 10);
-      return Number.isFinite(code) && code >= 32 && code < 65536
-        ? String.fromCharCode(code)
-        : ' ';
-    });
-  const collapsed = decoded.replace(/\s+/g, ' ').trim();
-  return collapsed.length > 1200 ? collapsed.slice(0, 1200) : collapsed;
+  return stripHtmlToText(raw, { maxLength: 1200 });
 }
 
 /**
