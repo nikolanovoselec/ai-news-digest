@@ -27,12 +27,27 @@ Stored via `wrangler secret put <name>`. Never committed to git.
 
 ## GitHub Actions Secrets (CI deploy only)
 
-| Secret | Description |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | Token with Workers Scripts:Edit scope for deployment |
-| `CLOUDFLARE_ACCOUNT_ID` | Target account id |
+The deploy job reads these secrets from GitHub Actions. The first two are Cloudflare credentials; the rest are Worker secrets that CI pushes to the Worker on each deploy via `wrangler secret put`.
 
-CI pushes the Worker secrets during each deploy via `wrangler secret put` using the file-redirect form (safer than piping under some CI environments).
+| Secret | Required | Description |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | Yes | Token with Workers Scripts:Edit scope for deployment |
+| `CLOUDFLARE_ACCOUNT_ID` | Yes | Target Cloudflare account id |
+| `GH_OAUTH_CLIENT_ID` | Conditional | GitHub OAuth App client ID (required when GitHub sign-in is enabled) |
+| `GH_OAUTH_CLIENT_SECRET` | Conditional | GitHub OAuth App client secret (required when `GH_OAUTH_CLIENT_ID` is set) |
+| `GOOGLE_OAUTH_CLIENT_ID` | Conditional | Google OAuth 2.0 client ID (required when Google sign-in is enabled) |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | Conditional | Google OAuth 2.0 client secret (required when `GOOGLE_OAUTH_CLIENT_ID` is set) |
+| `OAUTH_JWT_SECRET` | Yes | 32+ char random string used to HMAC-sign session JWTs |
+| `RESEND_API_KEY` | Conditional | Resend API key for digest emails; when absent the runtime silently skips email dispatch |
+| `RESEND_FROM` | Conditional | Sender address for emails; required when `RESEND_API_KEY` is set |
+| `APP_URL` | Yes | Canonical origin (e.g., `https://digest.example.com`); used in emails, OAuth redirect URIs, and CSRF checks |
+| `DEV_BYPASS_TOKEN` | Conditional | Bearer token that enables `/api/dev/login` and `/api/dev/trigger-scrape`; omit in production |
+| `ADMIN_EMAIL` | Conditional | Operator email that gates `/api/admin/*`; when unset every admin endpoint returns HTTP 403 ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8) |
+| `CF_ACCESS_AUD` | Optional | Cloudflare Access audience tag for `aud`-claim validation on the admin JWT; when unset, only header presence is required ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8) |
+
+The deploy job also runs `wrangler secret delete DEV_BYPASS_USER_ID` (idempotent, silenced on not-found) on each deploy to wipe any pre-migration value that would defeat the synthetic `__e2e__` sandbox. This secret is no longer propagated by the workflow; operators who need it must set it manually via `wrangler secret put`.
+
+CI pushes Worker secrets using the file-redirect form (safer than piping under some CI environments).
 
 ## Platform Bindings
 
