@@ -265,7 +265,8 @@ Operator → POST /api/admin/force-refresh (or GET /api/admin/force-refresh)
   → if found: reuse that run_id (no second coordinator dispatched)
   → if not found: INSERT scrape_runs row, send SCRAPE_COORDINATOR message
   → POST: 303 → /settings?force_refresh={ok|reused}&run_id={ulid}
-  → GET:  200 { ok, scrape_run_id, reused }
+  → GET (browser / no Accept header): 303 → /settings?force_refresh={ok|reused}&run_id={ulid}
+  → GET (Accept: application/json):   200 { ok: true, scrape_run_id, reused }
 ```
 
 ### Daily retention cleanup
