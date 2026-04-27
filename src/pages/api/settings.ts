@@ -28,7 +28,7 @@ import {
   rateLimitResponse,
   RATE_LIMIT_RULES,
 } from '~/lib/rate-limit';
-import { parseHashtags as parseHashtagsShared } from '~/lib/hashtags';
+import { parseHashtags as parseHashtagsJson } from '~/lib/hashtags';
 import { isValidTz } from '~/lib/tz';
 import { loadSession } from '~/middleware/auth';
 import { checkOrigin, originOf } from '~/middleware/origin-check';
@@ -67,8 +67,6 @@ interface UserSettingsRow {
   email_enabled: number;
 }
 
-// Parse the user's stored hashtags JSON via the shared helper.
-const parseHashtagsJson = parseHashtagsShared;
 
 /**
  * Normalize a single user-typed hashtag:

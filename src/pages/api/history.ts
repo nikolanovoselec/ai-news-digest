@@ -27,8 +27,8 @@ import { errorResponse } from '~/lib/errors';
 import { log } from '~/lib/log';
 import { loadSession } from '~/middleware/auth';
 import { localDateInTz, DEFAULT_TZ } from '~/lib/tz';
-import { parseJsonStringArray } from '~/lib/json-string-array';
-import { parseHashtags as parseHashtagsShared } from '~/lib/hashtags';
+import { parseJsonStringArray as parseStringArray } from '~/lib/json-string-array';
+import { parseHashtags } from '~/lib/hashtags';
 
 /** 7 days of history per REQ-HIST-001 AC 1. */
 const WINDOW_SECONDS = 7 * 86_400;
@@ -58,10 +58,6 @@ interface ScrapeRunRow {
   status: string;
 }
 
-// Stored `hashtags_json` user column → bare string list (shared helper).
-const parseHashtags = parseHashtagsShared;
-// JSON string-array column (tags_json, details_json) → bare string list.
-const parseStringArray = parseJsonStringArray;
 
 /** Wire shape for an article inside a day group. */
 interface WireArticle {

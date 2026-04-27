@@ -1,4 +1,4 @@
-// Implements REQ-DATA-001
+// Implements REQ-PIPE-002
 //
 // Thin D1 wrapper — helpers that make the D1 client behave the way the rest
 // of the app expects. Deliberately NOT a repository abstraction: domain

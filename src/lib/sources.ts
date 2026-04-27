@@ -289,15 +289,6 @@ export async function fetchFromSourceWithResult(
   return { headlines, fetched: true, success: true };
 }
 
-/**
- * Fetch headlines for `tag` from `source`, checking the shared KV cache
- * first. On a cache miss, a live fetch is performed with 5s timeout and
- * 1MB body cap; successful results are written back to the cache with
- * a 10-minute TTL (see `headline-cache.ts`). Errors — network, HTTP,
- * parse, extract — are logged and surfaced as an empty array so the
- * caller can carry on with other sources.
- */
-
 // ---------- Fan-out ------------------------------------------------------
 
 /**

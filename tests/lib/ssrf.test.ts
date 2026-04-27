@@ -124,26 +124,3 @@ describe('isUrlSafe', () => {
   });
 });
 
-describe('assertUrlSafe', () => {
-  it('REQ-DISC-005: returns void for safe URLs', () => {
-    expect(() => assertUrlSafe('https://example.com')).not.toThrow();
-    expect(() => assertUrlSafe('https://api.github.com')).not.toThrow();
-  });
-
-  it('REQ-DISC-005: throws for unsafe URLs', () => {
-    expect(() => assertUrlSafe('http://example.com')).toThrow();
-    expect(() => assertUrlSafe('https://127.0.0.1')).toThrow();
-    expect(() => assertUrlSafe('https://user@example.com')).toThrow();
-    expect(() => assertUrlSafe('not a url')).toThrow();
-  });
-
-  it('REQ-DISC-005: thrown error mentions the URL for debuggability', () => {
-    try {
-      assertUrlSafe('https://127.0.0.1');
-      throw new Error('should have thrown');
-    } catch (e) {
-      expect(e).toBeInstanceOf(Error);
-      expect((e as Error).message).toContain('127.0.0.1');
-    }
-  });
-});

@@ -28,7 +28,7 @@ import { errorResponse } from '~/lib/errors';
 import { loadSession } from '~/middleware/auth';
 import { slugify } from '~/lib/slug';
 import { parseHashtags } from '~/lib/hashtags';
-import { parseJsonStringArray } from '~/lib/json-string-array';
+import { parseJsonStringArray as parseStringArray } from '~/lib/json-string-array';
 import { log } from '~/lib/log';
 
 /** Raw row shape for the global-pool article query. */
@@ -54,9 +54,6 @@ interface ScrapeRunRow {
   status: string;
 }
 
-// JSON-encoded string array column parser — uses the shared
-// parseJsonStringArray helper from ~/lib/json-string-array.
-const parseStringArray = parseJsonStringArray;
 
 /** Wire shape — what the dashboard consumes per article. */
 export interface WireArticle {

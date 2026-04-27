@@ -18,7 +18,7 @@ import { errorResponse } from '~/lib/errors';
 import { loadSession } from '~/middleware/auth';
 import { slugify } from '~/lib/slug';
 import { log } from '~/lib/log';
-import { parseJsonStringArray } from '~/lib/json-string-array';
+import { parseJsonStringArray as parseStringArray } from '~/lib/json-string-array';
 
 /** Raw row shape returned by the starred-article JOIN. */
 interface StarredRow {
@@ -53,9 +53,6 @@ export interface WireArticle {
 export interface StarredResponse {
   articles: WireArticle[];
 }
-
-// JSON-encoded string array column parser — uses the shared helper.
-const parseStringArray = parseJsonStringArray;
 
 /**
  * Load the user's starred-article list from D1.
