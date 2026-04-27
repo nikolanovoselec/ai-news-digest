@@ -45,11 +45,14 @@ function makeDb(opts: {
         records.push({ sql, params, via: 'run' });
         if (sql.startsWith('INSERT OR IGNORE INTO scrape_chunk_completions')) {
           const key = `${String(params[0])}:${String(params[1])}`;
-          if (!completedKeys.has(key)) {
+          const alreadyHad = completedKeys.has(key);
+          if (!alreadyHad) {
             completedKeys.add(key);
             completedChunkCount += 1;
           }
-          return { success: true, meta: { changes: completedKeys.has(key) ? 1 : 0 } };
+          // Mirror D1 semantics: duplicate INSERT OR IGNORE returns
+          // meta.changes === 0; first insert returns 1.
+          return { success: true, meta: { changes: alreadyHad ? 0 : 1 } };
         }
         if (
           sql.includes('UPDATE scrape_runs') &&
@@ -61,6 +64,15 @@ function makeDb(opts: {
             return { success: true, meta: { changes: 0 } };
           }
           finalizeLocked.add(runId);
+          return { success: true, meta: { changes: 1 } };
+        }
+        // Rollback path: clear the finalize lock when send throws.
+        if (
+          sql.includes('UPDATE scrape_runs') &&
+          sql.includes('finalize_enqueued = 0') &&
+          !sql.includes('finalize_enqueued = 1')
+        ) {
+          finalizeLocked.delete(String(params[0]));
           return { success: true, meta: { changes: 1 } };
         }
         return { success: true, meta: { changes: 1 } };
@@ -535,6 +547,41 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;
     expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('REQ-PIPE-008: send-failure rollback — clears finalize_enqueued so the queue retry can re-attempt', async () => {
+    // CF-002 follow-up: the atomic UPDATE-then-send sequence has a
+    // failure mode that the original KV gate didn't have — if send()
+    // throws after the lock has been written, future redeliveries
+    // would see finalize_enqueued = 1 and silently skip the send,
+    // permanently dropping the finalize. The consumer must roll back
+    // the lock on send failure so a retry can re-acquire it.
+    const aiResponse = {
+      response: JSON.stringify({ articles: [{ title: 'A', details: 'a.', tags: ['cloudflare'] }], dedup_groups: [] }),
+      usage: { input_tokens: 10, output_tokens: 10 },
+    };
+    const { db, records } = makeDb();
+    const { kv } = makeKv();
+    const env = makeEnv(db, kv, aiResponse);
+    // First call: SCRAPE_FINALIZE.send throws.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;
+    sendMock.mockRejectedValueOnce(new Error('queue temporarily unavailable'));
+    await expect(processOneChunk(env, makeChunk())).rejects.toThrow(
+      'queue temporarily unavailable',
+    );
+    // Rollback was issued — the lock-clearing UPDATE is in the SQL log.
+    const rollback = records.find(
+      (r) =>
+        r.sql.includes('UPDATE scrape_runs') &&
+        r.sql.includes('finalize_enqueued = 0') &&
+        !r.sql.includes('finalize_enqueued = 1'),
+    );
+    expect(rollback).toBeDefined();
+    // Second call (queue redelivery) succeeds — lock was cleared so the
+    // race-acquire UPDATE bumps it back to 1, and send is re-attempted.
+    await processOneChunk(env, makeChunk());
+    expect(sendMock).toHaveBeenCalledTimes(2);
   });
 
   it('REQ-PIPE-002: updates scrape_runs stats (tokens, cost, ingested, deduped)', async () => {

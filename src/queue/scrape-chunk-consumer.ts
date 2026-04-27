@@ -585,7 +585,21 @@ export async function processOneChunk(
       .run();
     const wonFinalizeRace = (lockResult.meta?.changes ?? 0) === 1;
     if (wonFinalizeRace) {
-      await env.SCRAPE_FINALIZE.send({ scrape_run_id: body.scrape_run_id });
+      try {
+        await env.SCRAPE_FINALIZE.send({ scrape_run_id: body.scrape_run_id });
+      } catch (sendErr) {
+        // Roll back the lock so the queue redelivery can re-attempt
+        // the send. Without this, a transient send failure would mark
+        // finalize_enqueued = 1 forever, and the next redelivery
+        // would short-circuit, losing the finalize permanently.
+        await env.DB
+          .prepare(
+            'UPDATE scrape_runs SET finalize_enqueued = 0 WHERE id = ?1',
+          )
+          .bind(body.scrape_run_id)
+          .run();
+        throw sendErr;
+      }
     }
   }
 
