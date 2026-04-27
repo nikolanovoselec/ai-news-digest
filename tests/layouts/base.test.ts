@@ -33,8 +33,10 @@ describe('Base.astro / page-effects.ts — view-transition wiring (REQ-DES-003 /
 
   it('page-effects.ts registers preOpenHistoryDayInIncomingDocument as an astro:before-swap listener', () => {
     expect(effectsSource).toContain('preOpenHistoryDayInIncomingDocument');
+    // Regex spans newlines because the call is multi-line in the
+    // source: `addEventListener(\n  'astro:before-swap',\n  preOpen...,\n);`
     expect(effectsSource).toMatch(
-      /addEventListener\(\s*\n?\s*['"]astro:before-swap['"]\s*,\s*\n?\s*preOpenHistoryDayInIncomingDocument\s*\n?\s*\)/,
+      /addEventListener\([\s\S]{0,80}['"]astro:before-swap['"][\s\S]{0,80}preOpenHistoryDayInIncomingDocument/,
     );
   });
 
@@ -84,7 +86,7 @@ describe('Base.astro / page-effects.ts — view-transition wiring (REQ-DES-003 /
     // and filter-driven layout reflow, but it cannot replace the
     // sync restore — by the time page-load fires, the snapshot is
     // already captured.
-    expect(baseSource).toMatch(
+    expect(effectsSource).toMatch(
       /astro:after-swap[\s\S]{0,400}window\.scrollTo\(\s*0\s*,\s*target\s*\)/,
     );
   });
