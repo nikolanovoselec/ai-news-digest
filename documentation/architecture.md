@@ -93,7 +93,7 @@ Implements [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-su
 | `src/pages/api/digest/today.ts` | `GET /api/digest/today` — 29 most-recently-ingested articles filtered by user tags (`ORDER BY ingested_at DESC, published_at DESC`) + last scrape run metadata + `next_scrape_at` | [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest) AC 5 |
 | `src/pages/api/digest/[id].ts` | `GET /api/digest/:id` — single article from the global pool by id; returns 404 if not found | [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view) |
 | `src/pages/api/digest/refresh.ts` | `POST /api/digest/refresh` — *(Deprecated 2026-04-23 — REQ-GEN-002 superseded by REQ-PIPE-001 cron-only pipeline.)* File kept on disk; no live caller. The replacement rate-limiter for live mutation routes is `src/lib/rate-limit.ts`'s `RATE_LIMIT_RULES` (per-route-class window counters, see row above). Per-user-generation throttling and the redirect to `/rate-limited` are no longer reachable. | [REQ-GEN-002](../sdd/generation.md#req-gen-002-manual-refresh-with-rate-limiting) *(Deprecated 2026-04-23)* |
-| `src/pages/api/history.ts` | `GET /api/history` — day-grouped article history for the last 7 days, keyed by the user's timezone; aggregates scrape_runs stats per day; articles filtered to the user's active tags | [REQ-HIST-001](../sdd/history.md#req-hist-001-day-grouped-article-history) |
+| `src/pages/api/history.ts` | `GET /api/history` — day-grouped article history for the last 14 days, keyed by the user's timezone; aggregates scrape_runs stats per day; articles filtered to the user's active tags | [REQ-HIST-001](../sdd/history.md#req-hist-001-day-grouped-article-history) |
 | `src/pages/api/stats.ts` | `GET /api/stats` — four user-scoped aggregates (digests, articles read/total, tokens, cost) via parallel D1 queries | [REQ-HIST-002](../sdd/history.md#req-hist-002-user-stats-widget) |
 | `src/pages/api/discovery/status.ts` | `GET /api/discovery/status` — pending discovery tags for the session user | [REQ-DISC-002](../sdd/discovery.md#req-disc-002-discovery-progress-visibility) *(Deprecated 2026-04-24)* |
 | `src/pages/api/admin/discovery/retry.ts` | `POST /api/admin/discovery/retry` — accepts JSON body `{"tag":"<tag>"}` (returns `200 {ok:true}`) or form-encoded `tag=<tag>` (returns `303 → /settings?rediscover=ok&tag=<tag>`); clears `sources:{tag}` and `discovery_failures:{tag}` KV, re-queues in `pending_discoveries`; gated by Cloudflare Access (`/api/admin/*` wildcard) | [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover) |
@@ -281,7 +281,7 @@ Cron fires (daily at 03:00 UTC)
 
 ## Data Flow
 
-Articles are the central entity in the global pool. Each article belongs to a `scrape_runs` tick, not a user. Users read from the pool by filtering on their active hashtags. Foreign keys cascade on delete. Starred articles are user-scoped and exempt from the 7-day cleanup.
+Articles are the central entity in the global pool. Each article belongs to a `scrape_runs` tick, not a user. Users read from the pool by filtering on their active hashtags. Foreign keys cascade on delete. Starred articles are user-scoped and exempt from the 14-day cleanup.
 
 Pending discoveries are per-user rows but discovery results (`sources:{tag}` KV) are globally shared so multiple users benefit from a single discovery run.
 

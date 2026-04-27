@@ -114,7 +114,7 @@ export async function GET(context: APIContext): Promise<Response> {
   const userTags = parseHashtags(user.hashtags_json);
 
   const now = Math.floor(Date.now() / 1000);
-  const sevenDaysAgo = now - WINDOW_SECONDS;
+  const windowStart = now - WINDOW_SECONDS;
 
   // --- Articles ---------------------------------------------------------
   // Restrict to articles in the window whose tag set intersects the
@@ -150,7 +150,7 @@ export async function GET(context: APIContext): Promise<Response> {
     try {
       const result = await env.DB
         .prepare(articlesSql)
-        .bind(sevenDaysAgo, ...userTags)
+        .bind(windowStart, ...userTags)
         .all<ArticleRow>();
       articleRows = result.results ?? [];
     } catch (err) {
@@ -174,7 +174,7 @@ export async function GET(context: APIContext): Promise<Response> {
           `tokens_in, tokens_out, estimated_cost_usd, status ` +
           `FROM scrape_runs WHERE started_at >= ?1 ORDER BY started_at DESC`,
       )
-      .bind(sevenDaysAgo)
+      .bind(windowStart)
       .all<ScrapeRunRow>();
     runRows = result.results ?? [];
   } catch (err) {
