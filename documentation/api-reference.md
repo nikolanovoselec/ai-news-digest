@@ -518,7 +518,7 @@ Implements [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-log
 | `discovery.queued` | A new per-tag discovery job was inserted into `pending_discoveries` |
 | `settings.update.failed` | D1 update in `PUT /api/settings` threw |
 | `auth.refresh.rate_limited` | Inline middleware or explicit refresh path hit a refresh rate-limit bucket — request rejected with 429. `bucket` field is `"ip"` (pre-validation `auth_refresh_ip`, 60/min) or `"user"` (post-validation `auth_refresh_user`, 10/min). Buckets are shared with `POST /api/auth/refresh` |
-| `rate.limit.kv_error` | KV read/write in the rate-limit helper threw — emitted with `decision: "fail_open"` (most routes) or `decision: "fail_closed"` (`auth_refresh_ip`, `auth_refresh_user`); caller proceeds per the per-rule fail-mode |
+| `rate.limit.kv_error` | KV read/write in the rate-limit helper threw — emitted with `decision: "fail_open"` (most routes) or `decision: "fail_closed"` (`auth_refresh_ip`, `auth_refresh_user`); caller proceeds per the per-rule fail-mode. `kv_op` field is `"get"` (counter-read path) or `"put"` (counter-write path) on both error paths |
 | `article.star.failed` | D1 insert or delete in `POST/DELETE /api/articles/:id/star` threw |
 
 Raw exception messages appear only in the `detail` field of error-level records; they are never stored in D1 and never returned to clients (see [REQ-OPS-002](../sdd/observability.md#req-ops-002-sanitized-error-surfaces)).
