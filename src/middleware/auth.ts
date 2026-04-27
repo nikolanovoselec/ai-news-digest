@@ -273,6 +273,28 @@ export async function loadSession(
       }
       const child = await findUnrevokedChild(db, refreshRow.id);
       if (child !== null) {
+        // Tier-2 user limit gates the JWT mint. Without it, an
+        // attacker with a freshly-stolen-and-just-rotated cookie that
+        // passes the fingerprint check could mint up to 60 access
+        // JWTs in the 30 s grace window (bounded only by the per-IP
+        // tier). The 10/min/user cap collapses that to 10 mints
+        // before reuse-detection inevitably fires the next request.
+        if (kv !== undefined) {
+          const rate = await enforceRateLimit(
+            { KV: kv },
+            RATE_LIMIT_RULES.AUTH_REFRESH_USER,
+            `user:${refreshRow.user_id}`,
+          );
+          if (!rate.ok) {
+            log('warn', 'auth.refresh.rate_limited', {
+              user_id: refreshRow.user_id,
+              bucket: 'user',
+              path: 'grace_collision',
+              retry_after_seconds: rate.retryAfter,
+            });
+            return unauthenticated(false);
+          }
+        }
         const userRow = await loadUserById(db, refreshRow.user_id);
         if (userRow === null) return unauthenticated(true);
         const fresh = await signSession(

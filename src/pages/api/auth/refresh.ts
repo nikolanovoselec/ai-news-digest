@@ -133,6 +133,18 @@ export async function POST(context: APIContext): Promise<Response> {
       // off the surviving child without rotating again.
       const child = await findUnrevokedChild(env.DB, row.id);
       if (child !== null) {
+        // Tier-2 user limit gates the JWT mint. Without it, an
+        // attacker with a freshly-stolen-and-just-rotated cookie that
+        // passes the fingerprint check could mint up to 60 access
+        // JWTs in the 30 s grace window (bounded only by the per-IP
+        // tier). The 10/min/user cap collapses that to 10 mints
+        // before reuse-detection inevitably fires the next request.
+        const userRate = await enforceRateLimit(
+          env,
+          RATE_LIMIT_RULES.AUTH_REFRESH_USER,
+          `user:${row.user_id}`,
+        );
+        if (!userRate.ok) return rateLimitResponse(userRate.retryAfter);
         const user = await env.DB
           .prepare(
             'SELECT id, email, gh_login, session_version FROM users WHERE id = ?1',

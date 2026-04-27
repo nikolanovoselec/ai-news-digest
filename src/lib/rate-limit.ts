@@ -76,6 +76,7 @@ export async function enforceRateLimit(
     log('warn', 'rate.limit.kv_error', {
       route_class: rule.routeClass,
       identity,
+      kv_op: 'get',
       kv_error: String(err).slice(0, 200),
       decision: failClosed ? 'fail_closed' : 'fail_open',
     });

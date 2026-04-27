@@ -139,7 +139,7 @@ describe('enforceRateLimit', () => {
     expect(result.retryAfter).toBe(RATE_LIMIT_RULES.AUTH_REFRESH_IP.windowSec);
   });
 
-  it('CF-028: KV.put error on a fail-open rule still permits the request (preserves prior behavior)', async () => {
+  it('REQ-AUTH-001 AC 9: KV.put error on a fail-open rule still permits the request (preserves prior behavior)', async () => {
     const env = makeKv({
       get: vi.fn().mockResolvedValue(null),
       put: vi.fn().mockRejectedValue(new Error('kv put down')),
