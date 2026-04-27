@@ -10,11 +10,12 @@
 -- /api/auth/refresh to mint new access tokens.
 --
 -- Schema notes:
--- * `id` is the random 32-byte hex value the client holds in the
---   `__Host-news_digest_refresh` cookie. We index by `token_hash`
---   instead of `id` because we never want the raw value queryable —
---   on every refresh we hash the cookie value with SHA-256 and look
---   up the row. (CodeQL js/sensitive-data-treatment.)
+-- * `id` is an internal row identifier (random 16-byte hex) that is
+--   NEVER the cookie value. The cookie value is hashed with SHA-256
+--   and stored in `token_hash`; lookups always go through `token_hash`.
+--   Keeping `id` separate ensures a leaked DB dump (backup, ops query,
+--   error log) does not expose live refresh tokens — only their
+--   irreversible hashes. (CodeQL js/sensitive-data-treatment.)
 -- * `device_fingerprint_hash` = SHA-256(User-Agent + Cf-IPCountry).
 --   Country, not /24 — mobile networks rotate IPs across the same
 --   country all day, /24 would lock people out. UA + country is

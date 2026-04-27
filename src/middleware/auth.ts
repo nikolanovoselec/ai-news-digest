@@ -21,10 +21,11 @@ import { signSession, verifySession } from '~/lib/session-jwt';
 import { readCookie as readCookieCanonical } from '~/lib/crypto';
 import {
   REFRESH_TOKEN_COOKIE_NAME,
+  ROTATION_GRACE_SECONDS,
   buildRefreshCookie,
-  buildClearRefreshCookie,
   deviceFingerprint,
   findRefreshToken,
+  findUnrevokedChild,
   rotateRefreshToken,
   revokeAllForUser,
   type RefreshTokenRow,
@@ -180,15 +181,57 @@ export async function loadSession(
 
   const nowSec = Math.floor(Date.now() / 1000);
 
-  // REQ-AUTH-008 AC 4 — reuse detection. A revoked token reappearing
-  // means either replay-of-old-cookie (benign) or post-rotation theft
-  // (not benign). We can't tell, so we revoke every refresh row for
-  // the user AND bump session_version to kill in-flight access JWTs.
+  // REQ-AUTH-008 AC 4 — reuse detection vs. concurrent-rotation
+  // tolerance. A revoked token reappearing has two possible causes:
+  //   (a) post-rotation theft — attacker stole the cookie and is
+  //       replaying it. This is the case AC 4 protects against.
+  //   (b) benign concurrent rotation — same client made two parallel
+  //       requests against the same expired access JWT, both invoked
+  //       refresh, one won the rotation, the other lost. The loser
+  //       presents a now-revoked cookie inside the grace window.
+  // We distinguish via the grace window: if `revoked_at` is within
+  // ROTATION_GRACE_SECONDS, treat as benign and serve a fresh access
+  // JWT WITHOUT rotating again (the winner already minted the new
+  // refresh row). If outside the window, treat as theft and nuke
+  // every refresh row for the user.
   if (refreshRow.revoked_at !== null) {
+    const sinceRevoked = nowSec - refreshRow.revoked_at;
+    if (sinceRevoked <= ROTATION_GRACE_SECONDS) {
+      const child = await findUnrevokedChild(db, refreshRow.id);
+      if (child !== null) {
+        const userRow = await loadUserById(db, refreshRow.user_id);
+        if (userRow === null) return null;
+        const fresh = await signSession(
+          {
+            sub: userRow.id,
+            email: userRow.email,
+            ghl: userRow.gh_login,
+            sv: userRow.session_version,
+          },
+          jwtSecret,
+        );
+        log('info', 'auth.refresh.concurrent_collision', {
+          user_id: userRow.id,
+          revoked_token_id: refreshRow.id,
+          surviving_child_id: child.id,
+          since_revoked_seconds: sinceRevoked,
+        });
+        // Serve the fresh access JWT only — no refresh cookie. The
+        // client's stale revoked cookie keeps working for the rest
+        // of the grace window; their next refresh after the winner's
+        // Set-Cookie lands will pick up the winner's value.
+        return {
+          user: toAuthenticatedUser(userRow),
+          cookiesToSet: [buildSessionCookie(fresh)],
+        };
+      }
+    }
+    // Outside grace window OR no surviving child — treat as theft.
     await revokeAllForUser(db, refreshRow.user_id, nowSec);
     log('warn', 'auth.refresh.reuse_detected', {
       user_id: refreshRow.user_id,
       refresh_token_id: refreshRow.id,
+      since_revoked_seconds: sinceRevoked,
     });
     return null;
   }
@@ -219,7 +262,7 @@ export async function loadSession(
   const userRow = await loadUserById(db, refreshRow.user_id);
   if (userRow === null) return null;
 
-  let rotated: { value: string; id: string };
+  let rotated: { value: string; id: string } | null;
   try {
     rotated = await rotateRefreshToken(db, refreshRow, request, nowSec);
   } catch (err) {
@@ -228,6 +271,31 @@ export async function loadSession(
       detail: String(err).slice(0, 500),
     });
     return null;
+  }
+
+  // Concurrent-rotation collision — another caller rotated this row
+  // between our findRefreshToken and rotate calls. The other caller
+  // has minted the surviving refresh cookie; we just serve a fresh
+  // access JWT (per the grace-window branch above). The client's
+  // stale cookie remains valid until the winner's Set-Cookie lands.
+  if (rotated === null) {
+    const fresh = await signSession(
+      {
+        sub: userRow.id,
+        email: userRow.email,
+        ghl: userRow.gh_login,
+        sv: userRow.session_version,
+      },
+      jwtSecret,
+    );
+    log('info', 'auth.refresh.concurrent_lost_race', {
+      user_id: userRow.id,
+      refresh_token_id: refreshRow.id,
+    });
+    return {
+      user: toAuthenticatedUser(userRow),
+      cookiesToSet: [buildSessionCookie(fresh)],
+    };
   }
 
   const fresh = await signSession(

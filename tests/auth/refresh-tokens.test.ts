@@ -10,7 +10,6 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { env, applyD1Migrations } from '../fixtures/cloudflare-test';
 import {
   REFRESH_TOKEN_COOKIE_NAME,
-  buildRefreshCookie,
   deviceFingerprint,
   findRefreshToken,
   issueRefreshToken,
@@ -90,15 +89,43 @@ describe('refresh-tokens — REQ-AUTH-008', () => {
     expect(oldRow).not.toBeNull();
 
     const rotated = await rotateRefreshToken(env.DB, oldRow!, req);
-    expect(rotated.value).not.toBe(oldValue);
+    expect(rotated).not.toBeNull();
+    expect(rotated!.value).not.toBe(oldValue);
+    // The row id is a separate random identifier, NOT the cookie value.
+    expect(rotated!.id).not.toBe(rotated!.value);
+    expect(rotated!.id).not.toBe(oldId);
 
     const reloadedOld = await findRefreshToken(env.DB, oldValue);
     expect(reloadedOld!.revoked_at).not.toBeNull();
 
-    const newRow = await findRefreshToken(env.DB, rotated.value);
+    const newRow = await findRefreshToken(env.DB, rotated!.value);
     expect(newRow!.parent_id).toBe(oldId);
     expect(newRow!.rotation_count).toBe(1);
     expect(newRow!.revoked_at).toBeNull();
+  });
+
+  it('REQ-AUTH-008 AC 2: rotateRefreshToken returns null on concurrent rotation', async () => {
+    // Simulate two callers both holding the same refresh row in memory.
+    const req = fakeRequest({ ua: 'Mozilla/5.0', country: 'CH' });
+    const { value } = await issueRefreshToken(env.DB, USER_ID, req);
+    const rowA = await findRefreshToken(env.DB, value);
+    const rowB = await findRefreshToken(env.DB, value);
+    expect(rowA).not.toBeNull();
+    expect(rowB).not.toBeNull();
+
+    const winner = await rotateRefreshToken(env.DB, rowA!, req);
+    expect(winner).not.toBeNull();
+
+    // Loser presents the same (now-revoked) parent row.
+    const loser = await rotateRefreshToken(env.DB, rowB!, req);
+    expect(loser).toBeNull();
+  });
+
+  it('CodeQL js/sensitive-data-treatment: row id is not the cookie value', async () => {
+    const req = fakeRequest({ ua: 'Mozilla/5.0', country: 'CH' });
+    const { value, id } = await issueRefreshToken(env.DB, USER_ID, req);
+    expect(id).not.toBe(value);
+    expect(id.length).toBeLessThan(value.length);
   });
 
   it('REQ-AUTH-008 AC 4: revokeAllForUser bumps session_version', async () => {
@@ -203,18 +230,51 @@ describe('loadSession — refresh-token flow — REQ-AUTH-002, REQ-AUTH-008', ()
     expect(row!.revoked_at).toBeNull();
   });
 
-  it('REQ-AUTH-008 AC 4: reuse-detected token revokes ALL refresh rows for the user', async () => {
+  it('REQ-AUTH-008: concurrent-rotation collision within grace window serves access JWT only, no theft fallout', async () => {
     const req1 = fakeRequest({ ua: 'Mozilla/5.0', country: 'CH' });
     const { value: oldValue } = await issueRefreshToken(env.DB, USER_ID, req1);
-    // Issue a SECOND token (e.g., a different device the user owns).
     const { value: otherValue } = await issueRefreshToken(env.DB, USER_ID, req1);
 
-    // Manually revoke the old row to simulate a successful rotation
-    // having already happened.
+    // Rotate the old row — winning concurrent rotation just happened.
     const oldRow = await findRefreshToken(env.DB, oldValue);
     await rotateRefreshToken(env.DB, oldRow!, req1);
 
-    // Attacker (or replay) presents the now-revoked old cookie.
+    // Loser presents the old (now-revoked) cookie within the grace
+    // window. Treat as benign concurrent rotation.
+    const replayReq = fakeRequest({
+      ua: 'Mozilla/5.0',
+      country: 'CH',
+      cookie: `${REFRESH_TOKEN_COOKIE_NAME}=${oldValue}`,
+    });
+    const result = await loadSession(replayReq, env.DB, SECRET);
+    expect(result).not.toBeNull();
+    expect(result!.user.id).toBe(USER_ID);
+    // Just the access JWT — refresh row was already rotated by winner.
+    expect(result!.cookiesToSet.length).toBe(1);
+    expect(result!.cookiesToSet[0]).toContain(`${SESSION_COOKIE_NAME}=`);
+
+    // Other device's row must NOT be revoked — concurrent collision
+    // is benign, no global wipe.
+    const otherRow = await findRefreshToken(env.DB, otherValue);
+    expect(otherRow!.revoked_at).toBeNull();
+  });
+
+  it('REQ-AUTH-008 AC 4: reuse-detected token outside grace window revokes ALL refresh rows for the user', async () => {
+    const req1 = fakeRequest({ ua: 'Mozilla/5.0', country: 'CH' });
+    const { value: oldValue } = await issueRefreshToken(env.DB, USER_ID, req1);
+    const { value: otherValue } = await issueRefreshToken(env.DB, USER_ID, req1);
+
+    const oldRow = await findRefreshToken(env.DB, oldValue);
+    await rotateRefreshToken(env.DB, oldRow!, req1);
+
+    // Backdate revocation to OUTSIDE the grace window (current row was
+    // just revoked at "now"; push it back so reuse detection treats
+    // any replay as theft, not benign collision).
+    await env.DB
+      .prepare('UPDATE refresh_tokens SET revoked_at = 1 WHERE id = ?1')
+      .bind(oldRow!.id)
+      .run();
+
     const replayReq = fakeRequest({
       ua: 'Mozilla/5.0',
       country: 'CH',
@@ -223,8 +283,8 @@ describe('loadSession — refresh-token flow — REQ-AUTH-002, REQ-AUTH-008', ()
     const result = await loadSession(replayReq, env.DB, SECRET);
     expect(result).toBeNull();
 
-    // Reuse detection — every refresh row for the user is now revoked,
-    // including the second device's row.
+    // Every refresh row for the user is now revoked, including the
+    // second device's row.
     const otherRow = await findRefreshToken(env.DB, otherValue);
     expect(otherRow!.revoked_at).not.toBeNull();
 

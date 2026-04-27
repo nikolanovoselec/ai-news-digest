@@ -14,19 +14,60 @@
 //   2. Test surface: integration tests want a deterministic place to
 //      exercise the refresh-token rotation flow.
 //
-// On success: 204 No Content with both Set-Cookie headers.
+// Always force-rotates the refresh row on success — callers that hit
+// this endpoint specifically want a fresh window regardless of how
+// much time was left on the access JWT.
+//
+// On success: 200 OK with both Set-Cookie headers (new access JWT +
+// rotated refresh cookie).
 // On failure: 401 Unauthorized + clearing both cookies.
 
 import type { APIContext } from 'astro';
 import { errorResponse } from '~/lib/errors';
-import { loadSession, applyRefreshCookie, buildClearSessionCookie } from '~/middleware/auth';
-import { buildClearRefreshCookie } from '~/lib/refresh-tokens';
+import { signSession } from '~/lib/session-jwt';
+import {
+  buildSessionCookie,
+  buildClearSessionCookie,
+} from '~/middleware/auth';
+import {
+  REFRESH_TOKEN_COOKIE_NAME,
+  ROTATION_GRACE_SECONDS,
+  buildRefreshCookie,
+  buildClearRefreshCookie,
+  deviceFingerprint,
+  findRefreshToken,
+  findUnrevokedChild,
+  rotateRefreshToken,
+  revokeAllForUser,
+} from '~/lib/refresh-tokens';
+import { readCookie } from '~/lib/crypto';
 import { checkOrigin, originOf } from '~/middleware/origin-check';
+import { log } from '~/lib/log';
+
+interface UserMinRow {
+  id: string;
+  email: string;
+  gh_login: string;
+  session_version: number;
+}
+
+function unauthorizedResponse(): Response {
+  const headers = new Headers({ 'Content-Type': 'application/json; charset=utf-8' });
+  headers.append('Set-Cookie', buildClearSessionCookie());
+  headers.append('Set-Cookie', buildClearRefreshCookie());
+  return new Response(JSON.stringify({ ok: false, code: 'unauthorized' }), {
+    status: 401,
+    headers,
+  });
+}
 
 export async function POST(context: APIContext): Promise<Response> {
   const env = context.locals.runtime.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
     return errorResponse('app_not_configured');
+  }
+  if (typeof env.OAUTH_JWT_SECRET !== 'string' || env.OAUTH_JWT_SECRET === '') {
+    return errorResponse('oauth_not_configured');
   }
   const appOrigin = originOf(env.APP_URL);
 
@@ -37,30 +78,120 @@ export async function POST(context: APIContext): Promise<Response> {
     return originResult.response;
   }
 
-  const session = await loadSession(context.request, env.DB, env.OAUTH_JWT_SECRET);
-  if (session === null) {
-    // Refresh failed — clear both cookies so the browser stops sending
-    // a now-dead refresh value on every request.
-    const headers = new Headers();
-    headers.append('Set-Cookie', buildClearSessionCookie());
-    headers.append('Set-Cookie', buildClearRefreshCookie());
-    return new Response(JSON.stringify({ ok: false, code: 'unauthorized' }), {
-      status: 401,
-      headers: {
-        ...Object.fromEntries(headers),
-        'Content-Type': 'application/json; charset=utf-8',
-      },
+  const refreshValue = readCookie(
+    context.request.headers.get('Cookie'),
+    REFRESH_TOKEN_COOKIE_NAME,
+  );
+  if (refreshValue === null) {
+    return unauthorizedResponse();
+  }
+
+  const row = await findRefreshToken(env.DB, refreshValue);
+  if (row === null) {
+    return unauthorizedResponse();
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  // REQ-AUTH-008 AC 4 — reuse detection with grace-window tolerance.
+  if (row.revoked_at !== null) {
+    const sinceRevoked = nowSec - row.revoked_at;
+    if (sinceRevoked <= ROTATION_GRACE_SECONDS) {
+      // Concurrent-rotation collision — serve a fresh access JWT
+      // off the surviving child without rotating again.
+      const child = await findUnrevokedChild(env.DB, row.id);
+      if (child !== null) {
+        const user = await env.DB
+          .prepare(
+            'SELECT id, email, gh_login, session_version FROM users WHERE id = ?1',
+          )
+          .bind(row.user_id)
+          .first<UserMinRow>();
+        if (user === null) return unauthorizedResponse();
+        const fresh = await signSession(
+          { sub: user.id, email: user.email, ghl: user.gh_login, sv: user.session_version },
+          env.OAUTH_JWT_SECRET,
+        );
+        const headers = new Headers({ 'Content-Type': 'application/json; charset=utf-8' });
+        headers.append('Set-Cookie', buildSessionCookie(fresh));
+        return new Response(JSON.stringify({ ok: true, rotated: false }), {
+          status: 200,
+          headers,
+        });
+      }
+    }
+    // Theft — revoke everything for the user.
+    await revokeAllForUser(env.DB, row.user_id, nowSec);
+    log('warn', 'auth.refresh.reuse_detected', {
+      user_id: row.user_id,
+      refresh_token_id: row.id,
+      since_revoked_seconds: sinceRevoked,
+      via: 'explicit_refresh',
+    });
+    return unauthorizedResponse();
+  }
+
+  if (row.expires_at <= nowSec) {
+    return unauthorizedResponse();
+  }
+
+  // Device fingerprint check.
+  const present = await deviceFingerprint(context.request);
+  if (present !== row.device_fingerprint_hash) {
+    log('warn', 'auth.refresh.fingerprint_mismatch', {
+      user_id: row.user_id,
+      refresh_token_id: row.id,
+      via: 'explicit_refresh',
+    });
+    return unauthorizedResponse();
+  }
+
+  const user = await env.DB
+    .prepare(
+      'SELECT id, email, gh_login, session_version FROM users WHERE id = ?1',
+    )
+    .bind(row.user_id)
+    .first<UserMinRow>();
+  if (user === null) return unauthorizedResponse();
+
+  let rotated: { value: string; id: string } | null;
+  try {
+    rotated = await rotateRefreshToken(env.DB, row, context.request, nowSec);
+  } catch (err) {
+    log('error', 'auth.refresh.rotate_failed', {
+      user_id: row.user_id,
+      detail: String(err).slice(0, 500),
+    });
+    return unauthorizedResponse();
+  }
+
+  const fresh = await signSession(
+    { sub: user.id, email: user.email, ghl: user.gh_login, sv: user.session_version },
+    env.OAUTH_JWT_SECRET,
+  );
+
+  const headers = new Headers({ 'Content-Type': 'application/json; charset=utf-8' });
+  headers.append('Set-Cookie', buildSessionCookie(fresh));
+
+  if (rotated === null) {
+    // Concurrent caller rotated between findRefreshToken and rotate.
+    // Serve fresh access JWT only; client's stale cookie is good for
+    // the rest of the grace window.
+    return new Response(JSON.stringify({ ok: true, rotated: false }), {
+      status: 200,
+      headers,
     });
   }
 
-  // Force-mint fresh cookies even when loadSession's primary path was
-  // valid — the explicit refresh endpoint always rotates so callers
-  // can rely on a fresh window.
-  return applyRefreshCookie(
-    new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    }),
-    session,
-  );
+  headers.append('Set-Cookie', buildRefreshCookie(rotated.value));
+  log('info', 'auth.refresh.rotated', {
+    user_id: user.id,
+    refresh_token_id: rotated.id,
+    parent_id: row.id,
+    via: 'explicit_refresh',
+  });
+  return new Response(JSON.stringify({ ok: true, rotated: true }), {
+    status: 200,
+    headers,
+  });
 }
