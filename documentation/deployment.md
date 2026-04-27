@@ -91,7 +91,12 @@ CI workflows use `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'` at the workflow le
 
 ## Admin-only routes (Cloudflare Access gating)
 
-A handful of operator endpoints drive LLM calls or queue work on demand — budget-sensitive operations that must be reachable only by the site operator. Authentication via the site session is not sufficient: any signed-in user could forge a form POST. These endpoints are gated at the zone level by **Cloudflare Access**, so only the configured admin email can reach them regardless of session state.
+A handful of operator endpoints drive LLM calls or queue work on demand — budget-sensitive operations that must be reachable only by the site operator. These endpoints are protected by two independent layers:
+
+1. **Cloudflare Access (zone-level):** every request to `/api/admin/*` must carry a valid `Cf-Access-Jwt-Assertion` header. Without it, Access redirects the browser to the Access login page before the Worker ever sees the request.
+2. **Worker-side gate (`src/middleware/admin-auth.ts`):** even when the Access header is present, the Worker enforces three additional checks — (a) the CF Access JWT header must be present; (b) the requester must hold a valid Worker session cookie; (c) the session user's email must match `ADMIN_EMAIL` (case-insensitive). When `CF_ACCESS_AUD` is also configured, a fourth check validates the `aud` claim of the Access JWT. Each failing check returns at the first failure with no observable side effect. Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8.
+
+This dual-layer design means a misconfigured or disabled Access policy does **not** silently open the endpoints — the Worker gate is an independent backstop.
 
 ### Paths to gate
 
@@ -115,7 +120,7 @@ The pages containing these buttons (`/settings`, the dashboard footer) are **not
 
 The dev-bypass endpoint at `/api/dev/login` is gated separately by the `DEV_BYPASS_TOKEN` Worker secret (returns 404 when the secret is unset) and does **not** need a Cloudflare Access policy.
 
-No worker-side admin detection is performed — Cloudflare Access is the only gate for the routes above. Disabling or misconfiguring the Access policy silently opens the endpoint; keep its configuration in sync with deploys.
+Keep the Cloudflare Access policy in sync with deploys — Access is the first layer and improves user experience (login-page redirect instead of a bare 403). Both layers must be correctly configured for full protection.
 
 ## Resend domain verification
 
