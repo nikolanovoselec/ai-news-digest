@@ -117,11 +117,9 @@ export async function fetchArticleBody(
     contactUrl !== undefined && contactUrl !== ''
       ? `Mozilla/5.0 (compatible; news-digest/1.0; +${contactUrl})`
       : 'Mozilla/5.0 (compatible; news-digest/1.0)';
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
-      signal: controller.signal,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       redirect: 'follow',
       headers: {
         'User-Agent': ua,
@@ -171,8 +169,6 @@ export async function fetchArticleBody(
     return text.length >= 100 ? text : null;
   } catch {
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 

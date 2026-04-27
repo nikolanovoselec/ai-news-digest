@@ -1,4 +1,10 @@
-// Implements REQ-SET-001, REQ-SET-002, REQ-SET-003, REQ-SET-004, REQ-SET-005, REQ-SET-006
+// Implements REQ-SET-001
+// Implements REQ-SET-002
+// Implements REQ-SET-003
+// Implements REQ-SET-004
+// Implements REQ-SET-005
+// Implements REQ-SET-006
+// Implements REQ-AUTH-001
 //
 // GET /api/settings — return the authenticated user's settings snapshot
 // plus a `first_run` boolean derived from the onboarding-complete rule.
