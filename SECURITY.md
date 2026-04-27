@@ -27,7 +27,7 @@ listed on [graymatter.ch](https://graymatter.ch).
 
 - Authentication and session cookies
   ([REQ-AUTH-001](sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider),
-  [REQ-AUTH-002](sdd/authentication.md#req-auth-002-session-cookie-and-instant-revocation),
+  [REQ-AUTH-002](sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation),
   [REQ-AUTH-007](sdd/authentication.md#req-auth-007-cross-provider-account-dedup))
 - Origin / CSRF defense on state-changing endpoints
   ([REQ-AUTH-003](sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints))
@@ -36,7 +36,7 @@ listed on [graymatter.ch](https://graymatter.ch).
 - Rate-limit bypass paths
   ([REQ-AUTH-001 AC 9](sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider))
 - LLM prompt injection that produces fabricated source attributions
-  ([REQ-PIPE-002](sdd/generation.md#req-pipe-002-chunked-summarisation-and-tagging))
+  ([REQ-PIPE-002](sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract))
 - Anything that bypasses the per-user data scope
 
 ## What's out of scope
