@@ -1,6 +1,6 @@
 # Digest Generation
 
-A global scrape-and-summarise pipeline that runs every 4 hours: one cron-triggered coordinator run per tick assembles candidates from the curated source registry, canonical-URL-dedupes them, and fans chunks out to the LLM consumer. The consumer writes summaries + tags + cluster groupings into a shared article pool. The per-user dashboard then reads from that pool filtered by each user's active tags, so cost scales with the world (one LLM pass per tick) rather than with users × refreshes. Starred articles survive the 7-day retention cutoff.
+A global scrape-and-summarise pipeline that runs every 4 hours: one cron-triggered coordinator run per tick assembles candidates from the curated source registry, canonical-URL-dedupes them, and fans chunks out to the LLM consumer. The consumer writes summaries + tags + cluster groupings into a shared article pool. The per-user dashboard then reads from that pool filtered by each user's active tags, so cost scales with the world (one LLM pass per tick) rather than with users × refreshes. Starred articles survive the 14-day retention cutoff.
 
 ---
 
