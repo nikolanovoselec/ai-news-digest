@@ -212,6 +212,18 @@ describe('POST /api/tags/delete-initial — REQ-SET-002 AC 8', () => {
     const persisted = JSON.parse(upd!.params[0] as string) as string[];
     expect(persisted).toEqual([]);
   });
+
+  it('CF-028: returns 429 when the per-user TAGS_MUTATION bucket is exhausted', async () => {
+    const db = makeDb(userWith('["a","b"]'));
+    const e = env(db);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const windowIndex = Math.floor(nowSec / 60);
+    await e.KV!.put(`ratelimit:tags_mutation:user:u1:${windowIndex}`, '30');
+    const req = await postRequest(await signedCookie());
+    const res = await POST(makeContext(req, e) as never);
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).not.toBeNull();
+  });
 });
 
 describe('settings.astro — Restore + Delete-all visibility (REQ-SET-002 AC 8)', () => {

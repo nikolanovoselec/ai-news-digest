@@ -23,6 +23,11 @@ import type { APIContext } from 'astro';
 import { errorResponse } from '~/lib/errors';
 import { log } from '~/lib/log';
 import { MODELS } from '~/lib/models';
+import {
+  enforceRateLimit,
+  rateLimitResponse,
+  RATE_LIMIT_RULES,
+} from '~/lib/rate-limit';
 import { isValidTz } from '~/lib/tz';
 import { loadSession } from '~/middleware/auth';
 import { checkOrigin, originOf } from '~/middleware/origin-check';
@@ -219,6 +224,19 @@ export async function PUT(context: APIContext): Promise<Response> {
   const session = await loadSession(context.request, env.DB, env.OAUTH_JWT_SECRET);
   if (session === null) {
     return errorResponse('unauthorized');
+  }
+
+  // CF-028: PUT /api/settings is a parallel write path for hashtags
+  // alongside POST /api/tags{,/restore,/delete-initial}. Rate-limit
+  // here too so the per-user TAGS_MUTATION cap can't be bypassed by
+  // routing the same write through this endpoint.
+  const rl = await enforceRateLimit(
+    env,
+    RATE_LIMIT_RULES.TAGS_MUTATION,
+    `user:${session.user.id}`,
+  );
+  if (!rl.ok) {
+    return rateLimitResponse(rl.retryAfter);
   }
 
   let body: PutSettingsBody;
