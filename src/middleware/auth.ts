@@ -28,7 +28,6 @@ import {
   findUnrevokedChild,
   rotateRefreshToken,
   revokeAllForUser,
-  type RefreshTokenRow,
 } from '~/lib/refresh-tokens';
 import { log } from '~/lib/log';
 import type { AuthenticatedUser } from '~/lib/types';
@@ -361,14 +360,3 @@ export function applyRefreshCookie(
   });
 }
 
-/** Extract the active refresh-token row id (if any) from the request,
- *  for the logout path which wants to revoke just that row rather than
- *  bumping session_version on every login site for the user. */
-export async function activeRefreshTokenRow(
-  request: Request,
-  db: D1Database,
-): Promise<RefreshTokenRow | null> {
-  const refreshValue = readCookie(request.headers.get('Cookie'), REFRESH_TOKEN_COOKIE_NAME);
-  if (refreshValue === null) return null;
-  return findRefreshToken(db, refreshValue);
-}
