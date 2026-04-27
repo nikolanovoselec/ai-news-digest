@@ -51,7 +51,10 @@ Or via GitHub Actions (`.github/workflows/deploy.yml`), which triggers on a `wor
 
 The deploy job:
 1. Applies D1 migrations against the production database.
-2. Pushes Worker secrets (Resend credentials, etc.) via `wrangler secret put`.
+2. Pushes Worker secrets via `wrangler secret put` using the file-redirect form (safer than piping under some CI environments). All OAuth provider credentials, Resend config, and `APP_URL` are pushed unconditionally. Three secrets are pushed conditionally — only when the corresponding GitHub Actions secret is non-empty:
+   - `ADMIN_EMAIL` — when unset, every `/api/admin/*` request returns HTTP 403. This is the fork-friendly default that locks down the admin surface until an operator opts in. Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8.
+   - `CF_ACCESS_AUD` — when unset, the admin gate only checks header presence (Cloudflare Access already verified the JWT before forwarding). Set this to enable audience-claim validation as a defense-in-depth against header forging. Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8.
+   - `DEV_BYPASS_USER_ID` — when unset, `/api/dev/login` defaults to the synthetic `__e2e__` row inserted by `migrations/0006_e2e_user.sql`, so e2e test runs are sandboxed to that account and never touch the operator's data. Set this manually only for unusual staging scenarios (impersonating a specific account); the deploy workflow does not propagate it.
 3. Deploys the Worker.
 4. Binds the custom domain: extracts the hostname from the `APP_URL` secret, walks parent domains to find the matching Cloudflare zone in the account, then calls the Workers Custom Domains API (`PUT /accounts/{id}/workers/domains`) to attach the hostname to the Worker. The call is idempotent — safe to re-run on every deploy. Skipped if `APP_URL` is not set.
 5. Smoke-tests `GET /` against `APP_URL` first (the hostname users actually reach); falls back to the `*.workers.dev` URL if the custom domain has not propagated yet. Accepts `200` or `303` as passing. Uses `--max-time 15` to avoid hung connections.
@@ -88,7 +91,12 @@ CI workflows use `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'` at the workflow le
 
 ## Admin-only routes (Cloudflare Access gating)
 
-A handful of operator endpoints drive LLM calls or queue work on demand — budget-sensitive operations that must be reachable only by the site operator. Authentication via the site session is not sufficient: any signed-in user could forge a form POST. These endpoints are gated at the zone level by **Cloudflare Access**, so only the configured admin email can reach them regardless of session state.
+A handful of operator endpoints drive LLM calls or queue work on demand — budget-sensitive operations that must be reachable only by the site operator. These endpoints are protected by two independent layers:
+
+1. **Cloudflare Access (zone-level):** every request to `/api/admin/*` must carry a valid `Cf-Access-Jwt-Assertion` header. Without it, Access redirects the browser to the Access login page before the Worker ever sees the request.
+2. **Worker-side gate (`src/middleware/admin-auth.ts`):** even when the Access header is present, the Worker enforces three additional checks — (a) the CF Access JWT header must be present; (b) the requester must hold a valid Worker session cookie; (c) the session user's email must match `ADMIN_EMAIL` (case-insensitive). When `CF_ACCESS_AUD` is also configured, a fourth check validates the `aud` claim of the Access JWT. Each failing check returns at the first failure with no observable side effect. Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8.
+
+This dual-layer design means a misconfigured or disabled Access policy does **not** silently open the endpoints — the Worker gate is an independent backstop.
 
 ### Paths to gate
 
@@ -112,7 +120,7 @@ The pages containing these buttons (`/settings`, the dashboard footer) are **not
 
 The dev-bypass endpoint at `/api/dev/login` is gated separately by the `DEV_BYPASS_TOKEN` Worker secret (returns 404 when the secret is unset) and does **not** need a Cloudflare Access policy.
 
-No worker-side admin detection is performed — Cloudflare Access is the only gate for the routes above. Disabling or misconfiguring the Access policy silently opens the endpoint; keep its configuration in sync with deploys.
+Keep the Cloudflare Access policy in sync with deploys — Access is the first layer and improves user experience (login-page redirect instead of a bare 403). Both layers must be correctly configured for full protection.
 
 ## Resend domain verification
 
