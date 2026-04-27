@@ -18,6 +18,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | AD4 | Plaintext-only LLM output; no markdown parser or HTML sanitizer | Security | 2026-04-22 |
 | AD5 | KV for caches, D1 for consistent state | Storage | 2026-04-22 |
 | AD6 | Polling instead of SSE or WebSockets for scrape-run progress | UI | 2026-04-22 |
+| AD7 | D1 for chunk completion tracking, replacing KV read-modify-write (CF-002) | Storage | 2026-04-27 |
 
 ---
 
@@ -55,9 +56,9 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 ---
 
-### AD3: No server-side article-body fetching
+### AD3: No server-side article-body fetching *(revised — decision reversed in global-feed rework)*
 
-**Decision:** The system never fetches article pages from the Worker. Summaries are produced from titles and snippets returned by the search APIs.
+**Decision (original, 2026-04-22):** The system never fetches article pages from the Worker. Summaries are produced from titles and snippets returned by the search APIs.
 
 **Context:** Workers running from Cloudflare datacenter IPs face a real SSRF surface if they resolve arbitrary URLs from external feeds. Reddit and many publishers also rate-limit or block Cloudflare IP ranges, so even if we wanted article bodies, we'd get inconsistent coverage.
 
@@ -65,9 +66,11 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 - Fetch article bodies for richer LLM context, with an SSRF filter.
 - Use a residential-IP scraping service.
 
-**Rationale:** Every headline from HN Algolia, Google News RSS, and Reddit includes a title and URL (and often a snippet). Workers AI can rank and summarize from this alone. Dropping the fetch eliminates SSRF entirely, removes Reddit/Google News blocking concerns for our own fetching, and keeps the pipeline fast and simple.
+**Rationale (original):** Every headline from HN Algolia, Google News RSS, and Reddit includes a title and URL (and often a snippet). Workers AI can rank and summarize from this alone. Dropping the fetch eliminates SSRF entirely, removes Reddit/Google News blocking concerns for our own fetching, and keeps the pipeline fast and simple.
 
-**Related requirements:** [REQ-GEN-003](../../sdd/generation.md#req-gen-003-source-fan-out-with-caching), [REQ-GEN-004](../../sdd/generation.md#req-gen-004-url-canonicalization-and-dedupe)
+**Revision (2026-04-27 — global-feed rework, REQ-PIPE-001 AC 8):** This decision was reversed during the global-feed pipeline rework. The chunk consumer (`src/queue/scrape-chunk-consumer.ts`) now fetches article HTML bodies for candidates whose feed snippet is below 400 characters — SSRF-guarded via `src/lib/ssrf.ts`, 8-second timeout, 1.5 MB download cap. Readable plaintext is extracted by `src/lib/article-fetch.ts` and used as the prompt snippet when it is longer than the feed snippet; a failed fetch falls back to the feed snippet so it never blocks a summary. The SSRF filter from the original "Alternatives considered" mitigates the concern that prompted this ADR. Fan-out is bounded-concurrency via `src/lib/concurrency.ts` (`mapConcurrent`, 20 workers). Implements [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) AC 8.
+
+**Related requirements:** [REQ-GEN-003](../../sdd/generation.md#req-gen-003-source-fan-out-with-caching), [REQ-GEN-004](../../sdd/generation.md#req-gen-004-url-canonicalization-and-dedupe), [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
 ---
 
@@ -118,5 +121,21 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 **Rationale:** Polling `GET /api/scrape-status` (one D1 SELECT + one KV get) is negligible overhead at the operator-only volume this endpoint serves. No DO complexity, no WebSocket protocol, no phase-update machinery. The UX difference is imperceptible for a one-shot status flip.
 
 **Related requirements:** [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
+
+---
+
+### AD7: D1 for chunk completion tracking, replacing KV read-modify-write
+
+**Decision:** Move the "last chunk done" gate from a KV decrement (`scrape_run:{id}:chunks_remaining`) to a D1 `INSERT OR IGNORE` + `SELECT COUNT(*)` pattern on a dedicated `scrape_chunk_completions` table, with a follow-up conditional `UPDATE scrape_runs SET finalize_enqueued = 1 WHERE finalize_enqueued = 0` to gate the finalize handoff.
+
+**Context (CF-002):** The original KV implementation used a read-modify-write decrement: each chunk consumer read the counter, decremented it, and wrote it back. Under Cloudflare Queues' at-least-once delivery, two concurrent last-chunk consumers could both read the same value before either wrote, producing the same decremented target — both would see "zero remaining" and both would enqueue a second finalize pass and double-stamp the run as `ready`. A second race remained after the count check: both consumers could pass the count check and both call `SCRAPE_FINALIZE.send` before either set the KV gate. KV's eventual consistency made both races effectively undetectable via testing in non-adversarial conditions.
+
+**Alternatives considered:**
+- Durable Object for serialized counter updates — correct, but adds a DO dependency to a pipeline that runs without one today.
+- KV with Compare-And-Swap (`getWithMetadata` + `put` with `expirationTtl` as a CAS surrogate) — fragile; KV has no native CAS and the surrogate is not atomic.
+
+**Rationale:** AD5's own principle applies directly: completion counting needs transactional semantics. `INSERT OR IGNORE` into a table keyed by `(scrape_run_id, chunk_index)` is idempotent under redelivery and gives an exact count via `SELECT COUNT(*)` — no race. The finalize-enqueue gate is collapsed into a single atomic `UPDATE … WHERE finalize_enqueued = 0`; D1 returns `meta.changes` for exactly one consumer. The KV counter (`scrape_run:{id}:chunks_remaining`) is retained as a derived mirror for the `/api/scrape-status` progress display but is no longer authoritative. Implements [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract) and [REQ-PIPE-008](../../sdd/generation.md#req-pipe-008-cross-chunk-semantic-dedup-pass) AC 1 and AC 9.
+
+**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract), [REQ-PIPE-008](../../sdd/generation.md#req-pipe-008-cross-chunk-semantic-dedup-pass)
 
 ---

@@ -259,6 +259,8 @@ Cron fires (daily at 03:00 UTC)
   → Pass 1 — article retention (REQ-PIPE-005):
       DELETE articles WHERE published_at < now-7d AND NOT starred by any user
       FK cascade removes alternative sources, tag rows, read-tracking rows
+      DELETE scrape_chunk_completions rows whose scrape_run_id references a
+        now-deleted scrape_runs row (completion tracking rows, migration 0007)
   → Pass 2 — stuck-tag prune (REQ-DISC-006):
       Scan sources:{tag} KV entries — for each entry with feeds:[] AND
         discovered_at < now-7d → remove that tag from every user's hashtags_json
