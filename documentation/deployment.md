@@ -40,6 +40,8 @@ test('REQ-AUTH-003: rejects state-changing requests without matching Origin', ()
 
 **Test fixture for Cloudflare bindings:** import `env` and `applyD1Migrations` from `tests/fixtures/cloudflare-test.ts` rather than directly from `cloudflare:test`. The fixture re-exports these with the `@deprecated` JSDoc stripped, eliminating ~90 `ts(6385)` typecheck warnings that otherwise drown real CI failures in noise. If a future release of the upstream package removes the deprecation tag, delete the fixture and revert test imports to the direct `cloudflare:test` path.
 
+**CSP and Astro page scripts:** the site's Content Security Policy is `script-src 'self'`. When a `<script>` block inside an `.astro` file has no `import` statements, Astro's build pipeline inlines the script body directly into the HTML — and the browser silently drops it as an inline CSP violation. To prevent this, any page-level or layout-level `<script>` block must either (a) contain at least one `import` (which forces Astro to emit the code as an external `<script type="module" src="/_astro/...js">` bundle, allowed by `script-src 'self'`), or (b) carry the `is:inline` attribute for scripts that are intentionally inline and already covered by a hash-based CSP exception. The standard pattern is to move the script body to `src/scripts/*.ts` and import it: `<script> import '~/scripts/my-module'; </script>`.
+
 ## Production Deployment
 
 ```bash

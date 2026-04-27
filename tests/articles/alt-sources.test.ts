@@ -10,6 +10,10 @@
 import { describe, it, expect } from 'vitest';
 
 import modalSource from '../../src/components/AltSourcesModal.astro?raw';
+// Client behaviour was extracted to src/scripts/alt-sources-modal.ts
+// after the CSP inline-script extraction. Some assertions below pin
+// script-body content; they target the new module file.
+import modalScript from '../../src/scripts/alt-sources-modal.ts?raw';
 
 describe('AltSourcesModal — REQ-READ-002', () => {
   it('REQ-READ-002: declares it implements REQ-READ-002', () => {
@@ -46,9 +50,9 @@ describe('AltSourcesModal — REQ-READ-002', () => {
     // We rely on the native <dialog> Escape behaviour — the contract
     // is that we use showModal() (which enables Escape-to-cancel) not
     // show() (which does not). Assert showModal is invoked.
-    expect(modalSource).toContain('dialog.showModal()');
+    expect(modalScript).toContain('dialog.showModal()');
     // And regression-guard that the non-modal show() is not used.
-    expect(modalSource).not.toMatch(/dialog\.show\(\)/);
+    expect(modalScript).not.toMatch(/dialog\.show\(\)/);
   });
 
   it('REQ-READ-002: dialog closes on backdrop click (event.target === dialog)', () => {
@@ -56,8 +60,9 @@ describe('AltSourcesModal — REQ-READ-002', () => {
     // element itself (not its inner content), close. The inner
     // content is wrapped in an explicit __body div so this check
     // distinguishes the click surfaces reliably.
-    expect(modalSource).toMatch(/event\.target\s*===\s*dialog/);
-    expect(modalSource).toContain('dialog.close()');
+    expect(modalScript).toMatch(/event\.target\s*===\s*dialog/);
+    expect(modalScript).toContain('dialog.close()');
+    // The body class hook is in the template, not the script.
     expect(modalSource).toContain('alt-sources-modal__body');
   });
 
@@ -70,9 +75,9 @@ describe('AltSourcesModal — REQ-READ-002', () => {
   it('REQ-READ-002: client script tears down listeners on astro:before-swap', () => {
     // View Transitions swap pages without a full reload, so stale
     // listeners accumulate unless explicitly torn down.
-    expect(modalSource).toContain('astro:before-swap');
-    expect(modalSource).toContain('teardownModal');
-    expect(modalSource).toContain('removeEventListener');
+    expect(modalScript).toContain('astro:before-swap');
+    expect(modalScript).toContain('teardownModal');
+    expect(modalScript).toContain('removeEventListener');
   });
 
   it('REQ-READ-002: editorial styling reuses global theme tokens', () => {

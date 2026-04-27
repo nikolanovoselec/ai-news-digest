@@ -1,10 +1,12 @@
-// Tests for src/components/InstallPrompt.astro — REQ-PWA-001.
-// The component's inline script is the contract we're testing: iOS detection
-// via UA + !navigator.standalone, the beforeinstallprompt deferred-prompt
-// handler, and the "Add to Home Screen" instructional string.
+// Tests for the install-prompt client behaviour — REQ-PWA-001.
+// The contract we're testing (iOS detection, beforeinstallprompt
+// handler, "Add to Home Screen" copy) lives in
+// src/scripts/install-prompt.ts; the .astro file is template-only
+// after the CSP inline-script extraction.
 
 import { describe, it, expect } from 'vitest';
-import installPromptSource from '../../src/components/InstallPrompt.astro?raw';
+import installPromptSource from '../../src/scripts/install-prompt.ts?raw';
+import installPromptTemplate from '../../src/components/InstallPrompt.astro?raw';
 
 // Mirror of the detection logic in the component, duplicated here so we can
 // unit-test the branches without spinning up a DOM. If the regex or the
@@ -18,9 +20,10 @@ function isIos(nav: IosNavigatorLike): boolean {
   return IOS_UA_PATTERN.test(nav.userAgent) && !nav.standalone;
 }
 
-describe('InstallPrompt.astro source content', () => {
-  it('REQ-PWA-001: declares it implements REQ-PWA-001', () => {
+describe('InstallPrompt source content', () => {
+  it('REQ-PWA-001: declares it implements REQ-PWA-001 (in both the script and the template)', () => {
     expect(installPromptSource).toContain('REQ-PWA-001');
+    expect(installPromptTemplate).toContain('REQ-PWA-001');
   });
 
   it('REQ-PWA-001: listens for the beforeinstallprompt event (AC 5)', () => {
@@ -32,7 +35,9 @@ describe('InstallPrompt.astro source content', () => {
   });
 
   it('REQ-PWA-001: shows the iOS "Add to Home Screen" instructional note (AC 4)', () => {
-    expect(installPromptSource).toContain('Add to Home Screen');
+    // The user-facing copy lives in the template, the rendering branch
+    // logic lives in the script.
+    expect(installPromptTemplate).toContain('Add to Home Screen');
   });
 
   it('REQ-PWA-001: detects standalone via matchMedia(display-mode: standalone)', () => {
@@ -44,7 +49,11 @@ describe('InstallPrompt.astro source content', () => {
   });
 
   it('REQ-PWA-001: checks navigator.standalone in the iOS branch (AC 4)', () => {
-    expect(installPromptSource).toContain('navigator.standalone');
+    // The script casts navigator to a typed view (`const nav = navigator
+    // as IosNavigator`) before reading the iOS-specific .standalone
+    // property — so the literal "navigator.standalone" doesn't appear,
+    // but the .standalone access does. Pin the access shape.
+    expect(installPromptSource).toMatch(/\bnav\.standalone\b/);
   });
 });
 

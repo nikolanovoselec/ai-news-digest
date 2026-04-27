@@ -226,47 +226,39 @@ describe('REQ-SET-007 silent tz auto-correct — Base.astro', () => {
     expect(src).toMatch(/data-user-tz=\{Astro\.locals\.user\?\.tz\s*\?\?\s*''\}/);
   });
 
-  it('REQ-SET-007: inline module compares Intl.DateTimeFormat().resolvedOptions().timeZone to data-user-tz and POSTs when they differ', async () => {
-    const src = await import('../../src/layouts/Base.astro?raw').then((m) => m.default);
-    // The browser tz is read via Intl.
-    expect(src).toContain("Intl.DateTimeFormat().resolvedOptions().timeZone");
-    // The stored tz is read from the body data attribute.
+  // The tz-sync logic was extracted from inline `<script>` blocks in
+  // Base.astro into src/scripts/page-effects.ts after the site CSP
+  // (`script-src 'self'`) was found to silently block every inline
+  // bundled script — the previous inline copy in Base.astro never
+  // executed on the live site. The behaviour is unchanged; the source
+  // location for these regression checks moved to the external module.
+  it('REQ-SET-007: external module compares Intl.DateTimeFormat().resolvedOptions().timeZone to data-user-tz and POSTs when they differ', async () => {
+    const src = await import('../../src/scripts/page-effects.ts?raw').then((m) => m.default);
+    expect(src).toContain('Intl.DateTimeFormat().resolvedOptions().timeZone');
     expect(src).toContain("dataset['userTz']");
-    // A silent POST goes to /api/auth/set-tz when the two differ.
     expect(src).toContain('/api/auth/set-tz');
     expect(src).toMatch(/method:\s*['"]POST['"]/);
   });
 
   it('REQ-SET-007: sync runs once per session (tzAutoBound flag on documentElement) and survives View Transitions via astro:page-load', async () => {
-    const src = await import('../../src/layouts/Base.astro?raw').then((m) => m.default);
-    // Guard flag prevents stacking across ClientRouter navigations.
+    const src = await import('../../src/scripts/page-effects.ts?raw').then((m) => m.default);
     expect(src).toContain("dataset['tzAutoBound']");
     expect(src).toMatch(/dataset\['tzAutoBound'\]\s*=\s*'1'/);
-    // astro:page-load listener re-runs the sync on every
-    // View-Transition-based navigation.
     expect(src).toMatch(/astro:page-load[\s\S]*?syncBrowserTz/);
   });
 
   it('REQ-SET-007: early-return when the browser tz equals the stored tz (no redundant POST on matching page loads)', async () => {
-    const src = await import('../../src/layouts/Base.astro?raw').then((m) => m.default);
-    // A matching browser-vs-stored tz bails before POST.
+    const src = await import('../../src/scripts/page-effects.ts?raw').then((m) => m.default);
     expect(src).toMatch(/browser\s*===\s*stored[\s\S]{0,80}return/);
   });
 
   it("REQ-SET-007: AC 6 — silent path fires only when stored tz is the empty seeded sentinel", async () => {
-    const src = await import('../../src/layouts/Base.astro?raw').then((m) => m.default);
-    // Any non-empty stored tz (manual save, including a deliberate
-    // 'UTC' pick, or an earlier silent correction) is authoritative
-    // and must not be overwritten. New users are seeded with tz=''
-    // so the silent path can populate the browser-detected zone once.
-    // Regression guard against the prior `stored === 'UTC'` gate which
-    // overwrote users who genuinely wanted UTC.
+    const src = await import('../../src/scripts/page-effects.ts?raw').then((m) => m.default);
     expect(src).toMatch(/stored\s*!==\s*['"]['"][\s\S]{0,80}return/);
   });
 
   it('REQ-SET-007: on successful POST, updates data-user-tz in place so the next page load skips the POST', async () => {
-    const src = await import('../../src/layouts/Base.astro?raw').then((m) => m.default);
-    // After res.ok, the dataset attribute is patched to the new tz.
+    const src = await import('../../src/scripts/page-effects.ts?raw').then((m) => m.default);
     expect(src).toMatch(/res\.ok[\s\S]{0,120}dataset\['userTz'\]\s*=\s*browser/);
   });
 });
