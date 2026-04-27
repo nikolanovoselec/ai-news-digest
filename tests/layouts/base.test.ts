@@ -29,9 +29,15 @@ describe('Base.astro / page-effects.ts — view-transition wiring (REQ-DES-003 /
     // is:inline so Astro renders the tag verbatim — no processing, no
     // inlining, just a same-origin <script src=> the browser fetches
     // straight from the static asset pipeline.
-    expect(baseSource).toMatch(
-      /<script\s+is:inline\s+type="module"\s+src="\/scripts\/page-effects\.js"\s*>\s*<\/script>/,
-    );
+    //
+    // Pin attributes independently so a prettier or hand reorder
+    // (alphabetical, etc.) doesn't break the test on a no-op format
+    // commit.
+    const tag = baseSource.match(/<script\b[^>]*src="\/scripts\/page-effects\.js"[^>]*>\s*<\/script>/);
+    expect(tag, 'expected a <script src="/scripts/page-effects.js"> tag in Base.astro').not.toBeNull();
+    const t = tag?.[0] ?? '';
+    expect(t).toMatch(/\bis:inline\b/);
+    expect(t).toMatch(/type="module"/);
   });
 
   it('page-effects.ts registers preOpenHistoryDayInIncomingDocument as an astro:before-swap listener', () => {
