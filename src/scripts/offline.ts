@@ -1,9 +1,10 @@
 // Implements REQ-READ-006 — offline retry button + online-event hop.
 // Extracted from src/pages/offline.astro (same REQ tag as the parent
-// page; REQ-PWA-002 was moved to Out of Scope). The site CSP
-// `script-src 'self'` silently blocks the inline bundle Astro would
-// otherwise produce for a small page-level script; importing this
-// module forces an external emit.
+// page; the offline service-worker REQ that once owned this page is
+// now Out of Scope per sdd/README.md). The site CSP `script-src 'self'`
+// silently blocks the inline bundle Astro would otherwise produce for
+// a small page-level script; importing this module forces an external
+// emit.
 
 function init(): void {
   const button = document.querySelector<HTMLButtonElement>('[data-offline-retry]');
