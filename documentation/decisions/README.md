@@ -139,3 +139,10 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 **Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract), [REQ-PIPE-008](../../sdd/generation.md#req-pipe-008-cross-chunk-semantic-dedup-pass)
 
 ---
+
+## Related Documentation
+
+- [Architecture](../architecture.md) — System overview and component map
+- [Configuration](../configuration.md) — Env vars, bindings, KV key conventions
+
+---
