@@ -4,6 +4,16 @@ Semantic changes to the specification. Git history captures diffs; this file cap
 
 Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verification pass" entries. No spec cleanup or format fixes (those live in git history).
 
+## 2026-04-27
+
+- REQ-AUTH-007 added (and REQ-AUTH-001 AC 7 removed): signing in via two providers with the same verified email now lands in one account, not two. Existing duplicate-email pairs (the production case where one user signed in via both GitHub and Google) are merged in a single one-time pass so the daily digest goes out once instead of twice.
+
+- REQ-DISC-006 added: stuck tags (no working feeds for more than 7 days) now drop out of the user's interests automatically on the daily retention pass, and the settings page lists the actual stuck tag names instead of just a count so users can see at a glance which tags need attention.
+
+- REQ-DISC-004 AC 4 updated: the bulk "Discover missing sources" endpoint now accepts both POST (settings form submit) and GET (the request shape Cloudflare Access uses after bouncing the click through SSO). Users with Access configured no longer land on a 404 after the post-auth callback — the same outcome banner the POST path produces shows up on /settings.
+
+- REQ-MAIL-001 ACs reworked: source-name labels next to email headlines are gone (Outlook auto-linkified tokens like `cs.AI` into fake links), so the headline is now the only clickable element per row. The signature switches to a webapp-matching footer "Built with Codeflare © 2026 Gray Matter GmbH" with both names linked, and the From header now displays "News Digest <noreply@graymatter.ch>" so inbox lists show the brand instead of the bare email.
+
 ## 2026-04-26
 
 - REQ-PWA-001 PWA install/splash artwork now uses the canonical MDI `newspaper` glyph — the same segmented top-edge icon the favicon and top-left in-app brand already use — so the home-screen icon and splash match the running app instead of showing the older filled `newspaper-variant` glyph. The Android home-screen and iOS splash title also shorten from "Digest" to "newsdigest" to mirror the in-app wordmark.

@@ -17,7 +17,7 @@ Federated sign-in via GitHub or Google — no passwords, no email verification f
 4. If the chosen provider returns no verified email or otherwise refuses to release one, sign-in fails with error code `no_verified_email` and the user is redirected to the landing page with a clear message naming the affected provider.
 5. New-account creation seeds the user's hashtag list with the 20-entry system default covering the project owner's actual reading topics across cloud platforms, AI/LLM, security, identity, and infrastructure. Every default tag is guaranteed to have at least one curated source so the first digest has meaningful input before the user touches the strip.
 6. New accounts are also seeded with a default scheduled-digest time of 08:00, a default UTC timezone that the reading surface overwrites with the browser's actual IANA zone on first load, and the email-notification preference enabled. As a result, successful sign-in for a brand-new account lands the user directly on the reading surface with real articles visible — there is no forced onboarding detour through the settings form.
-7. Each provider's account is independent — signing in with Google after a previous GitHub sign-in creates a fresh account rather than merging by email. This is a deliberate trade-off: it eliminates the cross-provider email-conflict ambiguity at the cost of forcing users to remember which provider they used.
+7. Cross-provider sign-in by the same verified email lands in a single account per REQ-AUTH-007 (was previously per-provider isolation).
 
 **Constraints:** CON-AUTH-001
 **Priority:** P0
@@ -98,6 +98,26 @@ Federated sign-in via GitHub or Google — no passwords, no email verification f
 2. Submitting the confirmed deletion deletes the user and every row owned by the user (stars, read-tracking, pending discoveries) via foreign-key cascade. The shared article pool is unaffected — articles are global, not per-user. The account-deletion endpoint accepts both a JSON API path (used by scripted clients and smoke tests) and a native HTML form submission (used by the settings page) so deletion succeeds on every browser the app supports, including mobile in-app webviews that do not reliably dispatch fetch-based `DELETE` requests.
 3. The session cookie is cleared and the user is redirected to the landing page with a one-time confirmation banner.
 4. KV entries keyed by the user's id (if any) are deleted in the same handler.
+
+**Constraints:** CON-AUTH-001
+**Priority:** P1
+**Dependencies:** REQ-AUTH-001
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+### REQ-AUTH-007: Cross-provider account dedup
+
+**Intent:** A person who signs in via two providers with the same verified email lands in one account, not two — the daily digest goes out once and starred articles, read marks, and interests are shared across both sign-in paths.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. The first time a user signs in via any provider, a new account is created and the (provider, provider identifier) pair is recorded so subsequent sign-ins via the same provider land in the same account.
+2. When a sign-in arrives via a provider not yet linked to any account but with a verified email that matches an existing account, the new (provider, identifier) pair is linked to that existing account instead of creating a duplicate row. The user signs in to the same account regardless of which provider they pick.
+3. The daily digest is sent once per real person — duplicate-email accounts that pre-date this requirement are merged in a single one-time pass; their stars, read marks, and pending discoveries re-point to the surviving account so no user-visible state is lost.
+4. Removing one sign-in path (revoking access at the OAuth provider) does not delete the account or other linked sign-in paths — the account remains reachable via the other provider.
 
 **Constraints:** CON-AUTH-001
 **Priority:** P1
