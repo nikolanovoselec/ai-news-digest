@@ -301,13 +301,24 @@ export async function revokeRefreshToken(
  * the grace window — within the window, see ROTATION_GRACE_SECONDS.
  * REQ-AUTH-008 AC 4.
  *
- * Idempotent under retry: a second call against an already-revoked
- * user is a no-op. Without this short-circuit a browser replaying a
- * dead refresh cookie against an inline-refresh path would re-bump
- * session_version on every request, causing ongoing session churn for
- * the legitimate user. Race window between two concurrent first-time
- * callers is narrow but possible; the over-bump cost is bounded
- * (session_version is monotonically increasing).
+ * **Idempotent under retry**: a second call when no unrevoked rows
+ * exist is a no-op (no `session_version` bump). Without this short-
+ * circuit a browser replaying a dead refresh cookie against the
+ * inline-refresh path would re-bump on every request, causing ongoing
+ * session churn for the legitimate user.
+ *
+ * **Soundness:** skipping the bump when all rows are already revoked
+ * is safe because every prior path that revoked those rows ALSO
+ * bumped `session_version` (this function bundles both writes; logout
+ * does the same; account deletion drops the user entirely). So at the
+ * moment we observe "no unrevoked rows", every access JWT older than
+ * the last legitimate bump is already invalid. Future callers that
+ * revoke rows without a parallel `session_version` bump (none today)
+ * MUST update this contract.
+ *
+ * **Race:** two concurrent first-time callers may both observe
+ * unrevoked rows and both bump. Bounded over-bump is acceptable —
+ * `session_version` is monotonically increasing.
  */
 export async function revokeAllForUser(
   db: D1Database,

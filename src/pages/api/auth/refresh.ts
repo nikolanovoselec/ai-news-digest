@@ -84,16 +84,16 @@ export async function POST(context: APIContext): Promise<Response> {
     return originResult.response;
   }
 
-  // REQ-AUTH-008 — application-layer rate limit. An attacker holding
-  // a valid refresh cookie could otherwise hammer this endpoint to
-  // mint unlimited 5-minute access JWTs. Keyed by IP because the
-  // user_id may not be available yet (we haven't validated the cookie).
-  const rateResult = await enforceRateLimit(
+  // REQ-AUTH-008 — Tier 1 (pre-validation): IP-keyed rate limit. Caps
+  // random-cookie spam and bounds DOS without paying for a DB lookup
+  // per request. Shared bucket with the inline middleware refresh path
+  // so attackers can't pivot between the two.
+  const ipRate = await enforceRateLimit(
     env,
-    RATE_LIMIT_RULES.AUTH_REFRESH,
+    RATE_LIMIT_RULES.AUTH_REFRESH_IP,
     `ip:${clientIp(context.request)}`,
   );
-  if (!rateResult.ok) return rateLimitResponse(rateResult.retryAfter);
+  if (!ipRate.ok) return rateLimitResponse(ipRate.retryAfter);
 
   const refreshValue = readCookie(
     context.request.headers.get('Cookie'),
@@ -107,6 +107,15 @@ export async function POST(context: APIContext): Promise<Response> {
   if (row === null) {
     return unauthorizedResponse();
   }
+
+  // Tier 2 (post-validation): user-keyed limit. Catches a stolen
+  // cookie distributed across many IPs that bypasses the per-IP tier.
+  const userRate = await enforceRateLimit(
+    env,
+    RATE_LIMIT_RULES.AUTH_REFRESH_USER,
+    `user:${row.user_id}`,
+  );
+  if (!userRate.ok) return rateLimitResponse(userRate.retryAfter);
 
   const nowSec = Math.floor(Date.now() / 1000);
 

@@ -161,18 +161,32 @@ export const RATE_LIMIT_RULES = {
     limit: 30,
     windowSec: 60,
   },
-  // REQ-AUTH-008 — explicit /api/auth/refresh force-rotates a refresh
-  // token on every call. An attacker holding a valid refresh cookie
-  // could otherwise hammer this endpoint to mint unlimited 5-minute
-  // access JWTs. 10/min/IP is generous for any browser; legitimate
-  // clients call this at most once per access-token expiry (~12/hr).
-  AUTH_REFRESH: {
-    routeClass: 'auth_refresh',
-    limit: 10,
+  // REQ-AUTH-008 — refresh-token rotation. Two-tier rate-limit:
+  // AUTH_REFRESH_IP runs BEFORE the DB lookup to bound random-cookie
+  // spam without authenticating the caller. The previous 10/min was
+  // too tight for legitimate flows: a corporate NAT or CGNAT pool can
+  // share an IP across dozens of users, and a single user with 5+
+  // tabs can fan out >10 inline-refresh requests in parallel after
+  // the 5-min access JWT expires. 60/min/IP is generous for both
+  // shapes while still catching attacker-grade volumes (≥1 req/sec).
+  AUTH_REFRESH_IP: {
+    routeClass: 'auth_refresh_ip',
+    limit: 60,
     windowSec: 60,
     // A stolen refresh cookie must not benefit from a KV outage —
     // fail closed so the limiter denies during KV downtime rather
     // than waving every request through unbounded.
+    failClosed: true,
+  },
+  // AUTH_REFRESH_USER runs AFTER findRefreshToken returns a valid
+  // row, keyed by user_id. Catches the "stolen cookie distributed
+  // across many IPs" attacker that defeats the per-IP limit. 10/min
+  // per user is far more than any browser needs (one refresh per
+  // 5-min access-JWT expiry, plus a small concurrent burst).
+  AUTH_REFRESH_USER: {
+    routeClass: 'auth_refresh_user',
+    limit: 10,
+    windowSec: 60,
     failClosed: true,
   },
   // REQ-AUTH-002 — bound logout calls per IP. Practical blast radius

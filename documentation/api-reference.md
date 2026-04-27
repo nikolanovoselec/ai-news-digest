@@ -72,7 +72,7 @@ Force-rotates the refresh-token row and mints a new 5-minute access JWT. Used by
 
 **Auth:** Requires the `__Host-news_digest_refresh` refresh cookie (the access JWT need not be valid). Origin check applies.
 
-**Rate limit:** 10 requests / 60 seconds per IP (`auth_refresh` rule). Exhausted → `429 Too Many Requests` with `Retry-After` header.
+**Rate limit:** Two tiers, both fail-closed on KV outage. Pre-validation: 60 req / 60 s per IP (`auth_refresh_ip` rule) — caps random-cookie spam without paying for a DB lookup per request. Post-validation (after the refresh row is found): 10 req / 60 s per user (`auth_refresh_user` rule) — caps a stolen cookie distributed across many IPs that bypasses the per-IP tier. Either tier exhausted → `429 Too Many Requests` with `Retry-After` header. Both buckets are shared with the inline-middleware refresh path so an attacker cannot pivot between the two endpoints to evade the limits.
 
 **Response (success):** `200` with both `Set-Cookie` headers (new access JWT + rotated refresh cookie).
 
@@ -517,8 +517,8 @@ Implements [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-log
 | `discovery.completed` | Per-tag LLM discovery run finished |
 | `discovery.queued` | A new per-tag discovery job was inserted into `pending_discoveries` |
 | `settings.update.failed` | D1 update in `PUT /api/settings` threw |
-| `auth.refresh.rate_limited` | Inline middleware refresh path hit the `auth_refresh` rate-limit bucket — request rejected with 429; rate-limit bucket is shared with `POST /api/auth/refresh` |
-| `rate.limit.kv_error` | KV read/write in the rate-limit helper threw — emitted with `decision: "fail_open"` (most routes) or `decision: "fail_closed"` (`auth_refresh` rule); caller proceeds per the per-rule fail-mode |
+| `auth.refresh.rate_limited` | Inline middleware or explicit refresh path hit a refresh rate-limit bucket — request rejected with 429. `bucket` field is `"ip"` (pre-validation `auth_refresh_ip`, 60/min) or `"user"` (post-validation `auth_refresh_user`, 10/min). Buckets are shared with `POST /api/auth/refresh` |
+| `rate.limit.kv_error` | KV read/write in the rate-limit helper threw — emitted with `decision: "fail_open"` (most routes) or `decision: "fail_closed"` (`auth_refresh_ip`, `auth_refresh_user`); caller proceeds per the per-rule fail-mode |
 | `article.star.failed` | D1 insert or delete in `POST/DELETE /api/articles/:id/star` threw |
 
 Raw exception messages appear only in the `detail` field of error-level records; they are never stored in D1 and never returned to clients (see [REQ-OPS-002](../sdd/observability.md#req-ops-002-sanitized-error-surfaces)).

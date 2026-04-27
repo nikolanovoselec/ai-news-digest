@@ -93,6 +93,32 @@ describe('enforceRateLimit', () => {
     );
     expect(result.ok).toBe(true);
   });
+
+  it('REQ-AUTH-001 AC 9: fails CLOSED on KV.get error for a failClosed:true rule', async () => {
+    const env = makeKv({ get: vi.fn().mockRejectedValue(new Error('kv down')) });
+    const result = await enforceRateLimit(
+      env as unknown as { KV: KVNamespace },
+      RATE_LIMIT_RULES.AUTH_REFRESH_IP,
+      'ip:1.2.3.4',
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // Retry-After is the full window length so the client backs off
+    // for at least one full window before retrying.
+    expect(result.retryAfter).toBe(RATE_LIMIT_RULES.AUTH_REFRESH_IP.windowSec);
+  });
+
+  it('REQ-AUTH-001 AC 9: AUTH_REFRESH_USER also fails closed on KV outage', async () => {
+    const env = makeKv({ get: vi.fn().mockRejectedValue(new Error('kv down')) });
+    const result = await enforceRateLimit(
+      env as unknown as { KV: KVNamespace },
+      RATE_LIMIT_RULES.AUTH_REFRESH_USER,
+      'user:abc-123',
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.retryAfter).toBe(RATE_LIMIT_RULES.AUTH_REFRESH_USER.windowSec);
+  });
 });
 
 describe('rateLimitResponse', () => {

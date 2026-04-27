@@ -160,9 +160,11 @@ function toAuthenticatedUser(row: UserRow): AuthenticatedUser {
  * carry clear-cookie directives that the caller must attach via
  * {@link applyRefreshCookie}. Never throws.
  *
- * Pass {@link kv} to rate-limit the inline refresh-token rotation path
- * (the same `AUTH_REFRESH` bucket as `POST /api/auth/refresh`). When
- * omitted, the inline path runs unrate-limited — only acceptable for
+ * Pass {@link kv} to rate-limit the inline refresh-token rotation path.
+ * Two tiers: AUTH_REFRESH_IP runs before the DB lookup (anti-spam),
+ * AUTH_REFRESH_USER runs after a valid refresh row is found (caps a
+ * stolen-cookie attacker holding a real user's refresh value). When
+ * {@link kv} is omitted both tiers are skipped — only acceptable for
  * unit tests; production callers must always pass the namespace.
  *
  * Two paths:
@@ -205,19 +207,20 @@ export async function loadSession(
     return unauthenticated(accessToken !== null);
   }
 
-  // REQ-AUTH-001 AC 9 — rate-limit the inline refresh path on the
-  // SAME `AUTH_REFRESH` bucket as `POST /api/auth/refresh`, so an
-  // attacker can't pivot to GET endpoints to bypass the explicit-
-  // endpoint limit. Skipped only when `kv` is omitted (test-only).
+  // REQ-AUTH-001 AC 9 — Tier 1 (pre-validation): IP-keyed limit caps
+  // random-cookie spam without paying a DB lookup per request. The
+  // bucket is shared with `POST /api/auth/refresh` (same routeClass)
+  // so an attacker can't pivot between the inline and explicit paths.
   if (kv !== undefined) {
     const rate = await enforceRateLimit(
       { KV: kv },
-      RATE_LIMIT_RULES.AUTH_REFRESH,
+      RATE_LIMIT_RULES.AUTH_REFRESH_IP,
       `ip:${clientIp(request)}`,
     );
     if (!rate.ok) {
       log('warn', 'auth.refresh.rate_limited', {
         ip: clientIp(request),
+        bucket: 'ip',
         retry_after_seconds: rate.retryAfter,
       });
       // Don't clear cookies — the user may be legitimate and just
@@ -231,6 +234,26 @@ export async function loadSession(
     // Cookie value not in DB. Stale cookie from a deleted session, or
     // a cookie issued before a DB rebuild — clear it.
     return unauthenticated(true);
+  }
+
+  // Tier 2 (post-validation): user-keyed limit. Catches a stolen
+  // cookie distributed across many IPs (botnet / proxy network) that
+  // the per-IP tier alone would miss. Run AFTER findRefreshToken so
+  // we have a stable user identity even on revoked / expired rows.
+  if (kv !== undefined) {
+    const rate = await enforceRateLimit(
+      { KV: kv },
+      RATE_LIMIT_RULES.AUTH_REFRESH_USER,
+      `user:${refreshRow.user_id}`,
+    );
+    if (!rate.ok) {
+      log('warn', 'auth.refresh.rate_limited', {
+        user_id: refreshRow.user_id,
+        bucket: 'user',
+        retry_after_seconds: rate.retryAfter,
+      });
+      return unauthenticated(false);
+    }
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
@@ -395,19 +418,25 @@ export async function loadSession(
 }
 
 /**
- * Apply any cookies the middleware produced to the outgoing response.
- * Pass the {@link LoadSessionResult} from {@link loadSession} (or its
- * `cookiesToSet` array directly). Accepts `null` for legacy callers.
+ * Apply the cookies a session helper produced to the outgoing response.
+ * Pass any object exposing `cookiesToSet: readonly string[]` — typically
+ * a {@link LoadSessionResult} or {@link PageSessionResult}. `null` is
+ * accepted as a no-op for legacy callers that may not have a session.
+ *
+ * Single-shape signature on purpose: a previous iteration accepted a
+ * raw string array too, but that was never used in production and made
+ * passing a discriminated-union result a footgun (e.g. {@link
+ * RequireSessionResult}'s `ok: false` branch silently lacks
+ * `cookiesToSet`).
  */
 export function applyRefreshCookie(
   response: Response,
-  result: { cookiesToSet: string[] } | readonly string[] | null,
+  result: { cookiesToSet: readonly string[] } | null,
 ): Response {
   if (result === null) return response;
-  const cookies = Array.isArray(result) ? result : (result as { cookiesToSet: string[] }).cookiesToSet;
-  if (cookies.length === 0) return response;
+  if (result.cookiesToSet.length === 0) return response;
   const headers = new Headers(response.headers);
-  for (const c of cookies) headers.append('Set-Cookie', c);
+  for (const c of result.cookiesToSet) headers.append('Set-Cookie', c);
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

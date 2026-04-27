@@ -11,9 +11,12 @@ import {
   buildSessionCookie,
   buildClearSessionCookie,
   loadSession,
+  loadSessionForPage,
   applyRefreshCookie,
+  requireSession,
   SESSION_COOKIE_NAME,
 } from '~/middleware/auth';
+import { errorResponse } from '~/lib/errors';
 import { signSession } from '~/lib/session-jwt';
 
 /**
@@ -221,12 +224,107 @@ describe('applyRefreshCookie', () => {
     expect(joined).toContain('__Host-news_digest_refresh=abc123');
   });
 
-  it('REQ-AUTH-008: accepts a bare string array (rotated cookies)', async () => {
-    const original = new Response('ok', { status: 200 });
-    const out = applyRefreshCookie(original, [
-      `${SESSION_COOKIE_NAME}=jwt-x; Max-Age=300`,
-    ]);
-    const joined = setCookiesOf(out).join('\n');
-    expect(joined).toContain(`${SESSION_COOKIE_NAME}=jwt-x`);
+});
+
+/** Build a stub `AuthEnv` whose DB returns {@link row} for `loadUserById`.
+ *  KV is a mock that records puts/gets so tests can inspect rate-limit
+ *  bucket usage. */
+function makeEnv(row: unknown): {
+  env: { DB: D1Database; OAUTH_JWT_SECRET: string; KV: KVNamespace };
+  kvGet: ReturnType<typeof vi.fn>;
+} {
+  const { db } = makeDb(row);
+  const kvGet = vi.fn().mockResolvedValue(null);
+  const kvPut = vi.fn().mockResolvedValue(undefined);
+  const kv = { get: kvGet, put: kvPut } as unknown as KVNamespace;
+  return {
+    env: { DB: db, OAUTH_JWT_SECRET: SECRET, KV: kv },
+    kvGet,
+  };
+}
+
+describe('requireSession — REQ-AUTH-001 / REQ-AUTH-002', () => {
+  it('REQ-AUTH-002: returns ok=true with cookiesToSet=[] on a valid access JWT', async () => {
+    const token = await signSession(
+      { sub: '12345', email: 'a@b.c', ghl: 'a', sv: 1 },
+      SECRET,
+      300,
+    );
+    const { env } = makeEnv(baseRow(1));
+    const req = new Request('https://example.com/', {
+      headers: { Cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    const result = await requireSession(req, env);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.user.id).toBe('12345');
+    expect(result.cookiesToSet).toEqual([]);
+  });
+
+  it('REQ-AUTH-002: default failure response is errorResponse("unauthorized") with cookies cleared', async () => {
+    const { env } = makeEnv(null);
+    // Bad JWT but no refresh cookie — `unauthenticated(true)` clears.
+    const req = new Request('https://example.com/', {
+      headers: { Cookie: `${SESSION_COOKIE_NAME}=not.a.jwt` },
+    });
+    const result = await requireSession(req, env);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.response.status).toBe(401);
+    const cookies = setCookiesOf(result.response);
+    // Both cookies are cleared (Max-Age=0).
+    expect(cookies.some((c) => c.startsWith(`${SESSION_COOKIE_NAME}=;`))).toBe(true);
+  });
+
+  it('REQ-AUTH-002: invokes the custom unauthorized callback (for redirect-on-fail routes)', async () => {
+    const { env } = makeEnv(null);
+    const req = new Request('https://example.com/');
+    const customResp = new Response(null, {
+      status: 303,
+      headers: { Location: '/' },
+    });
+    const result = await requireSession(req, env, () => customResp);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.response.status).toBe(303);
+    expect(result.response.headers.get('Location')).toBe('/');
+  });
+});
+
+describe('loadSessionForPage — REQ-AUTH-002 / REQ-AUTH-008', () => {
+  it('REQ-AUTH-002: appends rotation cookies to the responseHeaders argument', async () => {
+    const token = await signSession(
+      { sub: '12345', email: 'a@b.c', ghl: 'a', sv: 1 },
+      SECRET,
+      300,
+    );
+    const { env } = makeEnv(baseRow(1));
+    const req = new Request('https://example.com/', {
+      headers: { Cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    });
+    const responseHeaders = new Headers();
+    const result = await loadSessionForPage(req, env, responseHeaders);
+    expect(result.user).not.toBeNull();
+    // Valid access JWT → no cookie churn → headers unchanged.
+    expect(responseHeaders.get('Set-Cookie')).toBeNull();
+    expect(result.cookiesToSet).toEqual([]);
+  });
+
+  it('REQ-AUTH-008: returns user=null AND attaches clear-cookie strings on a stale JWT with no refresh cookie', async () => {
+    const { env } = makeEnv(null);
+    const req = new Request('https://example.com/', {
+      headers: { Cookie: `${SESSION_COOKIE_NAME}=not.a.jwt` },
+    });
+    const responseHeaders = new Headers();
+    const result = await loadSessionForPage(req, env, responseHeaders);
+    expect(result.user).toBeNull();
+    // Both Set-Cookie strings are now on the page response headers.
+    const h = responseHeaders as Headers & { getSetCookie?: () => string[] };
+    const cookies = typeof h.getSetCookie === 'function' ? h.getSetCookie() : [];
+    expect(cookies.length).toBeGreaterThan(0);
+    expect(cookies.some((c) => c.startsWith(`${SESSION_COOKIE_NAME}=;`))).toBe(true);
+    // Returned array mirrors the headers so callers can paint a separate
+    // gated-redirect Response if they need to.
+    expect(result.cookiesToSet.length).toBe(cookies.length);
   });
 });
