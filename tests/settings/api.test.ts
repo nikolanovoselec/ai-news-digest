@@ -591,4 +591,33 @@ describe('PUT /api/settings', () => {
     expect(body.discovering).toEqual([]);
     expect(batchCalls.length).toBe(0);
   });
+
+  it('REQ-AUTH-001 AC 9 / CF-028: returns 429 when the per-user TAGS_MUTATION bucket is exhausted (PUT closes the bypass)', async () => {
+    // PUT /api/settings is the alternative tag-mutation write path
+    // alongside POST /api/tags*. The bucket counter is shared so a
+    // client that drove POST /api/tags to the limit must also be
+    // throttled when it switches to PUT /api/settings.
+    const { db } = makeDb(baseRow());
+    const kvStore = new Map<string, string>();
+    const nowSec = Math.floor(Date.now() / 1000);
+    const windowIndex = Math.floor(nowSec / 60);
+    kvStore.set(`ratelimit:tags_mutation:user:12345:${windowIndex}`, '30');
+    const kv = {
+      get: vi.fn().mockImplementation(async (key: string) => kvStore.get(key) ?? null),
+      put: vi.fn().mockImplementation(async (key: string, value: string) => {
+        kvStore.set(key, value);
+      }),
+    } as unknown as KVNamespace;
+    const req = await authedRequest('PUT', {
+      hashtags: ['ai', 'llm'],
+      digest_hour: 8,
+      digest_minute: 0,
+      tz: 'UTC',
+      model_id: VALID_MODEL_ID,
+      email_enabled: true,
+    });
+    const res = await PUT(makeContext(req, env(db, kv)) as never);
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).not.toBeNull();
+  });
 });

@@ -19,7 +19,7 @@
 //     + chunks_remaining so the user sees live progress.
 
 import type { APIContext } from 'astro';
-import { loadSession } from '~/middleware/auth';
+import { applyRefreshCookie, loadSession } from '~/middleware/auth';
 import { errorResponse } from '~/lib/errors';
 
 interface ScrapeRunRow {
@@ -43,23 +43,41 @@ export async function GET(context: APIContext): Promise<Response> {
   );
   if (session === null) return errorResponse('unauthorized');
 
+  // Optional ?run_id=… pins the lookup to a specific run rather than
+  // the most-recent row. Useful when the dashboard countdown polls
+  // immediately after a Force Refresh and a new run has not quite
+  // become "most recent" yet.
+  const requestedRunId = new URL(context.request.url).searchParams.get('run_id');
   let row: ScrapeRunRow | null = null;
   try {
-    row = await env.DB
-      .prepare(
-        `SELECT id, started_at, finished_at, status, chunk_count, articles_ingested
-           FROM scrape_runs ORDER BY started_at DESC LIMIT 1`,
-      )
-      .first<ScrapeRunRow>();
+    if (requestedRunId !== null && requestedRunId !== '') {
+      row = await env.DB
+        .prepare(
+          `SELECT id, started_at, finished_at, status, chunk_count, articles_ingested
+             FROM scrape_runs WHERE id = ?1`,
+        )
+        .bind(requestedRunId)
+        .first<ScrapeRunRow>();
+    } else {
+      row = await env.DB
+        .prepare(
+          `SELECT id, started_at, finished_at, status, chunk_count, articles_ingested
+             FROM scrape_runs ORDER BY started_at DESC LIMIT 1`,
+        )
+        .first<ScrapeRunRow>();
+    }
   } catch {
     row = null;
   }
 
   if (row === null || row.status !== 'running') {
-    return new Response(JSON.stringify({ running: false }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    });
+    return applyRefreshCookie(
+      new Response(JSON.stringify({ running: false }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      }),
+      session.refreshCookie,
+    );
   }
 
   // KV counter decrements per completed chunk. chunk_count on the
@@ -78,21 +96,24 @@ export async function GET(context: APIContext): Promise<Response> {
     chunksRemaining = null;
   }
 
-  return new Response(
-    JSON.stringify({
-      running: true,
-      id: row.id,
-      started_at: row.started_at,
-      chunks_remaining: chunksRemaining,
-      chunks_total:
-        typeof row.chunk_count === 'number' && row.chunk_count > 0
-          ? row.chunk_count
-          : null,
-      articles_ingested: row.articles_ingested ?? 0,
-    }),
-    {
-      status: 200,
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    },
+  return applyRefreshCookie(
+    new Response(
+      JSON.stringify({
+        running: true,
+        id: row.id,
+        started_at: row.started_at,
+        chunks_remaining: chunksRemaining,
+        chunks_total:
+          typeof row.chunk_count === 'number' && row.chunk_count > 0
+            ? row.chunk_count
+            : null,
+        articles_ingested: row.articles_ingested ?? 0,
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      },
+    ),
+    session.refreshCookie,
   );
 }

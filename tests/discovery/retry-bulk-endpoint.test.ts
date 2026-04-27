@@ -131,6 +131,8 @@ function envWith(db: D1Database, kv: KVNamespace): Partial<Env> {
     OAUTH_JWT_SECRET: JWT_SECRET,
     DB: db,
     KV: kv,
+    // CF-001 — retry-bulk now requires admin gate.
+    ADMIN_EMAIL: 'alice@example.com',
   };
 }
 
@@ -153,6 +155,7 @@ async function validSessionCookie(): Promise<string> {
 async function bulkRequest(options: {
   origin?: string | null;
   cookie?: string | null;
+  accessJwt?: string | null;
 }): Promise<Request> {
   const headers = new Headers({
     'Content-Type': 'application/x-www-form-urlencoded',
@@ -162,6 +165,11 @@ async function bulkRequest(options: {
   }
   if (options.cookie !== null && options.cookie !== undefined) {
     headers.set('Cookie', options.cookie);
+  }
+  // CF-001 — admin gate requires this header. Default to a placeholder.
+  const access = options.accessJwt === undefined ? 'placeholder.jwt.sig' : options.accessJwt;
+  if (access !== null) {
+    headers.set('Cf-Access-Jwt-Assertion', access);
   }
   return new Request(`${APP_URL}/api/admin/discovery/retry-bulk`, {
     method: 'POST',
@@ -327,6 +335,7 @@ describe('POST /api/admin/discovery/retry-bulk — REQ-DISC-004', () => {
 async function bulkGetRequest(options: {
   cookie?: string | null;
   accept?: string | null;
+  accessJwt?: string | null;
 }): Promise<Request> {
   const headers = new Headers();
   if (options.cookie !== null && options.cookie !== undefined) {
@@ -334,6 +343,11 @@ async function bulkGetRequest(options: {
   }
   if (options.accept !== null && options.accept !== undefined) {
     headers.set('Accept', options.accept);
+  }
+  const access =
+    options.accessJwt === undefined ? 'placeholder.jwt.sig' : options.accessJwt;
+  if (access !== null) {
+    headers.set('Cf-Access-Jwt-Assertion', access);
   }
   return new Request(`${APP_URL}/api/admin/discovery/retry-bulk`, {
     method: 'GET',
@@ -379,13 +393,15 @@ describe('GET /api/admin/discovery/retry-bulk — REQ-DISC-004 AC 4 (Access post
   it('REQ-DISC-004: GET browser path without a session redirects to /settings (no raw JSON)', async () => {
     // Without a session, browsers must NEVER see a JSON 401 — that
     // looks like a 404 to a user who just clicked through Cloudflare
-    // Access SSO. The handler redirects to /settings instead.
+    // Access SSO. The handler redirects to /settings instead. After
+    // CF-001 the admin gate fires before the loadSession path, so the
+    // redirect carries `rediscover=denied`.
     const { db } = makeDb(userWith('["go"]'));
     const { kv } = makeKv();
     const req = await bulkGetRequest({});
     const res = await GET(makeContext(req, envWith(db, kv)) as never);
     expect(res.status).toBe(303);
-    expect(res.headers.get('Location')).toBe(`${APP_ORIGIN}/settings?rediscover=error`);
+    expect(res.headers.get('Location')).toBe(`${APP_ORIGIN}/settings?rediscover=denied`);
   });
 
   it('REQ-DISC-004: GET with Accept: application/json without a session returns 401 (scripted callers opt in)', async () => {

@@ -28,6 +28,8 @@ import { errorResponse } from '~/lib/errors';
 import { loadSession } from '~/middleware/auth';
 import { slugify } from '~/lib/slug';
 import { parseHashtags } from '~/lib/hashtags';
+import { parseJsonStringArray as parseStringArray } from '~/lib/json-string-array';
+import { log } from '~/lib/log';
 
 /** Raw row shape for the global-pool article query. */
 interface ArticleRow {
@@ -52,18 +54,6 @@ interface ScrapeRunRow {
   status: string;
 }
 
-/** Parse a JSON-encoded string array column (`tags_json`, `details_json`).
- * Returns `[]` on null / malformed input. */
-function parseStringArray(json: string | null): string[] {
-  if (json === null || json === '') return [];
-  try {
-    const parsed = JSON.parse(json) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((v): v is string => typeof v === 'string');
-  } catch {
-    return [];
-  }
-}
 
 /** Wire shape — what the dashboard consumes per article. */
 export interface WireArticle {
@@ -130,7 +120,14 @@ export async function loadTodayPayload(
           WHERE status = 'ready' ORDER BY started_at DESC LIMIT 1`,
       )
       .first<ScrapeRunRow>();
-  } catch {
+  } catch (err) {
+    // CF-035 — a silent fallback to null hides D1 anomalies that
+    // operationally matter (the dashboard countdown stops working).
+    log('error', 'digest.today.query_failed', {
+      user_id: userId,
+      query: 'last_scrape_run',
+      detail: String(err).slice(0, 200),
+    });
     lastRun = null;
   }
 
@@ -178,7 +175,15 @@ export async function loadTodayPayload(
       .bind(userId, ...userTags)
       .all<ArticleRow>();
     rows = result.results ?? [];
-  } catch {
+  } catch (err) {
+    // CF-035 — log before falling through to empty rows so an operator
+    // can correlate "user reports empty dashboard" with a D1 error.
+    log('error', 'digest.today.query_failed', {
+      user_id: userId,
+      query: 'articles',
+      tag_count: userTags.length,
+      detail: String(err).slice(0, 200),
+    });
     rows = [];
   }
 

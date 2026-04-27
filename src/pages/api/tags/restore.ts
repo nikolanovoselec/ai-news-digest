@@ -1,4 +1,6 @@
-// Implements REQ-SET-002 AC 8 (restore defaults) + REQ-AUTH-003 (Origin check).
+// Implements REQ-SET-002
+// Implements REQ-AUTH-001
+// Implements REQ-AUTH-003
 //
 // POST /api/tags/restore — replace the authenticated user's hashtag list
 // with the bundled DEFAULT_HASHTAGS and 303-redirect to /digest.
@@ -12,6 +14,11 @@
 import type { APIContext } from 'astro';
 import { errorResponse } from '~/lib/errors';
 import { log } from '~/lib/log';
+import {
+  enforceRateLimit,
+  rateLimitResponse,
+  RATE_LIMIT_RULES,
+} from '~/lib/rate-limit';
 import { loadSession } from '~/middleware/auth';
 import { checkOrigin, originOf } from '~/middleware/origin-check';
 import { DEFAULT_HASHTAGS } from '~/lib/default-hashtags';
@@ -26,7 +33,7 @@ export async function POST(context: APIContext): Promise<Response> {
 
   const originResult = checkOrigin(context.request, appOrigin);
   if (!originResult.ok) {
-    return originResult.response!;
+    return originResult.response;
   }
 
   const session = await loadSession(context.request, env.DB, env.OAUTH_JWT_SECRET);
@@ -35,6 +42,16 @@ export async function POST(context: APIContext): Promise<Response> {
       status: 303,
       headers: { Location: '/' },
     });
+  }
+
+  // CF-028: per-user rate-limit on tag-list mutations.
+  const rl = await enforceRateLimit(
+    env,
+    RATE_LIMIT_RULES.TAGS_MUTATION,
+    `user:${session.user.id}`,
+  );
+  if (!rl.ok) {
+    return rateLimitResponse(rl.retryAfter);
   }
 
   const tags = Array.from(DEFAULT_HASHTAGS);

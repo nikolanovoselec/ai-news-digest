@@ -35,13 +35,9 @@ import {
   processChunkUserPrompt,
 } from '~/lib/prompts';
 import {
-  extractResponsePayload,
-  extractTokensIn,
-  extractTokensOut,
   parseLLMPayload,
   sanitizeText,
 } from '~/lib/generate';
-import type { AIRunResponse } from '~/lib/generate';
 import {
   mergeClustersByLlmHints,
   type Candidate,
@@ -50,11 +46,13 @@ import {
 import { fetchArticleBodies } from '~/lib/article-fetch';
 import { DEFAULT_HASHTAGS } from '~/lib/default-hashtags';
 import { splitIntoParagraphs } from '~/lib/paragraph-split';
-import { DEFAULT_MODEL_ID, FALLBACK_MODEL_ID, estimateCost } from '~/lib/models';
+import { FALLBACK_MODEL_ID } from '~/lib/models';
+import { runJsonWithFallback, previewRawResponse } from '~/lib/llm-json';
 import { addChunkStats, finishRun } from '~/lib/scrape-run';
 import { generateUlid } from '~/lib/ulid';
-import { applyForeignKeysPragma, batch as batchExec } from '~/lib/db';
+import { applyForeignKeysPragma } from '~/lib/db';
 import { log } from '~/lib/log';
+import { titlesShareAnyToken } from '~/lib/title-overlap';
 
 /** Shape of every `scrape-chunks` queue message. Produced by the
  * coordinator in `src/queue/scrape-coordinator.ts`. `candidates` are the
@@ -220,82 +218,54 @@ export async function processOneChunk(
     });
   }
 
-  // Call Workers AI with the primary model, then fall through to the
-  // OpenAI-native-JSON failover model if the primary returns malformed
-  // JSON. This preserves the cheap default (gemma-4) as the hot path
-  // while keeping a reliable safety net (gpt-oss-20b) for the runs
-  // where Google's JSON-prompt-following wobbles.
-  const ai = env.AI as unknown as {
-    run: (model: string, params: Record<string, unknown>) => Promise<AIRunResponse>;
-  };
-  const runLLM = async (modelId: string): Promise<AIRunResponse> =>
-    ai.run(modelId, {
+  // CF-009: primary-then-fallback retry centralised in
+  // src/lib/llm-json.ts so chunk + finalize + discovery share the
+  // same waste-cost accounting and the same single-attempt narrowing.
+  // The hot path stays on the cheap default (gemma-4); the fallback
+  // (gpt-oss-20b) is JSON-strict for runs where the primary's
+  // prompt-following wobbles.
+  const llmRun = await runJsonWithFallback({
+    ai: env.AI as unknown as { run: (m: string, p: Record<string, unknown>) => Promise<unknown> },
+    params: {
       messages: [
         { role: 'system', content: PROCESS_CHUNK_SYSTEM },
         { role: 'user', content: processChunkUserPrompt(promptCandidates, allowedTags) },
       ],
       ...LLM_PARAMS,
-    });
-
-  let modelUsed = DEFAULT_MODEL_ID;
-  let aiResult = await runLLM(modelUsed);
-  let rawResponse = extractResponsePayload(aiResult);
-  let parsed = narrowChunkPayload(parseLLMPayload(rawResponse), rawResponse);
-
-  // Wasted tokens — the primary call that failed still cost money even
-  // though its output was unusable. Accumulate here so a fallback
-  // success doesn't silently drop them from cost reporting.
-  let wastedTokensIn = 0;
-  let wastedTokensOut = 0;
-  let wastedCostUsd = 0;
-
-  if (parsed === null) {
-    // Primary model returned unparseable output. Log the event and
-    // retry once with the fallback — gpt-oss-20b has OpenAI's native
-    // response_format: json_object which hard-guarantees valid JSON.
-    wastedTokensIn = extractTokensIn(aiResult);
-    wastedTokensOut = extractTokensOut(aiResult);
-    wastedCostUsd = estimateCost(DEFAULT_MODEL_ID, wastedTokensIn, wastedTokensOut);
-    // Dump the first chunk of raw response so wrangler tail can show
-    // WHAT the model emitted — the user was stuck with
-    // status=failed runs with no diagnostic signal. Trim hard so the
-    // log line stays Cloudflare-size-safe.
-    const primaryPreview = typeof rawResponse === 'string'
-      ? rawResponse.slice(0, 400)
-      : JSON.stringify(rawResponse).slice(0, 400);
-    log('warn', 'digest.generation', {
-      status: 'chunk_invalid_json_fallback_try',
-      scrape_run_id: body.scrape_run_id,
-      chunk_index: body.chunk_index,
-      primary_model: DEFAULT_MODEL_ID,
-      fallback_model: FALLBACK_MODEL_ID,
-      primary_tokens_in: wastedTokensIn,
-      primary_tokens_out: wastedTokensOut,
-      primary_cost_usd: wastedCostUsd,
-      primary_response_preview: primaryPreview,
-    });
-    modelUsed = FALLBACK_MODEL_ID;
-    aiResult = await runLLM(modelUsed);
-    rawResponse = extractResponsePayload(aiResult);
-    parsed = narrowChunkPayload(parseLLMPayload(rawResponse), rawResponse);
-    if (parsed === null) {
-      const fallbackPreview = typeof rawResponse === 'string'
-        ? rawResponse.slice(0, 400)
-        : JSON.stringify(rawResponse).slice(0, 400);
-      const fallbackTokensIn = extractTokensIn(aiResult);
-      const fallbackTokensOut = extractTokensOut(aiResult);
+    },
+    narrow: (raw) => narrowChunkPayload(parseLLMPayload(raw), raw),
+    onPrimaryFailure: (info) => {
       log('warn', 'digest.generation', {
-        status: 'chunk_invalid_json',
+        status: 'chunk_invalid_json_fallback_try',
         scrape_run_id: body.scrape_run_id,
         chunk_index: body.chunk_index,
+        primary_model: info.modelUsed,
         fallback_model: FALLBACK_MODEL_ID,
-        fallback_tokens_in: fallbackTokensIn,
-        fallback_tokens_out: fallbackTokensOut,
-        fallback_response_preview: fallbackPreview,
+        primary_tokens_in: info.tokensIn,
+        primary_tokens_out: info.tokensOut,
+        primary_cost_usd: info.costUsd,
+        primary_response_preview: previewRawResponse(info.rawResponse),
       });
-      throw new Error('chunk_invalid_json');
-    }
+    },
+  });
+
+  if (!llmRun.ok) {
+    log('warn', 'digest.generation', {
+      status: 'chunk_invalid_json',
+      scrape_run_id: body.scrape_run_id,
+      chunk_index: body.chunk_index,
+      fallback_model: llmRun.fallback.modelUsed,
+      fallback_tokens_in: llmRun.fallback.tokensIn,
+      fallback_tokens_out: llmRun.fallback.tokensOut,
+      fallback_response_preview: previewRawResponse(llmRun.fallback.rawResponse),
+    });
+    throw new Error('chunk_invalid_json');
   }
+
+  const parsed = llmRun.parsed;
+  const wastedTokensIn = llmRun.wastedTokensIn;
+  const wastedTokensOut = llmRun.wastedTokensOut;
+  const wastedCostUsd = llmRun.wastedCostUsd;
 
   const rawArticles = Array.isArray(parsed.articles) ? parsed.articles : [];
   const dedupGroups = normaliseDedupGroups(parsed.dedup_groups);
@@ -534,64 +504,131 @@ export async function processOneChunk(
   }
 
   if (statements.length > 0) {
-    await batchExec(env.DB, statements);
+    await env.DB.batch(statements);
   }
 
-  // Accumulate chunk stats into the scrape_runs row. Tokens from the
-  // failed primary call (when the fallback was taken) count too — they
-  // burned real budget even though their output was unusable — so we
-  // add them to the reported totals.
-  const successTokensIn = extractTokensIn(aiResult);
-  const successTokensOut = extractTokensOut(aiResult);
-  const tokensIn = successTokensIn + wastedTokensIn;
-  const tokensOut = successTokensOut + wastedTokensOut;
-  // Cost attribution uses the model that actually produced the output
-  // for the success path, plus the primary-model cost for the wasted
-  // attempt when a fallback fired. `modelUsed` is DEFAULT_MODEL_ID on
-  // the happy path but flips to FALLBACK_MODEL_ID when the fallback
-  // retry succeeded.
-  const costUsd = estimateCost(modelUsed, successTokensIn, successTokensOut) + wastedCostUsd;
+  // CF-002: atomic chunk-completion via D1. The previous KV-counter
+  // decrement was non-atomic — two concurrent consumers reading the
+  // same chunks_remaining value could race to "0" and double-finalize.
+  // INSERT OR IGNORE makes the per-chunk write idempotent under
+  // retries/redelivery, and the COUNT(*) gives the exact "completed
+  // so far" total without depending on a counter another writer might
+  // be mutating in parallel.
+  //
+  // The completion INSERT runs FIRST so we can use its `meta.changes`
+  // as the idempotency gate for `addChunkStats` below — that update is
+  // additive (`col = col + ?`) and would double-count tokens, cost,
+  // and article counters on every queue redelivery. Article INSERTs
+  // above are already idempotent via `INSERT OR IGNORE` on
+  // canonical_url, so they don't need the gate.
+  const completedAt = Math.floor(Date.now() / 1000);
+  const completionResult = await env.DB
+    .prepare(
+      'INSERT OR IGNORE INTO scrape_chunk_completions (scrape_run_id, chunk_index, completed_at) VALUES (?1, ?2, ?3)',
+    )
+    .bind(body.scrape_run_id, body.chunk_index, completedAt)
+    .run();
+  const isFirstCompletion = (completionResult.meta?.changes ?? 0) === 1;
+
+  // Tokens from the failed primary call (when the fallback was taken)
+  // count too — they burned real budget even though their output was
+  // unusable — so we add them to the reported totals. Both live and
+  // wasted counters come from runJsonWithFallback (CF-009).
+  const tokensIn = llmRun.tokensIn + wastedTokensIn;
+  const tokensOut = llmRun.tokensOut + wastedTokensOut;
+  // llmRun.costUsd attributes to the model that actually produced the
+  // output (DEFAULT on the happy path, FALLBACK when the retry
+  // succeeded). Add the wasted-primary cost on top (zero on happy path).
+  const costUsd = llmRun.costUsd + wastedCostUsd;
   // Deduped count = input candidates that ended up collapsed into a
   // primary plus input candidates that were dropped entirely (e.g. zero
   // valid tags after validation).
   const articlesIngested = prepared.length;
   const articlesDeduped = body.candidates.length - articlesIngested;
-  await addChunkStats(env.DB, body.scrape_run_id, {
-    tokens_in: tokensIn,
-    tokens_out: tokensOut,
-    estimated_cost_usd: costUsd,
-    articles_ingested: articlesIngested,
-    articles_deduped: articlesDeduped,
-  });
 
-  // Decrement the KV chunks_remaining counter. Last chunk closes the run.
+  // Only the first delivery for a given (run_id, chunk_index) pair runs
+  // addChunkStats — it issues an additive UPDATE that would otherwise
+  // double-count tokens, cost, and article counters under queue
+  // redelivery.
+  if (isFirstCompletion) {
+    await addChunkStats(env.DB, body.scrape_run_id, {
+      tokens_in: tokensIn,
+      tokens_out: tokensOut,
+      estimated_cost_usd: costUsd,
+      articles_ingested: articlesIngested,
+      articles_deduped: articlesDeduped,
+    });
+  }
+  const completedRow = await env.DB
+    .prepare(
+      'SELECT COUNT(*) AS done FROM scrape_chunk_completions WHERE scrape_run_id = ?1',
+    )
+    .bind(body.scrape_run_id)
+    .first<{ done: number }>();
+  const completedCount = completedRow?.done ?? 0;
+
+  // Keep the legacy KV counter in sync so /api/scrape-status can keep
+  // showing "X of Y chunks done" while the UI clients are in flight.
+  // The KV value is now derived from the authoritative D1 count rather
+  // than computed by decrement, so it can never be out of sync with
+  // the actual completion state.
+  const remaining = Math.max(0, body.total_chunks - completedCount);
   const counterKey = `scrape_run:${body.scrape_run_id}:chunks_remaining`;
-  const raw = await env.KV.get(counterKey, 'text');
-  const current = raw === null ? 0 : Math.max(0, parseInt(raw, 10) || 0);
-  const next = Math.max(0, current - 1);
-  await env.KV.put(counterKey, String(next), { expirationTtl: 3 * 3600 });
-  if (next === 0) {
+  await env.KV.put(counterKey, String(remaining), { expirationTtl: 3 * 3600 });
+
+  if (completedCount >= body.total_chunks) {
     await finishRun(env.DB, body.scrape_run_id, 'ready');
     // REQ-PIPE-008: kick off the cross-chunk semantic dedup pass. Articles
     // are already visible (run is `ready`) — finalize is a background
     // cleanup that may briefly leave duplicates in the feed.
     //
-    // The KV counter clamps to 0 (line 570 above), which means a redelivered
-    // last-chunk message would re-enter this branch and re-enqueue
-    // SCRAPE_FINALIZE — every redelivery would burn another LLM call.
-    // Gate the send on a separate KV "enqueued" flag; the merge SQL is
-    // idempotent on retry but the LLM call is not.
-    const enqueuedKey = `scrape_run:${body.scrape_run_id}:finalize_enqueued`;
-    const alreadyEnqueued = await env.KV.get(enqueuedKey, 'text');
-    if (alreadyEnqueued === null) {
-      // Send first, then mark the gate. If `send()` throws on a transient
-      // queue API failure, the gate is still null and the message retry
-      // gets to try again. The narrow risk this leaves open is a duplicate
-      // send if `send()` succeeded but the subsequent KV.put failed before
-      // ack — that is far rarer and far cheaper than permanently losing
-      // the finalize on a transient send hiccup.
-      await env.SCRAPE_FINALIZE.send({ scrape_run_id: body.scrape_run_id });
-      await env.KV.put(enqueuedKey, '1', { expirationTtl: 3 * 3600 });
+    // CF-002 follow-up: the previous KV-based gate (KV.get → KV.put)
+    // had its own TOCTOU — two concurrent last-chunk consumers could
+    // both read `null` and both call SCRAPE_FINALIZE.send, burning
+    // duplicate Workers AI calls. Migration 0008 added a
+    // finalize_enqueued column on scrape_runs; the conditional UPDATE
+    // below is atomic in D1 — only the consumer whose statement bumps
+    // the row from 0→1 sees `meta.changes === 1` and enqueues the
+    // finalize message. Every other concurrent or redelivered consumer
+    // sees `changes === 0` and short-circuits.
+    const lockResult = await env.DB
+      .prepare(
+        'UPDATE scrape_runs SET finalize_enqueued = 1 WHERE id = ?1 AND finalize_enqueued = 0',
+      )
+      .bind(body.scrape_run_id)
+      .run();
+    const wonFinalizeRace = (lockResult.meta?.changes ?? 0) === 1;
+    if (wonFinalizeRace) {
+      try {
+        await env.SCRAPE_FINALIZE.send({ scrape_run_id: body.scrape_run_id });
+      } catch (sendErr) {
+        // Roll back the lock so the queue redelivery can re-attempt
+        // the send. Without this, a transient send failure would mark
+        // finalize_enqueued = 1 forever, and the next redelivery
+        // would short-circuit, losing the finalize permanently.
+        //
+        // The rollback itself is wrapped — if D1 is the failing
+        // dependency we still want to surface the original send error
+        // to the queue retry path. Logging the rollback failure is
+        // the only way an operator can see the lock is now stranded
+        // at 1 and the finalize message is lost.
+        try {
+          await env.DB
+            .prepare(
+              'UPDATE scrape_runs SET finalize_enqueued = 0 WHERE id = ?1',
+            )
+            .bind(body.scrape_run_id)
+            .run();
+        } catch (rollbackErr) {
+          log('error', 'digest.generation', {
+            status: 'finalize_lock_rollback_failed',
+            scrape_run_id: body.scrape_run_id,
+            send_error: String(sendErr).slice(0, 500),
+            rollback_error: String(rollbackErr).slice(0, 500),
+          });
+        }
+        throw sendErr;
+      }
     }
   }
 
@@ -617,48 +654,7 @@ export async function processOneChunk(
   void collapsedSet;
 }
 
-/** Very cheap token-overlap check for defense-in-depth against LLM
- * summaries that echo the correct candidate index but describe a
- * different candidate's story. Returns true when the two titles share
- * at least one non-trivial token (alnum, length ≥ 4, case-insensitive,
- * common English stopwords excluded). Returns true trivially when
- * either title is empty or very short (we only reject when BOTH titles
- * are substantial enough to compare meaningfully — never drop on a
- * short headline). */
-function titlesShareAnyToken(a: string, b: string): boolean {
-  const tokensA = tokenizeTitle(a);
-  const tokensB = tokenizeTitle(b);
-  // Be conservative: if either side has fewer than 2 meaningful tokens
-  // the overlap signal is too noisy — accept rather than drop.
-  if (tokensA.size < 2 || tokensB.size < 2) return true;
-  for (const t of tokensA) {
-    if (tokensB.has(t)) return true;
-  }
-  return false;
-}
-
-const TITLE_STOPWORDS = new Set([
-  'the', 'that', 'this', 'with', 'from', 'into', 'over', 'your', 'their',
-  'have', 'will', 'been', 'were', 'what', 'when', 'about', 'after',
-  'announce', 'announces', 'announced', 'release', 'released', 'launches',
-  'launch', 'update', 'updates', 'updated', 'says', 'said', 'introduces',
-  'introduced', 'adds', 'added', 'gets', 'gains', 'makes', 'made',
-  'using', 'uses', 'based', 'new', 'via', 'now', 'for', 'and',
-]);
-
-/** Extract meaningful tokens from a title for the overlap check:
- *  lowercase, alnum only, length ≥ 4, not in the small stopword list. */
-function tokenizeTitle(title: string): Set<string> {
-  const out = new Set<string>();
-  const lowered = title.toLowerCase();
-  const words = lowered.split(/[^a-z0-9]+/);
-  for (const w of words) {
-    if (w.length < 4) continue;
-    if (TITLE_STOPWORDS.has(w)) continue;
-    out.add(w);
-  }
-  return out;
-}
+// titlesShareAnyToken / tokenizeTitle moved to ~/lib/title-overlap (CF-058).
 
 /** Load the tag allowlist: DEFAULT_HASHTAGS ∪ any tag whose
  * `sources:{tag}` KV key exists. De-duplicated, lowercase, no leading `#`. */
@@ -681,10 +677,15 @@ async function loadAllowedTags(kv: KVNamespace): Promise<string[]> {
       }
       cursor = listResult.list_complete ? undefined : listResult.cursor;
     } while (cursor !== undefined);
-  } catch {
+  } catch (err) {
     // KV list is best-effort; fall back to DEFAULT_HASHTAGS if the
     // binding misbehaves. A strict failure would block the chunk for no
-    // strong reason.
+    // strong reason. CF-056: surface the failure in logs so silent
+    // degradation is observable.
+    log('warn', 'digest.generation', {
+      status: 'allowed_tags.list_failed',
+      error: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
+    });
   }
   return Array.from(set);
 }

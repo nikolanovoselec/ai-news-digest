@@ -77,6 +77,9 @@ function envWith(db: D1Database, kv: KVNamespace): Partial<Env> {
     OAUTH_JWT_SECRET: JWT_SECRET,
     DB: db,
     KV: kv,
+    // CF-001 — retry now requires admin gate. Tests use the
+    // session-row email as the admin email.
+    ADMIN_EMAIL: 'alice@example.com',
   };
 }
 
@@ -84,6 +87,9 @@ async function retryRequest(options: {
   origin?: string | null;
   cookie?: string | null;
   body?: unknown;
+  /** Cf-Access-Jwt-Assertion override; defaults to a placeholder so
+   *  tests that don't care about the admin gate still pass. */
+  accessJwt?: string | null;
 }): Promise<Request> {
   const headers = new Headers({ 'Content-Type': 'application/json' });
   if (options.origin !== null && options.origin !== undefined) {
@@ -91,6 +97,10 @@ async function retryRequest(options: {
   }
   if (options.cookie !== null && options.cookie !== undefined) {
     headers.set('Cookie', options.cookie);
+  }
+  const access = options.accessJwt === undefined ? 'placeholder.jwt.sig' : options.accessJwt;
+  if (access !== null) {
+    headers.set('Cf-Access-Jwt-Assertion', access);
   }
   const init: RequestInit = { method: 'POST', headers };
   if (options.body !== undefined) {
@@ -124,9 +134,14 @@ describe('POST /api/admin/discovery/retry', () => {
   });
 
   it('REQ-AUTH-003: rejects request with missing Origin header', async () => {
+    const cookie = await validSessionCookie();
     const { db } = makeDb(baseRow('["ai"]'));
     const { kv } = makeKv();
-    const req = await retryRequest({ origin: null, body: { tag: 'ai' } });
+    const req = await retryRequest({
+      origin: null,
+      cookie,
+      body: { tag: 'ai' },
+    });
     const res = await POST(makeContext(req, envWith(db, kv)) as never);
     expect(res.status).toBe(403);
   });
@@ -195,6 +210,7 @@ describe('POST /api/admin/discovery/retry', () => {
         'Content-Type': 'application/json',
         Origin: APP_ORIGIN,
         Cookie: cookie,
+        'Cf-Access-Jwt-Assertion': 'placeholder.jwt.sig',
       },
       body: 'not json',
     });
@@ -262,6 +278,7 @@ describe('POST /api/admin/discovery/retry', () => {
     origin?: string | null;
     cookie?: string | null;
     tag?: string | null;
+    accessJwt?: string | null;
   }): Promise<Request> {
     const headers = new Headers({
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -271,6 +288,11 @@ describe('POST /api/admin/discovery/retry', () => {
     }
     if (options.cookie !== null && options.cookie !== undefined) {
       headers.set('Cookie', options.cookie);
+    }
+    const access =
+      options.accessJwt === undefined ? 'placeholder.jwt.sig' : options.accessJwt;
+    if (access !== null) {
+      headers.set('Cf-Access-Jwt-Assertion', access);
     }
     const params = new URLSearchParams();
     if (options.tag !== null && options.tag !== undefined) {
@@ -333,12 +355,18 @@ describe('POST /api/admin/discovery/retry', () => {
     expect(res.status).toBe(403);
   });
 
-  it('REQ-DISC-004: form-encoded POST without a session returns 401', async () => {
+  it('REQ-DISC-004: form-encoded POST without a session redirects to /settings (no raw JSON)', async () => {
+    // After CF-001, the admin gate fails Layer 2 (loadSession returns
+    // null) and the form-encoded branch wraps the denial in a 303 to
+    // /settings rather than surfacing raw JSON to a browser.
     const { db } = makeDb(baseRow('["ikea"]'));
     const { kv } = makeKv();
     const req = await retryFormRequest({ origin: APP_ORIGIN, tag: 'ikea' });
     const res = await POST(makeContext(req, envWith(db, kv)) as never);
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(303);
+    expect(res.headers.get('Location')).toBe(
+      `${APP_ORIGIN}/settings?rediscover=denied`,
+    );
   });
 
   it('REQ-DISC-004: form-encoded POST URL-encodes the tag in the redirect location', async () => {

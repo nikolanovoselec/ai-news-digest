@@ -17,6 +17,8 @@ import type { APIContext } from 'astro';
 import { errorResponse } from '~/lib/errors';
 import { loadSession } from '~/middleware/auth';
 import { slugify } from '~/lib/slug';
+import { log } from '~/lib/log';
+import { parseJsonStringArray as parseStringArray } from '~/lib/json-string-array';
 
 /** Raw row shape returned by the starred-article JOIN. */
 interface StarredRow {
@@ -52,19 +54,6 @@ export interface StarredResponse {
   articles: WireArticle[];
 }
 
-/** Parse a JSON-encoded string array column. Returns `[]` on null / bad
- *  input so a malformed DB row can never crash the render. */
-function parseStringArray(json: string | null): string[] {
-  if (json === null || json === '') return [];
-  try {
-    const parsed = JSON.parse(json) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((v): v is string => typeof v === 'string');
-  } catch {
-    return [];
-  }
-}
-
 /**
  * Load the user's starred-article list from D1.
  *
@@ -94,7 +83,14 @@ export async function loadStarredPayload(
   try {
     const result = await db.prepare(sql).bind(userId).all<StarredRow>();
     rows = result.results ?? [];
-  } catch {
+  } catch (err) {
+    // CF-035 — log before falling through to empty rows so a "no
+    // starred articles" UX bug is distinguishable from a real D1
+    // failure in the logs.
+    log('error', 'starred.query_failed', {
+      user_id: userId,
+      detail: String(err).slice(0, 200),
+    });
     rows = [];
   }
 

@@ -93,13 +93,18 @@ describe('sendEmail — REQ-MAIL-001', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await sendEmail(makeEnv(), makeParams({ to: 'a@b.com' }));
+    await sendEmail(
+      makeEnv(),
+      makeParams({ to: 'a@b.com', logRecipientId: 'user-1' }),
+    );
 
     const record = findLogRecord(consoleSpy, 'email.send.failed');
     expect(record).not.toBeNull();
     expect(record?.level).toBe('error');
     expect(record?.status).toBe(403);
-    expect(record?.to).toBe('a@b.com');
+    // CF-003: log carries user_id, not the recipient address (PII).
+    expect(record?.user_id).toBe('user-1');
+    expect(record?.to).toBeUndefined();
   });
 
   it('REQ-MAIL-001: 5xx response returns error result and does not throw', async () => {
@@ -124,12 +129,17 @@ describe('sendEmail — REQ-MAIL-001', () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('boom'));
     vi.stubGlobal('fetch', fetchMock);
 
-    await sendEmail(makeEnv(), makeParams({ to: 'x@y.com' }));
+    await sendEmail(
+      makeEnv(),
+      makeParams({ to: 'x@y.com', logRecipientId: 'user-7' }),
+    );
 
     const record = findLogRecord(consoleSpy, 'email.send.failed');
     expect(record).not.toBeNull();
     expect(record?.level).toBe('error');
-    expect(record?.to).toBe('x@y.com');
+    // CF-003: log carries user_id, not the recipient address (PII).
+    expect(record?.user_id).toBe('user-7');
+    expect(record?.to).toBeUndefined();
   });
 
   it('REQ-MAIL-001: AbortError (timeout) returns error result without throwing', async () => {

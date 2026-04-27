@@ -12,10 +12,11 @@
 // last chunk via counter==0.
 //
 // Per-source fetch reuses the 10-worker semaphore pattern from
-// src/lib/sources.ts (fetchFromSource + KV cache + 5s timeout + 1MB
-// cap). Curated sources are trusted (not gated through SSRF), but
-// discovered-tag feeds are synthesised on-the-fly via
-// adaptersForDiscoveredFeeds so the SSRF gate still fires.
+// src/lib/sources.ts (fetchFromSourceWithResult + KV cache + per-fetch
+// timeout + body cap from ~/lib/fetch-policy). Curated sources are
+// trusted (not gated through SSRF); discovered-tag feeds are
+// synthesised on-the-fly via adaptersForDiscoveredFeeds so the SSRF
+// gate still fires.
 
 import {
   CURATED_SOURCES,
@@ -32,6 +33,7 @@ import { finishRun } from '~/lib/scrape-run';
 import { clearHealth, recordFetchResult } from '~/lib/feed-health';
 import { SYSTEM_USER_ID } from '~/lib/system-user';
 import { log } from '~/lib/log';
+import { mapConcurrent } from '~/lib/concurrency';
 import type { DiscoveredFeed, SourcesCacheValue, Headline } from '~/lib/types';
 
 /** Max candidates per chunk. Matches the LLM's ~8K input-token budget
@@ -47,11 +49,12 @@ import type { DiscoveredFeed, SourcesCacheValue, Headline } from '~/lib/types';
  * it. Body-fetch quality matters more than chunk count. */
 const CHUNK_SIZE = 50;
 
-/** 10-worker semaphore cap for the fetch fan-out, mirroring
- * src/lib/sources.ts#GLOBAL_CONCURRENCY. The curated registry (~50
- * entries) plus discovered-tag feeds can easily exceed single-digit
- * parallelism without a cap. */
-const GLOBAL_CONCURRENCY = 10;
+/** 10-worker semaphore cap for the coordinator's fetch fan-out.
+ * The curated registry (~50 entries) plus discovered-tag feeds can
+ * easily exceed single-digit parallelism without a cap. CF-008
+ * renamed from GLOBAL_CONCURRENCY so the constant doesn't collide
+ * with the (separately-bounded) source-fetch fan-out in sources.ts. */
+const COORDINATOR_FETCH_CONCURRENCY = 10;
 
 /** KV counter TTL — 3 hours is generous relative to the 60-minute cron
  * cadence, giving slow chunks ample retry headroom without leaking
@@ -74,6 +77,30 @@ const PER_SOURCE_ITEM_CAP = 10;
  * 11 chunks. Cap at 40 leaves plenty of headroom for a discovered-
  * tag set without exploding LLM cost. */
 const MAX_CHUNKS_PER_TICK = 40;
+
+/** CF-012 + CF-073: cap the chunk fan-out at `max` and emit a single
+ *  `coordinator_chunks_capped` warning when truncation actually
+ *  happens. Exported for direct testing — the production caller is
+ *  the only other site, so the test surface is the helper itself.
+ *
+ *  Returns a fresh slice when truncating (immutability over the input
+ *  array), or the input array when nothing was dropped. */
+export function capChunks<T>(
+  chunks: T[],
+  max: number,
+  scrape_run_id: string,
+): T[] {
+  const dropped = Math.max(0, chunks.length - max);
+  if (dropped === 0) return chunks;
+  log('warn', 'digest.generation', {
+    status: 'coordinator_chunks_capped',
+    scrape_run_id,
+    total_chunks: chunks.length,
+    kept_chunks: max,
+    dropped_chunks: dropped,
+  });
+  return chunks.slice(0, max);
+}
 
 /** Return true if the URL is a plain http(s) URL. Rejects
  * `javascript:`, `data:`, `file:`, mailto:, etc. at the coordinator
@@ -214,7 +241,7 @@ export async function runCoordinator(
   // value in an href attribute is NOT enough — Astro's escaping
   // prevents HTML injection but a `javascript:` href is valid HTML).
   const candidates: Candidate[] = [];
-  const nowSec = Math.floor(Date.now() / 1000);
+  const evictionNowSec = Math.floor(Date.now() / 1000);
   // Drop candidates whose source pubDate is more than 48 hours old.
   // Cron runs every 4 hours, so anything older than two days has
   // either been seen on a prior tick (and is already in the pool)
@@ -222,10 +249,10 @@ export async function runCoordinator(
   // summarising it wastes LLM budget and clutters the dashboard with
   // 'new ingest, old publish_at' cards that sort below genuinely
   // fresh stories and make the feed look stuck. candidates with an
-  // unparsable pubDate (we fall back to nowSec) are kept — a missing
-  // date is not the same as a stale date.
+  // unparsable pubDate (we fall back to evictionNowSec) are kept — a
+  // missing date is not the same as a stale date.
   const FRESHNESS_WINDOW_SEC = 48 * 60 * 60;
-  const staleCutoff = nowSec - FRESHNESS_WINDOW_SEC;
+  const staleCutoff = evictionNowSec - FRESHNESS_WINDOW_SEC;
   let droppedStale = 0;
   let missingPubdateKept = 0;
   for (const row of rawHeadlines) {
@@ -234,7 +261,7 @@ export async function runCoordinator(
     if (!isSafeWebUrl(canonical)) continue;
     const hasParsedPub =
       typeof row.headline.published_at === 'number' && row.headline.published_at > 0;
-    const pub = hasParsedPub ? (row.headline.published_at as number) : nowSec;
+    const pub = hasParsedPub ? (row.headline.published_at as number) : evictionNowSec;
     if (hasParsedPub && pub < staleCutoff) {
       droppedStale += 1;
       continue;
@@ -290,7 +317,7 @@ export async function runCoordinator(
     .map((c) => c.primary.canonical_url)
     .filter((url) => existing.has(url));
   if (reSeenUrls.length > 0) {
-    const nowSec = Math.floor(Date.now() / 1000);
+    const refreshNowSec = Math.floor(Date.now() / 1000);
     const REFRESH_BATCH = 100;
     for (let i = 0; i < reSeenUrls.length; i += REFRESH_BATCH) {
       const slice = reSeenUrls.slice(i, i + REFRESH_BATCH);
@@ -299,7 +326,7 @@ export async function runCoordinator(
         .prepare(
           `UPDATE articles SET ingested_at = ?1 WHERE canonical_url IN (${placeholders})`,
         )
-        .bind(nowSec, ...slice)
+        .bind(refreshNowSec, ...slice)
         .run();
     }
     log('info', 'digest.generation', {
@@ -354,18 +381,8 @@ export async function runCoordinator(
   // fan-out past MAX_CHUNKS_PER_TICK. Any excess is simply deferred to
   // the next 4-hour tick (the existing-URL filter keeps tick-N+1 from
   // re-processing the chunks we emit this tick).
-  const droppedChunks = Math.max(0, chunks.length - MAX_CHUNKS_PER_TICK);
-  if (droppedChunks > 0) {
-    log('warn', 'digest.generation', {
-      status: 'coordinator_chunks_capped',
-      scrape_run_id,
-      total_chunks: chunks.length,
-      kept_chunks: MAX_CHUNKS_PER_TICK,
-      dropped_chunks: droppedChunks,
-    });
-    chunks.length = MAX_CHUNKS_PER_TICK;
-  }
-  const totalChunks = chunks.length;
+  const keptChunks = capChunks(chunks, MAX_CHUNKS_PER_TICK, scrape_run_id);
+  const totalChunks = keptChunks.length;
 
   const counterKey = `scrape_run:${scrape_run_id}:chunks_remaining`;
   await env.KV.put(counterKey, String(totalChunks), {
@@ -389,8 +406,8 @@ export async function runCoordinator(
     });
   }
 
-  for (let i = 0; i < chunks.length; i++) {
-    const candidates = chunks[i] ?? [];
+  for (let i = 0; i < keptChunks.length; i++) {
+    const candidates = keptChunks[i] ?? [];
     await env.SCRAPE_CHUNKS.send({
       scrape_run_id,
       chunk_index: i,
@@ -428,7 +445,7 @@ interface SourceForFetch {
 /** One evicted feed — emitted by fetchAllSources when a URL's health
  * counter crosses the threshold. Only discovered feeds participate
  * (curated URLs have `discoveredTag = null` and are skipped upstream). */
-interface FeedEviction {
+export interface FeedEviction {
   tag: string;
   url: string;
   failureCount: number;
@@ -552,33 +569,23 @@ async function fetchAllSources(
   evictions: FeedEviction[];
 }> {
   const kv = env.KV;
-  const jobs: Array<SourceForFetch & { idx: number }> = sources.map(
-    (s, idx) => ({ ...s, idx }),
-  );
-  // Index-addressed so a straggling source doesn't reorder the pool.
-  const results: Array<Array<{ headline: Headline }> | undefined> = [];
-  const evictionSlots: Array<FeedEviction | undefined> = [];
-  for (let i = 0; i < jobs.length; i++) {
-    results.push(undefined);
-    evictionSlots.push(undefined);
-  }
-
-  let cursor = 0;
-  const worker = async (): Promise<void> => {
-    while (true) {
-      const i = cursor++;
-      if (i >= jobs.length) return;
-      const job = jobs[i];
-      if (job === undefined) return;
-      // Per-source fetch is wrapped in try/catch so a single flaky
-      // feed (404/403/timeout/malformed XML) never bubbles up and
-      // kills the rest of the pool. Empty result keeps the worker
-      // loop going; the logged event gives operators enough signal
-      // to swap the URL later.
-      // Health tracking only applies to discovered (KV-sourced) feeds
-      // — curated URLs can't be runtime-evicted, so writing their
-      // counter just burns KV budget without enabling any action.
-      const trackHealth = job.discoveredTag !== null && job.discoveredTag !== '';
+  // Per-source fetch is wrapped in try/catch so a single flaky feed
+  // (404/403/timeout/malformed XML) never bubbles up and kills the
+  // rest of the pool. Empty result keeps the helper iterating; the
+  // logged event gives operators enough signal to swap the URL.
+  // Health tracking only applies to discovered (KV-sourced) feeds —
+  // curated URLs can't be runtime-evicted, so writing their counter
+  // just burns KV budget without enabling any action.
+  type Slot = {
+    headlines: Array<{ headline: Headline }>;
+    eviction: FeedEviction | null;
+  };
+  const slots = await mapConcurrent<SourceForFetch, Slot>(
+    sources,
+    COORDINATOR_FETCH_CONCURRENCY,
+    async (job) => {
+      const trackHealth =
+        job.discoveredTag !== null && job.discoveredTag !== '';
       try {
         const { headlines, fetched, success } = await fetchFromSourceWithResult(
           job.adapter,
@@ -586,38 +593,35 @@ async function fetchAllSources(
           kv,
         );
         const capped = headlines.slice(0, PER_SOURCE_ITEM_CAP).map((h) => ({
-          headline: {
-            ...h,
-            source_name: job.sourceName,
-          },
+          headline: { ...h, source_name: job.sourceName },
         }));
-        results[i] = capped;
-
+        let eviction: FeedEviction | null = null;
         // Only record health for live fetches on discovered feeds —
         // cache hits are neither a liveness signal nor a failure.
         if (trackHealth && fetched) {
           const health = await recordFetchResult(env, job.feedUrl, success);
           if (health.evicted) {
-            evictionSlots[i] = {
+            eviction = {
               tag: job.discoveredTag as string,
               url: job.feedUrl,
               failureCount: health.count,
             };
           }
         }
+        return { headlines: capped, eviction };
       } catch (err) {
         log('warn', 'source.fetch.failed', {
           source_name: job.sourceName,
           detail: String(err).slice(0, 200),
         });
-        results[i] = [];
         // Unexpected throw still counts as a failure against the URL,
         // but only for discovered feeds.
+        let eviction: FeedEviction | null = null;
         if (trackHealth) {
           try {
             const health = await recordFetchResult(env, job.feedUrl, false);
             if (health.evicted) {
-              evictionSlots[i] = {
+              eviction = {
                 tag: job.discoveredTag as string,
                 url: job.feedUrl,
                 failureCount: health.count,
@@ -634,23 +638,16 @@ async function fetchAllSources(
             });
           }
         }
+        return { headlines: [], eviction };
       }
-    }
-  };
-
-  const workerCount = Math.min(GLOBAL_CONCURRENCY, jobs.length);
-  const workers: Promise<void>[] = [];
-  for (let w = 0; w < workerCount; w++) workers.push(worker());
-  await Promise.all(workers);
+    },
+  );
 
   const rawHeadlines: Array<{ headline: Headline }> = [];
-  for (const r of results) {
-    if (r === undefined) continue;
-    for (const entry of r) rawHeadlines.push(entry);
-  }
   const evictions: FeedEviction[] = [];
-  for (const e of evictionSlots) {
-    if (e !== undefined) evictions.push(e);
+  for (const slot of slots) {
+    for (const entry of slot.headlines) rawHeadlines.push(entry);
+    if (slot.eviction !== null) evictions.push(slot.eviction);
   }
   return { rawHeadlines, evictions };
 }
@@ -667,7 +664,7 @@ async function fetchAllSources(
  *
  * Implements REQ-DISC-003 AC 2-3.
  */
-async function applyEvictions(
+export async function applyEvictions(
   env: Env,
   evictions: FeedEviction[],
   scrape_run_id: string,

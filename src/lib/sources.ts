@@ -22,6 +22,10 @@ import type { DiscoveredFeed, Headline } from '~/lib/types';
 import { isUrlSafe } from '~/lib/ssrf';
 import { readCachedHeadlines, writeCachedHeadlines } from '~/lib/headline-cache';
 import { log } from '~/lib/log';
+import { mapConcurrent } from '~/lib/concurrency';
+import { stripHtmlToText } from '~/lib/html-text';
+import { FEED_FETCH_TIMEOUT_MS as FETCH_TIMEOUT_MS } from '~/lib/fetch-policy';
+import { definedProp } from '~/lib/optional-prop';
 
 /** Hard-cap returned by `fanOutForTags`. 300 overflowed
  * llama-3.1-8b-instruct-fp8-fast's 30K token context window: ~24K
@@ -31,12 +35,16 @@ import { log } from '~/lib/log';
  * just means a tighter candidate pool, which raises the bar for what
  * gets summarized. */
 const MAX_COMBINED_HEADLINES = 100;
-/** 5-second per-fetch timeout. */
-const FETCH_TIMEOUT_MS = 5_000;
-/** 1 MB cap on the response body. */
+/** 1 MB cap on the decoded body — NOT the same shape as
+ *  `FEED_MAX_BODY_BYTES`: this caps the post-decode character count
+ *  passed to the parser, not the raw response byte length. Kept
+ *  module-local so a future maintainer doesn't silently switch the
+ *  semantic during a fetch-policy "completion" pass. */
 const FETCH_MAX_BYTES = 1_024 * 1_024;
-/** Global concurrency cap across every {tag × source} pair. */
-const GLOBAL_CONCURRENCY = 10;
+/** Source-fetch concurrency cap across every {tag × source} pair.
+ *  CF-008: renamed from GLOBAL_CONCURRENCY so the constant doesn't
+ *  collide with the coordinator's own concurrency cap. */
+const SOURCE_FETCH_CONCURRENCY = 10;
 /** Max items pulled from a discovered (tag-specific) feed per tag. */
 const DISCOVERED_FEED_ITEM_CAP = 20;
 
@@ -103,7 +111,7 @@ const HACKER_NEWS: SourceAdapter = {
         title,
         url,
         source_name: 'hackernews',
-        ...(snippet !== null ? { snippet } : {}),
+        ...definedProp('snippet', snippet),
       });
     }
     return out;
@@ -160,7 +168,7 @@ const REDDIT: SourceAdapter = {
         title,
         url,
         source_name: 'reddit',
-        ...(snippet !== null ? { snippet } : {}),
+        ...definedProp('snippet', snippet),
       });
     }
     return out;
@@ -282,26 +290,6 @@ export async function fetchFromSourceWithResult(
   return { headlines, fetched: true, success: true };
 }
 
-/**
- * Fetch headlines for `tag` from `source`, checking the shared KV cache
- * first. On a cache miss, a live fetch is performed with 5s timeout and
- * 1MB body cap; successful results are written back to the cache with
- * a 10-minute TTL (see `headline-cache.ts`). Errors — network, HTTP,
- * parse, extract — are logged and surfaced as an empty array so the
- * caller can carry on with other sources.
- *
- * Thin compatibility shim over {@link fetchFromSourceWithResult} for
- * callers that only need the headline list.
- */
-export async function fetchFromSource(
-  source: SourceAdapter,
-  tag: string,
-  kv: KVNamespace,
-): Promise<Headline[]> {
-  const result = await fetchFromSourceWithResult(source, tag, kv);
-  return result.headlines;
-}
-
 // ---------- Fan-out ------------------------------------------------------
 
 /**
@@ -340,34 +328,21 @@ export async function fanOutForTags(
     }
   }
 
-  // Simple semaphore: each worker pulls the next job index until the
-  // list is exhausted. Results are stored in the same index so ordering
-  // is preserved regardless of network latency.
-  type JobResult =
-    | { kind: 'discovered' | 'generic'; tag: string; headlines: Headline[] }
-    | undefined;
-  const results: JobResult[] = [];
-  for (let i = 0; i < jobs.length; i++) {
-    results.push(undefined);
-  }
-  let cursor = 0;
-  const worker = async (): Promise<void> => {
-    while (true) {
-      const i = cursor++;
-      if (i >= jobs.length) return;
-      const job = jobs[i];
-      if (job === undefined) return;
-      const headlines = await fetchFromSource(job.source, job.tag, kv);
-      results[i] = { kind: job.kind, tag: job.tag, headlines };
-    }
+  // Bounded fan-out across {tag × source} jobs. Results are returned
+  // in input order so the dedup pass below sees deterministic precedence.
+  type JobResult = {
+    kind: 'discovered' | 'generic';
+    tag: string;
+    headlines: Headline[];
   };
-
-  const workerCount = Math.min(GLOBAL_CONCURRENCY, jobs.length);
-  const workers: Promise<void>[] = [];
-  for (let w = 0; w < workerCount; w++) {
-    workers.push(worker());
-  }
-  await Promise.all(workers);
+  const results = await mapConcurrent<typeof jobs[number], JobResult>(
+    jobs,
+    SOURCE_FETCH_CONCURRENCY,
+    async (job) => {
+      const result = await fetchFromSourceWithResult(job.source, job.tag, kv);
+      return { kind: job.kind, tag: job.tag, headlines: result.headlines };
+    },
+  );
 
   // Deduplicate by canonical URL. First occurrence wins for title /
   // source_name (tag-specific jobs come first in `jobs`), but the
@@ -377,14 +352,17 @@ export async function fanOutForTags(
   const seen = new Map<string, Headline>();
   const order: string[] = [];
   for (const r of results) {
-    if (r === undefined) continue;
     for (const h of r.headlines) {
       const key = canonicalize(h.url);
       const existing = seen.get(key);
       if (existing !== undefined) {
+        // CF-011: replace the existing entry with an immutable copy so
+        // upstream callers that share a Headline reference (e.g. the
+        // chunk consumer reading the same map) cannot observe a
+        // half-updated source_tags array mid-iteration.
         const tags = new Set(existing.source_tags ?? []);
         tags.add(r.tag);
-        existing.source_tags = Array.from(tags);
+        seen.set(key, { ...existing, source_tags: Array.from(tags) });
         continue;
       }
       seen.set(key, { ...h, source_tags: [r.tag] });
@@ -542,8 +520,8 @@ function extractJsonFeed(parsed: unknown, sourceName: string): Headline[] {
       title,
       url,
       source_name: sourceName,
-      ...(published_at !== null ? { published_at } : {}),
-      ...(snippet !== null ? { snippet } : {}),
+      ...definedProp('published_at', published_at),
+      ...definedProp('snippet', snippet),
     });
   }
   return out;
@@ -598,30 +576,14 @@ function extractNodeText(node: unknown): string | null {
 }
 
 /**
- * Strip HTML tags + collapse whitespace + HTML-entity-decode a small
- * set of common sequences. Intended for feed-snippet cleanup before
- * the text lands in the LLM prompt — not a full HTML sanitizer (the
- * output is never rendered as HTML anywhere). Caps at 1200 characters
- * so a giant `<content:encoded>` body can't blow up the chunk prompt
- * budget.
+ * Strip HTML tags + collapse whitespace + HTML-entity-decode for
+ * feed-snippet cleanup before the text lands in the LLM prompt. Caps
+ * at 1200 characters so a giant `<content:encoded>` body can't blow
+ * up the chunk prompt budget. Wraps the shared `stripHtmlToText`
+ * helper in `~/lib/html-text`.
  */
 function htmlSnippetToText(raw: string): string {
-  const noTags = raw.replace(/<[^>]+>/g, ' ');
-  const decoded = noTags
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_m, n: string) => {
-      const code = Number.parseInt(n, 10);
-      return Number.isFinite(code) && code >= 32 && code < 65536
-        ? String.fromCharCode(code)
-        : ' ';
-    });
-  const collapsed = decoded.replace(/\s+/g, ' ').trim();
-  return collapsed.length > 1200 ? collapsed.slice(0, 1200) : collapsed;
+  return stripHtmlToText(raw, { maxLength: 1200 });
 }
 
 /**
@@ -680,8 +642,8 @@ function itemToHeadline(item: unknown, sourceName: string): Headline | null {
     title,
     url: link,
     source_name: sourceName,
-    ...(published_at !== null ? { published_at } : {}),
-    ...(snippet !== null ? { snippet } : {}),
+    ...definedProp('published_at', published_at),
+    ...definedProp('snippet', snippet),
   };
 }
 
@@ -703,8 +665,8 @@ function entryToHeadline(entry: unknown, sourceName: string): Headline | null {
     title,
     url,
     source_name: sourceName,
-    ...(published_at !== null ? { published_at } : {}),
-    ...(snippet !== null ? { snippet } : {}),
+    ...definedProp('published_at', published_at),
+    ...definedProp('snippet', snippet),
   };
 }
 

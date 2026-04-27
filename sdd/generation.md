@@ -1,6 +1,6 @@
 # Digest Generation
 
-A global scrape-and-summarise pipeline that runs every 4 hours: one cron-triggered coordinator run per tick assembles candidates from the curated source registry, canonical-URL-dedupes them, and fans chunks out to the LLM consumer. The consumer writes summaries + tags + cluster groupings into a shared article pool. The per-user dashboard then reads from that pool filtered by each user's active tags, so cost scales with the world (one LLM pass per tick) rather than with users × refreshes. Starred articles survive the 7-day retention cutoff.
+A global scrape-and-summarise pipeline that runs every 4 hours: one cron-triggered coordinator run per tick assembles candidates from the curated source registry, canonical-URL-dedupes them, and fans chunks out to the LLM consumer. The consumer writes summaries + tags + cluster groupings into a shared article pool. The per-user dashboard then reads from that pool filtered by each user's active tags, so cost scales with the world (one LLM pass per tick) rather than with users × refreshes. Starred articles survive the 14-day retention cutoff.
 
 ---
 
@@ -94,14 +94,14 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ---
 
-### REQ-PIPE-005: Seven-day retention with starred-exempt cleanup
+### REQ-PIPE-005: Fourteen-day retention with starred-exempt cleanup
 
-**Intent:** The global pool stays small and fast by dropping stories older than a week, but articles any user has starred are preserved indefinitely.
+**Intent:** The global pool stays small and fast by dropping stories older than two weeks, but articles any user has starred are preserved indefinitely.
 
 **Applies To:** System
 
 **Acceptance Criteria:**
-1. A daily cron fires at 03:00 UTC and deletes articles whose published-at timestamp is older than 7 days, when no user has starred the article.
+1. A daily cron fires at 03:00 UTC and deletes articles whose published-at timestamp is older than 14 days, when no user has starred the article.
 2. An article starred by any user is preserved regardless of age.
 3. Deletion cascades remove the article's alternative sources, tag rows, and read-tracking rows so no orphans remain.
 4. The cleanup run is independent of the global scrape run and never blocks ingestion.
@@ -124,8 +124,10 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 1. Each run records its start time, finish time, articles ingested, articles deduplicated, input and output token counts, estimated cost in USD, model identifier, chunk count, and final status.
 2. The stats widget reads global token and cost totals as sums over the scrape-run aggregation.
 3. The history page reads its per-day aggregates and per-tick expansions from the same aggregation, not from article rows.
-4. Status transitions running → ready on success, or running → failed when the run aborts.
+4. Status transitions running → ready on success, or running → failed when the run aborts. Once a run leaves running its status is terminal: a late-arriving failed chunk whose retries exhausted after the run already reached ready does not flap the dashboard back to failed, and a late success message after a run was already marked failed does not flip it back to ready.
 5. A lightweight status endpoint reports whether a scrape is currently running; while running it returns the run identifier, start time, chunks completed, total chunks, and articles ingested so far. The reading surface uses this endpoint to replace its "Next update in Xm" countdown with an "Update in progress — X/Y chunks" indicator, and the settings surface shows the same progress alongside its manual-refresh control. Both indicators hide themselves automatically when the run finishes.
+6. The recorded finish time reflects when the run actually completed, not when the queue happened to redeliver the closing message. A redelivered last-chunk message that re-enters the closing path leaves the existing finish time intact, so the per-tick duration shown on the history page does not drift forward across retries.
+7. The per-tick token, cost, articles-ingested, and articles-deduplicated counters advance exactly once per chunk regardless of how many times the queue redelivers that chunk's message. A redelivered chunk that has already been recorded as completed for the run leaves these counters at their existing values, so the stats widget and history page never show inflated tokens, cost, or article counts attributable to retry traffic rather than real LLM work.
 
 **Constraints:** CON-DATA-001
 **Priority:** P1
@@ -171,6 +173,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 6. The pass caps its LLM input at the 250 most recent articles by ingestion time; ticks that produced more skip dedup on the tail. This ceiling is documented as a known limitation.
 7. Token and cost counters from the finalize call fold into the scrape tick's totals via the same per-chunk stats helper; the deduped-article counter increments by the number of losers deleted.
 8. A finalize that exhausts its queue retry budget logs a structured error and leaves the tick's articles in their un-merged state. The tick's status is not flipped from ready to failed — the articles are real and visible; only the cross-chunk merge is missing.
+9. The "exactly one finalize pass" guarantee in AC 1 holds across both directions of failure: concurrent or redelivered last-chunk consumers never enqueue a second finalize (so the LLM is not billed twice for the same tick), and a transient failure when the closing consumer hands the finalize off to its queue does not strand the run with zero finalize passes — the next redelivery of the closing message re-acquires the gate and re-attempts the handoff so the cross-chunk dedup eventually runs. If the lock-clearing step itself fails (a second transient outage of the run-state store landing inside the same closing handoff), a structured operator-visible log entry records the stranded lock and the original send error, and the original send error is the one surfaced to the queue retry path so the underlying cause is not masked.
 
 **Constraints:** CON-LLM-001
 **Priority:** P1

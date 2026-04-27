@@ -1,4 +1,6 @@
-// Implements REQ-SET-002 AC 8 (delete all tags) + REQ-AUTH-003 (Origin check).
+// Implements REQ-SET-002
+// Implements REQ-AUTH-001
+// Implements REQ-AUTH-003
 //
 // POST /api/tags/delete-initial — clear the authenticated user's
 // entire hashtag list, regardless of whether a tag came from the
@@ -20,6 +22,11 @@
 import type { APIContext } from 'astro';
 import { errorResponse } from '~/lib/errors';
 import { log } from '~/lib/log';
+import {
+  enforceRateLimit,
+  rateLimitResponse,
+  RATE_LIMIT_RULES,
+} from '~/lib/rate-limit';
 import { loadSession } from '~/middleware/auth';
 import { checkOrigin, originOf } from '~/middleware/origin-check';
 
@@ -32,7 +39,7 @@ export async function POST(context: APIContext): Promise<Response> {
 
   const originResult = checkOrigin(context.request, appOrigin);
   if (!originResult.ok) {
-    return originResult.response!;
+    return originResult.response;
   }
 
   const session = await loadSession(context.request, env.DB, env.OAUTH_JWT_SECRET);
@@ -41,6 +48,16 @@ export async function POST(context: APIContext): Promise<Response> {
       status: 303,
       headers: { Location: '/' },
     });
+  }
+
+  // CF-028: per-user rate-limit on tag-list mutations.
+  const rl = await enforceRateLimit(
+    env,
+    RATE_LIMIT_RULES.TAGS_MUTATION,
+    `user:${session.user.id}`,
+  );
+  if (!rl.ok) {
+    return rateLimitResponse(rl.retryAfter);
   }
 
   try {

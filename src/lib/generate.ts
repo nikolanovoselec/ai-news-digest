@@ -2,8 +2,6 @@
 // (src/queue/scrape-chunk-consumer.ts). The per-user generateDigest
 // function was retired in the global-feed rework (Wave 3).
 
-import { canonicalize } from '~/lib/canonical-url';
-import type { GeneratedArticle } from '~/lib/types';
 
 /** Shape Workers AI `.run()` returns. Different models surface token counts
  * under slightly different keys — the reader at the usage site tolerates all
@@ -151,7 +149,21 @@ function stripFencesAndPreamble(raw: string): string {
 
 /** Walk the string and return the first balanced {...} substring.
  * Respects string literals so a `}` inside a string does not close the
- * outer object. Returns null when no balanced pair is found. */
+ * outer object. Returns null when no balanced pair is found.
+ *
+ * State machine — three booleans/counters track parser context:
+ *   - `depth`    — nesting level. Increments on each unescaped `{`,
+ *                  decrements on each unescaped `}`. The substring is
+ *                  complete the first time `depth` returns to 0.
+ *   - `inString` — true while scanning inside a `"..."` string literal.
+ *                  Toggled by an unescaped `"`. Braces inside strings
+ *                  must NOT count toward depth (e.g. `{"k":"a } b"}`
+ *                  would otherwise close after the inner `}`).
+ *   - `escape`   — true for exactly one character after a `\`. Used so
+ *                  `"\""` (an escaped quote inside a string) does not
+ *                  end the string, and so `"\\"` (escaped backslash)
+ *                  does not start an escape on the next character.
+ */
 function extractFirstJsonObject(raw: string): string | null {
   const start = raw.indexOf('{');
   if (start < 0) return null;
@@ -160,91 +172,33 @@ function extractFirstJsonObject(raw: string): string | null {
   let escape = false;
   for (let i = start; i < raw.length; i++) {
     const ch = raw[i];
+    // Skip the next character whole — handles `\"`, `\\`, `\n` etc.
     if (escape) {
       escape = false;
       continue;
     }
+    // Backslash arms the escape latch for the following character.
     if (ch === '\\') {
       escape = true;
       continue;
     }
+    // Toggle string state. We only enter/leave strings via an unescaped
+    // quote, which is why this branch runs after the escape checks.
     if (ch === '"') {
       inString = !inString;
       continue;
     }
+    // Anything inside a string literal is opaque — braces don't count.
     if (inString) continue;
     if (ch === '{') depth++;
     else if (ch === '}') {
       depth--;
+      // First close-brace that brings us back to outer scope ends the
+      // object; return the slice from the opening `{` through this `}`.
       if (depth === 0) return raw.slice(start, i + 1);
     }
   }
   return null;
-}
-
-/** Convert a validated LLM payload into a sanitized list of articles ready
- * for insertion. Drops entries that lack required fields or produce empty
- * text after sanitization. Each article's `source_name` is resolved from
- * the supplied map by canonicalized URL; articles whose URL is not in the
- * map (i.e., the LLM hallucinated a URL outside the fetched headlines)
- * get `source_name: null`. */
-function sanitizeArticles(
-  payload: LLMPayload,
-  sourceNameByCanonicalUrl: Map<string, string>,
-  sourceTagsByCanonicalUrl: Map<string, string[]>,
-  userHashtags: string[],
-): GeneratedArticle[] {
-  const rawArticles = Array.isArray(payload.articles) ? payload.articles : [];
-  const userHashtagSet = new Set(userHashtags);
-  const out: GeneratedArticle[] = [];
-  for (const a of rawArticles) {
-    if (a === null || typeof a !== 'object') continue;
-    const title = sanitizeText(a['title']);
-    const url = typeof a['url'] === 'string' ? a['url'].trim() : '';
-    const oneLiner = sanitizeText(a['one_liner']);
-    const detailsRaw = Array.isArray(a['details']) ? a['details'] : [];
-    const details: string[] = [];
-    for (const d of detailsRaw) {
-      const sanitized = sanitizeText(d);
-      if (sanitized !== '') details.push(sanitized);
-    }
-    if (title === '' || url === '' || oneLiner === '') continue;
-    const canonical = canonicalize(url);
-    const sourceName = sourceNameByCanonicalUrl.get(canonical) ?? null;
-    // Tags: validated twice — first against the user's current hashtag
-    // list (so a hallucinated tag never reaches the DB), then — if the
-    // LLM omitted / returned all-invalid tags — fall back to the
-    // source_tags that the fan-out recorded for this URL. Either path
-    // yields a subset of the user's hashtags.
-    const llmTags = Array.isArray(a['tags']) ? a['tags'] : [];
-    const validatedTags: string[] = [];
-    const seenTags = new Set<string>();
-    for (const t of llmTags) {
-      if (typeof t !== 'string') continue;
-      const lower = t.trim().toLowerCase().replace(/^#/, '');
-      if (lower === '' || seenTags.has(lower)) continue;
-      if (!userHashtagSet.has(lower)) continue;
-      seenTags.add(lower);
-      validatedTags.push(lower);
-    }
-    if (validatedTags.length === 0) {
-      const fallback = sourceTagsByCanonicalUrl.get(canonical) ?? [];
-      for (const t of fallback) {
-        if (seenTags.has(t) || !userHashtagSet.has(t)) continue;
-        seenTags.add(t);
-        validatedTags.push(t);
-      }
-    }
-    out.push({
-      title,
-      url,
-      one_liner: oneLiner,
-      details,
-      tags: validatedTags,
-      source_name: sourceName,
-    });
-  }
-  return out;
 }
 
 /**
@@ -310,12 +264,3 @@ export function extractTokensOut(r: AIRunResponse): number {
   return 0;
 }
 
-/* Expose internals for focused unit tests without forcing them through the
- * full pipeline. Not part of the public contract. */
-export const __test = {
-  parseLLMPayload,
-  sanitizeArticles,
-  sanitizeText,
-  extractTokensIn,
-  extractTokensOut,
-};

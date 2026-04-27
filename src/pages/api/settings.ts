@@ -1,4 +1,10 @@
-// Implements REQ-SET-001, REQ-SET-002, REQ-SET-003, REQ-SET-004, REQ-SET-005, REQ-SET-006
+// Implements REQ-SET-001
+// Implements REQ-SET-002
+// Implements REQ-SET-003
+// Implements REQ-SET-004
+// Implements REQ-SET-005
+// Implements REQ-SET-006
+// Implements REQ-AUTH-001
 //
 // GET /api/settings — return the authenticated user's settings snapshot
 // plus a `first_run` boolean derived from the onboarding-complete rule.
@@ -23,6 +29,12 @@ import type { APIContext } from 'astro';
 import { errorResponse } from '~/lib/errors';
 import { log } from '~/lib/log';
 import { MODELS } from '~/lib/models';
+import {
+  enforceRateLimit,
+  rateLimitResponse,
+  RATE_LIMIT_RULES,
+} from '~/lib/rate-limit';
+import { parseHashtags as parseHashtagsJson } from '~/lib/hashtags';
 import { isValidTz } from '~/lib/tz';
 import { loadSession } from '~/middleware/auth';
 import { checkOrigin, originOf } from '~/middleware/origin-check';
@@ -61,22 +73,6 @@ interface UserSettingsRow {
   email_enabled: number;
 }
 
-/**
- * Parse the user's stored hashtags JSON into a string array. Returns
- * `[]` when the column is NULL or the stored value is not a well-formed
- * JSON array of strings — the UI prefers an empty list over a parse
- * error here since the GET response shape is non-nullable.
- */
-function parseHashtagsJson(raw: string | null): string[] {
-  if (raw === null || raw === '') return [];
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((v): v is string => typeof v === 'string');
-  } catch {
-    return [];
-  }
-}
 
 /**
  * Normalize a single user-typed hashtag:
@@ -213,12 +209,25 @@ export async function PUT(context: APIContext): Promise<Response> {
 
   const originResult = checkOrigin(context.request, appOrigin);
   if (!originResult.ok) {
-    return originResult.response!;
+    return originResult.response;
   }
 
   const session = await loadSession(context.request, env.DB, env.OAUTH_JWT_SECRET);
   if (session === null) {
     return errorResponse('unauthorized');
+  }
+
+  // CF-028: PUT /api/settings is a parallel write path for hashtags
+  // alongside POST /api/tags{,/restore,/delete-initial}. Rate-limit
+  // here too so the per-user TAGS_MUTATION cap can't be bypassed by
+  // routing the same write through this endpoint.
+  const rl = await enforceRateLimit(
+    env,
+    RATE_LIMIT_RULES.TAGS_MUTATION,
+    `user:${session.user.id}`,
+  );
+  if (!rl.ok) {
+    return rateLimitResponse(rl.retryAfter);
   }
 
   let body: PutSettingsBody;

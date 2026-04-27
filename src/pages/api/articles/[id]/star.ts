@@ -1,4 +1,5 @@
 // Implements REQ-STAR-001
+// Implements REQ-AUTH-001
 //
 // POST /api/articles/:id/star  — star an article for the session user
 // DELETE /api/articles/:id/star — unstar
@@ -22,6 +23,11 @@
 import type { APIContext } from 'astro';
 import { errorResponse } from '~/lib/errors';
 import { log } from '~/lib/log';
+import {
+  enforceRateLimit,
+  rateLimitResponse,
+  RATE_LIMIT_RULES,
+} from '~/lib/rate-limit';
 import { loadSession } from '~/middleware/auth';
 import { checkOrigin, originOf } from '~/middleware/origin-check';
 
@@ -57,7 +63,7 @@ async function authorize(
 
   const originResult = checkOrigin(context.request, appOrigin);
   if (!originResult.ok) {
-    return { kind: 'reject', response: originResult.response! };
+    return { kind: 'reject', response: originResult.response };
   }
 
   const session = await loadSession(
@@ -72,6 +78,18 @@ async function authorize(
   const articleId = readArticleId(context);
   if (articleId === null) {
     return { kind: 'reject', response: errorResponse('bad_request') };
+  }
+
+  // CF-028: per-user rate-limit on star toggles. The cap (60/min)
+  // protects against runaway client retries; legitimate humans never
+  // approach it.
+  const rl = await enforceRateLimit(
+    env,
+    RATE_LIMIT_RULES.ARTICLE_STAR,
+    `user:${session.user.id}`,
+  );
+  if (!rl.ok) {
+    return { kind: 'reject', response: rateLimitResponse(rl.retryAfter) };
   }
 
   return {
