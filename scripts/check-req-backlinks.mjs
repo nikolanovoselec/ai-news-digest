@@ -78,7 +78,7 @@ function findSddIds() {
   let files;
   try { files = walkSync(join(ROOT, SDD_DIR)); } catch { return ids; }
   for (const file of files) {
-    if (extname(file) !== '.md') continue;
+    if (extname(file).toLowerCase() !== '.md') continue;
     let body;
     try { body = readFileSync(file, 'utf8'); } catch { continue; }
     for (const line of body.split('\n')) {
