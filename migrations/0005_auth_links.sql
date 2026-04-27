@@ -1,4 +1,4 @@
--- Implements REQ-AUTH-006
+-- Implements REQ-AUTH-007
 -- Cross-provider user dedup. Without this table, signing in via GitHub and
 -- then via Google with the same verified email creates two `users` rows
 -- (different `id` shapes — bare numeric for GitHub, `google:<sub>` for
@@ -18,6 +18,10 @@
 -- This migration also performs a one-time merge for any duplicate-email
 -- pairs that already exist in the database (e.g. the production case
 -- where mafijozo@gmail.com signed in via both providers).
+--
+-- D1 forbids CREATE TEMP TABLE, so the merge is expressed as a series
+-- of DML statements over plain `_merge_*` staging tables created and
+-- dropped in this migration.
 
 PRAGMA foreign_keys = ON;
 
@@ -31,72 +35,79 @@ CREATE TABLE auth_links (
 );
 CREATE INDEX idx_auth_links_user ON auth_links(user_id);
 
--- 2. Identify duplicate-email groups and pick a winner per group.
---    Winner = oldest by created_at, with id ASC tiebreaker for
---    determinism. Losers = every other row in the same email group.
-CREATE TEMP TABLE _email_winners AS
-  SELECT email, MIN(created_at) AS winner_created_at
-  FROM users
-  WHERE id != '__system__' AND email IS NOT NULL AND email != ''
-  GROUP BY email
-  HAVING COUNT(*) > 1;
+-- 2. Staging table — duplicate-email groups with their winner_id.
+--    Winner = the row with MIN(created_at) within the email group;
+--    ties broken by the row with the smallest id.
+CREATE TABLE _merge_email_winners (
+  email     TEXT NOT NULL PRIMARY KEY,
+  winner_id TEXT NOT NULL
+);
 
-CREATE TEMP TABLE _user_merges AS
-  SELECT
-    (SELECT u.id FROM users u
-       WHERE u.email = w.email
-         AND u.created_at = w.winner_created_at
-         AND u.id != '__system__'
-       ORDER BY u.id ASC LIMIT 1) AS winner_id,
-    u.id AS loser_id
-  FROM _email_winners w
-  JOIN users u ON u.email = w.email AND u.id != '__system__'
-  WHERE u.id != (
-    SELECT u2.id FROM users u2
-       WHERE u2.email = w.email
-         AND u2.created_at = w.winner_created_at
-         AND u2.id != '__system__'
-       ORDER BY u2.id ASC LIMIT 1
-  );
+INSERT INTO _merge_email_winners (email, winner_id)
+  SELECT u.email, u.id
+    FROM users u
+    JOIN (
+      SELECT email, MIN(created_at) AS winner_created_at
+        FROM users
+        WHERE id != '__system__' AND email IS NOT NULL AND email != ''
+        GROUP BY email
+        HAVING COUNT(*) > 1
+    ) g ON g.email = u.email
+   WHERE u.id != '__system__'
+     AND u.created_at = g.winner_created_at
+   GROUP BY u.email
+   HAVING u.id = MIN(u.id);
 
--- 3. Capture each loser's (provider, provider_sub) BEFORE we delete the
---    loser row — we will write these as auth_links rows pointing at the
---    winner so that future logins by the same provider find the winner
---    instead of creating a fresh row.
-CREATE TEMP TABLE _loser_links AS
-  SELECT
-    CASE WHEN u.id LIKE '%:%' THEN substr(u.id, 1, instr(u.id, ':') - 1) ELSE 'github' END AS provider,
-    CASE WHEN u.id LIKE '%:%' THEN substr(u.id, instr(u.id, ':') + 1) ELSE u.id END AS provider_sub,
-    m.winner_id AS user_id,
-    COALESCE(u.created_at, CAST(strftime('%s', 'now') AS INTEGER)) AS linked_at
-  FROM users u
-  JOIN _user_merges m ON u.id = m.loser_id;
+-- 3. Staging table — every (loser_id → winner_id) pair we need to merge.
+CREATE TABLE _merge_user_merges (
+  loser_id  TEXT NOT NULL PRIMARY KEY,
+  winner_id TEXT NOT NULL
+);
+
+INSERT INTO _merge_user_merges (loser_id, winner_id)
+  SELECT u.id, w.winner_id
+    FROM users u
+    JOIN _merge_email_winners w ON u.email = w.email
+   WHERE u.id != '__system__'
+     AND u.id != w.winner_id;
 
 -- 4. Re-point child rows from loser → winner. INSERT OR IGNORE collapses
 --    the case where the user has the same article starred under both
---    accounts.
+--    accounts (so the winner row already exists).
 INSERT OR IGNORE INTO article_stars (user_id, article_id, starred_at)
   SELECT m.winner_id, s.article_id, s.starred_at
     FROM article_stars s
-    JOIN _user_merges m ON s.user_id = m.loser_id;
+    JOIN _merge_user_merges m ON s.user_id = m.loser_id;
 
 INSERT OR IGNORE INTO article_reads (user_id, article_id, read_at)
   SELECT m.winner_id, r.article_id, r.read_at
     FROM article_reads r
-    JOIN _user_merges m ON r.user_id = m.loser_id;
+    JOIN _merge_user_merges m ON r.user_id = m.loser_id;
 
 INSERT OR IGNORE INTO pending_discoveries (user_id, tag, added_at)
   SELECT m.winner_id, p.tag, p.added_at
     FROM pending_discoveries p
-    JOIN _user_merges m ON p.user_id = m.loser_id;
+    JOIN _merge_user_merges m ON p.user_id = m.loser_id;
 
--- 5. Delete the loser users. FK ON DELETE CASCADE on article_stars,
+-- 5. Add auth_links rows for the loser provider/sub → winner BEFORE we
+--    delete the loser users row (the loser's id encodes its provider
+--    and provider_sub; once the row is gone we can't recover them).
+INSERT OR IGNORE INTO auth_links (provider, provider_sub, user_id, linked_at)
+  SELECT
+    CASE WHEN u.id LIKE '%:%' THEN substr(u.id, 1, instr(u.id, ':') - 1) ELSE 'github' END,
+    CASE WHEN u.id LIKE '%:%' THEN substr(u.id, instr(u.id, ':') + 1) ELSE u.id END,
+    m.winner_id,
+    COALESCE(u.created_at, CAST(strftime('%s', 'now') AS INTEGER))
+    FROM users u
+    JOIN _merge_user_merges m ON u.id = m.loser_id;
+
+-- 6. Delete loser users. FK ON DELETE CASCADE on article_stars,
 --    article_reads, pending_discoveries removes any unmigrated child
 --    rows (e.g. if INSERT OR IGNORE above bounced because the winner
 --    already had the same row).
-DELETE FROM users WHERE id IN (SELECT loser_id FROM _user_merges);
+DELETE FROM users WHERE id IN (SELECT loser_id FROM _merge_user_merges);
 
--- 6. Backfill auth_links for every surviving user. Each users row
+-- 7. Backfill auth_links for every surviving user. Each users row
 --    contributes exactly one alias derived from its current id.
 INSERT OR IGNORE INTO auth_links (provider, provider_sub, user_id, linked_at)
   SELECT
@@ -107,12 +118,6 @@ INSERT OR IGNORE INTO auth_links (provider, provider_sub, user_id, linked_at)
   FROM users
   WHERE id != '__system__';
 
--- 7. Add the loser provider/sub → winner aliases so subsequent logins
---    via the loser's provider find the winner.
-INSERT OR IGNORE INTO auth_links (provider, provider_sub, user_id, linked_at)
-  SELECT provider, provider_sub, user_id, linked_at FROM _loser_links;
-
--- 8. Drop temp tables.
-DROP TABLE _loser_links;
-DROP TABLE _user_merges;
-DROP TABLE _email_winners;
+-- 8. Drop staging tables — single-use, not needed after this migration.
+DROP TABLE _merge_user_merges;
+DROP TABLE _merge_email_winners;

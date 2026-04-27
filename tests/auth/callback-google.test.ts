@@ -339,7 +339,7 @@ describe('GET /api/auth/google/callback — REQ-AUTH-001', () => {
     expect(insert!.params[0]).toBe('google:987654321');
   });
 
-  it('REQ-AUTH-006: cross-provider dedup — Google sign-in with email matching a GitHub user reuses the existing account', async () => {
+  it('REQ-AUTH-007: cross-provider dedup — Google sign-in with email matching a GitHub user reuses the existing account', async () => {
     // The user previously registered via GitHub; a `users` row exists
     // keyed `12345`. They now sign in via Google (sub=987654321) with
     // the same verified email. No (google, 987654321) auth_link exists
@@ -370,7 +370,7 @@ describe('GET /api/auth/google/callback — REQ-AUTH-001', () => {
     expect(payload!.sub).toBe('12345');
   });
 
-  it('REQ-AUTH-006: known auth_link short-circuits straight to the linked user_id (no email lookup, no INSERT)', async () => {
+  it('REQ-AUTH-007: known auth_link short-circuits straight to the linked user_id (no email lookup, no INSERT)', async () => {
     // A subsequent Google login by an already-linked user.
     const { db, runCalls } = makeDb(
       { id: '12345', tz: 'UTC', session_version: 1, digest_hour: 8, hashtags_json: '["ai"]' },
@@ -389,7 +389,7 @@ describe('GET /api/auth/google/callback — REQ-AUTH-001', () => {
     expect(linkInserts).toHaveLength(0);
   });
 
-  it('REQ-AUTH-006: brand-new user (no link, no email match) creates users row AND auth_links row in tandem', async () => {
+  it('REQ-AUTH-007: brand-new user (no link, no email match) creates users row AND auth_links row in tandem', async () => {
     // First-ever sign-in for this user via any provider.
     const { db, runCalls } = makeDb(null);
     mockGoogleFetch({});

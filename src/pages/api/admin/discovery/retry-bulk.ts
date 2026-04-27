@@ -194,12 +194,24 @@ export async function GET(context: APIContext): Promise<Response> {
   }
   const appOrigin = originOf(env.APP_URL);
 
+  const wantsJson = (context.request.headers.get('Accept') ?? '').includes('application/json');
+
   const session = await loadSession(context.request, env.DB, env.OAUTH_JWT_SECRET);
   if (session === null) {
-    return errorResponse('unauthorized');
+    // Browsers landing here without a valid session (cookie expired,
+    // session_version bumped, etc.) must NOT see raw JSON — that
+    // contradicts the comment block above and looks like a 404 to a
+    // user who just clicked through Cloudflare Access. Redirect to
+    // /settings instead and only emit JSON to scripted callers that
+    // explicitly opted in.
+    if (wantsJson) {
+      return errorResponse('unauthorized');
+    }
+    return new Response(null, {
+      status: 303,
+      headers: { Location: `${appOrigin}/settings?rediscover=error` },
+    });
   }
-
-  const wantsJson = (context.request.headers.get('Accept') ?? '').includes('application/json');
 
   const result = await executeRetryBulk(env, session.user.id, session.user.hashtags_json);
   if (!result.ok) {

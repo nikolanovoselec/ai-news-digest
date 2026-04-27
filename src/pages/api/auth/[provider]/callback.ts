@@ -1,4 +1,4 @@
-// Implements REQ-AUTH-001, REQ-AUTH-002, REQ-AUTH-004, REQ-AUTH-006
+// Implements REQ-AUTH-001, REQ-AUTH-002, REQ-AUTH-004, REQ-AUTH-007
 //
 // GET /api/auth/<provider>/callback — finish the OAuth/OIDC code flow
 // for any configured provider. The dynamic `[provider]` segment maps
@@ -323,7 +323,7 @@ export async function GET(context: APIContext): Promise<Response> {
     return errorRedirect(origin, 'no_verified_email', headers, 303, provider.name);
   }
 
-  // 5. Resolve user_id via auth_links (REQ-AUTH-006). Three paths:
+  // 5. Resolve user_id via auth_links (REQ-AUTH-007). Three paths:
   //    A. (provider, sub) already linked → reuse the linked user_id;
   //       this is the steady-state login for any user.
   //    B. Not linked, but a `users` row with the same verified email

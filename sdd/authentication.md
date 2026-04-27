@@ -17,7 +17,7 @@ Federated sign-in via GitHub or Google — no passwords, no email verification f
 4. If the chosen provider returns no verified email or otherwise refuses to release one, sign-in fails with error code `no_verified_email` and the user is redirected to the landing page with a clear message naming the affected provider.
 5. New-account creation seeds the user's hashtag list with the 20-entry system default covering the project owner's actual reading topics across cloud platforms, AI/LLM, security, identity, and infrastructure. Every default tag is guaranteed to have at least one curated source so the first digest has meaningful input before the user touches the strip.
 6. New accounts are also seeded with a default scheduled-digest time of 08:00, a default UTC timezone that the reading surface overwrites with the browser's actual IANA zone on first load, and the email-notification preference enabled. As a result, successful sign-in for a brand-new account lands the user directly on the reading surface with real articles visible — there is no forced onboarding detour through the settings form.
-7. Each provider's account is independent — signing in with Google after a previous GitHub sign-in creates a fresh account rather than merging by email. This is a deliberate trade-off: it eliminates the cross-provider email-conflict ambiguity at the cost of forcing users to remember which provider they used.
+7. Cross-provider sign-in by the same verified email lands in a single account per REQ-AUTH-007 (was previously per-provider isolation).
 
 **Constraints:** CON-AUTH-001
 **Priority:** P0
@@ -107,7 +107,7 @@ Federated sign-in via GitHub or Google — no passwords, no email verification f
 
 ---
 
-### REQ-AUTH-006: Cross-provider account dedup
+### REQ-AUTH-007: Cross-provider account dedup
 
 **Intent:** A person who signs in via two providers with the same verified email lands in one account, not two — the daily digest goes out once and starred articles, read marks, and interests are shared across both sign-in paths.
 

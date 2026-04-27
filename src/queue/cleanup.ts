@@ -246,7 +246,7 @@ async function runStuckTagPrune(env: Env): Promise<number> {
     const updateStmt = env.DB.prepare(
       'UPDATE users SET hashtags_json = ?1 WHERE id = ?2',
     );
-    const updates = [];
+    const updates: D1PreparedStatement[] = [];
     let prunedTotal = 0;
     for (const row of userRows.results ?? []) {
       const raw = row.hashtags_json;
