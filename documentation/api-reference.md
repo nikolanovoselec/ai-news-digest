@@ -495,6 +495,7 @@ Implements [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-log
 | `auth.callback.invalid_state` | CSRF state mismatch in the OAuth callback — returns 403 |
 | `auth.logout` | Session version bumped; both cookies cleared; active refresh-token row revoked |
 | `auth.logout.refresh_revoke_failed` | D1 revoke call in logout threw — session_version was still bumped so the session is invalidated; the refresh row will expire naturally |
+| `auth.logout.sv_bump_failed` | D1 `session_version` increment in logout threw — session may remain valid; both cookies are still cleared on the response |
 | `auth.account.delete` | User row deleted from D1 (info on success, warn when no row affected) |
 | `auth.account.delete.failed` | D1 delete threw, or KV cleanup threw |
 | `auth.set_tz.failed` | D1 update in `POST /api/auth/set-tz` threw |
@@ -516,6 +517,8 @@ Implements [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-log
 | `discovery.completed` | Per-tag LLM discovery run finished |
 | `discovery.queued` | A new per-tag discovery job was inserted into `pending_discoveries` |
 | `settings.update.failed` | D1 update in `PUT /api/settings` threw |
+| `auth.refresh.rate_limited` | Inline middleware refresh path hit the `auth_refresh` rate-limit bucket — request rejected with 429; rate-limit bucket is shared with `POST /api/auth/refresh` |
+| `rate.limit.kv_error` | KV read/write in the rate-limit helper threw — emitted with `decision: "fail_open"` (most routes) or `decision: "fail_closed"` (`auth_refresh` rule); caller proceeds per the per-rule fail-mode |
 | `article.star.failed` | D1 insert or delete in `POST/DELETE /api/articles/:id/star` threw |
 
 Raw exception messages appear only in the `detail` field of error-level records; they are never stored in D1 and never returned to clients (see [REQ-OPS-002](../sdd/observability.md#req-ops-002-sanitized-error-surfaces)).
