@@ -193,6 +193,8 @@ Returns up to 29 articles from the global pool filtered by the session user's ac
 
 Reads one `scrape_runs` row (most recent by `started_at DESC`) plus one KV key (`scrape_run:{id}:chunks_remaining`). No LLM cost.
 
+The KV `chunks_remaining` value is a **display mirror only** — it is decremented by chunk consumers for the live progress display, not the authoritative completion gate. The completion gate moved to D1 (`scrape_chunk_completions`, migration 0007) and the finalize lock to `scrape_runs.finalize_enqueued` (migration 0008) to eliminate the TOCTOU race window. When debugging a stuck run, inspect the D1 tables — the KV counter can lag without indicating a real stall.
+
 **Callers:**
 - `/digest` — swaps the "Next update in Xm" countdown for "Update in progress" while `running=true`.
 - `/settings` Force Refresh section — polls every 5s after form submission to show live `articles_ingested` and `chunks_remaining`.
