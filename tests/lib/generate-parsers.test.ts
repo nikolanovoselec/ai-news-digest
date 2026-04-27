@@ -58,7 +58,9 @@ describe('parseLLMPayload — REQ-PIPE-002', () => {
       'preamble {"articles":[{"title":"contains } inside","url":"u"}]} trailing';
     const out = parseLLMPayload(raw);
     expect(out?.articles).toHaveLength(1);
-    expect((out?.articles?.[0] as { title: string }).title).toContain('}');
+    const articles = out?.articles;
+    expect(articles).toBeDefined();
+    expect((articles![0] as { title: string }).title).toContain('}');
   });
 
   it('REQ-PIPE-002: invalid JSON returns null', () => {
