@@ -23,14 +23,67 @@ interface SqlRecord {
 function makeDb(opts: {
   existingCanonicals?: string[];
   records?: SqlRecord[];
+  /** Pre-populate scrape_chunk_completions so the COUNT(*) SELECT
+   *  in the consumer returns this value plus any new INSERTs. CF-002:
+   *  the chunk consumer drives finishRun off this count, not off the
+   *  legacy KV chunks_remaining counter. */
+  initialCompletedChunks?: number;
+  /** Inject a one-shot failure on the finalize-lock rollback UPDATE
+   *  so we can exercise the double-fault path (CF-002 follow-up). */
+  failNextRollback?: boolean;
 } = {}): { db: D1Database; records: SqlRecord[] } {
   const records = opts.records ?? [];
+  // Track inserted (run_id, chunk_index) pairs so INSERT OR IGNORE
+  // honors PK uniqueness — duplicate inserts are no-ops, matching D1.
+  const completedKeys = new Set<string>();
+  let completedChunkCount = opts.initialCompletedChunks ?? 0;
+  // Per-run finalize-lock state (CF-002 follow-up). The conditional
+  // UPDATE returns meta.changes === 1 only on the run-from-0 transition.
+  const finalizeLocked = new Set<string>();
   const prepare = vi.fn().mockImplementation((sql: string) => {
     const binder = (...params: unknown[]) => ({
       __sql: sql,
       __params: params,
       run: vi.fn().mockImplementation(async () => {
         records.push({ sql, params, via: 'run' });
+        if (sql.startsWith('INSERT OR IGNORE INTO scrape_chunk_completions')) {
+          const key = `${String(params[0])}:${String(params[1])}`;
+          const alreadyHad = completedKeys.has(key);
+          if (!alreadyHad) {
+            completedKeys.add(key);
+            completedChunkCount += 1;
+          }
+          // Mirror D1 semantics: duplicate INSERT OR IGNORE returns
+          // meta.changes === 0; first insert returns 1.
+          return { success: true, meta: { changes: alreadyHad ? 0 : 1 } };
+        }
+        if (
+          sql.includes('UPDATE scrape_runs') &&
+          sql.includes('finalize_enqueued = 1') &&
+          sql.includes('finalize_enqueued = 0')
+        ) {
+          const runId = String(params[0]);
+          if (finalizeLocked.has(runId)) {
+            return { success: true, meta: { changes: 0 } };
+          }
+          finalizeLocked.add(runId);
+          return { success: true, meta: { changes: 1 } };
+        }
+        // Rollback path: clear the finalize lock when send throws.
+        if (
+          sql.includes('UPDATE scrape_runs') &&
+          sql.includes('finalize_enqueued = 0') &&
+          !sql.includes('finalize_enqueued = 1')
+        ) {
+          if (opts.failNextRollback === true) {
+            // Consume the one-shot — only the first rollback throws,
+            // so a follow-up retry sees a healthy D1.
+            opts.failNextRollback = false;
+            throw new Error('d1 transient outage during rollback');
+          }
+          finalizeLocked.delete(String(params[0]));
+          return { success: true, meta: { changes: 1 } };
+        }
         return { success: true, meta: { changes: 1 } };
       }),
       all: vi.fn().mockImplementation(async () => {
@@ -39,6 +92,12 @@ function makeDb(opts: {
       }),
       first: vi.fn().mockImplementation(async () => {
         records.push({ sql, params, via: 'first' });
+        if (
+          sql.includes('FROM scrape_chunk_completions') &&
+          sql.includes('COUNT(*)')
+        ) {
+          return { done: completedChunkCount };
+        }
         return null;
       }),
     });
@@ -399,36 +458,46 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     expect(batched.length).toBe(6);
   });
 
-  it('REQ-PIPE-002: decrements KV chunks_remaining; last chunk calls finishRun(ready)', async () => {
+  it('REQ-PIPE-002: completing the final chunk calls finishRun(ready) and zeroes the KV mirror', async () => {
+    // CF-002: the run's "are we done?" gate is now the count of rows
+    // in scrape_chunk_completions, not a KV decrement. The KV counter
+    // is kept as a derived mirror so /api/scrape-status keeps working.
     const aiResponse = {
       response: JSON.stringify({ articles: [{ title: 'A', details: 'a.', tags: ['cloudflare'] }, { title: 'B', details: 'b.', tags: ['generative-ai'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db, records } = makeDb();
-    const { kv, state } = makeKv({ chunksRemaining: '1' });
+    const { kv, state } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
     await processOneChunk(env, makeChunk());
-    // Counter went from 1 → 0.
+    // total_chunks=1 (default) and we just inserted chunk 0 → done=1 → finalize.
     expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('0');
-    // finishRun emitted its UPDATE.
     const finish = records.find(
       (r) =>
         r.sql.includes('UPDATE scrape_runs') &&
         (r.params as unknown[])[1] === 'ready',
     );
     expect(finish).toBeDefined();
+    // INSERT OR IGNORE row was actually written.
+    const insert = records.find((r) =>
+      r.sql.startsWith('INSERT OR IGNORE INTO scrape_chunk_completions'),
+    );
+    expect(insert).toBeDefined();
+    expect(insert!.params[0]).toBe('test-run');
+    expect(insert!.params[1]).toBe(0);
   });
 
-  it('REQ-PIPE-002: non-last chunk leaves the counter above zero and does NOT call finishRun', async () => {
+  it('REQ-PIPE-002: non-last chunk leaves the KV mirror above zero and does NOT call finishRun', async () => {
     const aiResponse = {
       response: JSON.stringify({ articles: [{ title: 'A', details: 'a.', tags: ['cloudflare'] }, { title: 'B', details: 'b.', tags: ['generative-ai'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db, records } = makeDb();
-    const { kv, state } = makeKv({ chunksRemaining: '3' });
+    const { kv, state } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
-    await processOneChunk(env, makeChunk());
-    expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('2');
+    // total_chunks=4 simulates a multi-chunk run; this is chunk 0 of 4.
+    await processOneChunk(env, makeChunk({ chunk_index: 0, total_chunks: 4 }));
+    expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('3');
     const finish = records.find(
       (r) =>
         r.sql.includes('UPDATE scrape_runs') &&
@@ -443,7 +512,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db } = makeDb();
-    const { kv } = makeKv({ chunksRemaining: '1' });
+    const { kv } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
     await processOneChunk(env, makeChunk());
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -458,36 +527,137 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db } = makeDb();
-    const { kv } = makeKv({ chunksRemaining: '3' });
+    const { kv } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
-    await processOneChunk(env, makeChunk());
+    await processOneChunk(env, makeChunk({ chunk_index: 0, total_chunks: 4 }));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;
     expect(sendMock).not.toHaveBeenCalled();
   });
 
   it('REQ-PIPE-008: redelivered last-chunk message does NOT re-enqueue SCRAPE_FINALIZE (LLM cost gate)', async () => {
-    // The KV chunks_remaining counter clamps to 0, so a redelivered
-    // last-chunk message would re-enter the `next === 0` branch. The
-    // finalize merge SQL is idempotent on retry but the LLM call is
-    // not — the consumer must gate the send on a separate KV flag so
-    // a redelivery doesn't burn another Workers AI call.
+    // CF-002 follow-up: INSERT OR IGNORE makes the per-chunk write
+    // idempotent under retries, but the COUNT(*) gate still fires on
+    // redelivery (count >= total_chunks remains true). The atomic
+    // `UPDATE scrape_runs SET finalize_enqueued = 1 WHERE ...
+    // AND finalize_enqueued = 0` returns meta.changes = 0 on the
+    // second attempt, so the consumer short-circuits before sending.
     const aiResponse = {
       response: JSON.stringify({ articles: [{ title: 'A', details: 'a.', tags: ['cloudflare'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db } = makeDb();
-    const { kv, state } = makeKv({ chunksRemaining: '1' });
+    const { kv, state } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
     await processOneChunk(env, makeChunk());
-    // Replay: counter is now '0' (clamped), enqueue gate flag is set.
-    // Re-running must not trigger a second SCRAPE_FINALIZE.send.
+    // KV mirror has been zeroed; the finalize lock lives on the D1 row.
     expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('0');
-    expect(state.store.get('scrape_run:test-run:finalize_enqueued')).toBe('1');
     await processOneChunk(env, makeChunk());
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;
     expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('REQ-PIPE-002: addChunkStats is gated by completion INSERT — no double-count under redelivery', async () => {
+    // CF-002 hardening: addChunkStats issues an additive UPDATE
+    // (`tokens_in = tokens_in + ?, ...`) so an unguarded second
+    // invocation would double the per-chunk tokens, cost, and article
+    // counters in scrape_runs. The fix is to gate the UPDATE on the
+    // completion INSERT's meta.changes — only the first delivery for
+    // a given (run_id, chunk_index) pair runs addChunkStats, the
+    // redelivery sees changes === 0 and short-circuits.
+    const aiResponse = {
+      response: JSON.stringify({ articles: [{ title: 'A', details: 'a.', tags: ['cloudflare'] }], dedup_groups: [] }),
+      usage: { input_tokens: 10, output_tokens: 10 },
+    };
+    const { db, records } = makeDb();
+    const { kv } = makeKv();
+    const env = makeEnv(db, kv, aiResponse);
+    await processOneChunk(env, makeChunk());
+    await processOneChunk(env, makeChunk());
+    const statsCalls = records.filter(
+      (r) =>
+        r.sql.includes('UPDATE scrape_runs') &&
+        r.sql.includes('tokens_in = tokens_in +'),
+    );
+    expect(statsCalls).toHaveLength(1);
+  });
+
+  it('REQ-PIPE-008: send-failure rollback — clears finalize_enqueued so the queue retry can re-attempt', async () => {
+    // CF-002 follow-up: the atomic UPDATE-then-send sequence has a
+    // failure mode that the original KV gate didn't have — if send()
+    // throws after the lock has been written, future redeliveries
+    // would see finalize_enqueued = 1 and silently skip the send,
+    // permanently dropping the finalize. The consumer must roll back
+    // the lock on send failure so a retry can re-acquire it.
+    const aiResponse = {
+      response: JSON.stringify({ articles: [{ title: 'A', details: 'a.', tags: ['cloudflare'] }], dedup_groups: [] }),
+      usage: { input_tokens: 10, output_tokens: 10 },
+    };
+    const { db, records } = makeDb();
+    const { kv } = makeKv();
+    const env = makeEnv(db, kv, aiResponse);
+    // First call: SCRAPE_FINALIZE.send throws.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;
+    sendMock.mockRejectedValueOnce(new Error('queue temporarily unavailable'));
+    await expect(processOneChunk(env, makeChunk())).rejects.toThrow(
+      'queue temporarily unavailable',
+    );
+    // Rollback was issued — the lock-clearing UPDATE is in the SQL log.
+    const rollback = records.find(
+      (r) =>
+        r.sql.includes('UPDATE scrape_runs') &&
+        r.sql.includes('finalize_enqueued = 0') &&
+        !r.sql.includes('finalize_enqueued = 1'),
+    );
+    expect(rollback).toBeDefined();
+    // Second call (queue redelivery) succeeds — lock was cleared so the
+    // race-acquire UPDATE bumps it back to 1, and send is re-attempted.
+    await processOneChunk(env, makeChunk());
+    expect(sendMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('REQ-PIPE-008: rollback-failure path — emits finalize_lock_rollback_failed and surfaces sendErr', async () => {
+    // CF-002 follow-up: when the rollback UPDATE itself throws (a
+    // second transient D1 outage during the catch handler), the
+    // consumer must still surface the original sendErr to the queue
+    // retry path and emit a structured operator-visible log line so
+    // the stranded lock is observable. Pins REQ-PIPE-008 AC 9 (the
+    // "lock-clearing step itself fails" sub-case).
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      const aiResponse = {
+        response: JSON.stringify({ articles: [{ title: 'A', details: 'a.', tags: ['cloudflare'] }], dedup_groups: [] }),
+        usage: { input_tokens: 10, output_tokens: 10 },
+      };
+      const { db } = makeDb({ failNextRollback: true });
+      const { kv } = makeKv();
+      const env = makeEnv(db, kv, aiResponse);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;
+      sendMock.mockRejectedValueOnce(new Error('queue temporarily unavailable'));
+
+      // The original sendErr — not the rollback error — must surface.
+      await expect(processOneChunk(env, makeChunk())).rejects.toThrow(
+        'queue temporarily unavailable',
+      );
+
+      // Operator-visible log captures both errors.
+      const failedLog = consoleSpy.mock.calls.find((args: unknown[]) => {
+        const payload = args[0];
+        return (
+          typeof payload === 'string' &&
+          payload.includes('finalize_lock_rollback_failed')
+        );
+      });
+      expect(failedLog).toBeDefined();
+      const payload = failedLog![0] as string;
+      expect(payload).toContain('"send_error":"Error: queue temporarily unavailable"');
+      expect(payload).toContain('d1 transient outage during rollback');
+    } finally {
+      consoleSpy.mockRestore();
+    }
   });
 
   it('REQ-PIPE-002: updates scrape_runs stats (tokens, cost, ingested, deduped)', async () => {

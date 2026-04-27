@@ -85,7 +85,19 @@ function makeDb(
 }
 
 function env(db: D1Database): Partial<Env> {
-  return { APP_URL, OAUTH_JWT_SECRET: JWT_SECRET, DB: db };
+  // Minimal in-memory KV for the rate-limit helper.
+  const kvStore = new Map<string, string>();
+  const kv = {
+    get: vi.fn().mockImplementation(async (key: string) => kvStore.get(key) ?? null),
+    put: vi
+      .fn()
+      .mockImplementation(async (key: string, value: string) => {
+        kvStore.set(key, value);
+      }),
+    delete: vi.fn().mockResolvedValue(undefined),
+    list: vi.fn().mockResolvedValue({ keys: [], list_complete: true }),
+  } as unknown as KVNamespace;
+  return { APP_URL, OAUTH_JWT_SECRET: JWT_SECRET, DB: db, KV: kv };
 }
 
 function makeContext(request: Request, e: Partial<Env>): unknown {
@@ -199,6 +211,18 @@ describe('POST /api/tags/delete-initial — REQ-SET-002 AC 8', () => {
     const upd = bindings.find((b) => b.sql.includes('UPDATE users'));
     const persisted = JSON.parse(upd!.params[0] as string) as string[];
     expect(persisted).toEqual([]);
+  });
+
+  it('CF-028: returns 429 when the per-user TAGS_MUTATION bucket is exhausted', async () => {
+    const db = makeDb(userWith('["a","b"]'));
+    const e = env(db);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const windowIndex = Math.floor(nowSec / 60);
+    await e.KV!.put(`ratelimit:tags_mutation:user:u1:${windowIndex}`, '30');
+    const req = await postRequest(await signedCookie());
+    const res = await POST(makeContext(req, e) as never);
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).not.toBeNull();
   });
 });
 

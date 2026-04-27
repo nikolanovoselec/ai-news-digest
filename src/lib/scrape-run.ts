@@ -117,11 +117,16 @@ export async function finishRun(
   status: 'ready' | 'failed',
 ): Promise<void> {
   const now = nowSeconds();
+  // CF-002 follow-up: a redelivered last-chunk message can re-enter
+  // finishRun. Stamping `finished_at = now` unconditionally would
+  // shift the run's apparent duration forward on every retry. COALESCE
+  // preserves the first-write timestamp so the history dashboard sees
+  // when the run actually completed, not when the queue redelivered.
   await db
     .prepare(
       `UPDATE scrape_runs
          SET status = ?2,
-             finished_at = ?3
+             finished_at = COALESCE(finished_at, ?3)
        WHERE id = ?1`,
     )
     .bind(runId, status, now)
