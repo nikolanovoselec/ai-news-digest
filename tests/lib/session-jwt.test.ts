@@ -24,11 +24,13 @@ describe('session-jwt', () => {
       }
     });
 
-    it('REQ-AUTH-002: defaults TTL to 3600 seconds', async () => {
+    it('REQ-AUTH-002: defaults TTL to 300 seconds (5-minute access token)', async () => {
+      // Access JWT lifetime — short by design because the 30-day
+      // refresh cookie carries long-term presence (REQ-AUTH-008).
       const token = await signSession(baseClaims, SECRET);
       const claims = await verifySession(token, SECRET);
       expect(claims).not.toBeNull();
-      expect(claims!.exp - claims!.iat).toBe(3600);
+      expect(claims!.exp - claims!.iat).toBe(300);
     });
 
     it('REQ-AUTH-002: honours custom TTL', async () => {
