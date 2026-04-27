@@ -67,6 +67,13 @@ function findAllRefs() {
 }
 
 function findSddIds() {
+  // Only count IDs that appear in a markdown header line (`#`-prefixed)
+  // — that's where the spec defines a requirement. IDs that appear
+  // only in prose (e.g., the "Out of Scope" list in sdd/README.md, the
+  // "Replaced By:" lines in deprecated REQs, or sdd/changes.md prose)
+  // are NOT definitions and must not satisfy the backlink gate.
+  // Without this, a stale reference to a retired REQ would silently
+  // pass — defeating the gate's purpose.
   const ids = new Set();
   let files;
   try { files = walkSync(join(ROOT, SDD_DIR)); } catch { return ids; }
@@ -74,9 +81,12 @@ function findSddIds() {
     if (extname(file) !== '.md') continue;
     let body;
     try { body = readFileSync(file, 'utf8'); } catch { continue; }
-    const matches = body.match(REQ_RE);
-    if (matches === null) continue;
-    for (const id of matches) ids.add(id);
+    for (const line of body.split('\n')) {
+      if (!/^#{1,6}\s/.test(line)) continue;
+      const matches = line.match(REQ_RE);
+      if (matches === null) continue;
+      for (const id of matches) ids.add(id);
+    }
   }
   return ids;
 }
