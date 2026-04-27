@@ -41,7 +41,9 @@ Initiates the OAuth/OIDC authorization-code flow for a configured provider. The 
 
 `POST` is the canonical entry point — the landing page submits a same-origin form to avoid mobile-browser prefetch races that regenerate the state cookie before the provider's callback returns. `GET` is retained for direct URL access (bookmarks, test tooling). Both methods are exempt from the Origin check per [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints) AC 4.
 
-**Implements:** [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
+**Rate limit:** 10 requests / 60 seconds per IP (`auth_login` rule). Exhausted → `429 Too Many Requests` with `Retry-After` header. Fails open on KV errors so a backing-store outage cannot block sign-in.
+
+**Implements:** [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9, [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
 ### GET /api/auth/{provider}/callback
 
@@ -56,7 +58,9 @@ Sets the session cookie and redirects to `/digest` for all users.
 
 New accounts are inserted with complete onboarding defaults at the moment of first login — 20 seeded hashtags (`DEFAULT_HASHTAGS`), `digest_hour=8`, `digest_minute=0`, and `email_enabled=1`. The browser auto-corrects timezone on first `/digest` load via a client-side POST to `/api/auth/set-tz`. No `/settings` detour is required for new users.
 
-**Implements:** [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-004](../sdd/authentication.md#req-auth-004-oauth-error-surfacing), [REQ-AUTH-007](../sdd/authentication.md#req-auth-007-cross-provider-account-dedup)
+**Rate limit:** 20 requests / 60 seconds per IP (`auth_callback` rule). Exhausted → `429 Too Many Requests` with `Retry-After` header. Fails open on KV errors.
+
+**Implements:** [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9, [REQ-AUTH-004](../sdd/authentication.md#req-auth-004-oauth-error-surfacing), [REQ-AUTH-007](../sdd/authentication.md#req-auth-007-cross-provider-account-dedup)
 
 **Error responses:**
 - `access_denied`, `no_verified_email`, `oauth_error` — 3xx redirect to `/?error={code}&provider={name}`. The provider name lets the landing page surface a precise message ("Google did not return a verified email" instead of guessing).
@@ -257,17 +261,19 @@ No `Origin` check on GET — Cloudflare Access is the sole authentication gate f
 
 Stars an article. Optimistic — the UI flips the icon before the response returns. Protected by the Origin check.
 
-**Response:** `200 { ok: true, starred: true }` | `401 unauthorized` | `403 forbidden_origin` | `404 not_found`
+**Rate limit:** 60 requests / 60 seconds per user id (`article_star` rule). Exhausted → `429 Too Many Requests` with `Retry-After` header.
 
-**Implements:** [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles)
+**Response:** `200 { ok: true, starred: true }` | `401 unauthorized` | `403 forbidden_origin` | `404 not_found` | `429 rate_limit_exceeded`
+
+**Implements:** [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles), [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9
 
 ### DELETE /api/articles/:id/star
 
-Unstars an article. Same auth and error contract as POST.
+Unstars an article. Same auth, Origin, rate-limit, and error contract as POST.
 
-**Response:** `200 { ok: true, starred: false }` | `401` | `403` | `404`
+**Response:** `200 { ok: true, starred: false }` | `401` | `403` | `404` | `429`
 
-**Implements:** [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles)
+**Implements:** [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles), [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9
 
 ### GET /api/starred
 
@@ -283,19 +289,23 @@ Unstars an article. Same auth and error contract as POST.
 
 Add or remove a single hashtag from the user's tag list. Persists immediately — no form submit required. Normalises to lowercase, strips `#`, rejects characters outside `[a-z0-9-]`, enforces 2–32 char length and max 25 tags.
 
+**Rate limit:** 30 requests / 60 seconds per user id (`tags_mutation` rule). Shared with `POST /api/tags/restore`. Exhausted → `429 Too Many Requests` with `Retry-After` header.
+
 **Request:** `{ tag: string, action: "add" | "remove" }`
 
-**Response:** `200 { ok: true, hashtags: string[] }` | `400 invalid_tag` | `400 max_tags_reached` | `401`
+**Response:** `200 { ok: true, hashtags: string[] }` | `400 invalid_tag` | `400 max_tags_reached` | `401` | `429 rate_limit_exceeded`
 
-**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation)
+**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation), [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9
 
 ### POST /api/tags/restore
 
 Replaces the user's hashtag list with the curated default seed from `DEFAULT_HASHTAGS`.
 
-**Response:** `200 { ok: true, hashtags: string[] }` | `401`
+**Rate limit:** 30 requests / 60 seconds per user id (`tags_mutation` rule). Shared with `PUT /api/tags`.
 
-**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation) AC 8
+**Response:** `200 { ok: true, hashtags: string[] }` | `401` | `429 rate_limit_exceeded`
+
+**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation) AC 8, [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9
 
 ---
 
@@ -337,10 +347,12 @@ Operator-only endpoint that kicks the global-feed coordinator on demand — iden
 **POST response:** `303` redirect to `/settings?force_refresh=ok` (new run) or `/settings?force_refresh=reused` (concurrency guard hit). The `/settings` page reads `?force_refresh=` in `init()` and renders the result in `[data-scrape-progress]`.
 
 **GET response (content-negotiated):**
-- Browser or any client without `Accept: application/json` → `303` redirect to `/settings?force_refresh={ok|reused}`.
-- `Accept: application/json` → `200 { ok: true, scrape_run_id: string, reused: bool }`.
+- Browser (no `Accept: application/json`) — admin gate passes → `303` redirect to `/settings?force_refresh={ok|reused}`.
+- Browser (no `Accept: application/json`) — admin gate fails → `303` redirect to `/settings?force_refresh=denied`. Browsers never see a bare 403 body on the GET path.
+- `Accept: application/json` — admin gate passes → `200 { ok: true, scrape_run_id: string, reused: bool }`.
+- `Accept: application/json` — admin gate fails → `401 unauthorized` or `403 forbidden`.
 
-Scripts and `curl` callers must send `Accept: application/json` to receive the JSON payload; omitting it triggers a redirect.
+Scripts and `curl` callers must send `Accept: application/json` to receive the JSON payload; omitting it triggers a redirect on both success and auth failure.
 
 **Error response (both methods):** `500 "Failed to dispatch coordinator"` when the D1 INSERT or queue send throws.
 
