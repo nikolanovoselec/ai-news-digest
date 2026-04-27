@@ -77,6 +77,30 @@ const PER_SOURCE_ITEM_CAP = 10;
  * tag set without exploding LLM cost. */
 const MAX_CHUNKS_PER_TICK = 40;
 
+/** CF-012 + CF-073: cap the chunk fan-out at `max` and emit a single
+ *  `coordinator_chunks_capped` warning when truncation actually
+ *  happens. Exported for direct testing — the production caller is
+ *  the only other site, so the test surface is the helper itself.
+ *
+ *  Returns a fresh slice when truncating (immutability over the input
+ *  array), or the input array when nothing was dropped. */
+export function capChunks<T>(
+  chunks: T[],
+  max: number,
+  scrape_run_id: string,
+): T[] {
+  const dropped = Math.max(0, chunks.length - max);
+  if (dropped === 0) return chunks;
+  log('warn', 'digest.generation', {
+    status: 'coordinator_chunks_capped',
+    scrape_run_id,
+    total_chunks: chunks.length,
+    kept_chunks: max,
+    dropped_chunks: dropped,
+  });
+  return chunks.slice(0, max);
+}
+
 /** Return true if the URL is a plain http(s) URL. Rejects
  * `javascript:`, `data:`, `file:`, mailto:, etc. at the coordinator
  * layer so those schemes can never reach article_sources / primary_source_url
@@ -356,23 +380,7 @@ export async function runCoordinator(
   // fan-out past MAX_CHUNKS_PER_TICK. Any excess is simply deferred to
   // the next 4-hour tick (the existing-URL filter keeps tick-N+1 from
   // re-processing the chunks we emit this tick).
-  // CF-012: replace in-place `chunks.length = N` truncation with a
-  // fresh slice. `chunks` is local today, but project policy forbids
-  // mutation; using slice() keeps the cap site immutable so a future
-  // refactor that exports `chunks` (e.g. for tests) cannot leak a
-  // half-truncated array.
-  const droppedChunks = Math.max(0, chunks.length - MAX_CHUNKS_PER_TICK);
-  const keptChunks =
-    droppedChunks > 0 ? chunks.slice(0, MAX_CHUNKS_PER_TICK) : chunks;
-  if (droppedChunks > 0) {
-    log('warn', 'digest.generation', {
-      status: 'coordinator_chunks_capped',
-      scrape_run_id,
-      total_chunks: chunks.length,
-      kept_chunks: MAX_CHUNKS_PER_TICK,
-      dropped_chunks: droppedChunks,
-    });
-  }
+  const keptChunks = capChunks(chunks, MAX_CHUNKS_PER_TICK, scrape_run_id);
   const totalChunks = keptChunks.length;
 
   const counterKey = `scrape_run:${scrape_run_id}:chunks_remaining`;
