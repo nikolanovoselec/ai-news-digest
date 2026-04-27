@@ -245,7 +245,7 @@ describe('cleanup cron — REQ-PIPE-005', () => {
       await insertArticle(env.DB, {
         id: `01JCLEAN00000000000000003${i}`,
         canonicalUrl: `https://example.com/stale-${i}`,
-        publishedAt: daysAgo(9),
+        publishedAt: daysAgo(15),
       });
     }
 
@@ -436,7 +436,7 @@ describe('cleanup cron — REQ-PIPE-007 orphan-tag sweep', () => {
     await insertArticle(env.DB, {
       id: staleId,
       canonicalUrl: 'https://example.com/stale-iso',
-      publishedAt: daysAgo(10),
+      publishedAt: daysAgo(15),
     });
     await seedSources('ikea');
 
