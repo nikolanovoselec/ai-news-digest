@@ -23,14 +23,23 @@ interface SqlRecord {
 function makeDb(opts: {
   existingCanonicals?: string[];
   records?: SqlRecord[];
+  /** Pre-populate scrape_chunk_completions so the COUNT(*) SELECT
+   *  in the consumer returns this value plus any new INSERTs. CF-002:
+   *  the chunk consumer drives finishRun off this count, not off the
+   *  legacy KV chunks_remaining counter. */
+  initialCompletedChunks?: number;
 } = {}): { db: D1Database; records: SqlRecord[] } {
   const records = opts.records ?? [];
+  let completedChunkCount = opts.initialCompletedChunks ?? 0;
   const prepare = vi.fn().mockImplementation((sql: string) => {
     const binder = (...params: unknown[]) => ({
       __sql: sql,
       __params: params,
       run: vi.fn().mockImplementation(async () => {
         records.push({ sql, params, via: 'run' });
+        if (sql.startsWith('INSERT OR IGNORE INTO scrape_chunk_completions')) {
+          completedChunkCount += 1;
+        }
         return { success: true, meta: { changes: 1 } };
       }),
       all: vi.fn().mockImplementation(async () => {
@@ -39,6 +48,12 @@ function makeDb(opts: {
       }),
       first: vi.fn().mockImplementation(async () => {
         records.push({ sql, params, via: 'first' });
+        if (
+          sql.includes('FROM scrape_chunk_completions') &&
+          sql.includes('COUNT(*)')
+        ) {
+          return { done: completedChunkCount };
+        }
         return null;
       }),
     });
@@ -399,36 +414,46 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     expect(batched.length).toBe(6);
   });
 
-  it('REQ-PIPE-002: decrements KV chunks_remaining; last chunk calls finishRun(ready)', async () => {
+  it('REQ-PIPE-002: completing the final chunk calls finishRun(ready) and zeroes the KV mirror', async () => {
+    // CF-002: the run's "are we done?" gate is now the count of rows
+    // in scrape_chunk_completions, not a KV decrement. The KV counter
+    // is kept as a derived mirror so /api/scrape-status keeps working.
     const aiResponse = {
       response: JSON.stringify({ articles: [{ title: 'A', details: 'a.', tags: ['cloudflare'] }, { title: 'B', details: 'b.', tags: ['generative-ai'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db, records } = makeDb();
-    const { kv, state } = makeKv({ chunksRemaining: '1' });
+    const { kv, state } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
     await processOneChunk(env, makeChunk());
-    // Counter went from 1 → 0.
+    // total_chunks=1 (default) and we just inserted chunk 0 → done=1 → finalize.
     expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('0');
-    // finishRun emitted its UPDATE.
     const finish = records.find(
       (r) =>
         r.sql.includes('UPDATE scrape_runs') &&
         (r.params as unknown[])[1] === 'ready',
     );
     expect(finish).toBeDefined();
+    // INSERT OR IGNORE row was actually written.
+    const insert = records.find((r) =>
+      r.sql.startsWith('INSERT OR IGNORE INTO scrape_chunk_completions'),
+    );
+    expect(insert).toBeDefined();
+    expect(insert!.params[0]).toBe('test-run');
+    expect(insert!.params[1]).toBe(0);
   });
 
-  it('REQ-PIPE-002: non-last chunk leaves the counter above zero and does NOT call finishRun', async () => {
+  it('REQ-PIPE-002: non-last chunk leaves the KV mirror above zero and does NOT call finishRun', async () => {
     const aiResponse = {
       response: JSON.stringify({ articles: [{ title: 'A', details: 'a.', tags: ['cloudflare'] }, { title: 'B', details: 'b.', tags: ['generative-ai'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db, records } = makeDb();
-    const { kv, state } = makeKv({ chunksRemaining: '3' });
+    const { kv, state } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
-    await processOneChunk(env, makeChunk());
-    expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('2');
+    // total_chunks=4 simulates a multi-chunk run; this is chunk 0 of 4.
+    await processOneChunk(env, makeChunk({ chunk_index: 0, total_chunks: 4 }));
+    expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('3');
     const finish = records.find(
       (r) =>
         r.sql.includes('UPDATE scrape_runs') &&
@@ -443,7 +468,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db } = makeDb();
-    const { kv } = makeKv({ chunksRemaining: '1' });
+    const { kv } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
     await processOneChunk(env, makeChunk());
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -458,30 +483,28 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db } = makeDb();
-    const { kv } = makeKv({ chunksRemaining: '3' });
+    const { kv } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
-    await processOneChunk(env, makeChunk());
+    await processOneChunk(env, makeChunk({ chunk_index: 0, total_chunks: 4 }));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;
     expect(sendMock).not.toHaveBeenCalled();
   });
 
   it('REQ-PIPE-008: redelivered last-chunk message does NOT re-enqueue SCRAPE_FINALIZE (LLM cost gate)', async () => {
-    // The KV chunks_remaining counter clamps to 0, so a redelivered
-    // last-chunk message would re-enter the `next === 0` branch. The
-    // finalize merge SQL is idempotent on retry but the LLM call is
-    // not — the consumer must gate the send on a separate KV flag so
-    // a redelivery doesn't burn another Workers AI call.
+    // CF-002: INSERT OR IGNORE makes the per-chunk write idempotent
+    // under retries, but the COUNT(*) gate still fires on redelivery
+    // (count >= total_chunks remains true). The finalize_enqueued KV
+    // flag is the LLM-cost gate that prevents a second send.
     const aiResponse = {
       response: JSON.stringify({ articles: [{ title: 'A', details: 'a.', tags: ['cloudflare'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db } = makeDb();
-    const { kv, state } = makeKv({ chunksRemaining: '1' });
+    const { kv, state } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
     await processOneChunk(env, makeChunk());
-    // Replay: counter is now '0' (clamped), enqueue gate flag is set.
-    // Re-running must not trigger a second SCRAPE_FINALIZE.send.
+    // Replay: KV mirror is at '0', enqueue gate flag is set.
     expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('0');
     expect(state.store.get('scrape_run:test-run:finalize_enqueued')).toBe('1');
     await processOneChunk(env, makeChunk());

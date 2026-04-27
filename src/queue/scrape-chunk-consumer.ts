@@ -531,23 +531,48 @@ export async function processOneChunk(
     articles_deduped: articlesDeduped,
   });
 
-  // Decrement the KV chunks_remaining counter. Last chunk closes the run.
+  // CF-002: atomic chunk-completion via D1. The previous KV-counter
+  // decrement was non-atomic — two concurrent consumers reading the
+  // same chunks_remaining value could race to "0" and double-finalize.
+  // INSERT OR IGNORE makes the per-chunk write idempotent under
+  // retries/redelivery, and the COUNT(*) gives the exact "completed
+  // so far" total without depending on a counter another writer might
+  // be mutating in parallel.
+  const completedAt = Math.floor(Date.now() / 1000);
+  await env.DB
+    .prepare(
+      'INSERT OR IGNORE INTO scrape_chunk_completions (scrape_run_id, chunk_index, completed_at) VALUES (?1, ?2, ?3)',
+    )
+    .bind(body.scrape_run_id, body.chunk_index, completedAt)
+    .run();
+  const completedRow = await env.DB
+    .prepare(
+      'SELECT COUNT(*) AS done FROM scrape_chunk_completions WHERE scrape_run_id = ?1',
+    )
+    .bind(body.scrape_run_id)
+    .first<{ done: number }>();
+  const completedCount = completedRow?.done ?? 0;
+
+  // Keep the legacy KV counter in sync so /api/scrape-status can keep
+  // showing "X of Y chunks done" while the UI clients are in flight.
+  // The KV value is now derived from the authoritative D1 count rather
+  // than computed by decrement, so it can never be out of sync with
+  // the actual completion state.
+  const remaining = Math.max(0, body.total_chunks - completedCount);
   const counterKey = `scrape_run:${body.scrape_run_id}:chunks_remaining`;
-  const raw = await env.KV.get(counterKey, 'text');
-  const current = raw === null ? 0 : Math.max(0, parseInt(raw, 10) || 0);
-  const next = Math.max(0, current - 1);
-  await env.KV.put(counterKey, String(next), { expirationTtl: 3 * 3600 });
-  if (next === 0) {
+  await env.KV.put(counterKey, String(remaining), { expirationTtl: 3 * 3600 });
+
+  if (completedCount >= body.total_chunks) {
     await finishRun(env.DB, body.scrape_run_id, 'ready');
     // REQ-PIPE-008: kick off the cross-chunk semantic dedup pass. Articles
     // are already visible (run is `ready`) — finalize is a background
     // cleanup that may briefly leave duplicates in the feed.
     //
-    // The KV counter clamps to 0 (line 570 above), which means a redelivered
-    // last-chunk message would re-enter this branch and re-enqueue
-    // SCRAPE_FINALIZE — every redelivery would burn another LLM call.
-    // Gate the send on a separate KV "enqueued" flag; the merge SQL is
-    // idempotent on retry but the LLM call is not.
+    // INSERT OR IGNORE makes per-chunk completion idempotent, but a
+    // redelivered last-chunk message will still see completedCount >=
+    // total_chunks and re-enter this branch — every redelivery would
+    // burn another LLM call. Gate the send on a separate KV "enqueued"
+    // flag; the merge SQL is idempotent on retry but the LLM call is not.
     const enqueuedKey = `scrape_run:${body.scrape_run_id}:finalize_enqueued`;
     const alreadyEnqueued = await env.KV.get(enqueuedKey, 'text');
     if (alreadyEnqueued === null) {
