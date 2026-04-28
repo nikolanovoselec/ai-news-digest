@@ -14,7 +14,7 @@ import { errorResponse } from '~/lib/errors';
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /** Discriminated union (CF-013) — when ok is false, `response` is
- *  guaranteed present so callers no longer need a non-null assertion. */
+ *  guaranteed present so callers do not need a non-null assertion. */
 export type OriginCheckResult =
   | { ok: true }
   | { ok: false; response: Response };

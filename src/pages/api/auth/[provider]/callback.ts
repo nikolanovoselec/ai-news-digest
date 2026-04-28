@@ -333,7 +333,7 @@ export async function GET(context: APIContext): Promise<Response> {
   // The legacy `userIdFor(provider, sub)` shape is used only for the
   // path-C fresh-user case. Existing users keep whatever id they were
   // first issued — auth_links carries every (provider, sub) → user_id
-  // mapping so the id format is no longer load-bearing.
+  // mapping, so the id format is not load-bearing for lookup.
   const fallbackUserId = userIdFor(provider, profile.providerUserId);
   const displayName = profile.displayName;
   const nowSec = Math.floor(Date.now() / 1000);

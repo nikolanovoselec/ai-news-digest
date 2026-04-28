@@ -3,20 +3,13 @@
 //
 // Dashboard card interactions — star toggle + tag-disclosure popover.
 //
-// The previous implementation used a single document-level capture-
-// phase click listener. That pattern is fragile across mobile engines
-// (Samsung Browser, iOS Safari in-app webviews): the listener either
-// doesn't fire for taps inside an <article>, or it fires but the
-// touchstart→click translation eats the event before capture. We
-// were shipping fix after fix trying to coax it to work.
-//
-// This module throws that away. It does the boring thing: queries
-// every `[data-star-toggle]` and `[data-tag-trigger]` on the page
-// and attaches a direct `click` handler per button. Direct handlers
-// are the most reliable event path in every browser — no capture,
-// no delegation, no preventDefault races with an ancestor anchor.
-// The buttons already live OUTSIDE the card's <a>, so the anchor's
-// navigation can't shadow them.
+// This module queries every `[data-star-toggle]` and
+// `[data-tag-trigger]` on the page and attaches a direct `click`
+// handler per button. Direct handlers are the most reliable event
+// path across mobile engines (Samsung Browser, iOS Safari in-app
+// webviews) — no capture, no delegation, no preventDefault races
+// with an ancestor anchor. The buttons live OUTSIDE the card's <a>,
+// so the anchor's navigation can't shadow them.
 //
 // Exported for unit testing: `initCardInteractions(root)` walks the
 // given root (defaults to `document`) and binds handlers to every

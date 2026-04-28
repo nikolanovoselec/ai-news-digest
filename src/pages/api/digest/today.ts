@@ -89,13 +89,11 @@ export interface TodayResponse {
  *
  * Ordering is `ingested_at DESC, published_at DESC` (not plain
  * `published_at DESC`) so a new scrape always bubbles its articles to
- * the top of the dashboard. The prior order sorted by feed pubDate,
- * which meant a backlog item published two weeks ago could still
- * dominate the top of the dashboard when it was ingested AFTER a
- * very-recent article because the very-recent article had an even
- * newer pubDate. Users saw the same card for 8 hours despite refreshes;
- * `ingested_at DESC` makes "newest ingest wins" the primary sort so
- * the feed always feels alive.
+ * the top of the dashboard. Sorting by feed pubDate alone would let a
+ * backlog item published two weeks ago dominate the top whenever it
+ * happened to be ingested AFTER a very-recent article whose pubDate
+ * was even newer. `ingested_at DESC` makes "newest ingest wins" the
+ * primary sort so the feed always feels alive.
  *
  * Per-tag filtering that reaches beyond the newest-29 window lives on
  * Search & History, not here — the dashboard is deliberately a narrow

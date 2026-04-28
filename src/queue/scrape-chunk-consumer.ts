@@ -507,13 +507,11 @@ export async function processOneChunk(
     await env.DB.batch(statements);
   }
 
-  // CF-002: atomic chunk-completion via D1. The previous KV-counter
-  // decrement was non-atomic — two concurrent consumers reading the
-  // same chunks_remaining value could race to "0" and double-finalize.
-  // INSERT OR IGNORE makes the per-chunk write idempotent under
-  // retries/redelivery, and the COUNT(*) gives the exact "completed
-  // so far" total without depending on a counter another writer might
-  // be mutating in parallel.
+  // CF-002: atomic chunk-completion via D1. INSERT OR IGNORE makes the
+  // per-chunk write idempotent under retries/redelivery, and the
+  // COUNT(*) gives the exact "completed so far" total without depending
+  // on a non-atomic counter that two concurrent consumers could race to
+  // "0" and double-finalize.
   //
   // The completion INSERT runs FIRST so we can use its `meta.changes`
   // as the idempotency gate for `addChunkStats` below — that update is

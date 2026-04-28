@@ -47,9 +47,8 @@ import { checkOrigin, originOf } from '~/middleware/origin-check';
 export const HASHTAG_REGEX = /^[a-z0-9-]{2,32}$/;
 
 /** Maximum hashtags per user (REQ-SET-002 AC 6).
- *  Originally bumped from 20 to 25 to give new accounts headroom above
- *  the default seed. Stays at 25 even as the seed grows; the spec
- *  AC tracks the actual gap. */
+ *  Sized to give new accounts headroom above the default seed; the
+ *  spec AC tracks the actual gap. */
 export const MAX_HASHTAGS = 25;
 
 /** Shape accepted from the PUT body. All fields are `unknown` because the

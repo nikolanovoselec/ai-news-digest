@@ -45,7 +45,7 @@ The deploy job reads these secrets from GitHub Actions. The first two are Cloudf
 | `ADMIN_EMAIL` | Conditional | Operator email that gates `/api/admin/*`; when unset every admin endpoint returns HTTP 403 ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8) |
 | `CF_ACCESS_AUD` | Optional | Cloudflare Access audience tag for `aud`-claim validation on the admin JWT; when unset, only header presence is required ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8) |
 
-The deploy job also runs `wrangler secret delete DEV_BYPASS_USER_ID` (idempotent, silenced on not-found) on each deploy to wipe any pre-migration value that would defeat the synthetic `__e2e__` sandbox. This secret is no longer propagated by the workflow; operators who need it must set it manually via `wrangler secret put`.
+The deploy job also runs `wrangler secret delete DEV_BYPASS_USER_ID` (idempotent, silenced on not-found) on each deploy so any stray value cannot defeat the synthetic `__e2e__` sandbox. The workflow does not propagate this secret; operators who need it must set it manually via `wrangler secret put`.
 
 CI pushes Worker secrets using the file-redirect form (safer than piping under some CI environments).
 
@@ -73,7 +73,7 @@ Three triggers are declared in `wrangler.toml`:
 |---|---|
 | `0 */4 * * *` | Every-4-hour global-feed coordinator — fires the scrape pipeline at 00/04/08/12/16/20 UTC ([REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)) |
 | `0 3 * * *` | Daily retention cleanup — removes articles older than 14 days ([REQ-PIPE-005](../sdd/generation.md#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup)); also purges expired and old-revoked refresh-token rows from the `refresh_tokens` table (7-day grace on revoked rows preserves reuse-detection history — [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection) AC 5) |
-| `*/5 * * * *` | Every-5-minute tick — single trigger whose handler runs two chores: (1) email dispatcher fan-out per user ([REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email)), and (2) pending-discovery drain (LLM source discovery for newly added tags). *Previously the discovery side was also covered by [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking) per-user-generation rate limiting (Deprecated 2026-04-24); now implemented purely as a worker queue + cron consumer with no per-user gating.* |
+| `*/5 * * * *` | Every-5-minute tick — single trigger whose handler runs two chores: (1) email dispatcher fan-out per user ([REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email)), and (2) pending-discovery drain (LLM source discovery for newly added tags). The discovery side runs purely as a worker queue + cron consumer with no per-user gating. |
 
 ## KV Key Conventions
 

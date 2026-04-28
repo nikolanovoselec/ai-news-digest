@@ -35,9 +35,9 @@ interface DayGroup {
   local_date: string;
   article_count: number;
   articles: WireArticle[];
-  // `ticks` (per-scrape-run detail) is still returned by /api/history
-  // but no longer rendered — cumulative day-level tokens/cost below
-  // replace it.
+  // `ticks` (per-scrape-run detail) is returned by /api/history but
+  // not rendered here — cumulative day-level tokens/cost below carry
+  // the user-facing numbers.
   day_tokens_in: number;
   day_tokens_out: number;
   day_cost_usd: number;
@@ -703,9 +703,10 @@ function formatCostUsd(value: number | null | undefined): string {
   // Persist the user's last-expanded day + scroll position across the
   // /history → /digest/:id/:slug → back round-trip. Without this, the
   // <details open={isFocused}> server-render collapses every day on
-  // back-nav (the URL no longer carries ?date=) and the user loses
-  // their place. Stored under a single sessionStorage key keyed by the
-  // history page's pathname so unrelated routes don't pollute it.
+  // back-nav (the back-nav URL has no ?date= to drive isFocused) and
+  // the user loses their place. Stored under a single sessionStorage
+  // key keyed by the history page's pathname so unrelated routes don't
+  // pollute it.
   function initDayStatePersistence(): void {
     const STORAGE_KEY = 'history:last-day-state';
     const list = document.querySelector<HTMLElement>('[data-history-list]');

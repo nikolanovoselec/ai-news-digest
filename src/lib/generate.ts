@@ -1,6 +1,5 @@
 // Reusable LLM response helpers consumed by the global-feed pipeline
-// (src/queue/scrape-chunk-consumer.ts). The per-user generateDigest
-// function was retired in the global-feed rework (Wave 3).
+// (src/queue/scrape-chunk-consumer.ts).
 
 
 /** Shape Workers AI `.run()` returns. Different models surface token counts

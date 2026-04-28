@@ -380,8 +380,8 @@ export async function flipChipToPosition(
         // CSS Transitions L1 §3 interpolates between two computed
         // <transform-list> values cleanly when both endpoints are
         // explicit; relying on '' → cascade-fallback-to-`none` is
-        // valid per spec but has caused engine-specific edge cases
-        // historically. Belt-and-braces: state the destination.
+        // valid per spec but engine-specific edge cases can leave
+        // the chip mid-translation. State the destination explicitly.
         chip.style.transform = 'translate(0px, 0px)';
       }
 

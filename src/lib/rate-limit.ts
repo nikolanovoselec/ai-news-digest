@@ -178,12 +178,12 @@ export const RATE_LIMIT_RULES = {
   },
   // REQ-AUTH-008 — refresh-token rotation. Two-tier rate-limit:
   // AUTH_REFRESH_IP runs BEFORE the DB lookup to bound random-cookie
-  // spam without authenticating the caller. The previous 10/min was
-  // too tight for legitimate flows: a corporate NAT or CGNAT pool can
-  // share an IP across dozens of users, and a single user with 5+
-  // tabs can fan out >10 inline-refresh requests in parallel after
-  // the 5-min access JWT expires. 60/min/IP is generous for both
-  // shapes while still catching attacker-grade volumes (≥1 req/sec).
+  // spam without authenticating the caller. 60/min/IP accommodates
+  // legitimate flows where one IP fans out across many sessions:
+  // corporate NAT or CGNAT pools share an IP across dozens of users,
+  // and a single user with 5+ tabs can fan out >10 inline-refresh
+  // requests in parallel after the 5-min access JWT expires.
+  // 60/min/IP still catches attacker-grade volumes (≥1 req/sec).
   AUTH_REFRESH_IP: {
     routeClass: 'auth_refresh_ip',
     limit: 60,

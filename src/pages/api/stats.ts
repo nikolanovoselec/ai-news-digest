@@ -4,7 +4,7 @@
 //   { digests_generated, articles_read, articles_total,
 //     tokens_consumed, cost_usd }
 //
-// Semantics after the global-feed rework:
+// Semantics:
 //   - digests_generated = COUNT(*) FROM scrape_runs WHERE status='ready'
 //     (GLOBAL — one tick = one generation event, shown to every user)
 //   - tokens_consumed   = SUM(tokens_in + tokens_out) FROM scrape_runs
