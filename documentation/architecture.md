@@ -101,15 +101,17 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `headline-cache.ts` | KV-backed shared headline cache | [REQ-GEN-003](../sdd/generation.md#req-gen-003-source-fan-out-with-caching) |
 | `log.ts` | Structured JSON log emitter with closed `LogEvent` enum | [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-logging) |
 | `default-hashtags.ts` | Seed hashtag list for new accounts | [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation) |
-| `models.ts` | `MODELS` catalog, default + fallback model IDs, cost estimator | [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection) |
+| `models.ts` | `MODELS` catalog, default + fallback model IDs, cost estimator | [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection) *(Deprecated)* |
 | `oauth-providers.ts` | GitHub + Google adapters with id_token validation | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `oauth-errors.ts` | OAuth error code allowlist and sanitizer | [REQ-AUTH-004](../sdd/authentication.md#req-auth-004-oauth-error-surfacing) |
 | `prompts.ts` | LLM system prompts for chunk processing, discovery, and finalize | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract), [REQ-PIPE-008](../sdd/generation.md#req-pipe-008-cross-chunk-semantic-dedup-pass), [REQ-DISC-001](../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery) |
 | `rate-limit.ts` | KV window-counter rate limiter for auth and mutation routes | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `session-jwt.ts` | HMAC-SHA256 sign/verify for the access-token JWT | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation) |
 | `refresh-tokens.ts` | 30-day opaque refresh-token storage in D1 with rotation and reuse detection | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection) |
-| `slug.ts` | Deterministic ASCII slug generation | [REQ-GEN-006](../sdd/generation.md#req-gen-006-atomic-final-write) |
+| `slug.ts` | Deterministic ASCII slug generation | [REQ-GEN-006](../sdd/generation.md#req-gen-006-atomic-final-write) *(Deprecated)* |
 | `sources.ts` | Source adapters (RSS/Atom/JSON) and fan-out coordinator | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
+| `prefer-direct-source.ts` | Resolve aggregator URLs (e.g., Google News) to underlying publisher and merge tag-of-discovery state | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-canonical-url--llm-cluster-dedupe-with-first-source-wins) |
+| `paragraph-split.ts` | Normalise LLM-produced prose into a paragraph array for the article-detail view | [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view) |
 | `curated-sources.ts` | Static registry of curated feeds | [REQ-PIPE-004](../sdd/generation.md#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags) |
 | `dedupe.ts` | Canonical-URL plus LLM-cluster dedup; first-source-wins | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-canonical-url--llm-cluster-dedupe-with-first-source-wins) |
 | `finalize-merge.ts` | Pure helpers for the cross-chunk dedup finalize pass | [REQ-PIPE-008](../sdd/generation.md#req-pipe-008-cross-chunk-semantic-dedup-pass) |
@@ -123,7 +125,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `types.ts` | Shared cross-module TypeScript types | (shared) |
 | `tz.ts` | IANA timezone helpers (local-date / local-midnight conversions) | [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email) |
 | `optional-prop.ts` | Conditional-property spread helper for `exactOptionalPropertyTypes` | (shared) |
-| `ulid.ts` | 26-char Crockford base32 ULID generator | [REQ-GEN-006](../sdd/generation.md#req-gen-006-atomic-final-write) |
+| `ulid.ts` | 26-char Crockford base32 ULID generator | [REQ-GEN-006](../sdd/generation.md#req-gen-006-atomic-final-write) *(Deprecated)* |
 | `system-user.ts` | Sentinel user-id constants (`__system__`, `__e2e__`) | [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking) |
 | `title-overlap.ts` | Token-overlap alignment guard for the chunk consumer | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract) |
 | `feed-health.ts` | Per-URL fetch-health counter for the self-healing discovery loop | [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking) |
@@ -141,7 +143,7 @@ Page components (`src/pages/*.astro`) and API handlers (`src/pages/api/**.ts`) �
 | `digest/[id]/[slug].astro` | Article detail view with shared-element morph and read tracking | [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view), [REQ-READ-003](../sdd/reading.md#req-read-003-read-tracking) |
 | `history.astro` | `/history` — day-grouped paginated history with tag filtering | [REQ-HIST-001](../sdd/history.md#req-hist-001-day-grouped-article-history) |
 | `starred.astro` | `/starred` — user's starred articles | [REQ-STAR-002](../sdd/reading.md#req-star-002-starred-articles-page) |
-| `settings.astro` | `/settings` — hashtags, schedule, timezone, model, email toggle | [REQ-SET-001](../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow) |
+| `settings.astro` | `/settings` — hashtags, schedule, timezone, model, email toggle, account deletion, stuck-tag rediscovery | [REQ-SET-001](../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../sdd/settings.md#req-set-005-email-notification-preference), [REQ-SET-006](../sdd/settings.md#req-set-006-settings-incomplete-gate), [REQ-SET-007](../sdd/settings.md#req-set-007-timezone-change-detection), [REQ-AUTH-005](../sdd/authentication.md#req-auth-005-account-deletion), [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover) |
 | `404.astro`, `500.astro` | Error pages (`noindex`) | [REQ-READ-006](../sdd/reading.md#req-read-006-empty-error-and-offline-pages) |
 | `sitemap.xml.ts` | Dynamic sitemap (public landing only) | [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) |
 
@@ -157,11 +159,12 @@ Page components (`src/pages/*.astro`) and API handlers (`src/pages/api/**.ts`) �
 | `src/components/DigestCard.astro` | Article card for the digest grid | [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest), [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles) |
 | `src/components/AltSourcesModal.astro` | Modal listing alternative sources for an article | [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view) |
 | `src/components/StatsWidget.astro` | Four-tile stats widget | [REQ-HIST-002](../sdd/history.md#req-hist-002-user-stats-widget) |
-| `src/scripts/page-effects.ts` | Layout-level client behaviour (tz sync, scroll restore, brand-link, view transitions). Mirrored to `public/scripts/page-effects.js` (CSP requires external bundles) | [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash), [REQ-PWA-003](../sdd/pwa.md#req-pwa-003-mobile-first-responsive-layout) |
+| `src/scripts/page-effects.ts` | Layout-level client behaviour (tz sync, scroll restore, brand-link, view transitions). Mirrored to `public/scripts/page-effects.js` (CSP requires external bundles) | [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash), [REQ-DES-003](../sdd/design.md#req-des-003-deliberate-motion-system), [REQ-PWA-003](../sdd/pwa.md#req-pwa-003-mobile-first-responsive-layout), [REQ-SET-007](../sdd/settings.md#req-set-007-timezone-change-detection) |
 | `src/scripts/article-detail.ts` | Star toggle and history-aware back arrow on the article page | [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles), [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view) |
+| `src/scripts/card-interactions.ts` | Star toggle and tag-disclosure popover bindings on dashboard cards | [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles), [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest) |
 | `src/scripts/install-prompt.ts` | PWA install-prompt bindings | [REQ-PWA-001](../sdd/pwa.md#req-pwa-001-installable-pwa-manifest) |
 | `src/scripts/theme-toggle.ts` | Theme toggle and meta-tag updates | [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash) |
-| `src/styles/global.css` | Design tokens, type scale, focus ring, motion system | [REQ-DES-001](../sdd/design.md#req-des-001-swiss-minimal-visual-language), [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash) |
+| `src/styles/global.css` | Design tokens, type scale, focus ring, motion system | [REQ-DES-001](../sdd/design.md#req-des-001-swiss-minimal-visual-language), [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash), [REQ-DES-003](../sdd/design.md#req-des-003-deliberate-motion-system) |
 
 ### 4.5 Worker, Queue, and Migrations
 
@@ -225,6 +228,8 @@ Finalize consumer
 
 ### 5.2 Operator force-refresh
 
+Implements [REQ-OPS-005](../sdd/observability.md#req-ops-005-admin-force-refresh-endpoint).
+
 ```
 POST /api/admin/force-refresh   (or GET, gated by Cloudflare Access)
   └─ If a 'running' scrape_runs row is < 120 s old: reuse run_id
@@ -282,6 +287,8 @@ Articles are the central entity in the global pool. Each article belongs to a `s
 ## 8. Build and Deploy
 
 PWA icons render from `public/icons/app-icon.svg` via `scripts/generate-pwa-icons.mjs` (192×192 and 512×512 PNGs, regenerated on every build). Astro produces `dist/_worker.js/index.js`; `scripts/merge-worker-handlers.mjs` post-processes by bundling `src/worker.ts` and writing `dist/_worker.js/_merged.mjs`, which Wrangler deploys. See [`deployment.md`](deployment.md) for the full pipeline.
+
+**Page-script CSP gotcha.** The site CSP is `script-src 'self'`, which blocks every inline `<script>...</script>` block. Astro inlines page-level `<script>` blocks that contain no `import` statement, so any such block is silently dropped at runtime. The pattern: put the script body in `src/scripts/<module>.ts` and import it from a `<script> import '~/scripts/<module>'; </script>` block — Astro then emits the code as an external `<script type="module" src="/_astro/...js">` bundle that CSP allows.
 
 ---
 
