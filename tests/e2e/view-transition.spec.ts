@@ -124,18 +124,25 @@ test.describe('REQ-READ-002 view-transition shaping (live)', () => {
     // Install a one-shot capture on the article-detail page. The
     // listener survives the SPA back-nav (Astro's ClientRouter swaps
     // body, never replaces window/document), and fires once on the
-    // back-nav's after-swap.
+    // back-nav's after-swap. We also capture the named card's slug
+    // so a regression that names the WRONG card (e.g., always names
+    // index 0) gets caught — count alone wouldn't notice.
     await page.evaluate(() => {
-      (window as unknown as { __vtNamedAtAfterSwap?: number }).__vtNamedAtAfterSwap = -1;
+      type Win = { __vtNamedAtAfterSwap?: number; __vtNamedSlugAtAfterSwap?: string | null };
+      const w = window as unknown as Win;
+      w.__vtNamedAtAfterSwap = -1;
+      w.__vtNamedSlugAtAfterSwap = null;
       document.addEventListener(
         'astro:after-swap',
         () => {
-          (window as unknown as { __vtNamedAtAfterSwap?: number }).__vtNamedAtAfterSwap =
-            Array.from(
-              document.querySelectorAll<HTMLAnchorElement>(
-                '[data-digest-card] a.digest-card__link',
-              ),
-            ).filter((el) => el.style.viewTransitionName !== '').length;
+          const named = Array.from(
+            document.querySelectorAll<HTMLAnchorElement>(
+              '[data-digest-card] a.digest-card__link',
+            ),
+          ).filter((el) => el.style.viewTransitionName !== '');
+          w.__vtNamedAtAfterSwap = named.length;
+          const card = named[0]?.closest('[data-digest-card]') as HTMLElement | null;
+          w.__vtNamedSlugAtAfterSwap = card?.dataset['vtSlug'] ?? null;
         },
         { once: true },
       );
@@ -145,13 +152,19 @@ test.describe('REQ-READ-002 view-transition shaping (live)', () => {
     await page.waitForURL(/\/digest\/?$/);
     await page.waitForLoadState('networkidle');
 
-    const namedAtAfterSwap = await page.evaluate(
-      () => (window as unknown as { __vtNamedAtAfterSwap?: number }).__vtNamedAtAfterSwap,
-    );
+    const captured = await page.evaluate(() => {
+      type Win = { __vtNamedAtAfterSwap?: number; __vtNamedSlugAtAfterSwap?: string | null };
+      const w = window as unknown as Win;
+      return { count: w.__vtNamedAtAfterSwap, slug: w.__vtNamedSlugAtAfterSwap };
+    });
     expect(
-      namedAtAfterSwap,
+      captured.count,
       'exactly one card carries view-transition-name at after-swap (morph pair-time)',
     ).toBe(1);
+    expect(
+      captured.slug,
+      'the named card is the one we clicked (not e.g. always index 0)',
+    ).toBe(firstSlug);
   });
 });
 
@@ -191,16 +204,21 @@ test.describe('REQ-HIST-001 history return-morph (live)', () => {
     await page.waitForURL(/\/digest\/[^/]+\/[^/]+\/?$/);
 
     await page.evaluate(() => {
-      (window as unknown as { __vtNamedAtAfterSwap?: number }).__vtNamedAtAfterSwap = -1;
+      type Win = { __vtNamedAtAfterSwap?: number; __vtNamedSlugAtAfterSwap?: string | null };
+      const w = window as unknown as Win;
+      w.__vtNamedAtAfterSwap = -1;
+      w.__vtNamedSlugAtAfterSwap = null;
       document.addEventListener(
         'astro:after-swap',
         () => {
-          (window as unknown as { __vtNamedAtAfterSwap?: number }).__vtNamedAtAfterSwap =
-            Array.from(
-              document.querySelectorAll<HTMLAnchorElement>(
-                '[data-digest-card] a.digest-card__link',
-              ),
-            ).filter((el) => el.style.viewTransitionName !== '').length;
+          const named = Array.from(
+            document.querySelectorAll<HTMLAnchorElement>(
+              '[data-digest-card] a.digest-card__link',
+            ),
+          ).filter((el) => el.style.viewTransitionName !== '');
+          w.__vtNamedAtAfterSwap = named.length;
+          const card = named[0]?.closest('[data-digest-card]') as HTMLElement | null;
+          w.__vtNamedSlugAtAfterSwap = card?.dataset['vtSlug'] ?? null;
         },
         { once: true },
       );
@@ -210,13 +228,19 @@ test.describe('REQ-HIST-001 history return-morph (live)', () => {
     await page.waitForURL(/\/history\/?(\?.*)?$/);
     await page.waitForLoadState('networkidle');
 
-    const namedAtAfterSwap = await page.evaluate(
-      () => (window as unknown as { __vtNamedAtAfterSwap?: number }).__vtNamedAtAfterSwap,
-    );
+    const captured = await page.evaluate(() => {
+      type Win = { __vtNamedAtAfterSwap?: number; __vtNamedSlugAtAfterSwap?: string | null };
+      const w = window as unknown as Win;
+      return { count: w.__vtNamedAtAfterSwap, slug: w.__vtNamedSlugAtAfterSwap };
+    });
     expect(
-      namedAtAfterSwap,
-      `exactly one card named at after-swap (expected slug ${expectedSlug})`,
+      captured.count,
+      'exactly one card named at after-swap',
     ).toBe(1);
+    expect(
+      captured.slug,
+      'the named card is the one we clicked',
+    ).toBe(expectedSlug);
   });
 });
 
