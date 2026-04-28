@@ -165,13 +165,6 @@ export async function dispatchDailyEmails(env: Env): Promise<void> {
       try {
         const userTags = parseHashtags(user.hashtags_json);
 
-        // Fetch headlines + tally per user. Failure here falls through
-        // to the static-fallback render path below — we still send the
-        // email AND stamp the date so the per-day gate holds and the
-        // user always gets at least the bare notification.
-        let headlines: Headline[] = [];
-        let tally: TagTally[] = [];
-        let totalSinceMidnight = 0;
         // Fetch headlines + tally independently (Promise.allSettled,
         // not Promise.all) so a failure in one doesn't collapse the
         // other. A user might still get a useful headline list even
@@ -179,7 +172,16 @@ export async function dispatchDailyEmails(env: Env): Promise<void> {
         // versa. Distinct event name from `email.send.failed` so an
         // operator grepping `wrangler tail` for delivery failures
         // doesn't conflate "Resend rejected our POST" with "D1 read
-        // errored before we even composed the body".
+        // errored before we even composed the body". A headlines-fetch
+        // failure cascades to the AC-11 skip path below — we cannot
+        // prove there were headlines to send, so we default to silence.
+        let headlines: Headline[] = [];
+        let tally: TagTally[] = [];
+        // `null` distinguishes "we don't know" (tally fetch failed)
+        // from "we know there are zero" — important for any operator
+        // grepping the structured logs to tell genuine empty days from
+        // partially-degraded reads.
+        let totalSinceMidnight: number | null = 0;
         const [hSettled, tSettled] = await Promise.allSettled([
           selectUnreadHeadlinesForUser(env.DB, user.id, userTags, 5),
           tagTallySinceMidnight(env.DB, userTags, sinceMidnightUnix),
@@ -196,6 +198,7 @@ export async function dispatchDailyEmails(env: Env): Promise<void> {
           tally = tSettled.value.tally;
           totalSinceMidnight = tSettled.value.totalArticles;
         } else {
+          totalSinceMidnight = null;
           log('error', 'email.dispatch.degraded', {
             user_id: user.id,
             error: `tally_fetch_failed: ${String(tSettled.reason).slice(0, 200)}`,
@@ -228,7 +231,11 @@ export async function dispatchDailyEmails(env: Env): Promise<void> {
           userDisplayName: user.gh_login !== '' ? user.gh_login : user.email,
           headlines,
           tagTally: tally,
-          totalSinceMidnight,
+          // Coerce the "we don't know" sentinel back to 0 at the
+          // render boundary so a degraded tally just collapses to the
+          // tally-omitted branch in the renderer (line 168 of
+          // email.ts) rather than emitting `Since midnight: null`.
+          totalSinceMidnight: totalSinceMidnight ?? 0,
           sentLocal: { hour: user.digest_hour, minute: user.digest_minute, tz: user.tz },
           nextDigestLocal: { hour: user.digest_hour, minute: user.digest_minute },
         });
