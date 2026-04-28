@@ -1,5 +1,5 @@
 // Implements REQ-SET-002 (default hashtag seed for new accounts)
-// Implements REQ-AUTH-001 (new-account seed for the global-feed rework)
+// Implements REQ-AUTH-001
 //
 // Canonical list of hashtags that a newly-created user starts with.
 // Every entry is already in the storage-canonical form (lowercase,

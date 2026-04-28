@@ -70,8 +70,6 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 ### REQ-READ-004: Live generation state
 
-Superseded by REQ-PIPE-001 in the 2026-04-23 global-feed rework. The per-user digest-in-progress state no longer exists on the dashboard: the shared article pool is always populated, so `/digest` renders real cards immediately (see REQ-READ-001 AC 3). Polling, skeleton cards, and the in-progress progress bar are removed.
-
 **Intent:** During a ~60-second generation, users saw meaningful progress instead of a blank screen.
 
 **Applies To:** User

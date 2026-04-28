@@ -60,10 +60,7 @@ const today = await loadTodayPayload(env.DB, user.id, userTags);
 const articles = today.articles;
 
 // The countdown is computed client-side from next_scrape_at so the
-// ticker stays accurate across the tab's lifetime. A "Last updated at
-// HH:MM" label was retired alongside the minutes-only countdown — if
-// it's ever reintroduced, import localHourMinuteInTz from ~/lib/tz
-// and derive the HH:MM string from today.last_scrape_run.started_at.
+// ticker stays accurate across the tab's lifetime.
 
 // Set of user-active tags for filtering displayed article tags.
 // Articles in the global pool can carry tags the current user does
@@ -127,11 +124,11 @@ function isCardHidden(articleTags: readonly string[]): boolean {
 
 <Base title="Your feed">
   <section class="digest-page" data-digest-page>
-    {/* a11y: the visible "Today's digest" headline was removed in
-        favour of the brand wordmark carrying the page-header role,
-        but screen readers still need a single h1 per page so skip-
-        to-heading navigation has somewhere to land. Visually hidden
-        but exposed to the a11y tree. */}
+    {/* a11y: the brand wordmark carries the visible page-header role,
+        so the "Today's digest" h1 lives offscreen — screen readers
+        still need a single h1 per page so skip-to-heading navigation
+        has somewhere to land. Visually hidden but exposed to the a11y
+        tree. */}
     <h1 class="digest-page__a11y-title">Today's digest</h1>
     <div
       class="digest-page__offline"

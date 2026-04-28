@@ -5,7 +5,7 @@
 // must not reach the reading surface — they are bounced to
 // `/settings?first_run=1` instead. Symmetrically, a fully-configured user
 // who visits `/settings?first_run=1` is redirected to `/settings` (edit
-// mode) because the first-run framing no longer applies.
+// mode) because the first-run framing only applies to incomplete settings.
 //
 // This function is intentionally pure and operates on Astro's
 // `APIContext` so it can be called from any page's frontmatter before any
