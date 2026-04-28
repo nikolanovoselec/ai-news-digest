@@ -218,7 +218,9 @@ Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
 **Priority:** P0
 **Dependencies:** REQ-SET-003
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Deprecated
+**Replaced By:** REQ-PIPE-001
+**Removed In:** 2026-04-23
 
 ---
 
@@ -265,7 +267,9 @@ Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
 **Priority:** P0
 **Dependencies:** REQ-GEN-001, REQ-DISC-001
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Deprecated
+**Replaced By:** REQ-PIPE-001
+**Removed In:** 2026-04-23
 
 ---
 
@@ -288,7 +292,9 @@ Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
 **Priority:** P0
 **Dependencies:** REQ-GEN-003
 **Verification:** Automated test
-**Status:** Implemented
+**Status:** Deprecated
+**Replaced By:** REQ-PIPE-003
+**Removed In:** 2026-04-23
 
 ---
 
@@ -313,7 +319,9 @@ Superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework.
 **Priority:** P0
 **Dependencies:** REQ-GEN-003
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Deprecated
+**Replaced By:** REQ-PIPE-002
+**Removed In:** 2026-04-23
 
 ---
 
