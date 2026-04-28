@@ -665,9 +665,10 @@ describe('dispatchDailyEmails — REQ-MAIL-002 AC 3 tz-bucket isolation', () => 
     // Sibling bucket survived: exactly one Resend POST fired for the
     // valid UTC user, none for Mars.
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const body = JSON.parse(
-      (fetchMock.mock.calls[0]?.[1] as RequestInit).body as string,
-    ) as { to: string[] };
+    const firstCall = fetchMock.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const init = firstCall![1] as RequestInit;
+    const body = JSON.parse(init.body as string) as { to: string[] };
     expect(body.to).toEqual(['sibling@example.com']);
 
     // Structured warn log identifies the offending tz so an operator

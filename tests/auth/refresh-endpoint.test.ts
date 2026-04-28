@@ -26,7 +26,6 @@ import { POST } from '~/pages/api/auth/refresh';
 import {
   REFRESH_TOKEN_COOKIE_NAME,
   ROTATION_GRACE_SECONDS,
-  buildRefreshCookie,
   findRefreshToken,
   issueRefreshToken,
   revokeRefreshToken,
