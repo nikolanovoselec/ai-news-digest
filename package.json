@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "astro dev",
+    "dev": "node scripts/generate-pwa-icons.mjs && astro dev",
     "build": "node scripts/generate-pwa-icons.mjs && astro build && node scripts/merge-worker-handlers.mjs",
     "preview": "wrangler dev",
     "deploy": "node scripts/generate-pwa-icons.mjs && astro build && wrangler deploy",

@@ -7,9 +7,11 @@
 // SVG icons; pinning a 192×192 + 512×512 raster pair restores the
 // install affordance without losing the SVG vector lane.
 //
-// Runs as a build step (see `build` in package.json) so the generated
-// PNGs land in `dist/` and ship to the static-asset bundle. The PNGs
-// are NOT committed — they are reproducible from the SVG.
+// Runs as a build step (see `build` in package.json). The PNGs are
+// written to `public/icons/`; Astro copies the `public/` directory
+// into `dist/` during `astro build`, which is what ships to the
+// static-asset bundle. The PNGs are NOT committed — they are
+// reproducible from the SVG.
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -23,16 +25,36 @@ const svgPath = join(iconsDir, 'app-icon.svg');
 
 const svgRaw = readFileSync(svgPath, 'utf-8');
 
-// Strip the prefers-color-scheme: light override so the static PNG
-// always uses the dark palette (#0a0a0a bg, #fafafa fg). The launcher
-// composites the icon over its own canvas; a dark icon reads cleanly
-// on every Android launcher tested. resvg ignores @media queries by
-// default — the strip is a belt-and-braces guard against future
-// resvg releases that might evaluate them.
-const svgFlat = svgRaw.replace(
-  /@media\s*\(\s*prefers-color-scheme:\s*light\s*\)\s*\{[^}]*\{[^}]*\}[^}]*\{[^}]*\}\s*\}/g,
-  '',
-);
+// Strip every `@media (...)` block from the SVG so the static PNG is
+// rendered with the default (dark) palette and never picks up an
+// alternative theme. resvg ignores @media queries by default — this
+// strip is a belt-and-braces guard against future resvg releases that
+// might evaluate them, and it stays correct as the SVG grows new
+// rules. Balanced-brace scan handles arbitrary nesting and any number
+// of inner rules without the brittleness of a hand-written regex.
+function stripMediaBlocks(source) {
+  let out = source;
+  while (true) {
+    const start = out.search(/@media\b[^{]*\{/);
+    if (start === -1) return out;
+    let depth = 0;
+    let i = start;
+    for (; i < out.length; i++) {
+      const c = out[i];
+      if (c === '{') depth++;
+      else if (c === '}') {
+        depth--;
+        if (depth === 0) {
+          i++;
+          break;
+        }
+      }
+    }
+    out = out.slice(0, start) + out.slice(i);
+  }
+}
+
+const svgFlat = stripMediaBlocks(svgRaw);
 
 const sizes = [192, 512];
 mkdirSync(iconsDir, { recursive: true });
