@@ -6,7 +6,7 @@
 // entire hashtag list, regardless of whether a tag came from the
 // default seed or was added custom. 303-redirects to /digest. The
 // typical flow is "I want a completely custom interest set, not the
-// 20 defaults I was seeded with" — previously this required clicking
+// the defaults I was seeded with" — previously this required clicking
 // × on every default chip, which was hostile UX.
 //
 // Filename kept as `delete-initial.ts` (and URL as `/api/tags/delete-initial`)

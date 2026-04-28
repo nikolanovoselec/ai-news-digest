@@ -30,7 +30,7 @@ export interface CuratedSource {
   feed_url: string;
   /** Which parser shape to use. */
   kind: CuratedSourceKind;
-  /** One or more tag slugs from the 20-tag default registry. ≥1 required. */
+  /** One or more tag slugs from the default registry. ≥1 required. */
   tags: string[];
 }
 
