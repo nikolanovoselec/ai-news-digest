@@ -157,8 +157,14 @@ describe('Base.astro / page-effects.ts — view-transition wiring (REQ-DES-003 /
   });
 
   it('page-effects binds a tap handler that intercepts data-brand-home anchors and scrolls to top when already on /digest', () => {
+    // Listeners MUST be document capture-phase. Samsung Internet's
+    // WebView dispatches the native anchor handler before element-level
+    // listeners get the event, so element-bound listeners miss the
+    // first 2-3 taps of the session. Capture-phase on `document` fires
+    // before WebView's native dispatch and lets us preventDefault.
+    // Both click and pointerup are bound for the click-elision fallback.
     expect(effectsSource).toMatch(
-      /querySelector[\s\S]{0,80}a\[data-brand-home\]/,
+      /closest[\s\S]{0,80}a\[data-brand-home\]/,
     );
     expect(effectsSource).toMatch(
       /window\.location\.pathname\s*!==\s*['"]\/digest['"]/,
@@ -166,14 +172,12 @@ describe('Base.astro / page-effects.ts — view-transition wiring (REQ-DES-003 /
     expect(effectsSource).toMatch(
       /window\.scrollTo\(\s*\{\s*top:\s*0/,
     );
-    // Listeners are bound directly to the brand element rather than
-    // to `document` in capture phase. Element-target dispatch fires
-    // before any bubble-phase document delegate Astro ClientRouter
-    // registers, and stopPropagation prevents the event from reaching
-    // ClientRouter at all. Both click and pointerup are bound for the
-    // Samsung Internet first-tap fallback.
-    expect(effectsSource).toMatch(/link\.addEventListener\(\s*['"]click['"]/);
-    expect(effectsSource).toMatch(/link\.addEventListener\(\s*['"]pointerup['"]/);
+    expect(effectsSource).toMatch(
+      /document\.addEventListener\(\s*\n?\s*['"]click['"][\s\S]{0,400}true\s*,?\s*\)/,
+    );
+    expect(effectsSource).toMatch(
+      /document\.addEventListener\(\s*\n?\s*['"]pointerup['"][\s\S]{0,400}true\s*,?\s*\)/,
+    );
     expect(effectsSource).toMatch(/e\.stopPropagation\(\)/);
   });
 

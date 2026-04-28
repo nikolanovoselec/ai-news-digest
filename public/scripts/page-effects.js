@@ -153,14 +153,23 @@ function preOpenHistoryDayInIncomingDocument(e) {
 }
 
 // Header brand link: scroll-to-top when already on /digest, otherwise
-// fall through to Astro ClientRouter's default navigation. Listeners
-// are bound directly to the brand element (not the document) so they
-// cannot interfere with pointer events anywhere else on the page.
-// Both `click` and `pointerup` are handled because some mobile
-// WebViews (Samsung Internet) elide the synthesised click on the
-// first tap of the session. window.scrollTo is idempotent so both
-// firing is harmless. Re-binds on astro:page-load.
-function shouldInterceptBrandTap() {
+// fall through to Astro ClientRouter's default navigation.
+//
+// MUST be document capture-phase. Samsung Internet's WebView dispatches
+// the native anchor handler BEFORE element-level listeners get the
+// event — element-bound listeners miss the first 2-3 taps of the
+// session entirely. Document capture phase fires before WebView's
+// native dispatch, so we catch the tap on the very first try.
+//
+// `pointerup` is the fallback for the same WebViews that elide the
+// synthesised `click` after touchstart+touchend. Both run in capture
+// phase with stopPropagation; `window.scrollTo` is idempotent so a
+// click+pointerup pair both firing is harmless. Modifier-clicks and
+// non-primary buttons fall through (open-in-new-tab still works).
+function shouldInterceptBrandTap(target) {
+  if (!(target instanceof Element)) return false;
+  const link = target.closest('a[data-brand-home]');
+  if (link === null) return false;
   if (window.location.pathname !== '/digest') return false;
   if (window.location.search !== '') return false;
   return true;
@@ -171,26 +180,39 @@ function scrollTopRespectingMotion() {
   window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
 }
 
-function handleBrandTap(e) {
-  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-  if (e.button !== 0) return;
-  if (!shouldInterceptBrandTap()) return;
-  e.preventDefault();
-  e.stopPropagation();
-  scrollTopRespectingMotion();
-}
-
 function bindBrandLinkScrollToTop() {
-  const link = document.querySelector('a[data-brand-home]');
-  if (link === null) return;
-  if (link.dataset.brandTapBound === '1') return;
-  link.dataset.brandTapBound = '1';
-  link.addEventListener('click', handleBrandTap);
-  link.addEventListener('pointerup', handleBrandTap);
+  const root = document.documentElement;
+  if (root.dataset.brandLinkBound === '1') return;
+  root.dataset.brandLinkBound = '1';
+
+  document.addEventListener(
+    'click',
+    (e) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      if (e instanceof MouseEvent && e.button !== 0) return;
+      if (!shouldInterceptBrandTap(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      scrollTopRespectingMotion();
+    },
+    true,
+  );
+
+  document.addEventListener(
+    'pointerup',
+    (e) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      if (e.button !== 0) return;
+      if (!shouldInterceptBrandTap(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      scrollTopRespectingMotion();
+    },
+    true,
+  );
 }
 
 bindBrandLinkScrollToTop();
-document.addEventListener('astro:page-load', bindBrandLinkScrollToTop);
 
 if (document.documentElement.dataset.scrollRestoreBound !== '1') {
   document.documentElement.dataset.scrollRestoreBound = '1';
