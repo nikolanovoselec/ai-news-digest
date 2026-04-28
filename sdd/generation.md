@@ -64,6 +64,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 3. Within a cluster the earliest-published source becomes the primary article; the remaining members are persisted as alternative sources for that article.
 4. A canonical URL already present in the article pool is skipped on subsequent ticks — re-ingestion never produces a duplicate primary card.
 5. A single-source article (no cluster members) is persisted with zero alternative-source rows.
+6. When the same story appears under both a direct publisher / community link and an aggregator-wrapper link whose canonical form differs from the publisher's (e.g., a Google News URL), the aggregator-wrapper copy is dropped in favour of the direct copy and any tag-of-discovery state from the dropped copy is merged onto the surviving direct article. When no direct copy is present, the aggregator-wrapper copy is kept so coverage of stories no direct source surfaced is preserved.
 
 **Constraints:** CON-SEC-002
 **Priority:** P0
@@ -73,7 +74,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ---
 
-### REQ-PIPE-004: Curated source registry with ≥50 feeds spanning the 20 system tags
+### REQ-PIPE-004: Curated source registry with ≥50 feeds spanning the 21 system tags
 
 **Intent:** The product covers the full breadth of cloud, AI, security, DevOps, languages, databases, and observability topics without relying on any single aggregator.
 
@@ -81,7 +82,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Acceptance Criteria:**
 1. The registry contains at least 50 entries, each declaring a slug, human-readable name, feed URL, feed kind, and at least one tag.
-2. Every one of the 20 system tags is covered by at least one source.
+2. Every one of the 21 system tags is covered by at least one source.
 3. Every source declares at least one tag drawn from the system tag list.
 4. Every feed URL uses HTTPS.
 5. A live-fetch validator can be run on demand to detect dead feeds so operators can swap them out before they pollute the pool.

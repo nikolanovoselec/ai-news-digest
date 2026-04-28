@@ -369,7 +369,7 @@ describe('GET /api/auth/github/callback', () => {
     expect(res.status).toBe(500);
   });
 
-  it('REQ-AUTH-001: new account seeds hashtags_json with the 20-entry default set', async () => {
+  it('REQ-AUTH-001: new account seeds hashtags_json with the canonical default set', async () => {
     const { db, runCalls } = makeDb(null); // no existing row -> new user
     mockGitHubFetch({});
     const req = callbackRequest({ state: 'match', code: 'ghcode' }, 'match');
@@ -384,7 +384,10 @@ describe('GET /api/auth/github/callback', () => {
     expect(typeof hashtagsJson).toBe('string');
     const parsed = JSON.parse(hashtagsJson as string) as unknown;
     expect(Array.isArray(parsed)).toBe(true);
-    expect((parsed as string[]).length).toBe(20);
+    // Pin against the constant rather than a literal count so the
+    // seed list can grow/shrink without breaking this test — the
+    // exact-list comparison below still catches drift.
+    expect((parsed as string[]).length).toBe(DEFAULT_HASHTAGS.length);
     expect(parsed).toEqual([...DEFAULT_HASHTAGS]);
   });
 });

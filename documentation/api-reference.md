@@ -56,7 +56,7 @@ Resolves `user_id` via the three-path `auth_links` lookup (implements [REQ-AUTH-
 
 Sets the session cookie and redirects to `/digest` for all users.
 
-New accounts are inserted with complete onboarding defaults at the moment of first login — 20 seeded hashtags (`DEFAULT_HASHTAGS`), `digest_hour=8`, `digest_minute=0`, and `email_enabled=1`. The browser auto-corrects timezone on first `/digest` load via a client-side POST to `/api/auth/set-tz`. No `/settings` detour is required for new users.
+New accounts are inserted with complete onboarding defaults at the moment of first login — the seeded default hashtags (`DEFAULT_HASHTAGS`), `digest_hour=8`, `digest_minute=0`, and `email_enabled=1`. The browser auto-corrects timezone on first `/digest` load via a client-side POST to `/api/auth/set-tz`. No `/settings` detour is required for new users.
 
 **Rate limit:** 20 requests / 60 seconds per IP (`auth_callback` rule). Exhausted → `429 Too Many Requests` with `Retry-After` header. Fails open on KV errors.
 
@@ -72,13 +72,13 @@ Force-rotates the refresh-token row and mints a new 5-minute access JWT. Used by
 
 **Auth:** Requires the `__Host-news_digest_refresh` refresh cookie (the access JWT need not be valid). Origin check applies.
 
-**Rate limit:** Two tiers, both fail-closed on KV outage. Pre-validation: 60 req / 60 s per IP (`auth_refresh_ip` rule) — caps random-cookie spam without paying for a DB lookup per request. Post-validation (after the refresh row is found): 10 req / 60 s per user (`auth_refresh_user` rule) — caps a stolen cookie distributed across many IPs that bypasses the per-IP tier. Either tier exhausted → `429 Too Many Requests` with `Retry-After` header. Both buckets are shared with the inline-middleware refresh path so an attacker cannot pivot between the two endpoints to evade the limits.
+**Rate limit:** Two tiers, both fail-closed on KV outage. Pre-validation: 60 req / 60 s per IP (`auth_refresh_ip` rule) — caps random-cookie spam without paying for a DB lookup per request. Post-validation (after the refresh row is found): 30 req / 60 s per user (`auth_refresh_user` rule) — caps a stolen cookie distributed across many IPs that bypasses the per-IP tier. (Raised from 10 to 30 so multi-tab users do not hit silent 401s when all tabs refresh their access JWT concurrently.) Either tier exhausted → `429 Too Many Requests` with `Retry-After` header. Both buckets are shared with the inline-middleware refresh path so an attacker cannot pivot between the two endpoints to evade the limits.
 
 **Response (success):** `200` with both `Set-Cookie` headers (new access JWT + rotated refresh cookie).
 
 **Response (concurrent-rotation collision within 30 s grace window):** `200` with a new access JWT only; the refresh row is not re-rotated (concurrent call already won the race — this is a benign collision per [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection) AC 4).
 
-**Response (failure — missing/invalid/expired refresh cookie, reuse detected, fingerprint mismatch):** `401` with both cookies cleared, so a half-cleared session cannot persist.
+**Response (failure — missing/invalid/expired refresh cookie, reuse detected):** `401` with both cookies cleared, so a half-cleared session cannot persist. Fingerprint drift (UA or country change) is logged as `auth.refresh.fingerprint_drift` but does NOT reject the request — it is forensic metadata for future anomaly detection only.
 
 **Error codes:** `unauthorized`, `forbidden_origin`
 
@@ -150,9 +150,20 @@ Native-form transport path for account deletion. Accepts a `application/x-www-fo
 
 Native form-encoded fallback for the same settings update. Used when the JS fetch handler does not bind (Samsung Browser, in-app webviews, JS disabled). The `/settings` form declares `method="post" action="/api/settings"`.
 
-**Request:** `application/x-www-form-urlencoded` — same fields as PUT.
+**Request:** `application/x-www-form-urlencoded`
 
-**Response:** `303` redirect to `/settings` on success. On validation failure, redirects to `/settings?error=<code>` where `<code>` is one of `invalid_hashtags`, `invalid_time`, `invalid_email_enabled`; the settings page renders an inline error message next to the Save button from the query param; the param is stripped from the URL after display so a refresh does not re-show stale text.
+| Field | Type | Notes |
+|---|---|---|
+| `hour` | string (`"00"`–`"23"`) | Zero-padded hour from the hour `<select>`. Takes precedence over `time` when non-empty. |
+| `minute` | string (`"00"`, `"05"`, …, `"55"`) | Zero-padded minute from the minute `<select>`. Takes precedence over `time` when non-empty. |
+| `time` | string (`HH:MM`) | Legacy single-field fallback for in-flight pages that have not yet received the updated markup. Used only when `hour`/`minute` are absent or empty. |
+| `tz` | string | IANA timezone (e.g. `Europe/Zagreb`). |
+| `model_id` | string | Validated against `MODELS`; ignored when `REQ-SET-004` is deprecated. |
+| `email_enabled` | string (`"on"`) | Present when the toggle is checked; absent when unchecked (standard HTML checkbox behaviour). |
+
+The `/settings` page renders the schedule picker as two `<select>` elements (`name="hour"` and `name="minute"`) rather than `<input type="time">`. Native time inputs render in 12h on Chromium and Safari whenever the OS locale is `en-US`, ignoring the `lang` attribute — a user in `Europe/Zagreb` on an en-US device saw "08:00 AM". `<select>` options are literal strings, so 24h text always displays 24h regardless of browser or device locale. Implements [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone) AC 1.
+
+**Response:** `303` redirect to `/settings?saved=ok` on success. On validation failure, redirects to `/settings?error=<code>` where `<code>` is one of `invalid_hashtags`, `invalid_time`, `invalid_email_enabled`; the settings page renders an inline error message next to the Save button from the query param; the param is stripped from the URL after display so a refresh does not re-show stale text.
 
 **Implements:** [REQ-SET-001](../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation), [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-SET-005](../sdd/settings.md#req-set-005-email-notification-preference)
 
@@ -505,8 +516,9 @@ Implements [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-log
 | `auth.refresh.rotated` | Refresh-token row successfully rotated (inline middleware or explicit `/api/auth/refresh`) |
 | `auth.refresh.rotate_failed` | D1 batch in `rotateRefreshToken` threw |
 | `auth.refresh.expired` | Refresh cookie presented but the row is past its 30-day TTL |
-| `auth.refresh.fingerprint_mismatch` | Refresh cookie valid but device fingerprint (UA + Cf-IPCountry) does not match the stored row — rejected |
-| `auth.refresh.grace_fingerprint_mismatch` | Within the 30 s concurrent-rotation grace window but fingerprint still mismatches — rejected |
+| `auth.refresh.fingerprint_drift` | Refresh cookie valid; UA or country has changed since issuance — logged as forensic metadata for future anomaly detection on the steady-state path. Request is NOT rejected (RFC 9700 / OWASP / Auth0 / Okta guidance: UA-based hard gates lock users out on every browser auto-update) |
+| `auth.refresh.fingerprint_mismatch` | (Retained in log enum; no longer emitted — the steady-state hard gate was retired 2026-04-28) |
+| `auth.refresh.grace_fingerprint_mismatch` | Refresh cookie's row was rotated within the past 30 s grace window AND the present fingerprint does not match — treated as theft (parallel browser requests do not legitimately drift UA across 30 s); `revokeAllForUser` fires |
 | `auth.refresh.concurrent_collision` | Refresh cookie's row is already revoked but within the 30 s grace window — served a fresh access JWT off the surviving child row without re-rotating |
 | `auth.refresh.concurrent_lost_race` | Same as above; no surviving child row found — treated as reuse |
 | `auth.refresh.reuse_detected` | Revoked refresh cookie presented outside the grace window — every refresh row for the user revoked + `session_version` bumped |
@@ -518,7 +530,7 @@ Implements [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-log
 | `discovery.completed` | Per-tag LLM discovery run finished |
 | `discovery.queued` | A new per-tag discovery job was inserted into `pending_discoveries` |
 | `settings.update.failed` | D1 update in `PUT /api/settings` threw |
-| `auth.refresh.rate_limited` | Inline middleware or explicit refresh path hit a refresh rate-limit bucket — request rejected with 429. `bucket` field is `"ip"` (pre-validation `auth_refresh_ip`, 60/min) or `"user"` (post-validation `auth_refresh_user`, 10/min). Buckets are shared with `POST /api/auth/refresh` |
+| `auth.refresh.rate_limited` | Inline middleware or explicit refresh path hit a refresh rate-limit bucket — request rejected with 429. `bucket` field is `"ip"` (pre-validation `auth_refresh_ip`, 60/min) or `"user"` (post-validation `auth_refresh_user`, 30/min). Buckets are shared with `POST /api/auth/refresh` |
 | `rate.limit.kv_error` | KV read/write in the rate-limit helper threw — emitted with `decision: "fail_open"` (most routes) or `decision: "fail_closed"` (`auth_refresh_ip`, `auth_refresh_user`); caller proceeds per the per-rule fail-mode. `kv_op` field is `"get"` (counter-read path) or `"put"` (counter-write path) on both error paths |
 | `article.star.failed` | D1 insert or delete in `POST/DELETE /api/articles/:id/star` threw |
 

@@ -1,6 +1,6 @@
 # News Digest, full overview
 
-> A daily news digest curated by an LLM, running on Cloudflare Workers. Users authenticate with a federated identity provider (GitHub or Google), pick tags from a curated 20-tag allowlist, and see a personalised feed sourced from ~50 RSS/Atom/JSON feeds scraped every four hours. Summaries are LLM-generated (NYT-style titles, 1–3 paragraph bodies, deduped across sources). Single-operator, pre-launch.
+> A daily news digest curated by an LLM, running on Cloudflare Workers. Users authenticate with a federated identity provider (GitHub or Google), pick tags from a curated tag allowlist, and see a personalised feed sourced from ~50 RSS/Atom/JSON feeds scraped every four hours. Summaries are LLM-generated (NYT-style titles, 1–3 paragraph bodies, deduped across sources). Single-operator, pre-launch.
 
 ## Architecture
 
@@ -58,7 +58,7 @@ observability, rust, python, postgres, threat-intel.
 
 ## User flow
 
-1. Federated OAuth (GitHub or Google) → new account seeded with 20 default tags
+1. Federated OAuth (GitHub or Google) → new account seeded with the default tag set
 2. Settings: pick local digest-ready time, toggle email, restore-defaults button
 3. Dashboard `/digest`: up to 29 most-recently-ingested articles matching user's tags
 4. Per-card: source badge, star button, tag-disclosure

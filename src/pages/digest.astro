@@ -544,7 +544,7 @@ function isCardHidden(articleTags: readonly string[]): boolean {
       addButton.hidden = false;
     };
     // Keep in sync with MAX_HASHTAGS on the server (src/pages/api/settings.ts).
-    // Bumped to 25 so the 20-default seed leaves real headroom for customs.
+    // Bumped to 25 to give the default seed real headroom for customs.
     const MAX_TAGS = 25;
     const commit = async (): Promise<void> => {
       const tag = normaliseTag(input.value);
