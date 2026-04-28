@@ -239,6 +239,111 @@ function preOpenHistoryDayInIncomingDocument(e: Event): void {
   det.open = true;
 }
 
+// ---- single-named-group view-transition shaping --------------------
+//
+// `DigestCard` no longer emits a default `transition:name`. The browser
+// captures every named element on the page as part of the view-
+// transition pseudo tree, so /history (100+ cards across opened days)
+// paid O(N) capture/bookkeeping cost on every navigation despite only
+// ONE pair ever morphing (the clicked card ↔ article-detail header).
+// /digest paid the same cost at smaller N. Stripping the default and
+// promoting exactly one card per navigation reduces named groups to 1.
+//
+// Forward (overview → detail): on `astro:before-preparation` the
+// sourceElement is the clicked anchor; we walk up to the surrounding
+// `[data-digest-card]`, read its slug, and assign
+// `view-transition-name: card-${slug}` on the link before the OLD
+// snapshot is captured.
+//
+// Backward (detail → overview): on `astro:before-swap` we read the
+// outgoing URL (`/digest/{id}/{slug}`) and locate the matching card in
+// `event.newDocument`, skipping copies inside a hidden ancestor or a
+// closed `<details>` (those aren't in layout, so a view-transition-
+// name on them is silently dropped and the morph degrades to root
+// cross-fade).
+//
+// Cleanup runs on `astro:after-swap`: remove `view-transition-name`
+// from every card on the live DOM so the next navigation starts from
+// the no-name baseline. Any remaining name would re-introduce the
+// O(N) bookkeeping the moment a card with a leftover name happens to
+// be in viewport on the next click.
+
+const ARTICLE_DETAIL_PATH_RE = /^\/digest\/[^/]+\/([^/]+)\/?$/;
+
+function findPromotableCard(
+  scope: Document | HTMLElement,
+  slug: string,
+): HTMLAnchorElement | null {
+  const cards = scope.querySelectorAll<HTMLElement>(
+    `[data-digest-card][data-vt-slug="${CSS.escape(slug)}"]`,
+  );
+  for (const card of cards) {
+    // Skip cards inside a hidden ancestor (e.g. /history's flat
+    // search grid when no filter is active, or the day-list when
+    // a filter is active — only one container is visible at a time).
+    if (card.closest('[hidden]') !== null) continue;
+    // Skip cards inside a closed <details>: not in layout, so a
+    // view-transition-name has no bbox to capture and the morph
+    // would degrade to a default cross-fade.
+    const det = card.closest<HTMLDetailsElement>('details');
+    if (det !== null && !det.open) continue;
+    const link = card.querySelector<HTMLAnchorElement>('a.digest-card__link');
+    if (link !== null) return link;
+  }
+  return null;
+}
+
+function clearAllVtNames(scope: Document | HTMLElement): void {
+  scope
+    .querySelectorAll<HTMLElement>('[data-digest-card] a.digest-card__link')
+    .forEach((el) => {
+      el.style.removeProperty('view-transition-name');
+    });
+}
+
+function promoteSourceCardForOutgoingMorph(e: Event): void {
+  interface BeforePreparationEvent extends Event {
+    sourceElement?: HTMLElement | null;
+    to?: URL;
+  }
+  const ev = e as BeforePreparationEvent;
+  const to = ev.to;
+  if (to === undefined) return;
+  const match = ARTICLE_DETAIL_PATH_RE.exec(to.pathname);
+  if (match === null) return;
+  const src = ev.sourceElement;
+  if (!(src instanceof HTMLElement)) return;
+  const card = src.closest<HTMLElement>('[data-digest-card][data-vt-slug]');
+  if (card === null) return;
+  const slug = card.dataset['vtSlug'];
+  if (typeof slug !== 'string' || slug === '') return;
+  const link = card.querySelector<HTMLAnchorElement>('a.digest-card__link');
+  if (link === null) return;
+  // Belt-and-braces: clear any leftover name from a prior nav (after-
+  // swap clears too, but if a previous teardown raced this is the
+  // last-chance gate).
+  clearAllVtNames(document);
+  link.style.setProperty('view-transition-name', `card-${slug}`);
+}
+
+function promoteIncomingCardForReturnMorph(e: Event): void {
+  interface BeforeSwapWithFrom extends BeforeSwapEvent {
+    from?: URL;
+  }
+  const ev = e as BeforeSwapWithFrom;
+  const from = ev.from;
+  if (from === undefined) return;
+  const match = ARTICLE_DETAIL_PATH_RE.exec(from.pathname);
+  if (match === null) return;
+  const slug = match[1];
+  if (slug === undefined || slug === '') return;
+  const doc = ev.newDocument;
+  if (doc === undefined) return;
+  const link = findPromotableCard(doc, slug);
+  if (link === null) return;
+  link.style.setProperty('view-transition-name', `card-${slug}`);
+}
+
 // ---- header brand link: /digest, or scroll-to-top if already there
 //
 // MUST be document capture-phase. Samsung Internet's WebView dispatches
@@ -311,10 +416,18 @@ if (document.documentElement.dataset['scrollRestoreBound'] !== '1') {
   if ('scrollRestoration' in window.history) {
     window.history.scrollRestoration = 'manual';
   }
+  document.addEventListener(
+    'astro:before-preparation',
+    promoteSourceCardForOutgoingMorph,
+  );
   document.addEventListener('astro:before-swap', preFilterIncomingDocument);
   document.addEventListener(
     'astro:before-swap',
     preOpenHistoryDayInIncomingDocument,
+  );
+  document.addEventListener(
+    'astro:before-swap',
+    promoteIncomingCardForReturnMorph,
   );
   document.addEventListener('astro:before-swap', saveScroll);
   // Synchronous scroll restore inside the View-Transition update
@@ -351,6 +464,13 @@ if (document.documentElement.dataset['scrollRestoreBound'] !== '1') {
   });
   document.addEventListener('astro:after-swap', () => {
     delete document.documentElement.dataset['vtActive'];
+  });
+  // Wipe view-transition-name from the live DOM so the next
+  // navigation captures zero named card-groups by default — the
+  // promotion handlers above re-add a single name on the card the
+  // user is actually morphing to/from.
+  document.addEventListener('astro:after-swap', () => {
+    clearAllVtNames(document);
   });
   window.addEventListener('pagehide', saveScroll);
   document.addEventListener('astro:page-load', restoreScroll);

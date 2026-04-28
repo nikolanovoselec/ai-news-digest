@@ -152,6 +152,69 @@ function preOpenHistoryDayInIncomingDocument(e) {
   det.open = true;
 }
 
+// Single-named-group view-transition shaping. DigestCard no longer
+// emits a default transition:name — capturing every card on /digest
+// and especially /history (100+ named elements across opened days)
+// imposed O(N) snapshot/bookkeeping cost for a morph that only ever
+// pairs one card with the article-detail header. Promote exactly one
+// card per navigation, clear all on after-swap.
+const ARTICLE_DETAIL_PATH_RE = /^\/digest\/[^/]+\/([^/]+)\/?$/;
+
+function findPromotableCard(scope, slug) {
+  const cards = scope.querySelectorAll(
+    `[data-digest-card][data-vt-slug="${CSS.escape(slug)}"]`,
+  );
+  for (const card of cards) {
+    if (card.closest('[hidden]') !== null) continue;
+    const det = card.closest('details');
+    if (det !== null && !det.open) continue;
+    const link = card.querySelector('a.digest-card__link');
+    if (link !== null) return link;
+  }
+  return null;
+}
+
+function clearAllVtNames(scope) {
+  scope
+    .querySelectorAll('[data-digest-card] a.digest-card__link')
+    .forEach((el) => {
+      el.style.removeProperty('view-transition-name');
+    });
+}
+
+function promoteSourceCardForOutgoingMorph(e) {
+  const ev = e;
+  const to = ev.to;
+  if (to === undefined) return;
+  const match = ARTICLE_DETAIL_PATH_RE.exec(to.pathname);
+  if (match === null) return;
+  const src = ev.sourceElement;
+  if (!(src instanceof HTMLElement)) return;
+  const card = src.closest('[data-digest-card][data-vt-slug]');
+  if (card === null) return;
+  const slug = card.dataset.vtSlug;
+  if (typeof slug !== 'string' || slug === '') return;
+  const link = card.querySelector('a.digest-card__link');
+  if (link === null) return;
+  clearAllVtNames(document);
+  link.style.setProperty('view-transition-name', `card-${slug}`);
+}
+
+function promoteIncomingCardForReturnMorph(e) {
+  const ev = e;
+  const from = ev.from;
+  if (from === undefined) return;
+  const match = ARTICLE_DETAIL_PATH_RE.exec(from.pathname);
+  if (match === null) return;
+  const slug = match[1];
+  if (slug === undefined || slug === '') return;
+  const doc = ev.newDocument;
+  if (doc === undefined) return;
+  const link = findPromotableCard(doc, slug);
+  if (link === null) return;
+  link.style.setProperty('view-transition-name', `card-${slug}`);
+}
+
 // Header brand link: scroll-to-top when already on /digest, otherwise
 // fall through to Astro ClientRouter's default navigation.
 //
@@ -219,8 +282,16 @@ if (document.documentElement.dataset.scrollRestoreBound !== '1') {
   if ('scrollRestoration' in window.history) {
     window.history.scrollRestoration = 'manual';
   }
+  document.addEventListener(
+    'astro:before-preparation',
+    promoteSourceCardForOutgoingMorph,
+  );
   document.addEventListener('astro:before-swap', preFilterIncomingDocument);
   document.addEventListener('astro:before-swap', preOpenHistoryDayInIncomingDocument);
+  document.addEventListener(
+    'astro:before-swap',
+    promoteIncomingCardForReturnMorph,
+  );
   document.addEventListener('astro:before-swap', saveScroll);
   document.addEventListener('astro:after-swap', () => {
     try {
@@ -238,6 +309,12 @@ if (document.documentElement.dataset.scrollRestoreBound !== '1') {
   });
   document.addEventListener('astro:after-swap', () => {
     delete document.documentElement.dataset.vtActive;
+  });
+  // Wipe view-transition-name from every card on the live DOM so the
+  // next navigation starts from the no-name baseline. The promotion
+  // handlers re-add a single name on the card actually morphing.
+  document.addEventListener('astro:after-swap', () => {
+    clearAllVtNames(document);
   });
   window.addEventListener('pagehide', saveScroll);
   document.addEventListener('astro:page-load', restoreScroll);

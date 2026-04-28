@@ -196,6 +196,54 @@ describe('Base.astro / page-effects.ts — view-transition wiring (REQ-DES-003 /
     );
   });
 
+  it('page-effects.ts shapes view-transitions to a single named group per navigation (REQ-READ-002 / REQ-HIST-001)', () => {
+    // Default-no-name baseline: every DigestCard ships without a
+    // `transition:name`. /history can render 100+ cards across opened
+    // days, and the browser captures every named element on the page
+    // as part of the view-transition pseudo tree — paying O(N)
+    // snapshot bookkeeping for a morph that only ever pairs ONE card
+    // with the article-detail header. Promoting a single card per
+    // navigation collapses bookkeeping to O(1) and (per gpt-5.2's
+    // performance analysis) is the dominant lever closing the
+    // /history vs /digest sluggishness gap.
+    //
+    // Forward (overview → detail): on `astro:before-preparation` the
+    // sourceElement is the clicked anchor; we walk to the surrounding
+    // [data-digest-card], read its slug, and assign
+    // `view-transition-name: card-${slug}` on the link before the OLD
+    // snapshot is captured.
+    expect(effectsSource).toMatch(/promoteSourceCardForOutgoingMorph/);
+    expect(effectsSource).toMatch(
+      /astro:before-preparation[\s\S]{0,200}promoteSourceCardForOutgoingMorph/,
+    );
+    expect(effectsSource).toMatch(
+      /view-transition-name['"`]\s*,\s*[`'"]card-\$\{slug\}/,
+    );
+    // Backward (detail → overview): on astro:before-swap we read the
+    // outgoing URL (/digest/{id}/{slug}) and locate the matching card
+    // in event.newDocument, skipping copies inside hidden ancestors
+    // or closed <details> (those aren't in layout, so a name on them
+    // has no bbox and the morph degrades).
+    expect(effectsSource).toMatch(/promoteIncomingCardForReturnMorph/);
+    expect(effectsSource).toMatch(
+      /astro:before-swap[\s\S]{0,300}promoteIncomingCardForReturnMorph/,
+    );
+    expect(effectsSource).toMatch(/ARTICLE_DETAIL_PATH_RE/);
+    // Visibility filter: the helper that finds the promotable card
+    // skips elements inside [hidden] ancestors and inside closed
+    // <details>, otherwise the name lands on an off-layout element
+    // and the morph silently degrades to a root cross-fade.
+    expect(effectsSource).toMatch(/closest\(['"]\[hidden\]['"]\)/);
+    expect(effectsSource).toMatch(/closest[\s\S]{0,40}['"]details['"]/);
+    // Cleanup on after-swap so the next navigation starts from a
+    // no-name baseline; without this every morphed card would carry
+    // a leftover name into the next snapshot, recreating the O(N)
+    // bookkeeping the moment a second card is clicked.
+    expect(effectsSource).toMatch(
+      /astro:after-swap[\s\S]{0,200}clearAllVtNames/,
+    );
+  });
+
   it('synchronously restores scroll on astro:after-swap so view-transition snapshots include below-fold cards', () => {
     // Without an in-callback scroll restore, the View-Transition
     // snapshot of the new page is captured at scrollY=0. Any card
