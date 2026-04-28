@@ -108,7 +108,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `rate-limit.ts` | KV window-counter rate limiter for auth and mutation routes | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `session-jwt.ts` | HMAC-SHA256 sign/verify for the access-token JWT | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation) |
 | `refresh-tokens.ts` | 30-day opaque refresh-token storage in D1 with rotation and reuse detection | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection) |
-| `slug.ts` | Deterministic ASCII slug generation | [REQ-GEN-006](../sdd/generation.md#req-gen-006-atomic-final-write) *(Deprecated)* |
+| `slug.ts` | Deterministic ASCII slug generation | [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest) |
 | `sources.ts` | Source adapters (RSS/Atom/JSON) and fan-out coordinator | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
 | `prefer-direct-source.ts` | Resolve aggregator URLs (e.g., Google News) to underlying publisher and merge tag-of-discovery state | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-canonical-url--llm-cluster-dedupe-with-first-source-wins) |
 | `paragraph-split.ts` | Normalise LLM-produced prose into a paragraph array for the article-detail view | [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view) |
@@ -125,7 +125,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `types.ts` | Shared cross-module TypeScript types | (shared) |
 | `tz.ts` | IANA timezone helpers (local-date / local-midnight conversions) | [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email) |
 | `optional-prop.ts` | Conditional-property spread helper for `exactOptionalPropertyTypes` | (shared) |
-| `ulid.ts` | 26-char Crockford base32 ULID generator | [REQ-GEN-006](../sdd/generation.md#req-gen-006-atomic-final-write) *(Deprecated)* |
+| `ulid.ts` | 26-char Crockford base32 ULID generator | [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress) |
 | `system-user.ts` | Sentinel user-id constants (`__system__`, `__e2e__`) | [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking) |
 | `title-overlap.ts` | Token-overlap alignment guard for the chunk consumer | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract) |
 | `feed-health.ts` | Per-URL fetch-health counter for the self-healing discovery loop | [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking) |
