@@ -297,7 +297,7 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
               data-hour-select
               required
               class="settings__time-select settings__time-select--hour"
-              aria-label="hour"
+              aria-label="Daily digest time, hour"
             >
               {HOUR_OPTIONS.map((h) => (
                 <option value={h} selected={h === hourValue}>{h}</option>
@@ -309,7 +309,7 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
               data-minute-select
               required
               class="settings__time-select settings__time-select--minute"
-              aria-label="minute"
+              aria-label="Daily digest time, minute"
             >
               {minuteOptions.map((m) => (
                 <option value={m} selected={m === minuteValue}>{m}</option>
