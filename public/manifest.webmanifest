@@ -6,6 +6,7 @@
   "start_url": "/digest",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone"],
   "orientation": "portrait",
   "lang": "en",
   "dir": "ltr",
