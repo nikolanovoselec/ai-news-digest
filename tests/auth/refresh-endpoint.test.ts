@@ -202,12 +202,22 @@ describe('POST /api/auth/refresh — REQ-AUTH-002 AC 5', () => {
   });
 
   it('REQ-AUTH-008 AC 4: outside-window replay of a revoked cookie triggers reuse-detection — 401 + cookies cleared + session_version bumped', async () => {
+    // Realistic theft scenario: the user holds refresh row B (active),
+    // an attacker replays the user's earlier-rotated row A outside the
+    // grace window. revokeAllForUser only bumps session_version when
+    // it finds AT LEAST ONE unrevoked row for the user — so the test
+    // must seed a sibling unrevoked row B before pre-revoking row A,
+    // otherwise the bump short-circuits via the idempotent-retry guard
+    // in `revokeAllForUser` and the 401 still fires but session_version
+    // stays put.
     const issueReq = new Request('https://example.com/', {
       headers: new Headers({ 'User-Agent': 'Mozilla/5.0', 'Cf-IPCountry': 'CH' }),
     });
     const { value, id } = await issueRefreshToken(env.DB, USER_ID, issueReq);
+    // Row B — the legitimate active session the bump is meant to revoke.
+    await issueRefreshToken(env.DB, USER_ID, issueReq);
 
-    // Pre-revoke the row well outside the 30-second grace window.
+    // Pre-revoke row A well outside the 30-second grace window.
     const wayBefore = Math.floor(Date.now() / 1000) - (ROTATION_GRACE_SECONDS + 60);
     await revokeRefreshToken(env.DB, id, wayBefore);
 
