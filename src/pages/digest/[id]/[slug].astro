@@ -539,11 +539,16 @@ const articleDataset = {
        body lines are 1.65em each → 2 body lines = 3.30em. Without a
        negative margin-bottom, the float's 3.6em box spills 0.30em
        into line 3 and shifts that line's leading edge right — the
-       "third line indented" bug reported on Samsung Browser. Capital
-       letters have no descender so clipping the float footprint by
-       0.34em (a bit more than the 0.30em overrun, to absorb mobile
-       pixel-rounding) leaves the rendered glyph unchanged while
-       letting line 3 flow full-width. */
+       "third line indented" bug reported on Samsung Browser. The
+       visible cap occupies ~2.38em of the 3.6em box (cap-height
+       0.66 × font-size), leaving ~1.22em of empty descent space
+       below the baseline at line-height 1. A -0.34em margin-bottom
+       pulls into that empty zone (well inside the 1.22em slack),
+       absorbing the 0.30em overrun plus a small mobile pixel-
+       rounding buffer without ever clipping the rendered glyph;
+       line 3 then flows full-width. The safe upper bound on the
+       negative margin is 1 − cap_h − ascent_pad ≈ 1.22em — pushing
+       past it would start clipping the cap itself. */
     margin: 0 0.1em -0.34em 0;
     padding: 0;
   }
