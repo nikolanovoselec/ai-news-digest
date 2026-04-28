@@ -47,7 +47,7 @@ The following were considered and intentionally excluded from the MVP:
 - **User-added feeds / OPML import** — discovery via LLM + generic search APIs covers both default and custom hashtags without per-user feed management
 - **Sharing, bookmarking, cross-user recommendations** — the product is personal, not social
 - **Embeddings or vector search** — a single LLM call handles ranking; embeddings would add a dependency without measurable quality gain at this scale
-- **Unbounded server-side fetching** — article body fetching is in scope per REQ-PIPE-001 AC 8 but only via the SSRF allowlist filter (`src/lib/ssrf.ts`), an 8-second timeout, and a 1.5 MB download cap; arbitrary URL resolution remains explicitly out of scope
+- **Unbounded server-side fetching** — article body fetching is in scope per REQ-PIPE-001 AC 8 but only via the SSRF filter (HTTPS-only, no private/loopback/link-local ranges), an 8-second timeout, and a 1.5 MB download cap; arbitrary URL resolution remains explicitly out of scope
 - **Admin actor / multi-tenancy** — single actor (User) for MVP
 - **Cloudflare WAF-based OAuth rate limiting** (was REQ-AUTH-006) — infrastructure policy, not product behaviour; handled outside the spec if ever needed
 - **Sender domain verification walkthrough** (was REQ-MAIL-003) — operational setup task; deployment docs already cover Resend DNS configuration
