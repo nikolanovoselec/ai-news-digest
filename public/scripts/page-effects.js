@@ -153,73 +153,44 @@ function preOpenHistoryDayInIncomingDocument(e) {
 }
 
 // Header brand link: scroll-to-top when already on /digest, otherwise
-// fall through to Astro ClientRouter's default navigation. The
-// wordmark has data-brand-home so the click delegate can target it
-// without coupling to the CSS class name.
-//
-// Two listeners run in capture phase: `click` is the canonical path,
-// `pointerup` is a fallback for mobile WebViews (Samsung Internet
-// observed) that occasionally fail to dispatch the click after the
-// FIRST tap of the session — the user has to tap the wordmark 2-3
-// times before scroll-to-top fires. PointerEvents fire even when the
-// browser swallows the synthesised click, and window.scrollTo is
-// idempotent so a click+pointerup pair both firing is harmless. Both
-// listeners use stopPropagation to win the race against Astro
-// ClientRouter's bubble-phase document click delegate.
+// fall through to Astro ClientRouter's default navigation. Listeners
+// are bound directly to the brand element (not the document) so they
+// cannot interfere with pointer events anywhere else on the page.
+// Both `click` and `pointerup` are handled because some mobile
+// WebViews (Samsung Internet) elide the synthesised click on the
+// first tap of the session. window.scrollTo is idempotent so both
+// firing is harmless. Re-binds on astro:page-load.
+function shouldInterceptBrandTap() {
+  if (window.location.pathname !== '/digest') return false;
+  if (window.location.search !== '') return false;
+  return true;
+}
+
+function scrollTopRespectingMotion() {
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+}
+
+function handleBrandTap(e) {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  if (e.button !== 0) return;
+  if (!shouldInterceptBrandTap()) return;
+  e.preventDefault();
+  e.stopPropagation();
+  scrollTopRespectingMotion();
+}
+
 function bindBrandLinkScrollToTop() {
-  const root = document.documentElement;
-  if (root.dataset.brandLinkBound === '1') return;
-  root.dataset.brandLinkBound = '1';
-
-  function shouldIntercept(target) {
-    if (!(target instanceof Element)) return false;
-    const link = target.closest('a[data-brand-home]');
-    if (link === null) return false;
-    // Only intercept when the URL is EXACTLY /digest (no query string).
-    // On /digest?tags=ai the brand's href="/digest" should resolve via
-    // natural navigation so the tag filter clears.
-    if (window.location.pathname !== '/digest') return false;
-    if (window.location.search !== '') return false;
-    return true;
-  }
-
-  function scrollTopRespectingMotion() {
-    const reduced = window.matchMedia(
-      '(prefers-reduced-motion: reduce)',
-    ).matches;
-    window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
-  }
-
-  document.addEventListener(
-    'click',
-    (e) => {
-      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-      if (e instanceof MouseEvent && e.button !== 0) return;
-      if (!shouldIntercept(e.target)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      scrollTopRespectingMotion();
-    },
-    true,
-  );
-
-  // Pointer fallback for mobile WebViews that elide the synthesised
-  // click on the first tap of the session.
-  document.addEventListener(
-    'pointerup',
-    (e) => {
-      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-      if (e.button !== 0) return;
-      if (!shouldIntercept(e.target)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      scrollTopRespectingMotion();
-    },
-    true,
-  );
+  const link = document.querySelector('a[data-brand-home]');
+  if (link === null) return;
+  if (link.dataset.brandTapBound === '1') return;
+  link.dataset.brandTapBound = '1';
+  link.addEventListener('click', handleBrandTap);
+  link.addEventListener('pointerup', handleBrandTap);
 }
 
 bindBrandLinkScrollToTop();
+document.addEventListener('astro:page-load', bindBrandLinkScrollToTop);
 
 if (document.documentElement.dataset.scrollRestoreBound !== '1') {
   document.documentElement.dataset.scrollRestoreBound = '1';

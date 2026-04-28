@@ -115,14 +115,14 @@ describe('navigation consolidation — REQ-PWA-003 AC 3', () => {
     expect(baseSource).toMatch(/data-brand-home/);
   });
 
-  it('REQ-PWA-003 AC 4: brand-link click on /digest (no filter) scrolls to top instead of self-navigating; preserves filter-clear semantics on /digest?tags=...', () => {
-    // The page-effects click delegate must (1) intercept self-navigation
-    // when the URL is EXACTLY /digest with no query string, (2) bypass
+  it('REQ-PWA-003 AC 4: brand-link tap on /digest (no filter) scrolls to top instead of self-navigating; preserves filter-clear semantics on /digest?tags=...', () => {
+    // The brand-tap handler must (1) intercept self-navigation when
+    // the URL is EXACTLY /digest with no query string, (2) bypass
     // intercept when there are query params so /digest?tags=ai
     // navigation to clean /digest still clears the filter, and (3)
     // never preventDefault on modifier-clicks (cmd/ctrl/shift/alt) so
     // "open in new tab" still works.
-    expect(effectsSource).toMatch(/closest[\s\S]{0,80}a\[data-brand-home\]/);
+    expect(effectsSource).toMatch(/querySelector[\s\S]{0,80}a\[data-brand-home\]/);
     expect(effectsSource).toMatch(
       /window\.location\.pathname\s*!==\s*['"]\/digest['"]/,
     );
@@ -133,18 +133,20 @@ describe('navigation consolidation — REQ-PWA-003 AC 3', () => {
     expect(effectsSource).toMatch(/window\.scrollTo\(\s*\{\s*top:\s*0/);
   });
 
-  it('REQ-PWA-003 AC 4: brand-link click delegate runs in capture phase + stopPropagation so it wins the race with Astro ClientRouter', () => {
-    // Astro ClientRouter binds a bubble-phase document click delegate
-    // for view-transition navigation. A bubble-phase brand-link
-    // listener never reaches scrollTo because ClientRouter's fetch +
-    // swap has already started. Capture phase fires first; stop-
-    // Propagation ensures ClientRouter's bubble-phase listener never
-    // fires for the intercepted click. Required for Samsung Internet
-    // standalone shortcut behaviour where this race was most visible.
-    expect(effectsSource).toMatch(
-      /addEventListener\(\s*['"]click['"][\s\S]{0,1500}true\s*,?\s*\)/,
-    );
+  it('REQ-PWA-003 AC 4: brand-link listener is element-bound (not document) with stopPropagation to preempt Astro ClientRouter', () => {
+    // The brand-tap handler is bound directly to the brand <a> element
+    // rather than to `document` in capture phase. Element-target
+    // dispatch fires before any bubble-phase document delegate that
+    // ClientRouter registers, and stopPropagation prevents the event
+    // from reaching ClientRouter's delegate at all. Both `click` and
+    // `pointerup` are bound for the Samsung Internet first-tap fallback.
+    expect(effectsSource).toMatch(/link\.addEventListener\(\s*['"]click['"]/);
+    expect(effectsSource).toMatch(/link\.addEventListener\(\s*['"]pointerup['"]/);
     expect(effectsSource).toMatch(/e\.stopPropagation\(\)/);
+    // Re-bind on astro:page-load because ClientRouter swaps the DOM.
+    expect(effectsSource).toMatch(
+      /astro:page-load[\s\S]{0,80}bindBrandLinkScrollToTop/,
+    );
   });
 });
 
