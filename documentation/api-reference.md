@@ -56,7 +56,7 @@ Resolves `user_id` via the three-path `auth_links` lookup (implements [REQ-AUTH-
 
 Sets the session cookie and redirects to `/digest` for all users.
 
-New accounts are inserted with complete onboarding defaults at the moment of first login — 20 seeded hashtags (`DEFAULT_HASHTAGS`), `digest_hour=8`, `digest_minute=0`, and `email_enabled=1`. The browser auto-corrects timezone on first `/digest` load via a client-side POST to `/api/auth/set-tz`. No `/settings` detour is required for new users.
+New accounts are inserted with complete onboarding defaults at the moment of first login — the seeded default hashtags (`DEFAULT_HASHTAGS`), `digest_hour=8`, `digest_minute=0`, and `email_enabled=1`. The browser auto-corrects timezone on first `/digest` load via a client-side POST to `/api/auth/set-tz`. No `/settings` detour is required for new users.
 
 **Rate limit:** 20 requests / 60 seconds per IP (`auth_callback` rule). Exhausted → `429 Too Many Requests` with `Retry-After` header. Fails open on KV errors.
 
