@@ -152,6 +152,30 @@ function preOpenHistoryDayInIncomingDocument(e) {
   det.open = true;
 }
 
+// Header brand link: scroll-to-top when already on /digest, otherwise
+// fall through to Astro ClientRouter's default navigation. The wordmark
+// has data-brand-home so the click delegate can target it without
+// coupling to the CSS class name.
+function bindBrandLinkScrollToTop() {
+  const root = document.documentElement;
+  if (root.dataset.brandLinkBound === '1') return;
+  root.dataset.brandLinkBound = '1';
+  document.addEventListener('click', (e) => {
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    const link = target.closest('a[data-brand-home]');
+    if (link === null) return;
+    if (window.location.pathname !== '/digest') return;
+    e.preventDefault();
+    const reduced = window.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    ).matches;
+    window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+  });
+}
+
+bindBrandLinkScrollToTop();
+
 if (document.documentElement.dataset.scrollRestoreBound !== '1') {
   document.documentElement.dataset.scrollRestoreBound = '1';
   if ('scrollRestoration' in window.history) {

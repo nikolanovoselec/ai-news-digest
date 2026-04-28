@@ -143,6 +143,31 @@ describe('Base.astro / page-effects.ts — view-transition wiring (REQ-DES-003 /
     );
   });
 
+  it('site-header brand link is annotated with data-brand-home for the click-to-scroll-top delegate', () => {
+    // The wordmark anchor has href="/digest" (or "/" when signed-out)
+    // for SSR + no-JS fallback. The click delegate in page-effects.ts
+    // targets the data-brand-home attribute so refactoring the CSS
+    // class name doesn't break the binding.
+    expect(baseSource).toMatch(
+      /<a[\s\S]{0,200}site-header__brand[\s\S]{0,200}data-brand-home/,
+    );
+    expect(baseSource).toMatch(
+      /href=\{Astro\.locals\.user\s*\?\s*['"]\/digest['"]\s*:\s*['"]\/['"]/,
+    );
+  });
+
+  it('page-effects binds a click handler that intercepts data-brand-home anchors and scrolls to top when already on /digest', () => {
+    expect(effectsSource).toMatch(
+      /closest[\s\S]{0,80}a\[data-brand-home\]/,
+    );
+    expect(effectsSource).toMatch(
+      /window\.location\.pathname\s*!==\s*['"]\/digest['"]/,
+    );
+    expect(effectsSource).toMatch(
+      /window\.scrollTo\(\s*\{\s*top:\s*0/,
+    );
+  });
+
   it('::view-transition-group(site-header) carries an explicit z-index so morphing cards never paint over the header', () => {
     // Z-order in the view-transition layer follows DOM order of named
     // groups by default. Every digest card has `transition:name=card-...`

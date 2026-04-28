@@ -193,7 +193,12 @@ const initialTheme = cookieTheme ?? 'light';
     data-user-tz={Astro.locals.user?.tz ?? ''}
   >
     <header class="site-header safe-top safe-x">
-      <a href="/" class="site-header__brand focus-ring" aria-label="News Digest home">
+      <a
+        href={Astro.locals.user ? '/digest' : '/'}
+        class="site-header__brand focus-ring"
+        aria-label={Astro.locals.user ? 'Go to digest' : 'News Digest home'}
+        data-brand-home
+      >
         <svg
           class="site-header__mark"
           width="32"
