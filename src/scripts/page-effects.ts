@@ -324,55 +324,6 @@ function bindBrandLinkScrollToTop(): void {
 
 bindBrandLinkScrollToTop();
 
-// ---- PWA cold-launch splash hold (REQ-PWA-001)
-//
-// Markup is in Base.astro and CSS in global.css; both are gated to
-// `display-mode: standalone` so this code is a no-op for users in a
-// regular browser tab. The splash plays exactly once per PWA session:
-//   - On the very first page load of a new session, dataset.splashDone
-//     is left unset, the CSS animation runs (2.4s fade), then we stamp
-//     dataset.splashDone='1' AND sessionStorage so subsequent
-//     navigations within the same session skip the splash entirely.
-//   - On every subsequent navigation, the sessionStorage check at
-//     module-load time stamps dataset.splashDone='1' BEFORE first
-//     paint of the new page, so the new <div class="pwa-splash"> in
-//     the swapped-in DOM never becomes visible.
-// `splashDone` is on documentElement which is persisted across
-// view-transitions, so the timer-set version of the flag also
-// survives subsequent ClientRouter swaps without needing storage.
-function initPwaSplash(): void {
-  const root = document.documentElement;
-  if (root.dataset['splashInit'] === '1') return;
-  root.dataset['splashInit'] = '1';
-
-  let alreadyShown = false;
-  try {
-    alreadyShown = sessionStorage.getItem('pwa-splash-done') === '1';
-  } catch {
-    /* storage disabled — fall through and treat as fresh session */
-  }
-  if (alreadyShown) {
-    root.dataset['splashDone'] = '1';
-    return;
-  }
-
-  // Match the CSS animation duration so the dataset flag lands at the
-  // moment the keyframe completes. Using the same value avoids a race
-  // where the splash element re-shows on a view-transition that lands
-  // mid-animation.
-  const SPLASH_HOLD_MS = 2400;
-  window.setTimeout(() => {
-    root.dataset['splashDone'] = '1';
-    try {
-      sessionStorage.setItem('pwa-splash-done', '1');
-    } catch {
-      /* storage disabled — the dataset flag is enough for this session */
-    }
-  }, SPLASH_HOLD_MS);
-}
-
-initPwaSplash();
-
 if (document.documentElement.dataset['scrollRestoreBound'] !== '1') {
   document.documentElement.dataset['scrollRestoreBound'] = '1';
   // Override Astro ClientRouter's scroll-to-top so our per-path

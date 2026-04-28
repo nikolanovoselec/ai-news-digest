@@ -221,43 +221,6 @@ function bindBrandLinkScrollToTop() {
 
 bindBrandLinkScrollToTop();
 
-// PWA cold-launch splash hold — REQ-PWA-001. Markup is in Base.astro
-// and CSS in global.css; both gated to display-mode: standalone so
-// this code is a no-op for users in a regular browser tab. The splash
-// plays exactly once per PWA session: dataset.splashDone is stamped
-// after a 2.4s timer (matching the CSS animation duration) and the
-// flag is mirrored to sessionStorage so subsequent navigations within
-// the same session skip the splash entirely (the dataset is set
-// before first paint of the swapped-in page).
-function initPwaSplash() {
-  const root = document.documentElement;
-  if (root.dataset.splashInit === '1') return;
-  root.dataset.splashInit = '1';
-
-  let alreadyShown = false;
-  try {
-    alreadyShown = sessionStorage.getItem('pwa-splash-done') === '1';
-  } catch {
-    /* storage disabled — fall through and treat as fresh session */
-  }
-  if (alreadyShown) {
-    root.dataset.splashDone = '1';
-    return;
-  }
-
-  const SPLASH_HOLD_MS = 2400;
-  window.setTimeout(() => {
-    root.dataset.splashDone = '1';
-    try {
-      sessionStorage.setItem('pwa-splash-done', '1');
-    } catch {
-      /* storage disabled — the dataset flag is enough for this session */
-    }
-  }, SPLASH_HOLD_MS);
-}
-
-initPwaSplash();
-
 if (document.documentElement.dataset.scrollRestoreBound !== '1') {
   document.documentElement.dataset.scrollRestoreBound = '1';
   if ('scrollRestoration' in window.history) {
