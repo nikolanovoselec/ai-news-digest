@@ -37,48 +37,47 @@ Generic server-error fallback. Shown when an uncaught exception bubbles up to As
 
 ### POST /api/auth/{provider}/login (also GET)
 
-Initiates the OAuth/OIDC authorization-code flow for a configured provider. The dynamic `{provider}` segment matches entries in the provider registry (`github`, `google`); unknown names return 404. Generates random `state`, sets a per-provider `news_digest_oauth_state_{provider}` cookie (HttpOnly, 10-min TTL), redirects to the provider's authorize URL.
+Initiates the OAuth/OIDC authorization-code flow. `{provider}` matches the provider registry (`github`, `google`); unknown names return `404`. Sets a 10-minute `state` cookie and redirects to the provider's authorize URL. Exempt from the Origin check.
 
-`POST` is the canonical entry point — the landing page submits a same-origin form to avoid mobile-browser prefetch races that regenerate the state cookie before the provider's callback returns. `GET` is retained for direct URL access (bookmarks, test tooling). Both methods are exempt from the Origin check per [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints) AC 4.
-
-**Rate limit:** 10 requests / 60 seconds per IP (`auth_login` rule). Exhausted → `429 Too Many Requests` with `Retry-After` header. Fails open on KV errors so a backing-store outage cannot block sign-in.
+**Rate limit:** 10 / 60 s per IP (`auth_login`). Fails open on KV errors. Exhausted → `429` with `Retry-After`.
 
 **Implements:** [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9, [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
 ### GET /api/auth/{provider}/callback
 
-Handles the provider's OAuth redirect. Validates the per-provider `state` cookie, exchanges the code for an access token (and id_token when the provider issues one), extracts a stable provider-specific user identifier plus a verified primary email.
+Validates the per-provider `state` cookie, exchanges the code for tokens, extracts a stable provider identifier and verified email. Resolves `user_id` via the three-path `auth_links` lookup ([REQ-AUTH-007](../sdd/authentication.md#req-auth-007-cross-provider-account-dedup)):
 
-Resolves `user_id` via the three-path `auth_links` lookup (implements [REQ-AUTH-007](../sdd/authentication.md#req-auth-007-cross-provider-account-dedup)):
-- **Path A** — `(provider, provider_sub)` found in `auth_links` → reuse the linked `user_id`. Steady-state login for any returning user.
-- **Path B** — no `auth_links` row yet, but a `users` row with the same verified email exists → insert a new `auth_links` alias pointing at that `user_id`. Prevents duplicate accounts when the same person signs in via a second provider.
-- **Path C** — neither lookup matches → create a new `users` row keyed by `userIdFor(provider, sub)` (GitHub: bare numeric for legacy compatibility; Google: `google:<sub>`) and insert the first `auth_links` row in tandem.
+- **Path A** — `(provider, provider_sub)` found in `auth_links` → reuse linked `user_id`.
+- **Path B** — no link, but a `users` row with the same verified email exists → insert a new `auth_links` alias.
+- **Path C** — neither matches → create a new `users` row and the first `auth_links` row.
 
-Sets the session cookie and redirects to `/digest` for all users.
+New accounts are seeded with default hashtags, `digest_hour=8`, `email_enabled=1`. Sets the session cookie and redirects to `/digest`.
 
-New accounts are inserted with complete onboarding defaults at the moment of first login — the seeded default hashtags (`DEFAULT_HASHTAGS`), `digest_hour=8`, `digest_minute=0`, and `email_enabled=1`. The browser auto-corrects timezone on first `/digest` load via a client-side POST to `/api/auth/set-tz`. No `/settings` detour is required for new users.
+**Rate limit:** 20 / 60 s per IP (`auth_callback`). Fails open on KV errors.
 
-**Rate limit:** 20 requests / 60 seconds per IP (`auth_callback` rule). Exhausted → `429 Too Many Requests` with `Retry-After` header. Fails open on KV errors.
+**Error responses:**
+| Outcome | Status | Body |
+|---|---|---|
+| `access_denied`, `no_verified_email`, `oauth_error` | `3xx` | redirect to `/?error={code}&provider={name}` |
+| `invalid_state` (CSRF) | `403` | HTML body with `<meta http-equiv="refresh">` to `/?error=invalid_state` |
 
 **Implements:** [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9, [REQ-AUTH-004](../sdd/authentication.md#req-auth-004-oauth-error-surfacing), [REQ-AUTH-007](../sdd/authentication.md#req-auth-007-cross-provider-account-dedup)
 
-**Error responses:**
-- `access_denied`, `no_verified_email`, `oauth_error` — 3xx redirect to `/?error={code}&provider={name}`. The provider name lets the landing page surface a precise message ("Google did not return a verified email" instead of guessing).
-- `invalid_state` (CSRF state mismatch) — HTTP 403 with an HTML body that meta-refreshes to `/?error=invalid_state`. Browsers do not auto-follow `Location` on 4xx responses, so the redirect is delivered via `<meta http-equiv="refresh">` in the body. The origin value interpolated into the body is HTML-escaped.
-
 ### POST /api/auth/refresh
 
-Force-rotates the refresh-token row and mints a new 5-minute access JWT. Used by long-running tabs that need a fresh access JWT before issuing a state-changing XHR (the inline middleware refresh cannot safely rotate on the same POST that mutates state).
+Force-rotates the refresh-token row and mints a new access JWT. Used by long-running tabs before a state-changing XHR.
 
-**Auth:** Requires the `__Host-news_digest_refresh` refresh cookie (the access JWT need not be valid). Origin check applies.
+**Auth:** Refresh cookie required (access JWT need not be valid). Origin check applies.
 
-**Rate limit:** Two tiers, both fail-closed on KV outage. Pre-validation: 60 req / 60 s per IP (`auth_refresh_ip` rule) — caps random-cookie spam without paying for a DB lookup per request. Post-validation (after the refresh row is found): 30 req / 60 s per user (`auth_refresh_user` rule) — caps a stolen cookie distributed across many IPs that bypasses the per-IP tier. (Raised from 10 to 30 so multi-tab users do not hit silent 401s when all tabs refresh their access JWT concurrently.) Either tier exhausted → `429 Too Many Requests` with `Retry-After` header. Both buckets are shared with the inline-middleware refresh path so an attacker cannot pivot between the two endpoints to evade the limits.
+**Rate limit:** Two tiers, both fail-closed. Per-IP `auth_refresh_ip` 60 / 60 s (pre-validation); per-user `auth_refresh_user` 30 / 60 s (post-validation). Buckets shared with the inline middleware refresh path. Exhausted → `429` with `Retry-After`.
 
-**Response (success):** `200` with both `Set-Cookie` headers (new access JWT + rotated refresh cookie).
+**Responses:**
 
-**Response (concurrent-rotation collision within 30 s grace window):** `200` with a new access JWT only; the refresh row is not re-rotated (concurrent call already won the race — this is a benign collision per [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection) AC 4).
-
-**Response (failure — missing/invalid/expired refresh cookie, reuse detected):** `401` with both cookies cleared, so a half-cleared session cannot persist. Fingerprint drift (UA or country change) is logged as `auth.refresh.fingerprint_drift` but does NOT reject the request — it is forensic metadata for future anomaly detection only.
+| Outcome | Status | Cookies |
+|---|---|---|
+| Success — fresh rotation | `200` | new access JWT + rotated refresh cookie |
+| Success — concurrent-rotation collision (within 30 s grace) | `200` | new access JWT only ([REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection) AC 4) |
+| Failure — missing/invalid/expired cookie or reuse detected | `401` | both cleared |
 
 **Error codes:** `unauthorized`, `forbidden_origin`
 
@@ -86,13 +85,13 @@ Force-rotates the refresh-token row and mints a new 5-minute access JWT. Used by
 
 ### POST /api/auth/logout
 
-Provider-agnostic. Bumps `session_version`, revokes the active refresh-token row (single-device-only — does not sign the user out of other devices), clears both the access and refresh cookies, redirects to `/?logged_out=1`.
+Bumps `session_version`, revokes the active refresh-token row (single-device only), clears both cookies, redirects to `/?logged_out=1`.
 
-**Auth:** Requires a valid session (access JWT or inline-refreshed via refresh cookie). Origin check applies.
+**Auth:** Valid session. Origin check applies.
 
-**Rate limit:** 5 requests / 60 seconds per IP (`auth_logout` rule). Exhausted → `429 Too Many Requests` with `Retry-After` header.
+**Rate limit:** 5 / 60 s per IP (`auth_logout`).
 
-**Response:** `303` redirect to `/?logged_out=1`
+**Response:** `303` → `/?logged_out=1`
 
 **Error codes:** `unauthorized`, `forbidden_origin`
 
@@ -148,22 +147,20 @@ Native-form transport path for account deletion. Accepts a `application/x-www-fo
 
 ### POST /api/settings
 
-Native form-encoded fallback for the same settings update. Used when the JS fetch handler does not bind (Samsung Browser, in-app webviews, JS disabled). The `/settings` form declares `method="post" action="/api/settings"`.
+Native form-encoded fallback for the same settings update. Used when the JS fetch handler does not bind.
 
 **Request:** `application/x-www-form-urlencoded`
 
 | Field | Type | Notes |
 |---|---|---|
-| `hour` | string (`"00"`–`"23"`) | Zero-padded hour from the hour `<select>`. Takes precedence over `time` when non-empty. |
-| `minute` | string (`"00"`, `"05"`, …, `"55"`) | Zero-padded minute from the minute `<select>`. Takes precedence over `time` when non-empty. |
-| `time` | string (`HH:MM`) | Legacy single-field fallback for in-flight pages that have not yet received the updated markup. Used only when `hour`/`minute` are absent or empty. |
-| `tz` | string | IANA timezone (e.g. `Europe/Zagreb`). |
-| `model_id` | string | Validated against `MODELS`; ignored when `REQ-SET-004` is deprecated. |
-| `email_enabled` | string (`"on"`) | Present when the toggle is checked; absent when unchecked (standard HTML checkbox behaviour). |
+| `hour` | `"00"`–`"23"` | Zero-padded hour. Takes precedence over `time`. |
+| `minute` | `"00"`, `"05"`, …, `"55"` | Zero-padded minute. Takes precedence over `time`. |
+| `time` | `HH:MM` | Legacy single-field fallback. Used only when `hour`/`minute` are absent. |
+| `tz` | string | IANA timezone. |
+| `model_id` | string | Validated against `MODELS`. |
+| `email_enabled` | `"on"` | Present when checked; absent when unchecked. |
 
-The `/settings` page renders the schedule picker as two `<select>` elements (`name="hour"` and `name="minute"`) rather than `<input type="time">`. Native time inputs render in 12h on Chromium and Safari whenever the OS locale is `en-US`, ignoring the `lang` attribute — a user in `Europe/Zagreb` on an en-US device saw "08:00 AM". `<select>` options are literal strings, so 24h text always displays 24h regardless of browser or device locale. Implements [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone) AC 1.
-
-**Response:** `303` redirect to `/settings?saved=ok` on success. On validation failure, redirects to `/settings?error=<code>` where `<code>` is one of `invalid_hashtags`, `invalid_time`, `invalid_email_enabled`; the settings page renders an inline error message next to the Save button from the query param; the param is stripped from the URL after display so a refresh does not re-show stale text.
+**Response:** `303` → `/settings?saved=ok` on success; `303` → `/settings?error=<code>` on validation failure (`invalid_hashtags`, `invalid_time`, `invalid_email_enabled`).
 
 **Implements:** [REQ-SET-001](../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation), [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-SET-005](../sdd/settings.md#req-set-005-email-notification-preference)
 
@@ -195,7 +192,7 @@ The `/settings` page renders the schedule picker as two `<select>` elements (`na
 }
 ```
 
-Returns up to 29 articles from the global pool filtered by the session user's active hashtags, ordered by `ingested_at DESC, published_at DESC` — newest ingest wins so a fresh scrape always bubbles its articles to the top of the dashboard. The 30th position in the digest grid is always the "see today" tile (a fixed icon card that deep-links to `/history?date=YYYY-MM-DD`). `last_scrape_run` is the most recent completed `scrape_runs` row; `next_scrape_at` is `started_at + 14400` (unix seconds — the cron fires every 4 hours). The pool is always populated — no `live` flag or skeleton state.
+Up to 29 articles from the global pool filtered by the user's active hashtags, ordered `ingested_at DESC, published_at DESC`. `next_scrape_at = last_scrape_run.started_at + 14400` (4-hour cron).
 
 **Implements:** [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest) AC 5
 
@@ -226,17 +223,11 @@ Returns up to 29 articles from the global pool filtered by the session user's ac
 }
 ```
 
-`chunks_remaining` and `chunks_total` are `null` when the coordinator has not yet written the chunk count to KV. `articles_ingested` defaults to `0`.
+`chunks_remaining` and `chunks_total` are `null` when the coordinator has not yet written the chunk count to KV. `articles_ingested` defaults to `0`. The KV counter is a display mirror; the authoritative completion gate is in D1 (`scrape_chunk_completions`).
 
-Reads one `scrape_runs` row (most recent by `started_at DESC`) plus one KV key (`scrape_run:{id}:chunks_remaining`). No LLM cost.
+Both responses carry a `Set-Cookie` refresh when the session is within 5 minutes of expiry, so polling during a long scrape never expires the session.
 
-The KV `chunks_remaining` value is a **display mirror only** — it is decremented by chunk consumers for the live progress display, not the authoritative completion gate. The completion gate moved to D1 (`scrape_chunk_completions`, migration 0007) and the finalize lock to `scrape_runs.finalize_enqueued` (migration 0008) to eliminate the TOCTOU race window. When debugging a stuck run, inspect the D1 tables — the KV counter can lag without indicating a real stall.
-
-Both the `running: false` and `running: true` responses carry a `Set-Cookie` refresh when the session is within 5 minutes of expiry, matching the behaviour of page-route handlers. This prevents repeated polling during a long scrape run from inadvertently expiring a user's session.
-
-**Callers:**
-- `/digest` — swaps the "Next update in Xm" countdown for "Update in progress" while `running=true`.
-- `/settings` Force Refresh section — polls every 5s after form submission to show live `articles_ingested` and `chunks_remaining`.
+**Polled by:** `/digest` (swaps countdown for "Update in progress"), `/settings` Force Refresh section (5 s poll for live progress).
 
 **Implements:** [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation) AC 4, [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection)
 
@@ -244,53 +235,32 @@ Both the `running: false` and `running: true` responses carry a `Set-Cookie` ref
 
 ## Discovery
 
-### GET /api/discovery/status
-
-**Response:** `{ pending: string[] }` — tags this user is waiting on for discovery.
-
-**Implements:** [REQ-DISC-002](../sdd/discovery.md#req-disc-002-discovery-progress-visibility) *(Deprecated 2026-04-24)*
+> **Admin auth.** Every `/api/admin/*` route is gated by three layers: (a) Cloudflare Access zone-level JWT, (b) valid Worker session cookie, (c) session email matches `ADMIN_EMAIL`. See [Deployment: Admin-only routes](deployment.md#admin-only-routes-cloudflare-access-gating). Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8.
 
 ### POST /api/admin/discovery/retry
 
-Verifies the submitted tag is in the session user's `hashtags_json`, clears `sources:{tag}` and `discovery_failures:{tag}` KV entries, then inserts a fresh `pending_discoveries` row so the next 5-minute discovery cron repopulates the tag.
+Re-queues a single stuck tag. Validates the tag is in the user's `hashtags_json`, clears `sources:{tag}` and `discovery_failures:{tag}` KV, inserts a `pending_discoveries` row.
 
-**Access control:** `/api/admin/*` is protected by two independent layers — Cloudflare Access (zone-level JWT assertion header) and a Worker-side gate (`src/middleware/admin-auth.ts`) that also requires a valid session cookie and an `ADMIN_EMAIL` match. See [Deployment: Admin-only routes](deployment.md#admin-only-routes-cloudflare-access-gating). Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8.
+| Content-type | Request | Success response |
+|---|---|---|
+| `application/json` | `{ "tag": "<tag>" }` | `200 { "ok": true }` |
+| `application/x-www-form-urlencoded` | `tag=<tag>` | `303` → `/settings?rediscover=ok&tag=<tag>` |
 
-**Content-type: application/json**
-
-**Request:** `{ "tag": "<tag>" }`
-
-**Response:** `200 { "ok": true }` | `400 bad_request` | `400 unknown_tag` | `401 unauthorized` | `403 forbidden_origin`
-
-**Content-type: application/x-www-form-urlencoded**
-
-**Request:** form field `tag=<tag>` (native HTML form POST from the Stuck tags fieldset on `/settings`)
-
-**Response:** `303` redirect to `/settings?rediscover=ok&tag=<tag>` — returns the operator to the settings page with a visible confirmation banner. Error responses are identical in status code to the JSON path; the redirect is only issued on success.
+**Error responses:** `400 bad_request` | `400 unknown_tag` | `401 unauthorized` | `403 forbidden_origin`
 
 **Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)
 
 ### POST /api/admin/discovery/retry-bulk (also GET)
 
-Re-queues every "stuck" tag for the session user in one shot. A tag is stuck when its `sources:{tag}` KV entry has an explicitly empty `feeds` array (REQ-DISC-001 exhaustion path or REQ-DISC-003 self-healing eviction). Brand-new tags (no entry yet) are not queued — they are still discovering, not stuck. Backs the **Discover missing sources** button on `/settings`.
+Re-queues every stuck tag for the session user in one D1 batch. Backs the **Discover missing sources** button. A tag is stuck when its `sources:{tag}` entry has an explicitly empty `feeds` array; brand-new tags are not stuck (still discovering).
 
-**Access control:** `/api/admin/*` is protected by two independent layers — Cloudflare Access (zone-level JWT assertion header) and a Worker-side gate (`src/middleware/admin-auth.ts`) that also requires a valid session cookie and an `ADMIN_EMAIL` match. See [Deployment: Admin-only routes](deployment.md#admin-only-routes-cloudflare-access-gating). Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8.
+| Method | Caller | Success response |
+|---|---|---|
+| `POST` | Form submit | `303` → `/settings?rediscover=ok&count=<N>` |
+| `GET` | Cloudflare Access post-auth callback (browser) | `303` → `/settings?rediscover=ok&count=<N>` |
+| `GET` | Scripted (`Accept: application/json`) | `200 { ok: true, count: N }` |
 
-**POST — canonical form submit path:**
-
-**Content-type: application/x-www-form-urlencoded** (no body fields required)
-
-**Response:** `303` redirect to `/settings?rediscover=ok&count=<N>` where `<N>` is the number of tags re-queued (`0` is a valid no-op success). Error responses: `401 unauthorized` | `403 forbidden_origin` | `500 internal_error`.
-
-**GET — Cloudflare Access post-auth callback path:**
-
-When Cloudflare Access intercepts the form's POST, bounces the user through SSO, and returns them via a GET to the original URL, this handler ensures they land on `/settings` with the correct outcome banner rather than seeing a 404. Clients that send `Accept: application/json` receive a JSON response instead of a redirect (for scripted callers).
-
-**Response (browser, no `Accept: application/json`):** `303` redirect to `/settings?rediscover=ok&count=<N>` on success; `303` redirect to `/settings?rediscover=error` on session or internal error.
-
-**Response (`Accept: application/json`):** `200 { ok: true, count: N }` on success | `401 unauthorized` | `500 { ok: false, error: "internal_error" }`.
-
-No `Origin` check on GET — Cloudflare Access is the sole authentication gate for this path.
+**Error responses:** `401 unauthorized` | `403 forbidden_origin` | `500 internal_error`. GET path skips the Origin check (Cloudflare Access is the sole gate).
 
 **Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)
 
@@ -366,40 +336,25 @@ Clears the new-user "would you like our suggested tags?" seed prompt by writing 
 
 ## Developer Tools
 
+> Both `/api/dev/*` routes are gated by `DEV_BYPASS_TOKEN`. When the secret is unset the endpoint returns `404`. When set, the request must carry `Authorization: Bearer <DEV_BYPASS_TOKEN>` (timing-safe). Mismatch also returns `404` (no enumeration). Production leaves the secret unset.
+
 ### POST /api/dev/login
 
-Dev-only session minter. Bypasses the OAuth round-trip and writes a pre-baked session cookie for the synthetic e2e user (or `DEV_BYPASS_USER_ID` when set). Used by `scripts/e2e-test.sh` and local Playwright runs to skip browser-based sign-in.
+Mints a pre-baked session cookie for the synthetic e2e user (`__e2e__`) so test runs never mutate a real account. Set `DEV_BYPASS_USER_ID` to impersonate a different id (staging only).
 
-**Access control:** Endpoint returns `404` when `DEV_BYPASS_TOKEN` is unset OR when the request's `Authorization: Bearer <token>` doesn't timing-safe-match it. The endpoint deliberately does not distinguish "wrong token" from "not found" — this avoids enumeration of dev-mode deployments. Endpoint also returns `404` if `OAUTH_JWT_SECRET` is missing (no JWT can be minted).
+**Response:** `204` with `Set-Cookie: oauth_session=…` | `401` (missing Bearer) | `404` (disabled or token mismatch).
 
-**Default user:** When `DEV_BYPASS_USER_ID` is unset the endpoint mints a session for `__e2e__` (the synthetic row from `migrations/0006_e2e_user.sql`), so e2e flows never mutate the operator's own account. Setting `DEV_BYPASS_USER_ID` to a real user id impersonates that user — only set this manually on staging.
-
-**Response (success):** `204` with `Set-Cookie: oauth_session=...` (HttpOnly, Secure, SameSite=Lax). `401` if Bearer header is missing/malformed. `404` if disabled or token mismatch.
-
-**Implements:** No product REQ — this endpoint is a dev/e2e test scaffold gated by `DEV_BYPASS_TOKEN`. Production deployments leave the secret unset, which makes the endpoint return 404. Documented here so operators forking the repo know it exists.
-
----
+**Used by:** `scripts/e2e-test.sh`, local Playwright runs.
 
 ### POST /api/dev/trigger-scrape
 
-Dev-only pipeline trigger. Kicks a real global-feed scrape (coordinator → chunks → LLM → D1) without waiting for the every-4-hours cron or needing Cloudflare Access.
+Kicks a real scrape without waiting for the cron. Inserts a `scrape_runs` row and sends `SCRAPE_COORDINATOR`.
 
-**Access control:** Endpoint 404s when `DEV_BYPASS_TOKEN` is not configured. When the secret is set, the request must carry `Authorization: Bearer <DEV_BYPASS_TOKEN>` (timing-safe comparison). Any mismatch or missing header also returns `404` — the endpoint does not distinguish "wrong token" from "not found" to avoid enumeration.
+**Response (success):** `202 { ok: true, scrape_run_id, status_url: "/api/scrape-status" }`
 
-**Response (success):** `202`
-```json
-{
-  "ok": true,
-  "scrape_run_id": "string",
-  "status_url": "/api/scrape-status"
-}
-```
+**Error responses:** `500 { ok: false, error: "start_run_failed" | "enqueue_failed" }`
 
-The pipeline runs asynchronously via Queues. Poll `GET /api/scrape-status` to watch progress; the run transitions to `status='ready'` with `articles_ingested > 0` when complete.
-
-**Error responses:** `500 { ok: false, error: "start_run_failed" | "enqueue_failed" }` — if the D1 insert or queue send throws.
-
-**Used by:** `scripts/e2e-test.sh` full-cycle scrape section — triggers the real pipeline and asserts that at least one article is ingested and that the first article's `details` field is ≥ 150 words (target contract: 150–200 words, 2–3 paragraphs per [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract) AC 3).
+Poll `GET /api/scrape-status` until `status='ready'`.
 
 ---
 
@@ -407,23 +362,17 @@ The pipeline runs asynchronously via Queues. Poll `GET /api/scrape-status` to wa
 
 ### POST /api/admin/force-refresh (also GET)
 
-Operator-only endpoint that kicks the global-feed coordinator on demand — identical to what the `0 */4 * * *` cron fires automatically (every 4 hours at 00/04/08/12/16/20 UTC). Creates a fresh `scrape_runs` row with `status='running'` and sends a `SCRAPE_COORDINATOR` queue message.
+Kicks the global-feed coordinator on demand — identical to the every-4-hours cron. Inserts a `scrape_runs` row, sends `SCRAPE_COORDINATOR`. A 120-second reuse window absorbs double-clicks: a new request that finds a `running` row younger than 120 s reuses it.
 
-**Access control:** `/api/admin/*` is protected by two independent layers — Cloudflare Access (zone-level JWT assertion header) and a Worker-side gate (`src/middleware/admin-auth.ts`) that also requires a valid session cookie and an `ADMIN_EMAIL` match. `POST` additionally enforces the standard Origin check ([REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)) as defence-in-depth against CSRF. `GET` is exempt from the Origin check so operators can trigger from a bookmark or `curl`. See [Deployment: Admin-only routes](deployment.md#admin-only-routes-cloudflare-access-gating). Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8.
+POST enforces Origin; GET is exempt (so operators can bookmark or `curl`).
 
-**Concurrency guard (120-second reuse window):** Before creating a new run, the handler queries for any `scrape_runs` row with `status='running'` started within the last 120 seconds. If one is found it is reused instead of dispatching a second coordinator. This absorbs double-clicks and link-preview bot refetches. Note: two truly concurrent requests can both pass the SELECT before either INSERT commits — the ULIDs are unique so no PK collision collapses the race; for an operator-only endpoint the tradeoff is acceptable.
+| Method | Caller | Success response |
+|---|---|---|
+| `POST` | `/settings` form submit | `303` → `/settings?force_refresh={ok\|reused}` |
+| `GET` | Browser | `303` → `/settings?force_refresh={ok\|reused\|denied}` |
+| `GET` | Scripted (`Accept: application/json`) | `200 { ok: true, scrape_run_id, reused }` |
 
-**POST response:** `303` redirect to `/settings?force_refresh=ok` (new run) or `/settings?force_refresh=reused` (concurrency guard hit). The `/settings` page reads `?force_refresh=` in `init()` and renders the result in `[data-scrape-progress]`.
-
-**GET response (content-negotiated):**
-- Browser (no `Accept: application/json`) — admin gate passes → `303` redirect to `/settings?force_refresh={ok|reused}`.
-- Browser (no `Accept: application/json`) — admin gate fails → `303` redirect to `/settings?force_refresh=denied`. Browsers never see a bare 403 body on the GET path.
-- `Accept: application/json` — admin gate passes → `200 { ok: true, scrape_run_id: string, reused: bool }`.
-- `Accept: application/json` — admin gate fails → `401 unauthorized` or `403 forbidden`.
-
-Scripts and `curl` callers must send `Accept: application/json` to receive the JSON payload; omitting it triggers a redirect on both success and auth failure.
-
-**Error response (both methods):** `500 "Failed to dispatch coordinator"` when the D1 INSERT or queue send throws.
+**Error responses:** `401 unauthorized` | `403 forbidden` | `500 "Failed to dispatch coordinator"`.
 
 **Implements:** [REQ-OPS-005](../sdd/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
@@ -467,9 +416,9 @@ Extended machine-readable agents policy (`public/llms-full.txt`). Superset of `l
 |---|---|---|---|
 | `date` | string (`YYYY-MM-DD`) | No | When present, filters to the single matching local day. Used for the "see today" deep-link from the digest grid. |
 
-**Response:** `{ days: [...] }` — up to 14 day-groups keyed by the user's local timezone (users.tz), sorted `local_date DESC`. Empty days (no articles, no scrape ticks) are omitted. Each day group includes `local_date`, `article_count`, `articles[]` (articles from the global pool matching the user's active tags on that day), `ticks[]` (scrape_runs rows whose `started_at` falls in that day), and per-day aggregates: `day_tokens_in`, `day_tokens_out`, `day_cost_usd`, `day_articles_ingested`. Each tick entry includes `id`, `started_at`, `finished_at`, `articles_ingested`, `tokens_in`, `tokens_out`, `estimated_cost_usd`, and `status`.
+**Response:** `{ days: [...] }` — up to 14 day-groups keyed by the user's local timezone, sorted `local_date DESC`. Empty days are omitted. Each day group has `local_date`, `article_count`, `articles[]` (filtered to the user's active tags), `ticks[]` (scrape runs in that day), and per-day token/cost/articles-ingested aggregates.
 
-The `/history` page also reads `?q=` (search query, ≥3 chars) and `?tags=` (comma-separated tag list) from the URL client-side to restore the exact filter state when the user returns via the browser back button from an opened article. These parameters are written to the URL via `replaceState` — they are not sent to `/api/history` on the server; the page filters the already-rendered cards in the browser.
+`?q=` and `?tags=` are page-level URL state read client-side; they are not server query params.
 
 **Implements:** [REQ-HIST-001](../sdd/history.md#req-hist-001-day-grouped-article-history) AC 4, AC 5
 
@@ -477,7 +426,7 @@ The `/history` page also reads `?q=` (search query, ≥3 chars) and `?tags=` (co
 
 **Response:** `{ digests_generated: int, articles_read: int, articles_total: int, tokens_consumed: int, cost_usd: number }`
 
-`digests_generated`, `tokens_consumed`, and `cost_usd` are global (sourced from `scrape_runs`) — one tick represents one generation event shared across every user. `articles_total` and `articles_read` are per-user: they count articles in the global pool whose tags intersect the session user's currently-active tag list, and reads in `article_reads` scoped to that same pool. Reads on articles whose only tag the user has since deselected drop out of both numerator and denominator, so the ratio always describes "of the articles you can see right now, how many have you read" (see [REQ-HIST-002](../sdd/history.md#req-hist-002-user-stats-widget) AC 3). Queries run in parallel via `Promise.all`. Defaults to `0` for each field if no data exists.
+Global counters (`digests_generated`, `tokens_consumed`, `cost_usd`) come from `scrape_runs` — one tick is one shared event. Per-user counters (`articles_total`, `articles_read`) are scoped to the user's currently-active tag list, so the ratio always describes "of articles you can see now, how many have you read" ([REQ-HIST-002](../sdd/history.md#req-hist-002-user-stats-widget) AC 3).
 
 **Implements:** [REQ-HIST-002](../sdd/history.md#req-hist-002-user-stats-widget)
 

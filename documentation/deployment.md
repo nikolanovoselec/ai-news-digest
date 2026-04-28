@@ -30,7 +30,7 @@ The dev server runs at `http://localhost:4321`.
 npm test
 ```
 
-Tests are organized so each test references a REQ ID — `spec-reviewer` reads test files to verify which Implemented REQs have automated coverage. Example:
+Tests reference a REQ ID in the test name so `spec-reviewer` can verify automated coverage:
 
 ```typescript
 test('REQ-AUTH-003: rejects state-changing requests without matching Origin', () => {
@@ -38,9 +38,7 @@ test('REQ-AUTH-003: rejects state-changing requests without matching Origin', ()
 });
 ```
 
-**Test fixture for Cloudflare bindings:** import `env` and `applyD1Migrations` from `tests/fixtures/cloudflare-test.ts` rather than directly from `cloudflare:test`. The fixture re-exports these with the `@deprecated` JSDoc stripped, eliminating ~90 `ts(6385)` typecheck warnings that otherwise drown real CI failures in noise. If a future release of the upstream package removes the deprecation tag, delete the fixture and revert test imports to the direct `cloudflare:test` path.
-
-**CSP and Astro page scripts:** the site's Content Security Policy is `script-src 'self'`. When a `<script>` block inside an `.astro` file has no `import` statements, Astro's build pipeline inlines the script body directly into the HTML — and the browser silently drops it as an inline CSP violation. To prevent this, any page-level or layout-level `<script>` block must either (a) contain at least one `import` (which forces Astro to emit the code as an external `<script type="module" src="/_astro/...js">` bundle, allowed by `script-src 'self'`), or (b) carry the `is:inline` attribute for scripts that are intentionally inline and already covered by a hash-based CSP exception. The standard pattern is to move the script body to `src/scripts/*.ts` and import it: `<script> import '~/scripts/my-module'; </script>`.
+Import `env` and `applyD1Migrations` from `tests/fixtures/cloudflare-test.ts` (not `cloudflare:test` directly) — the fixture strips deprecated-JSDoc warnings.
 
 ## Production Deployment
 
@@ -49,21 +47,18 @@ npx wrangler d1 migrations apply DB --remote
 npx wrangler deploy
 ```
 
-Or via GitHub Actions (`.github/workflows/deploy.yml`), which triggers on a `workflow_run` event — it fires only when the "PR Checks" workflow on `main` completes with a `success` conclusion. This closes the window where a plain `push: [main]` trigger would have run the deploy in parallel with checks off the same SHA. `workflow_dispatch` is retained for manual re-runs of a stuck deploy.
+CI/CD: `.github/workflows/deploy.yml` triggers on a `workflow_run` event — fires only when "PR Checks" on `main` completes with `success`. `workflow_dispatch` is retained for manual re-runs.
 
 The deploy job:
-1. Applies D1 migrations against the production database. As of `migrations/0009_refresh_tokens.sql` this includes the `refresh_tokens` table (device-bound 30-day tokens for [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection)). The migration is idempotent — re-running the deploy does not re-apply already-applied migrations.
-2. Pushes Worker secrets via `wrangler secret put` using the file-redirect form (safer than piping under some CI environments). All OAuth provider credentials, Resend config, and `APP_URL` are pushed unconditionally. Three secrets are pushed conditionally — only when the corresponding GitHub Actions secret is non-empty:
-   - `ADMIN_EMAIL` — when unset, every `/api/admin/*` request returns HTTP 403. This is the fork-friendly default that locks down the admin surface until an operator opts in. Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8.
-   - `CF_ACCESS_AUD` — when unset, the admin gate only checks header presence (Cloudflare Access already verified the JWT before forwarding). Set this to enable audience-claim validation as a defense-in-depth against header forging. Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8.
-   - `DEV_BYPASS_USER_ID` — when unset, `/api/dev/login` defaults to the synthetic `__e2e__` row inserted by `migrations/0006_e2e_user.sql`, so e2e test runs are sandboxed to that account and never touch the operator's data. Set this manually only for unusual staging scenarios (impersonating a specific account); the deploy workflow does not propagate it.
+1. Applies D1 migrations (idempotent).
+2. Pushes Worker secrets via `wrangler secret put` (file-redirect form). Conditional secrets (`ADMIN_EMAIL`, `CF_ACCESS_AUD`, `DEV_BYPASS_USER_ID`) are pushed only when the corresponding GitHub Actions secret is non-empty.
 3. Deploys the Worker.
-4. Binds the custom domain: extracts the hostname from the `APP_URL` secret, walks parent domains to find the matching Cloudflare zone in the account, then calls the Workers Custom Domains API (`PUT /accounts/{id}/workers/domains`) to attach the hostname to the Worker. The call is idempotent — safe to re-run on every deploy. Skipped if `APP_URL` is not set.
-5. Smoke-tests `GET /` against `APP_URL` first (the hostname users actually reach); falls back to the `*.workers.dev` URL if the custom domain has not propagated yet. Accepts `200` or `303` as passing. Uses `--max-time 15` to avoid hung connections.
+4. Binds the custom domain extracted from `APP_URL` via the Workers Custom Domains API. Idempotent.
+5. Smoke-tests `GET /` against `APP_URL`, falling back to `*.workers.dev`. Accepts `200` or `303`.
 
-The `scripts/e2e-test.sh` script is for manual invocation only (`bash scripts/e2e-test.sh --force-prod`) and is not part of the deploy job — running it on every deploy would trigger a full-cycle scrape (LLM cost and ~10 min wall-clock) and mutate the owner's account state (tags/stars/settings). The reachability smoke above plus PR Checks on the preceding commit are sufficient to confirm a healthy deploy.
+`scripts/e2e-test.sh` is manual only (`bash scripts/e2e-test.sh --force-prod`) and not part of CI deploy — running it triggers a full LLM-cost scrape and mutates the owner's account.
 
-> **Fork-friendly:** set `APP_URL` to any hostname whose apex domain is a Cloudflare zone in the same account — the deploy step binds it automatically. No edits to `wrangler.toml` are required.
+> **Fork-friendly:** set `APP_URL` to any hostname whose apex is a zone in the same Cloudflare account. The deploy binds it automatically.
 
 ### Environment-specific configuration
 
