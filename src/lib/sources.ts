@@ -26,6 +26,7 @@ import { mapConcurrent } from '~/lib/concurrency';
 import { stripHtmlToText } from '~/lib/html-text';
 import { FEED_FETCH_TIMEOUT_MS as FETCH_TIMEOUT_MS } from '~/lib/fetch-policy';
 import { definedProp } from '~/lib/optional-prop';
+import { preferDirectOverGoogleNews } from '~/lib/prefer-direct-source';
 
 /** Hard-cap returned by `fanOutForTags`. 300 overflowed
  * llama-3.1-8b-instruct-fp8-fast's 30K token context window: ~24K
@@ -374,12 +375,19 @@ export async function fanOutForTags(
     if (order.length >= MAX_COMBINED_HEADLINES) break;
   }
 
-  const out: Headline[] = [];
+  const ordered: Headline[] = [];
   for (const key of order) {
     const h = seen.get(key);
-    if (h !== undefined) out.push(h);
+    if (h !== undefined) ordered.push(h);
   }
-  return out;
+
+  // Prefer direct sources over Google News for the same story
+  // (REQ-PIPE-001 dedup heuristic). Google News URLs canonicalise to
+  // a different form than the underlying publisher/HN/Reddit links,
+  // so the canonical-URL pass above keeps both copies. The
+  // title-overlap pass below drops the Google News entry when a
+  // direct headline carrying the same story is already present.
+  return preferDirectOverGoogleNews(ordered);
 }
 
 /**
