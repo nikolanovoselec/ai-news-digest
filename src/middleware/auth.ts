@@ -12,10 +12,13 @@
 //
 // `loadSession` is the single entry point. It tries the access JWT
 // first; if missing or expired, it tries the refresh-token flow
-// inline (one D1 lookup, fingerprint check, rotate on success). Both
-// new cookies come back through `refreshCookie` / `rotatedRefreshCookie`
-// so the caller can attach them via `applyRefreshCookie` before
-// returning the response.
+// inline (one D1 lookup, rotate on success). Both new cookies come
+// back through `refreshCookie` / `rotatedRefreshCookie` so the caller
+// can attach them via `applyRefreshCookie` before returning the
+// response. Device-fingerprint mismatch is logged as forensic
+// metadata on the steady-state path (no rejection); a hard gate is
+// retained only on the 30 s concurrent-rotation grace branch, where
+// the UA cannot legitimately drift across two parallel requests.
 
 import { signSession, verifySession } from '~/lib/session-jwt';
 import { readCookie as readCookieCanonical } from '~/lib/crypto';
@@ -99,8 +102,9 @@ export function buildClearSessionCookie(): string {
  *   - `{ user: <row>, cookiesToSet: [session] }` — concurrent-rotation
  *     grace branch, fresh access JWT only.
  *   - `{ user: null, cookiesToSet: [clearSession, clearRefresh] }` —
- *     theft / fingerprint mismatch / expired refresh / unknown row;
- *     dead cookies are cleared so the browser stops replaying them.
+ *     theft (reuse outside grace, or grace-branch fingerprint
+ *     mismatch) / expired refresh / unknown row; dead cookies are
+ *     cleared so the browser stops replaying them.
  *   - `{ user: null, cookiesToSet: [] }` — no cookies present, or
  *     inline-refresh rate limit hit (don't clear; let the client retry).
  */
@@ -170,11 +174,14 @@ function toAuthenticatedUser(row: UserRow): AuthenticatedUser {
  * Two paths:
  *   1. Access JWT valid → return the user, no cookie churn.
  *   2. Access JWT missing/expired but refresh cookie valid →
- *      a. fingerprint matches → mint new access JWT + rotate refresh
- *         token (REQ-AUTH-008 AC 2)
- *      b. revoked refresh token presented → revoke ALL of the user's
- *         refresh tokens + bump session_version (REQ-AUTH-008 AC 4)
- *      c. fingerprint mismatch or expired → clear refresh cookie
+ *      a. mint new access JWT + rotate refresh token, logging any
+ *         fingerprint drift as forensic metadata (REQ-AUTH-008 AC 1+2)
+ *      b. revoked refresh token presented inside the 30 s grace window
+ *         WITH fingerprint mismatch → revoke ALL of the user's refresh
+ *         tokens + bump session_version (REQ-AUTH-008 AC 4)
+ *      c. revoked refresh token presented OUTSIDE grace → same revoke-
+ *         all theft path
+ *      d. expired refresh token → clear refresh cookie
  */
 export async function loadSession(
   request: Request,
@@ -258,26 +265,37 @@ export async function loadSession(
     // grace check; otherwise an attacker who can advance the row's
     // revoked_at into the future gets unbounded grace.
     if (sinceRevoked >= 0 && sinceRevoked <= ROTATION_GRACE_SECONDS) {
-      // No hard fingerprint gate here. The industry-standard refresh-
-      // token defenses (rotation + reuse-detection + HttpOnly/Secure/
-      // __Host- cookie + absolute 30-day expiry) already protect the
-      // grace window: an attacker replaying a stolen-and-just-rotated
-      // cookie still has to (a) get past `findRefreshToken` (hash of
-      // the cookie value) and (b) find an unrevoked child. The
-      // previous UA-based fingerprint check was an anti-pattern flagged
-      // by RFC 9700 § OAuth 2.0 BCP / OWASP / Auth0 / Okta — browser
-      // auto-updates and privacy-mode UA randomisation flip the
-      // fingerprint deterministically, locking out legitimate users.
-      // Anomaly detection on fingerprint metadata can be reintroduced
-      // later as a soft signal (warn log + re-auth prompt), but never
-      // as a hard reject.
+      // The grace branch keeps a hard fingerprint gate even though the
+      // steady-state path drops it. The two threat models differ:
+      //   - Steady-state: legit user's UA drifts across browser auto-
+      //     updates between refreshes (minutes / hours / days apart).
+      //     A hard gate would lock them out — anti-pattern.
+      //   - Grace branch: a token's `revoked_at` is set, and the
+      //     replay arrives within 30 seconds of the legit rotation.
+      //     For this to be a benign concurrent collision, the same
+      //     browser must have fired two parallel requests literally
+      //     30 seconds apart. The UA does not drift over 30 seconds
+      //     in real browsers, so a fingerprint mismatch in this
+      //     window is much more strongly correlated with theft. The
+      //     gate cheaply bounds the "freshly-stolen-just-rotated
+      //     cookie within 30 s" attacker without any legitimate-user
+      //     cost.
+      const presentFingerprint = await deviceFingerprint(request);
+      if (presentFingerprint !== refreshRow.device_fingerprint_hash) {
+        await revokeAllForUser(db, refreshRow.user_id, nowSec);
+        log('warn', 'auth.refresh.grace_fingerprint_mismatch', {
+          user_id: refreshRow.user_id,
+          refresh_token_id: refreshRow.id,
+        });
+        return unauthenticated(true);
+      }
       const child = await findUnrevokedChild(db, refreshRow.id);
       if (child !== null) {
         // Tier-2 user limit gates the JWT mint. Without it, an
         // attacker with a freshly-stolen-and-just-rotated cookie that
         // passes the fingerprint check could mint up to 60 access
         // JWTs in the 30 s grace window (bounded only by the per-IP
-        // tier). The 10/min/user cap collapses that to 10 mints
+        // tier). The 30/min/user cap collapses that to 30 mints
         // before reuse-detection inevitably fires the next request.
         if (kv !== undefined) {
           const rate = await enforceRateLimit(

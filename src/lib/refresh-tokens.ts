@@ -18,11 +18,15 @@
 // moment of refresh) and serve a fresh access JWT without rotating
 // again.
 //
-// Device fingerprint: SHA-256(UA || NUL || Cf-IPCountry). The
-// null-byte separator keeps two adjacent fields from colliding on
-// concatenation. Country (not /24) keeps mobile users on the same
-// fingerprint across cell-tower IP rotation; switching VPN exit
-// country IS treated as a fingerprint mismatch (intentional).
+// Device fingerprint: SHA-256(UA || NUL || Cf-IPCountry). Captured
+// at issuance and recorded on every refresh-token row. As of
+// 2026-04-28 the fingerprint is forensic metadata on the steady-state
+// refresh path (UA drift across browser auto-updates was forcing
+// legitimate users back through OAuth on every refresh — anti-pattern
+// per RFC 9700 / OWASP / Auth0 / Okta). The hard gate is preserved
+// only on the 30-second concurrent-rotation grace branch, where the
+// UA cannot legitimately drift across two parallel requests fired
+// seconds apart.
 
 import { hexEncode } from '~/lib/crypto';
 

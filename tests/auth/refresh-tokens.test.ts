@@ -231,16 +231,17 @@ describe('loadSession — refresh-token flow — REQ-AUTH-002, REQ-AUTH-008', ()
     expect(oldRow!.revoked_at).not.toBeNull();
   });
 
-  it('REQ-AUTH-008 AC 1: refresh succeeds across UA/country drift (no hard fingerprint gate)', async () => {
+  it('REQ-AUTH-008 AC 1: steady-state refresh succeeds across UA drift, rotates row, returns both cookies', async () => {
     // The previous behavior rejected on fingerprint mismatch and locked
     // legitimate users out every time their browser auto-updated the
     // User-Agent string (RFC 9700 / OWASP / Auth0 / Okta all flag this
-    // as an anti-pattern). The fingerprint is now metadata only:
-    // recorded for future anomaly detection, not a hard gate. This
-    // test pins the new contract — a refresh from a different UA and
-    // country WITH a valid cookie still succeeds.
+    // as an anti-pattern). On the steady-state path the fingerprint
+    // is now metadata only. Pin the FULL new contract: user is
+    // recognised, the original row is marked revoked + a child row
+    // exists, and the response carries BOTH a fresh session cookie
+    // and a rotated refresh cookie.
     const issueReq = fakeRequest({ ua: 'Mozilla/5.0 Chrome/130', country: 'CH' });
-    const { value } = await issueRefreshToken(env.DB, USER_ID, issueReq);
+    const { value, id: oldId } = await issueRefreshToken(env.DB, USER_ID, issueReq);
 
     // Browser auto-updated to Chrome/131; user travelled to US.
     const req = fakeRequest({
@@ -249,15 +250,38 @@ describe('loadSession — refresh-token flow — REQ-AUTH-002, REQ-AUTH-008', ()
       cookie: `${REFRESH_TOKEN_COOKIE_NAME}=${value}`,
     });
     const result = await loadSession(req, env.DB, SECRET);
+
     // User is recognised; no forced logout.
     expect(result.user).not.toBeNull();
     expect(result.user!.id).toBe(USER_ID);
-    // The original refresh row is rotated, not revoked-and-cleared.
-    // (rotateRefreshToken marks the old row revoked_at and writes a
-    // new child row; the test below pins the new row was issued.)
+
+    // Steady-state rotation: old row marked revoked, new child row
+    // exists pointing back to the old one.
+    const oldRow = await findRefreshToken(env.DB, value);
+    expect(oldRow!.revoked_at).not.toBeNull();
+    const childRow = await env.DB
+      .prepare('SELECT id, parent_id FROM refresh_tokens WHERE parent_id = ?1')
+      .bind(oldId)
+      .first<{ id: string; parent_id: string }>();
+    expect(childRow).not.toBeNull();
+    expect(childRow!.parent_id).toBe(oldId);
+
+    // Both cookies returned: a fresh session JWT and the rotated
+    // refresh cookie. (The "lost concurrent race" branch returns ONLY
+    // the session cookie — pinning two cookies here ensures we are
+    // on the steady-state rotation path.)
+    const cookies = result.cookiesToSet;
+    expect(cookies.some((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`))).toBe(true);
+    expect(cookies.some((c) => c.startsWith(`${REFRESH_TOKEN_COOKIE_NAME}=`))).toBe(true);
   });
 
-  it('REQ-AUTH-008 AC 1: grace-window replay from another country still mints fresh access JWT (no fingerprint gate)', async () => {
+  it('REQ-AUTH-008 AC 1: grace-window fingerprint mismatch is treated as theft (gate retained)', async () => {
+    // The hard fingerprint gate was retained on the 30 s grace branch
+    // because real legitimate users do not change UA across two
+    // parallel requests fired seconds apart — a mismatch in this
+    // window is much more strongly correlated with theft. This test
+    // pins that contract: replay within grace from a DIFFERENT
+    // country fires the revokeAllForUser theft path.
     const issueReq = fakeRequest({ ua: 'Mozilla/5.0', country: 'CH' });
     const { value } = await issueRefreshToken(env.DB, USER_ID, issueReq);
     const { value: otherValue } = await issueRefreshToken(env.DB, USER_ID, issueReq);
@@ -266,22 +290,24 @@ describe('loadSession — refresh-token flow — REQ-AUTH-002, REQ-AUTH-008', ()
     const oldRow = await findRefreshToken(env.DB, value);
     await rotateRefreshToken(env.DB, oldRow!, issueReq);
 
-    // Replay within the grace window from a DIFFERENT country. Without
-    // the hard fingerprint gate, the grace path treats this as a
-    // benign concurrent rotation and serves a fresh access JWT off the
-    // surviving child rather than firing the theft path. (Theft is
-    // still detected on OUTSIDE-grace replay — see the next test.)
+    // Replay within grace from a different country → grace branch
+    // fires the fingerprint gate → revokeAllForUser.
     const replayReq = fakeRequest({
       ua: 'Mozilla/5.0',
       country: 'US',
       cookie: `${REFRESH_TOKEN_COOKIE_NAME}=${value}`,
     });
     const result = await loadSession(replayReq, env.DB, SECRET);
-    expect(result.user).not.toBeNull();
+    expect(result.user).toBeNull();
 
-    // Other device's refresh row stays valid (no global wipe).
+    // Other device's refresh row IS revoked (global wipe — theft path).
     const otherRow = await findRefreshToken(env.DB, otherValue);
-    expect(otherRow!.revoked_at).toBeNull();
+    expect(otherRow!.revoked_at).not.toBeNull();
+    const sv = await env.DB
+      .prepare('SELECT session_version FROM users WHERE id = ?1')
+      .bind(USER_ID)
+      .first<{ session_version: number }>();
+    expect(sv!.session_version).toBeGreaterThan(1);
   });
 
   it('REQ-AUTH-008: future revoked_at (clock skew) falls through to theft branch, never mints access JWT', async () => {
