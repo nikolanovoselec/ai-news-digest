@@ -195,12 +195,18 @@ export const RATE_LIMIT_RULES = {
   },
   // AUTH_REFRESH_USER runs AFTER findRefreshToken returns a valid
   // row, keyed by user_id. Catches the "stolen cookie distributed
-  // across many IPs" attacker that defeats the per-IP limit. 10/min
-  // per user is far more than any browser needs (one refresh per
-  // 5-min access-JWT expiry, plus a small concurrent burst).
+  // across many IPs" attacker that defeats the per-IP limit. The
+  // previous 10/min was too tight: a user with several browser tabs
+  // open will hit it after the 5-min access JWT expires (each tab
+  // makes its own inline-refresh on its first request). Multi-tab
+  // users were getting silent 401s and being forced to re-login
+  // mid-session. 30/min still bounds attacker volume comfortably
+  // (an attacker would mint at most 30 access JWTs before reuse-
+  // detection or theft-detection fires) while giving legitimate
+  // multi-tab use a 3× headroom.
   AUTH_REFRESH_USER: {
     routeClass: 'auth_refresh_user',
-    limit: 10,
+    limit: 30,
     windowSec: 60,
     failClosed: true,
   },

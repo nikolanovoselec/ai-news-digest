@@ -258,19 +258,19 @@ export async function loadSession(
     // grace check; otherwise an attacker who can advance the row's
     // revoked_at into the future gets unbounded grace.
     if (sinceRevoked >= 0 && sinceRevoked <= ROTATION_GRACE_SECONDS) {
-      // REQ-AUTH-008 AC 1 — even in the benign-collision branch, the
-      // device fingerprint must match. Otherwise an attacker with a
-      // freshly-stolen-and-just-rotated cookie could ride the grace
-      // window to mint one extra 5-min access JWT.
-      const presentFingerprint = await deviceFingerprint(request);
-      if (presentFingerprint !== refreshRow.device_fingerprint_hash) {
-        await revokeAllForUser(db, refreshRow.user_id, nowSec);
-        log('warn', 'auth.refresh.grace_fingerprint_mismatch', {
-          user_id: refreshRow.user_id,
-          refresh_token_id: refreshRow.id,
-        });
-        return unauthenticated(true);
-      }
+      // No hard fingerprint gate here. The industry-standard refresh-
+      // token defenses (rotation + reuse-detection + HttpOnly/Secure/
+      // __Host- cookie + absolute 30-day expiry) already protect the
+      // grace window: an attacker replaying a stolen-and-just-rotated
+      // cookie still has to (a) get past `findRefreshToken` (hash of
+      // the cookie value) and (b) find an unrevoked child. The
+      // previous UA-based fingerprint check was an anti-pattern flagged
+      // by RFC 9700 § OAuth 2.0 BCP / OWASP / Auth0 / Okta — browser
+      // auto-updates and privacy-mode UA randomisation flip the
+      // fingerprint deterministically, locking out legitimate users.
+      // Anomaly detection on fingerprint metadata can be reintroduced
+      // later as a soft signal (warn log + re-auth prompt), but never
+      // as a hard reject.
       const child = await findUnrevokedChild(db, refreshRow.id);
       if (child !== null) {
         // Tier-2 user limit gates the JWT mint. Without it, an
@@ -361,18 +361,24 @@ export async function loadSession(
     }
   }
 
-  // Device fingerprint check — UA + Cf-IPCountry hashed at issuance.
+  // No hard fingerprint gate. The industry-standard refresh-token
+  // defenses (rotation + reuse-detection + HttpOnly/Secure/__Host-
+  // cookie + absolute 30-day expiry) are sufficient. UA-based
+  // fingerprinting was an anti-pattern: browser auto-updates and
+  // privacy-mode UA randomisation flipped the persisted hash
+  // deterministically and locked legitimate users out every time
+  // their access token expired (the bug the user was reporting).
+  // RFC 9700, OWASP OAuth Cheat Sheet, Auth0, and Okta guidance all
+  // treat fingerprint as a soft anomaly-detection signal, not a hard
+  // gate. Log the present fingerprint when it diverges so the data
+  // is available for future anomaly-detection work without rejecting
+  // the request.
   const presentFingerprint = await deviceFingerprint(request);
   if (presentFingerprint !== refreshRow.device_fingerprint_hash) {
-    // Treat fingerprint mismatch as suspicious. Don't nuke the whole
-    // user (that would lock them out across legitimate device-rotation
-    // events like a browser-version bump on a different tab) — just
-    // revoke this row and force re-login on this device.
-    log('warn', 'auth.refresh.fingerprint_mismatch', {
+    log('info', 'auth.refresh.fingerprint_drift', {
       user_id: refreshRow.user_id,
       refresh_token_id: refreshRow.id,
     });
-    return unauthenticated(true);
   }
 
   // All checks passed — rotate.

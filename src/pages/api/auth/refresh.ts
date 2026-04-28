@@ -125,18 +125,16 @@ export async function POST(context: APIContext): Promise<Response> {
     // Negative `sinceRevoked` (clock skew / replication lag) must not
     // open the grace window indefinitely.
     if (sinceRevoked >= 0 && sinceRevoked <= ROTATION_GRACE_SECONDS) {
-      // REQ-AUTH-008 AC 1 — fingerprint check applies in the grace
-      // branch too, otherwise a stolen cookie within the rotation
-      // window mints one free access JWT off any device.
+      // No hard fingerprint gate (see middleware/auth.ts for the
+      // industry-standard rationale). Log fingerprint drift for
+      // future anomaly-detection work but accept the request.
       const presentFp = await deviceFingerprint(context.request);
       if (presentFp !== row.device_fingerprint_hash) {
-        await revokeAllForUser(env.DB, row.user_id, nowSec);
-        log('warn', 'auth.refresh.grace_fingerprint_mismatch', {
+        log('info', 'auth.refresh.fingerprint_drift', {
           user_id: row.user_id,
           refresh_token_id: row.id,
           via: 'explicit_refresh',
         });
-        return unauthorizedResponse();
       }
       // Concurrent-rotation collision — serve a fresh access JWT
       // off the surviving child without rotating again.
@@ -217,15 +215,15 @@ export async function POST(context: APIContext): Promise<Response> {
     return rateLimitResponse(userRate.retryAfter);
   }
 
-  // Device fingerprint check.
+  // No hard fingerprint gate (see middleware/auth.ts). Log drift for
+  // future anomaly-detection work and accept the request.
   const present = await deviceFingerprint(context.request);
   if (present !== row.device_fingerprint_hash) {
-    log('warn', 'auth.refresh.fingerprint_mismatch', {
+    log('info', 'auth.refresh.fingerprint_drift', {
       user_id: row.user_id,
       refresh_token_id: row.id,
       via: 'explicit_refresh',
     });
-    return unauthorizedResponse();
   }
 
   const user = await env.DB

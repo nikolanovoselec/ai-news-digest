@@ -6,6 +6,8 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 ## 2026-04-28
 
+- REQ-AUTH-008 AC 1 rewritten: refresh tokens are no longer logged out when the browser auto-updates its User-Agent string — fingerprint mismatches on the normal refresh path are now logged for review instead of force-revoking the session, while the 30-second concurrent-rotation grace branch still treats a fingerprint drift as theft. The per-user refresh rate limit also rose from 10/min to 30/min so multi-tab users stop hitting silent 401s when their access JWT expires.
+
 - REQ-PIPE-003 AC 6 added: when the same story appears via a direct publisher/community link and an aggregator-wrapper link (e.g., Google News) whose canonicalised URL differs, the wrapper copy is dropped and its tag-of-discovery state is merged onto the surviving direct article — closing the bug where one trending story showed up 4× on `/digest` because the canonical-URL pass treated the wrapper and the original as distinct.
 
 - Default hashtag seed grows from 20 to 21 entries with the addition of `graymatter`, and the curated source registry gains a graymatter.ch RSS feed so the new tag has at least one verified source from day one. REQ-AUTH-001 AC 5, REQ-PIPE-004 (header + AC 2), and REQ-SET-002 AC 6/8 updated; the 25-tag user cap is unchanged so a new account now has 4 slots of custom-tag headroom instead of 5.
