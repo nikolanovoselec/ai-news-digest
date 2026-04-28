@@ -14,7 +14,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 |----|----------|----------|------|
 | AD1 | Custom federated OAuth/OIDC (GitHub, Google) + HMAC-SHA256 JWT, no third-party auth library | Security | 2026-04-22 |
 | AD2 | Cloudflare Queues for digest generation under thundering herd | Architecture | 2026-04-22 |
-| AD3 | No server-side article-body fetching; summaries from headlines only | Security | 2026-04-22 |
+| AD3 | Server-side article-body fetching with SSRF guard *(revised 2026-04-27)* | Security | 2026-04-27 |
 | AD4 | Plaintext-only LLM output; no markdown parser or HTML sanitizer | Security | 2026-04-22 |
 | AD5 | KV for caches, D1 for consistent state | Storage | 2026-04-22 |
 | AD6 | Polling instead of SSE or WebSockets for scrape-run progress | UI | 2026-04-22 |
