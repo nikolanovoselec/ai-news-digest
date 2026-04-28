@@ -125,9 +125,12 @@ export async function POST(context: APIContext): Promise<Response> {
     // Negative `sinceRevoked` (clock skew / replication lag) must not
     // open the grace window indefinitely.
     if (sinceRevoked >= 0 && sinceRevoked <= ROTATION_GRACE_SECONDS) {
-      // REQ-AUTH-008 AC 1 — fingerprint check applies in the grace
-      // branch too, otherwise a stolen cookie within the rotation
-      // window mints one free access JWT off any device.
+      // Hard fingerprint gate retained on the grace branch. Two
+      // parallel requests from the same browser fire 30 s apart at
+      // most; the UA does not drift across that window. A mismatch
+      // here is much more strongly correlated with theft than the
+      // steady-state path — see middleware/auth.ts for the full
+      // two-threat-models rationale.
       const presentFp = await deviceFingerprint(context.request);
       if (presentFp !== row.device_fingerprint_hash) {
         await revokeAllForUser(env.DB, row.user_id, nowSec);
@@ -146,7 +149,7 @@ export async function POST(context: APIContext): Promise<Response> {
         // attacker with a freshly-stolen-and-just-rotated cookie that
         // passes the fingerprint check could mint up to 60 access
         // JWTs in the 30 s grace window (bounded only by the per-IP
-        // tier). The 10/min/user cap collapses that to 10 mints
+        // tier). The 30/min/user cap collapses that to 30 mints
         // before reuse-detection inevitably fires the next request.
         const userRate = await enforceRateLimit(
           env,
@@ -217,15 +220,15 @@ export async function POST(context: APIContext): Promise<Response> {
     return rateLimitResponse(userRate.retryAfter);
   }
 
-  // Device fingerprint check.
+  // No hard fingerprint gate (see middleware/auth.ts). Log drift for
+  // future anomaly-detection work and accept the request.
   const present = await deviceFingerprint(context.request);
   if (present !== row.device_fingerprint_hash) {
-    log('warn', 'auth.refresh.fingerprint_mismatch', {
+    log('info', 'auth.refresh.fingerprint_drift', {
       user_id: row.user_id,
       refresh_token_id: row.id,
       via: 'explicit_refresh',
     });
-    return unauthorizedResponse();
   }
 
   const user = await env.DB

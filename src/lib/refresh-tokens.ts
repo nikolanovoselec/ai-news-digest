@@ -18,11 +18,15 @@
 // moment of refresh) and serve a fresh access JWT without rotating
 // again.
 //
-// Device fingerprint: SHA-256(UA || NUL || Cf-IPCountry). The
-// null-byte separator keeps two adjacent fields from colliding on
-// concatenation. Country (not /24) keeps mobile users on the same
-// fingerprint across cell-tower IP rotation; switching VPN exit
-// country IS treated as a fingerprint mismatch (intentional).
+// Device fingerprint: SHA-256(UA || NUL || Cf-IPCountry). Captured
+// at issuance and recorded on every refresh-token row. As of
+// 2026-04-28 the fingerprint is forensic metadata on the steady-state
+// refresh path (UA drift across browser auto-updates was forcing
+// legitimate users back through OAuth on every refresh — anti-pattern
+// per RFC 9700 / OWASP / Auth0 / Okta). The hard gate is preserved
+// only on the 30-second concurrent-rotation grace branch, where the
+// UA cannot legitimately drift across two parallel requests fired
+// seconds apart.
 
 import { hexEncode } from '~/lib/crypto';
 
@@ -89,18 +93,21 @@ export async function sha256Hex(input: string): Promise<string> {
 }
 
 /** Build the device fingerprint hash from request headers.
- *  UA || NUL || Country, then SHA-256. Null-byte separator prevents
- *  collisions where one field's tail matches another field's head
- *  (e.g., UA "foo CH" + empty country vs. UA "foo" + country "CH").
+ *  UA || NUL || Country, then SHA-256.
  *
- *  TRUST ASSUMPTION: `Cf-IPCountry` is injected by the Cloudflare
- *  edge and cannot be forged by clients on production traffic. If
- *  this Worker is ever moved off pure Cloudflare ingress (e.g.,
- *  fronted by another proxy that forwards request headers verbatim),
- *  the country header MUST be stripped at the new boundary or the
- *  device-binding becomes meaningless. Local `wrangler dev` traffic
- *  has no Cf-IPCountry header — fingerprint falls back to UA-only,
- *  intentional for dev UX.
+ *  As of 2026-04-28 this hash is captured for FORENSIC METADATA only.
+ *  The middleware no longer rejects requests on fingerprint mismatch
+ *  (see `src/middleware/auth.ts`). The previous hard gate was an
+ *  anti-pattern flagged by RFC 9700 / OWASP / Auth0 / Okta guidance:
+ *  browser auto-updates flip the UA string deterministically, so the
+ *  persisted hash diverged on every minor version bump and locked
+ *  legitimate users out every time their 5-min access JWT expired.
+ *
+ *  Keeping UA + country in the recorded hash preserves the value of
+ *  the column for future anomaly detection (e.g. soft-prompt for
+ *  re-auth when a new IP/UA pair appears) without making the cookie
+ *  fragile. The cookie's HttpOnly + Secure + __Host- prefix +
+ *  rotation + reuse-detection are the actual defenses that matter.
  */
 export async function deviceFingerprint(request: Request): Promise<string> {
   const ua = request.headers.get('User-Agent') ?? '';

@@ -50,6 +50,7 @@ export type LogEvent =
   | 'auth.refresh.expired'
   | 'auth.refresh.fingerprint_mismatch'
   | 'auth.refresh.grace_fingerprint_mismatch'
+  | 'auth.refresh.fingerprint_drift'
   | 'auth.refresh.concurrent_collision'
   | 'auth.refresh.concurrent_lost_race'
   | 'auth.refresh.reuse_detected'
