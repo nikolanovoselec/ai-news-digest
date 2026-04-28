@@ -73,7 +73,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ---
 
-### REQ-PIPE-004: Curated source registry with ≥50 feeds spanning the 20 system tags
+### REQ-PIPE-004: Curated source registry with ≥50 feeds spanning the 21 system tags
 
 **Intent:** The product covers the full breadth of cloud, AI, security, DevOps, languages, databases, and observability topics without relying on any single aggregator.
 
@@ -81,7 +81,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Acceptance Criteria:**
 1. The registry contains at least 50 entries, each declaring a slug, human-readable name, feed URL, feed kind, and at least one tag.
-2. Every one of the 20 system tags is covered by at least one source.
+2. Every one of the 21 system tags is covered by at least one source.
 3. Every source declares at least one tag drawn from the system tag list.
 4. Every feed URL uses HTTPS.
 5. A live-fetch validator can be run on demand to detect dead feeds so operators can swap them out before they pollute the pool.

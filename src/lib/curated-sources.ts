@@ -30,7 +30,7 @@ export interface CuratedSource {
   feed_url: string;
   /** Which parser shape to use. */
   kind: CuratedSourceKind;
-  /** One or more tag slugs from the 20-tag default registry. ≥1 required. */
+  /** One or more tag slugs from the default registry. ≥1 required. */
   tags: string[];
 }
 
@@ -494,5 +494,14 @@ export const CURATED_SOURCES: readonly CuratedSource[] = [
     feed_url: 'https://feed.infoq.com/',
     kind: 'rss',
     tags: ['kubernetes', 'devsecops'],
+  },
+
+  // ---- Brand sources -----------------------------------------------------
+  {
+    slug: 'graymatter-blog',
+    name: 'Gray Matter',
+    feed_url: 'https://graymatter.ch/rss-en.xml',
+    kind: 'rss',
+    tags: ['graymatter', 'zero-trust', 'ai-agents'],
   },
 ] as const;

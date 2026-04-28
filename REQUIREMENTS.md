@@ -7,7 +7,7 @@ A personalized daily tech news digest. Sign in with GitHub, pick your interests 
 ## How it works
 
 1. **Sign in with GitHub** — account is created on first login
-2. **Pick your interests** — tap hashtags from 20 defaults or type your own
+2. **Pick your interests** — tap hashtags from the defaults or type your own
 3. **Set your digest time** — pick exact HH:MM in your timezone; one scheduled generation per day at that moment
 4. **Read** — overview grid with one-line summaries, click any card for the full brief with source link
 5. **Refresh on demand** — manual "refresh now" button any time
@@ -124,7 +124,7 @@ This approach:
 
 ### Seed at deploy time (optional)
 
-A one-time `npm run seed-sources` script runs discovery for the 20 default tags so new users land with rich sources on their first digest. Optional — the system works without seeding.
+A one-time `npm run seed-sources` script runs discovery for the default tag set so new users land with rich sources on their first digest. Optional — the system works without seeding.
 
 ### Generation pipeline consumes both
 
@@ -344,7 +344,7 @@ No dedicated `/onboarding` route. `/settings` IS the onboarding — the same for
 4. Client posts tz to /api/auth/set-tz on load (validated server-side against
    Intl.supportedValuesOf('timeZone')).
 5. Form sections (rendered identically in both modes):
-   a. Interests — 20 default hashtag chips, custom text input, min 1 required
+   a. Interests — default hashtag chips, custom text input, min 1 required
    b. Schedule — HH:MM time picker (native <input type="time">). Timezone
       shown with a link "detected Europe/Zurich — change" that opens an
       IANA zone dropdown.
