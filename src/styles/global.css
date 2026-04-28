@@ -183,3 +183,66 @@ html {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* PWA install splash overlay — REQ-PWA-001.
+ *
+ * The system splash that Android Chrome / Samsung Internet show on a
+ * cold launch from the home screen icon disappears as soon as the page
+ * paints first content, which is fast enough to feel jarring (the
+ * splash flickers for ~200ms on a warm cache before the dashboard
+ * renders). This overlay extends the visible "loading" moment to a
+ * deliberate ~2 seconds so the brand registers and the device transition
+ * feels intentional. Gated three ways:
+ *   1. Only renders in display-mode: standalone — never visible in a
+ *      browser tab where it would be a pure regression.
+ *   2. Hidden once `data-splash-done='1'` lands on <html> (set by JS
+ *      after the timer expires AND on subsequent navigations within
+ *      the same session via sessionStorage), so the splash plays once
+ *      per cold launch, not on every view-transition.
+ *   3. Pointer-events:none and aria-hidden so it never traps focus or
+ *      blocks clicks on the underlying UI as it fades.
+ * Reduced-motion users get an instant fade-out (0.3s) instead of the
+ * full 2.4s presentation — they still get the dark canvas, just not
+ * the lingering dwell.
+ */
+.pwa-splash {
+  display: none;
+}
+@media all and (display-mode: standalone) {
+  html:not([data-splash-done='1']) .pwa-splash {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background-color: var(--bg);
+    color: var(--text);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.25rem;
+    pointer-events: none;
+    animation: pwa-splash-fade 2.4s forwards;
+  }
+  html:not([data-splash-done='1']) .pwa-splash__icon {
+    width: 96px;
+    height: 96px;
+    color: var(--text);
+  }
+  html:not([data-splash-done='1']) .pwa-splash__title {
+    font-size: var(--text-2xl);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+}
+@keyframes pwa-splash-fade {
+  0%,
+  75% {
+    opacity: 1;
+    visibility: visible;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
