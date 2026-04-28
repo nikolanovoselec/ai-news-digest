@@ -220,8 +220,7 @@ const initialTheme = cookieTheme ?? 'light';
             pages to provide the delegated click handler.
             Authenticated pages get a compact HeaderThemeToggle to the
             LEFT of the avatar — the sun/moon icon is a single-tap
-            control; dark mode is no longer buried in the UserMenu
-            dropdown. */}
+            control surfaced directly in the header. */}
         {!Astro.locals.user && <ThemeToggle />}
         {/* UserMenu is NOT hidden during firstRun — the user still needs
             a way to log out if they change their mind about onboarding,
@@ -273,17 +272,17 @@ const initialTheme = cookieTheme ?? 'light';
     <script is:inline type="module" src="/scripts/page-effects.js"></script>
 
     {/* Scroll save/restore + view-transition handlers also live in
-        ~/scripts/page-effects (imported above). The previous inline
-        copy here was silently dropped at runtime by CSP, taking the
-        morph animation and the per-path scroll restore with it. */}
+        ~/scripts/page-effects (imported above). They must stay in the
+        same external-loaded module — an inline copy would be dropped
+        at runtime by CSP, taking the morph animation and the per-path
+        scroll restore with it. */}
 
     <style>
-      /* Sticky header. Originally a frosted-glass effect (88% bg +
-         backdrop-blur) but the translucency let scrolled article body
-         text leak visibly through the header on detail-back navigation
-         even after the view-transition completed. Solid bg eliminates
-         the bleed; the wordmark + icon-trio composition still reads
-         clearly against the page without needing a frosted layer. */
+      /* Sticky header. Solid background (no frosted-glass / backdrop-
+         blur) so scrolled article body text cannot bleed through during
+         detail-back view transitions; the wordmark + icon-trio
+         composition reads clearly against the page without needing a
+         translucent layer. */
       .site-header {
         position: sticky;
         top: 0;
@@ -294,17 +293,16 @@ const initialTheme = cookieTheme ?? 'light';
         gap: 16px;
         padding: 14px 20px;
         background-color: var(--bg);
-        /* Issue #93 — give the header its own view-transition group so
-           it morphs independently from the page-body root snapshot.
-           Without this, the body's old→new morph plays underneath the
-           header and content bleeds through during the cross-fade. */
+        /* Give the header its own view-transition group so it morphs
+           independently from the page-body root snapshot. Without
+           this, the body's old→new morph plays underneath the header
+           and content bleeds through during the cross-fade. */
         view-transition-name: site-header;
       }
-      /* Belt-and-braces: the during-transition rule survives because
-         the named view-transition group can briefly desync from the
-         body snapshot on slow devices. Keeping the explicit opaque
-         override here means even if a future refactor reintroduces a
-         translucent base, the in-flight transition stays solid. */
+      /* During an active view transition, force the header opaque so
+         the in-flight body snapshot cannot bleed through, even on slow
+         devices where the named view-transition group can briefly
+         desync from the body snapshot. */
       [data-vt-active] .site-header {
         background-color: var(--bg);
         backdrop-filter: none;
@@ -369,11 +367,10 @@ const initialTheme = cookieTheme ?? 'light';
         flex-shrink: 0;
       }
 
-      /* Wordmark doubles as the page H1 — 'Today's digest' was
-         removed from /digest in favour of the brand carrying the
-         visual weight of a page header. 2xl on desktop bumps to
-         3xl so it reads as a header, not chrome. Mobile stays at
-         2xl to keep the 44px sticky-header row comfortable. */
+      /* Wordmark doubles as the page H1 on /digest — the brand
+         carries the visual weight of a page header. 2xl on desktop
+         bumps to 3xl so it reads as a header. Mobile stays at 2xl
+         to keep the 44px sticky-header row comfortable. */
       .site-header__wordmark {
         display: inline-flex;
         align-items: baseline;

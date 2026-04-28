@@ -61,7 +61,7 @@ The deploy job:
 4. Binds the custom domain: extracts the hostname from the `APP_URL` secret, walks parent domains to find the matching Cloudflare zone in the account, then calls the Workers Custom Domains API (`PUT /accounts/{id}/workers/domains`) to attach the hostname to the Worker. The call is idempotent — safe to re-run on every deploy. Skipped if `APP_URL` is not set.
 5. Smoke-tests `GET /` against `APP_URL` first (the hostname users actually reach); falls back to the `*.workers.dev` URL if the custom domain has not propagated yet. Accepts `200` or `303` as passing. Uses `--max-time 15` to avoid hung connections.
 
-The `scripts/e2e-test.sh` script still exists for manual invocation (`bash scripts/e2e-test.sh --force-prod`) but no longer runs automatically on every deploy — running it on every deploy triggers a full-cycle scrape (LLM cost and ~10 min wall-clock) and mutates the owner's account state (tags/stars/settings). The reachability smoke above plus PR Checks on the preceding commit are sufficient to confirm a healthy deploy.
+The `scripts/e2e-test.sh` script is for manual invocation only (`bash scripts/e2e-test.sh --force-prod`) and is not part of the deploy job — running it on every deploy would trigger a full-cycle scrape (LLM cost and ~10 min wall-clock) and mutate the owner's account state (tags/stars/settings). The reachability smoke above plus PR Checks on the preceding commit are sufficient to confirm a healthy deploy.
 
 > **Fork-friendly:** set `APP_URL` to any hostname whose apex domain is a Cloudflare zone in the same account — the deploy step binds it automatically. No edits to `wrangler.toml` are required.
 
@@ -101,7 +101,7 @@ Every push to `develop` (and every PR targeting `main`) runs the following gates
 | Install | `npm install --no-fund --no-audit` | Dependency resolution |
 | Security audit (advisory-only) | `npm audit --omit=dev --audit-level=high` with `continue-on-error: true` | Surfaces HIGH+ advisories in runtime dep tree but does NOT fail the build. Worker runtime is workerd, not Node.js, so most advisories live in build tooling (`@astrojs/cloudflare`, `wrangler`, `miniflare`, `undici`) and don't reach the deployed bundle. Operators read the advisory list from CI logs and act via Dependabot PRs; failing the build on these would block legitimate work without improving production security. |
 | Lint | `npm run lint` | Oxlint rules |
-| REQ backlink coverage | `node scripts/check-req-backlinks.mjs` | Every `REQ-X-NNN` reference in `src/`, `tests/`, `documentation/`, and `migrations/` resolves to a header in `sdd/`. Catches stale doc or code references to retired requirements before they reach production (CF-069). |
+| REQ backlink coverage | `node scripts/check-req-backlinks.mjs` | Every `REQ-X-NNN` reference in `src/`, `tests/`, `documentation/`, and `migrations/` resolves to a header in `sdd/`. Fails the build if any reference points at a REQ ID that does not exist in the spec (CF-069). |
 | Dead code | `npm run knip` | No unused exports or files |
 | Unit + integration tests | `npx vitest run` | Vitest suite |
 

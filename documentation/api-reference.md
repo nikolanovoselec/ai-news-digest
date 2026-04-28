@@ -477,7 +477,7 @@ The `/history` page also reads `?q=` (search query, ≥3 chars) and `?tags=` (co
 
 **Response:** `{ digests_generated: int, articles_read: int, articles_total: int, tokens_consumed: int, cost_usd: number }`
 
-After the global-feed rework `digests_generated`, `tokens_consumed`, and `cost_usd` are global (sourced from `scrape_runs`) — one tick represents one generation event shared across every user. `articles_total` and `articles_read` are per-user: they count articles in the global pool whose tags intersect the session user's currently-active tag list, and reads in `article_reads` scoped to that same pool. Reads on articles whose only tag the user has since deselected drop out of both numerator and denominator, so the ratio always describes "of the articles you can see right now, how many have you read" (see [REQ-HIST-002](../sdd/history.md#req-hist-002-user-stats-widget) AC 3). Queries run in parallel via `Promise.all`. Defaults to `0` for each field if no data exists.
+`digests_generated`, `tokens_consumed`, and `cost_usd` are global (sourced from `scrape_runs`) — one tick represents one generation event shared across every user. `articles_total` and `articles_read` are per-user: they count articles in the global pool whose tags intersect the session user's currently-active tag list, and reads in `article_reads` scoped to that same pool. Reads on articles whose only tag the user has since deselected drop out of both numerator and denominator, so the ratio always describes "of the articles you can see right now, how many have you read" (see [REQ-HIST-002](../sdd/history.md#req-hist-002-user-stats-widget) AC 3). Queries run in parallel via `Promise.all`. Defaults to `0` for each field if no data exists.
 
 **Implements:** [REQ-HIST-002](../sdd/history.md#req-hist-002-user-stats-widget)
 
@@ -517,7 +517,6 @@ Implements [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-log
 | `auth.refresh.rotate_failed` | D1 batch in `rotateRefreshToken` threw |
 | `auth.refresh.expired` | Refresh cookie presented but the row is past its 30-day TTL |
 | `auth.refresh.fingerprint_drift` | Refresh cookie valid; UA or country has changed since issuance — logged as forensic metadata for future anomaly detection on the steady-state path. Request is NOT rejected (RFC 9700 / OWASP / Auth0 / Okta guidance: UA-based hard gates lock users out on every browser auto-update) |
-| `auth.refresh.fingerprint_mismatch` | (Retained in log enum; no longer emitted — the steady-state hard gate was retired 2026-04-28) |
 | `auth.refresh.grace_fingerprint_mismatch` | Refresh cookie's row was rotated within the past 30 s grace window AND the present fingerprint does not match — treated as theft (parallel browser requests do not legitimately drift UA across 30 s); `revokeAllForUser` fires |
 | `auth.refresh.concurrent_collision` | Refresh cookie's row is already revoked but within the 30 s grace window — served a fresh access JWT off the surviving child row without re-rotating |
 | `auth.refresh.concurrent_lost_race` | Same as above; no surviving child row found — treated as reuse |

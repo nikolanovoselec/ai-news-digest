@@ -19,9 +19,7 @@
 //   - `*/5 * * * *` — two fixed chores: discovery drain
 //                     (`processPendingDiscoveries`, up to N tags/tick)
 //                     and the daily-email dispatcher
-//                     (`dispatchDailyEmails`). The retired per-user
-//                     digest scheduler (REQ-GEN-001, pre-rework) has
-//                     been deleted from this path.
+//                     (`dispatchDailyEmails`).
 //
 // Queue dispatch (wrangler.toml: three consumers):
 //   - `scrape-coordinator` → handleCoordinatorBatch (REQ-PIPE-001).

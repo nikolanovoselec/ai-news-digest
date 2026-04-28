@@ -231,8 +231,8 @@ if (rawSource !== '') {
 // source or many. Click behaviour diverges: single-source → direct
 // navigation to primary_source_url; multi-source → open the
 // <AltSourcesModal /> picker so the reader chooses which outlet to
-// read. The '+N' count hint was removed per user request (it leaked
-// implementation detail into what should just be a read affordance).
+// read. No '+N' count hint — the label is a read affordance, not an
+// implementation detail.
 const readAtLabel = 'Read at source';
 
 // Star/read state exposed to the template so the follow-up star-feature

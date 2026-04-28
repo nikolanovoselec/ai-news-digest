@@ -95,13 +95,13 @@ export async function sha256Hex(input: string): Promise<string> {
 /** Build the device fingerprint hash from request headers.
  *  UA || NUL || Country, then SHA-256.
  *
- *  As of 2026-04-28 this hash is captured for FORENSIC METADATA only.
- *  The middleware no longer rejects requests on fingerprint mismatch
- *  (see `src/middleware/auth.ts`). The previous hard gate was an
- *  anti-pattern flagged by RFC 9700 / OWASP / Auth0 / Okta guidance:
- *  browser auto-updates flip the UA string deterministically, so the
- *  persisted hash diverged on every minor version bump and locked
- *  legitimate users out every time their 5-min access JWT expired.
+ *  This hash is captured for FORENSIC METADATA only. The middleware
+ *  does not reject steady-state requests on fingerprint mismatch
+ *  (see `src/middleware/auth.ts`). RFC 9700 / OWASP / Auth0 / Okta
+ *  guidance flags a UA-based hard gate as an anti-pattern: browser
+ *  auto-updates flip the UA string deterministically, so a persisted
+ *  hash would diverge on every minor version bump and lock legitimate
+ *  users out every time their 5-min access JWT expires.
  *
  *  Keeping UA + country in the recorded hash preserves the value of
  *  the column for future anomaly detection (e.g. soft-prompt for

@@ -4,7 +4,7 @@ Canonical definitions for terms used across the spec, code, and documentation. U
 
 | Term | Definition |
 |------|-----------|
-| **Article pool** | The shared, global article store written by the scrape pipeline and read per-user by tag intersection. Replaces the per-user "digest" concept retired in the global-feed rework. |
+| **Article pool** | The shared, global article store written by the scrape pipeline and read per-user by tag intersection. |
 | **Hashtag** | A lowercase alphanumeric-plus-hyphen interest label (no leading `#` stored) that drives source fetching and LLM ranking. Each user has between 1 and 25. |
 | **Curated source** | An operator-maintained feed entry in the global registry, declaring at least one tag drawn from the system tag list. Replacement is a code change, not a runtime mutation. |
 | **Discovered source** | A first-party feed (blog, changelog, or Google News query-RSS fallback) discovered once per tag via the LLM and cached globally for every user who selected that tag. |

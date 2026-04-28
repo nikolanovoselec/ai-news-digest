@@ -462,11 +462,11 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
            re-queues every empty-feed tag in one shot. Gated to admin
            users only — the API endpoint itself remains gated by
            ADMIN_EMAIL + Cloudflare Access regardless of what we render
-           here. Non-admins simply don't see the section. The settings
-           page no longer renders a button per stuck tag; clicking
-           once is enough. Native form POST chosen over JS for the
-           same Samsung-Browser/in-app-webview reliability reason as
-           the rest of the page. */
+           here. Non-admins simply don't see the section. One bulk
+           button covers every stuck tag — clicking once is enough.
+           Native form POST chosen over JS for the same
+           Samsung-Browser/in-app-webview reliability reason as the
+           rest of the page. */
         <fieldset class="settings__section settings__section--standalone">
           <legend class="settings__legend">Stuck tags</legend>
           <p class="settings__hint">
@@ -666,7 +666,7 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
     const emailEnabled = emailToggle?.checked === true;
 
     // Hashtags are edited on the /digest tag strip via POST /api/tags;
-    // this endpoint no longer accepts a `hashtags` field.
+    // this endpoint does not accept a `hashtags` field.
     const payload = {
       digest_hour: digestHour,
       digest_minute: digestMinute,
