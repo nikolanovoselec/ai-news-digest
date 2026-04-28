@@ -56,7 +56,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The digest time is captured and displayed in 24-hour format (HH:MM, 00:00–23:55) identically for every user, regardless of browser, operating system, or device locale.
+1. The digest time is captured and displayed in 24-hour format identically for every user, regardless of browser, operating system, or device locale. Selectable values follow a 5-minute step (00:00, 00:05, …, 23:55) so the picker matches the dispatcher's 5-minute cron tick.
 2. The browser-detected IANA timezone is displayed next to the time and auto-syncs to the server whenever it differs from the stored value; there is no manual timezone picker in the UI.
 3. Initial timezone is populated from the browser's resolved IANA zone on first load, saved to the user row, and re-synced on every subsequent visit if it changes (e.g., travel).
 4. The saved time is interpreted in the user's stored timezone; DST transitions are handled correctly using `Intl.DateTimeFormat`.
