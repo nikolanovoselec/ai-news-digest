@@ -148,7 +148,7 @@ const initialTheme = cookieTheme ?? 'light';
     <meta name="color-scheme" content="light dark" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="newsdigest" />
+    <meta name="apple-mobile-web-app-title" content="News Digest" />
     {/* SVG apple-touch-icon — Safari 13+ supports it; older versions
         fall back to the favicon. We don't ship a raster PNG because we
         have no image pipeline to keep it in sync with the SVG master. */}
@@ -196,6 +196,24 @@ const initialTheme = cookieTheme ?? 'light';
     data-first-run={firstRun ? 'true' : 'false'}
     data-user-tz={Astro.locals.user?.tz ?? ''}
   >
+    {/* PWA cold-launch splash — REQ-PWA-001. The system splash that
+        Android Chrome / Samsung Internet show on the home-screen tap
+        disappears as soon as first paint lands; this overlay holds
+        the dark canvas + brand for ~2 s so the launch feels
+        intentional. Gated to display-mode: standalone in CSS, and
+        hidden on subsequent navigations within the session via
+        page-effects.ts (sessionStorage key 'pwa-splash-done'). */}
+    <div class="pwa-splash" aria-hidden="true" data-pwa-splash>
+      <svg
+        class="pwa-splash__icon"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        fill="currentColor"
+      >
+        <path d="M20,11H4V8H20M20,15H13V13H20M20,19H13V17H20M11,19H4V13H11M20.33,4.67L18.67,3L17,4.67L15.33,3L13.67,4.67L12,3L10.33,4.67L8.67,3L7,4.67L5.33,3L3.67,4.67L2,3V19A2,2 0 0,0 4,21H20A2,2 0 0,0 22,19V3L20.33,4.67Z" />
+      </svg>
+      <span class="pwa-splash__title">News Digest</span>
+    </div>
     <header class="site-header safe-top safe-x">
       <a
         href={Astro.locals.user ? '/digest' : '/'}

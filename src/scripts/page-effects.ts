@@ -241,28 +241,52 @@ function preOpenHistoryDayInIncomingDocument(e: Event): void {
 
 // ---- header brand link: /digest, or scroll-to-top if already there
 
-// The "newsdigest" wordmark in the site header is a plain anchor for
-// authenticated users with href="/digest" (server-rendered fallback so
-// SSR + no-JS works). When the user IS already on /digest, navigating
-// to it again is a no-op that flashes a transition; intercept the
-// click and scroll to top instead so the wordmark behaves like a
-// classic "back to top" affordance. On any other page we fall through
-// to Astro ClientRouter's default link handling so the view-transition
-// to /digest plays normally.
+// The "News Digest" wordmark in the site header is a plain anchor
+// for authenticated users with href="/digest" (server-rendered
+// fallback so SSR + no-JS works). When the user IS already on
+// /digest, navigating to it again is a no-op that flashes a
+// transition; intercept the click and scroll to top instead so the
+// wordmark behaves like a classic "back to top" affordance. On any
+// other page we fall through to Astro ClientRouter's default link
+// handling so the view-transition to /digest plays normally.
 //
-// The listener uses capture phase + stopPropagation so it fires BEFORE
-// Astro ClientRouter's bubble-phase document click delegate. Without
-// capture phase the same-page /digest click triggers a redundant view-
-// transition fetch+swap that wins the race against scrollTo, leaving
-// the page wherever it was. Standalone-mode WebViews on Samsung
-// Internet exhibited the same issue most visibly — bubble phase
-// listeners never reached scrollTo because the WebView's own anchor
-// handler had already begun navigation by the time the bubble phase
-// arrived.
+// Two listeners run in capture phase: `click` is the canonical path,
+// `pointerup` is a fallback for mobile WebViews (Samsung Internet
+// observed) that occasionally fail to dispatch the click after the
+// FIRST tap of the session — the user has to tap the wordmark 2-3
+// times before scroll-to-top fires. PointerEvents fire even when the
+// browser swallows the synthesised click, and `window.scrollTo` is
+// idempotent so a click+pointerup pair both firing is harmless. Both
+// listeners use stopPropagation to win the race against Astro
+// ClientRouter's bubble-phase document click delegate, which would
+// otherwise initiate a redundant /digest fetch+swap that beats
+// `scrollTo` to the punch.
 function bindBrandLinkScrollToTop(): void {
   const root = document.documentElement;
   if (root.dataset['brandLinkBound'] === '1') return;
   root.dataset['brandLinkBound'] = '1';
+
+  function shouldIntercept(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) return false;
+    const link = target.closest<HTMLAnchorElement>('a[data-brand-home]');
+    if (link === null) return false;
+    // Only intercept when the URL is EXACTLY /digest (no query
+    // string). On /digest?tags=ai the brand's href="/digest" should
+    // resolve via natural navigation so the tag filter clears —
+    // preserving the long-standing "click the brand to reset"
+    // affordance.
+    if (window.location.pathname !== '/digest') return false;
+    if (window.location.search !== '') return false;
+    return true;
+  }
+
+  function scrollTopRespectingMotion(): void {
+    const reduced = window.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    ).matches;
+    window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+  }
+
   document.addEventListener(
     'click',
     (e) => {
@@ -270,28 +294,84 @@ function bindBrandLinkScrollToTop(): void {
       // and non-primary mouse buttons.
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       if (e instanceof MouseEvent && e.button !== 0) return;
-      const target = e.target;
-      if (!(target instanceof Element)) return;
-      const link = target.closest<HTMLAnchorElement>('a[data-brand-home]');
-      if (link === null) return;
-      // Only intercept when the URL is EXACTLY /digest (no query string).
-      // On /digest?tags=ai the brand's href="/digest" should resolve via
-      // natural navigation so the tag filter clears — preserving the
-      // long-standing "click the brand to reset" affordance.
-      if (window.location.pathname !== '/digest') return;
-      if (window.location.search !== '') return;
+      if (!shouldIntercept(e.target)) return;
       e.preventDefault();
       e.stopPropagation();
-      const reduced = window.matchMedia(
-        '(prefers-reduced-motion: reduce)',
-      ).matches;
-      window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+      scrollTopRespectingMotion();
+    },
+    true,
+  );
+
+  // Pointer fallback: fires on every tap that produced a touchstart +
+  // touchend pair, even when the WebView elides the click event. The
+  // capture phase + stopPropagation guards keep ClientRouter from
+  // racing the scroll. Restricting to primary-button + non-modifier
+  // pointers keeps the keyboard-Enter and middle-click paths going
+  // through the click handler.
+  document.addEventListener(
+    'pointerup',
+    (e) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      if (e.button !== 0) return;
+      if (!shouldIntercept(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      scrollTopRespectingMotion();
     },
     true,
   );
 }
 
 bindBrandLinkScrollToTop();
+
+// ---- PWA cold-launch splash hold (REQ-PWA-001)
+//
+// Markup is in Base.astro and CSS in global.css; both are gated to
+// `display-mode: standalone` so this code is a no-op for users in a
+// regular browser tab. The splash plays exactly once per PWA session:
+//   - On the very first page load of a new session, dataset.splashDone
+//     is left unset, the CSS animation runs (2.4s fade), then we stamp
+//     dataset.splashDone='1' AND sessionStorage so subsequent
+//     navigations within the same session skip the splash entirely.
+//   - On every subsequent navigation, the sessionStorage check at
+//     module-load time stamps dataset.splashDone='1' BEFORE first
+//     paint of the new page, so the new <div class="pwa-splash"> in
+//     the swapped-in DOM never becomes visible.
+// `splashDone` is on documentElement which is persisted across
+// view-transitions, so the timer-set version of the flag also
+// survives subsequent ClientRouter swaps without needing storage.
+function initPwaSplash(): void {
+  const root = document.documentElement;
+  if (root.dataset['splashInit'] === '1') return;
+  root.dataset['splashInit'] = '1';
+
+  let alreadyShown = false;
+  try {
+    alreadyShown = sessionStorage.getItem('pwa-splash-done') === '1';
+  } catch {
+    /* storage disabled — fall through and treat as fresh session */
+  }
+  if (alreadyShown) {
+    root.dataset['splashDone'] = '1';
+    return;
+  }
+
+  // Match the CSS animation duration so the dataset flag lands at the
+  // moment the keyframe completes. Using the same value avoids a race
+  // where the splash element re-shows on a view-transition that lands
+  // mid-animation.
+  const SPLASH_HOLD_MS = 2400;
+  window.setTimeout(() => {
+    root.dataset['splashDone'] = '1';
+    try {
+      sessionStorage.setItem('pwa-splash-done', '1');
+    } catch {
+      /* storage disabled — the dataset flag is enough for this session */
+    }
+  }, SPLASH_HOLD_MS);
+}
+
+initPwaSplash();
 
 if (document.documentElement.dataset['scrollRestoreBound'] !== '1') {
   document.documentElement.dataset['scrollRestoreBound'] = '1';
