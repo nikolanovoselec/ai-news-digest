@@ -1,4 +1,4 @@
-// Tests for src/lib/prefer-direct-source.ts — REQ-PIPE-001 dedup
+// Tests for src/lib/prefer-direct-source.ts — REQ-PIPE-001/003 dedup
 // heuristic. The user reported one trending story appearing 4× on
 // /digest because Google News aggregator-wrapper URLs canonicalise
 // to a different form than the original publisher/HN/Reddit links,
@@ -6,7 +6,7 @@
 // copy and the direct copy of the same story as separate articles.
 //
 // This module's contract: drop the Google News copy when a direct
-// copy of the same story (≥2 shared meaningful tokens) is present;
+// copy of the same story (≥3 shared meaningful tokens) is present;
 // keep the Google News copy when no direct copy exists.
 
 import { describe, it, expect } from 'vitest';
@@ -25,7 +25,7 @@ function h(
   return { title, url, source_name, source_tags };
 }
 
-describe('isGoogleNewsUrl — REQ-PIPE-001', () => {
+describe('isGoogleNewsUrl — REQ-PIPE-003', () => {
   it('matches the hardcoded GENERIC_SOURCES.googlenews adapter URL shape', () => {
     expect(
       isGoogleNewsUrl(
@@ -54,8 +54,8 @@ describe('isGoogleNewsUrl — REQ-PIPE-001', () => {
   });
 });
 
-describe('preferDirectOverGoogleNews — REQ-PIPE-001', () => {
-  it('drops a Google News headline when a direct headline shares ≥2 meaningful tokens', () => {
+describe('preferDirectOverGoogleNews — REQ-PIPE-003', () => {
+  it('drops a Google News headline when a direct headline shares ≥3 meaningful tokens', () => {
     const input: Headline[] = [
       h(
         'Anthropic releases Claude Sonnet 4.6 with extended context window',
@@ -103,10 +103,10 @@ describe('preferDirectOverGoogleNews — REQ-PIPE-001', () => {
     );
   });
 
-  it('does not drop a Google News headline that shares only ONE token with a direct one (high-precision threshold)', () => {
-    // "kubernetes" overlaps but "release" + "outage" + "ec2" + "1.30" are
-    // disjoint; only one shared token → keep both. This is the explicit
-    // high-precision contract: ≥2 token overlap required to drop.
+  it('does not drop a Google News headline that shares fewer than 3 tokens with a direct one (high-precision threshold)', () => {
+    // After stopword/length filters only `kubernetes` survives in
+    // both — 1 shared token, well below the ≥3 drop threshold. This
+    // is the explicit high-precision contract.
     const input: Headline[] = [
       h(
         'Kubernetes 1.30 release notes published',
@@ -116,6 +116,30 @@ describe('preferDirectOverGoogleNews — REQ-PIPE-001', () => {
       h(
         'Kubernetes outage on AWS EC2 affects multiple regions',
         'https://news.google.com/articles/X',
+        'googlenews',
+      ),
+    ];
+    const out = preferDirectOverGoogleNews(input);
+    expect(out).toHaveLength(2);
+  });
+
+  it('REQ-PIPE-003: keeps unrelated stories that incidentally share two generic terms', () => {
+    // Code-reviewer flagged the false-positive risk of a ≥2-token
+    // threshold: two unrelated stories that happen to share generic
+    // technical terms could collapse. The bump to ≥3 must NOT drop
+    // this pair — the only meaningful tokens shared are "synthetic"
+    // and "data" (count = 2, below threshold). A regression that
+    // lowers the threshold back to ≥2 would silently start dropping
+    // here; this test fires loudly in that case.
+    const input: Headline[] = [
+      h(
+        'OpenAI publishes synthetic data benchmark report',
+        'https://openai.com/announcement-x/',
+        'openai-blog',
+      ),
+      h(
+        'Cloudflare evaluates synthetic data approaches for traffic security',
+        'https://news.google.com/articles/Y',
         'googlenews',
       ),
     ];
