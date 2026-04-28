@@ -20,7 +20,7 @@ News Digest hires the LLM. It remembers so you don't. This isn't enlightenment. 
 
 ## What's in it
 
-- **20 tags preloaded** (`#cloudflare`, `#ai-agents`, `#mcp`, `#zero-trust`, `#supply-chain-security`…). My opinions, helpfully pre-formed for you. Add a tag the registry doesn't know and it goes feed-hunting in the background — finds sources or admits it couldn't, so you're never waiting on a ghost.
+- **A curated default tag set preloaded** (`#cloudflare`, `#ai-agents`, `#mcp`, `#zero-trust`, `#supply-chain-security`, `#graymatter`…). My opinions, helpfully pre-formed for you. Add a tag the registry doesn't know and it goes feed-hunting in the background — finds sources or admits it couldn't, so you're never waiting on a ghost.
 - **Composable filters on Search & History**: tag + search + date AND together, all in the URL.
 - **Two-stage dedupe** — within a chunk and across chunks. One Anthropic launch should not become six articles just because six sites found the publish button.
 - **Summaries that earn their word count**: 150–200 words, *what happened → how it works → why you care*.

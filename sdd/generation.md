@@ -64,6 +64,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 3. Within a cluster the earliest-published source becomes the primary article; the remaining members are persisted as alternative sources for that article.
 4. A canonical URL already present in the article pool is skipped on subsequent ticks — re-ingestion never produces a duplicate primary card.
 5. A single-source article (no cluster members) is persisted with zero alternative-source rows.
+6. When the same story appears under both a direct publisher / community link and an aggregator-wrapper link whose canonical form differs from the publisher's (e.g., a Google News URL), the aggregator-wrapper copy is dropped in favour of the direct copy and any tag-of-discovery state from the dropped copy is merged onto the surviving direct article. When no direct copy is present, the aggregator-wrapper copy is kept so coverage of stories no direct source surfaced is preserved.
 
 **Constraints:** CON-SEC-002
 **Priority:** P0

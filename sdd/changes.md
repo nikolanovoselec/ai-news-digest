@@ -6,6 +6,8 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 ## 2026-04-28
 
+- REQ-PIPE-003 AC 6 added: when the same story appears via a direct publisher/community link and an aggregator-wrapper link (e.g., Google News) whose canonicalised URL differs, the wrapper copy is dropped and its tag-of-discovery state is merged onto the surviving direct article — closing the bug where one trending story showed up 4× on `/digest` because the canonical-URL pass treated the wrapper and the original as distinct.
+
 - Default hashtag seed grows from 20 to 21 entries with the addition of `graymatter`, and the curated source registry gains a graymatter.ch RSS feed so the new tag has at least one verified source from day one. REQ-AUTH-001 AC 5, REQ-PIPE-004 (header + AC 2), and REQ-SET-002 AC 6/8 updated; the 25-tag user cap is unchanged so a new account now has 4 slots of custom-tag headroom instead of 5.
 
 - REQ-SET-003 AC 1 refined: the digest schedule picker now displays 12-hour AM/PM labels for users on 12-hour locales (en-US and similar) and 24-hour labels for 24-hour locales (en-GB, hr-HR, and similar), auto-detected from the browser without any country-by-country hardcoding — previously a Europe/Zagreb user on an en-US Android device saw "08:00 AM" because the native browser time input fell back to the device locale.
