@@ -235,12 +235,28 @@ describe('Base.astro / page-effects.ts — view-transition wiring (REQ-DES-003 /
     // and the morph silently degrades to a root cross-fade.
     expect(effectsSource).toMatch(/closest\(['"]\[hidden\]['"]\)/);
     expect(effectsSource).toMatch(/closest[\s\S]{0,40}['"]details['"]/);
-    // Cleanup on after-swap so the next navigation starts from a
-    // no-name baseline; without this every morphed card would carry
-    // a leftover name into the next snapshot, recreating the O(N)
-    // bookkeeping the moment a second card is clicked.
+    // Cleanup deliberately runs at the START of the NEXT click via
+    // `promoteSourceCardForOutgoingMorph`'s clearAllVtNames(document)
+    // — NOT on `astro:after-swap`. The View Transitions API captures
+    // the NEW snapshot after the update callback resolves; astro:
+    // after-swap fires while the callback is still running. Wiping
+    // the name there would strip it from the matching card BEFORE
+    // the snapshot is taken, breaking the pair and degrading to a
+    // root cross-fade. The forward-promotion clear at click time is
+    // the right window — the previous transition has long settled.
     expect(effectsSource).toMatch(
-      /astro:after-swap[\s\S]{0,200}clearAllVtNames/,
+      /promoteSourceCardForOutgoingMorph[\s\S]{0,400}clearAllVtNames\(document\)/,
+    );
+    // Regression guard: must NOT register clearAllVtNames as an
+    // astro:after-swap listener. Match the actual addEventListener
+    // call shape so a NOTE-style comment that mentions both terms
+    // (the explanation block above the listener) doesn't false-
+    // positive.
+    expect(effectsSource).not.toMatch(
+      /addEventListener\(\s*['"]astro:after-swap['"][^)]*\)\s*\{[^}]*clearAllVtNames/,
+    );
+    expect(effectsSource).not.toMatch(
+      /addEventListener\(\s*['"]astro:after-swap['"]\s*,\s*\(?\)?\s*=>\s*\{?\s*clearAllVtNames/,
     );
   });
 

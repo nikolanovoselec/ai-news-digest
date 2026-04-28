@@ -171,6 +171,30 @@ describe('tap / focus styling — REQ-PWA-003 AC 5', () => {
     // :focus-visible selector must define an outline/ring.
     expect(globalCss).toMatch(/:focus-visible|\.focus-ring/);
   });
+
+  it('REQ-PWA-003 AC 4: .site-header__brand opts out of iOS double-tap-zoom delay (touch-action: manipulation)', () => {
+    // Without `touch-action: manipulation` on the brand link, mobile
+    // Safari applies a ~350ms delay on the first tap to disambiguate
+    // from a possible double-tap-to-zoom — manifesting as the
+    // "scroll-to-top needs 4-5 taps to fire" regression the user
+    // reported on prod. `manipulation` keeps pinch-zoom and panning
+    // while disabling the double-tap delay so the first tap commits
+    // immediately to the click handler. A future CSS reorder /
+    // prettier pass / selector consolidation that drops the rule
+    // would silently re-introduce the lag — Playwright wouldn't catch
+    // it without specific iOS Safari emulation, so this static text
+    // assertion is the realistic guard.
+    //
+    // Split into two anchored assertions: a windowed regex would have
+    // to span the multi-line explanatory CSS comment block above the
+    // property and easily breaks on innocuous CSS additions to the
+    // rule. Both halves are verified to be unique in Base.astro
+    // (single `.site-header__brand` rule, single `touch-action:
+    // manipulation` declaration) so the pair is equivalent to a
+    // tight in-block match without the brittle window length.
+    expect(baseSource).toMatch(/\.site-header__brand\s*\{/);
+    expect(baseSource).toMatch(/touch-action:\s*manipulation/);
+  });
 });
 
 describe('header tap-target minimums — REQ-PWA-003 AC 6', () => {
