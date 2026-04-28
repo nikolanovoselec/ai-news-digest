@@ -161,11 +161,20 @@ function bindBrandLinkScrollToTop() {
   if (root.dataset.brandLinkBound === '1') return;
   root.dataset.brandLinkBound = '1';
   document.addEventListener('click', (e) => {
+    // Let the browser handle modifier-clicks (open in new tab/window)
+    // and non-primary mouse buttons.
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (e instanceof MouseEvent && e.button !== 0) return;
     const target = e.target;
     if (!(target instanceof Element)) return;
     const link = target.closest('a[data-brand-home]');
     if (link === null) return;
+    // Only intercept when the URL is EXACTLY /digest (no query string).
+    // On /digest?tags=ai the brand's href="/digest" should resolve via
+    // natural navigation so the tag filter clears — preserving the
+    // long-standing "click the brand to reset" affordance.
     if (window.location.pathname !== '/digest') return;
+    if (window.location.search !== '') return;
     e.preventDefault();
     const reduced = window.matchMedia(
       '(prefers-reduced-motion: reduce)',
