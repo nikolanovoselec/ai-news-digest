@@ -66,7 +66,7 @@ describe('renderDigestReadyEmail subject — REQ-MAIL-001 AC 3', () => {
     expect(afterBullet.split(', ')).toHaveLength(3);
   });
 
-  it('REQ-MAIL-001 AC 3: subject reads "Your news digest is ready" when headlines empty (AC 10 fallback)', () => {
+  it('REQ-MAIL-001 AC 3: subject reads "Your news digest is ready" when headlines empty (defence-in-depth)', () => {
     const { subject } = renderDigestReadyEmail(makeParams({ headlines: [] }));
     expect(subject).toBe('Your news digest is ready');
   });

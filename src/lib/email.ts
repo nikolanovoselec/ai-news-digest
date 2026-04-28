@@ -101,7 +101,9 @@ function pad2(n: number): string {
  *                        shape so adding personalisation later is a
  *                        renderer change, not an interface change.
  * `headlines`          — top-N unread articles (typically 5); empty
- *                        triggers the static-subject fallback (AC 10).
+ *                        triggers the static-subject fallback
+ *                        (defence-in-depth; AC 11 prevents production
+ *                        trigger via dispatcher-side skip).
  * `tagTally`           — per-tag counts, already sorted DESC by count;
  *                        empty omits the tally line entirely (AC 5).
  * `totalSinceMidnight` — total distinct articles in the tally window;
