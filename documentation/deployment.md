@@ -142,7 +142,7 @@ Two ways to close that gap:
 1. **Set `CF_ACCESS_AUD`** to the audience tag of the Access application that fronts the custom domain. The Worker then validates the JWT's `aud` claim against the value, and a forged header on workers.dev is rejected at Layer 1. Recommended for any deploy that binds Access.
 2. **Disable the `*.workers.dev` subdomain** in the Cloudflare dashboard (Workers & Pages → your worker → Settings → Domains & Routes → disable workers.dev). Forks that don't use Access at all should leave it enabled; forks that DO use Access in production should disable it so the Access-protected custom domain is the only entry point.
 
-When Access is bound and `CF_ACCESS_AUD` is unset, every admin request emits the structured log `admin.auth.aud_unset_warning` so the misconfiguration is visible via `wrangler tail` or Logpush. Forks without Access bound still see admin unreachable at Layer 1 and never trigger this warning.
+When Access is bound and `CF_ACCESS_AUD` is unset, the structured log `admin.auth.aud_unset_warning` is emitted once per Worker isolate (isolates cycle roughly every 30 minutes under load) so the misconfiguration is visible via `wrangler tail` or Logpush without flooding Logpush during brute-force probes. Forks without Access bound still see admin unreachable at Layer 1 and never trigger this warning.
 
 ### Paths to gate
 
