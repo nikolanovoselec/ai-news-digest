@@ -98,6 +98,7 @@ Structured JSON logging as the single operational surface — no external observ
 3. A machine-readable agents policy file describes what the product is, what is public, and an explicit request not to train on content behind the login.
 4. A sitemap is served from a stable URL, lists only public URLs, and is referenced from the crawler policy file.
 5. Error pages served for not-found and server-error conditions are flagged no-index so crawler spaces stay clean.
+6. Structured-data (JSON-LD) blocks emitted into the page head are serialized through a defensive helper that rewrites any `</script>` sequence to its escaped form (case-insensitive) so a future caller-supplied string cannot terminate the script tag and inject HTML into the page. Today every JSON-LD value is server-controlled; the defence is preventive insurance for a future refactor that interpolates a user-controlled value (e.g., article title) into the graph.
 
 **Constraints:** CON-SEC-001
 **Priority:** P2
