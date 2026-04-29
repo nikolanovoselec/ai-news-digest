@@ -1,3 +1,5 @@
+// Implements REQ-MAIL-001
+//
 // Centralised HTML helpers for the digest email renderer.
 //
 // Concentrates escape + link construction in one module so every

@@ -76,14 +76,15 @@ function audMatches(
   return false;
 }
 
-// Per-isolate hourly stamp so the AUD-unset warning fires at most
-// once per hour per Worker isolate, not on every admin probe. Logs
-// are best-effort observability; emitting on every request would
-// flood Logpush during brute-force probes against an Access-bound
-// deploy that forgot to set CF_ACCESS_AUD. Long-lived isolates would
-// hide a permanent misconfiguration with a single fire-and-forget
-// flag, so re-emit hourly to keep the operator alerted while the
-// misconfiguration persists.
+// Per-isolate hourly stamp so the AUD-unset warning fires roughly
+// once per hour per Worker isolate, not on every admin probe. The
+// gate is best-effort: workerd freezes `Date.now()` between I/O
+// boundaries within one request, so two probes received in the same
+// I/O-quiescent slot can both pass the check-then-write. Worst case
+// is a duplicate log line (two instead of one); the goal is "don't
+// flood Logpush under brute-force probes" not "exactly once per
+// hour". Re-emitting hourly keeps the operator alerted while the
+// misconfiguration persists, which is the property that matters.
 const AUD_WARN_INTERVAL_MS = 60 * 60 * 1000;
 let lastAudWarnAt = 0;
 
