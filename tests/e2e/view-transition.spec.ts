@@ -216,10 +216,15 @@ test.describe('REQ-OPS-003 CSP enforcement (live)', () => {
       };
       w.__cspViolations = [];
       window.addEventListener('securitypolicyviolation', (e) => {
+        // `sample` is optional per the W3C CSP spec — Chromium only
+        // populates it when `report-sample` is in the directive (which
+        // it isn't here). Guard the slice so the listener doesn't
+        // throw and silently drop subsequent violations.
+        const sample = typeof e.sample === 'string' ? e.sample.slice(0, 200) : '';
         w.__cspViolations!.push({
           directive: e.violatedDirective,
           blockedURI: e.blockedURI,
-          sample: e.sample.slice(0, 200),
+          sample,
         });
       });
     });
