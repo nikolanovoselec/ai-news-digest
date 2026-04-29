@@ -247,7 +247,7 @@ Both responses carry a `Set-Cookie` refresh when the session is within 5 minutes
 
 ## Discovery
 
-> **Admin auth.** Every `/api/admin/*` route is gated by three layers: (a) Cloudflare Access zone-level JWT, (b) valid Worker session cookie, (c) session email matches `ADMIN_EMAIL`. See [Deployment: Admin-only routes](deployment.md#admin-only-routes-cloudflare-access-gating). Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8.
+> **Admin auth.** Every `/api/admin/*` route is gated by the Worker-side middleware: (a) `Cf-Access-Jwt-Assertion` header present; (b) valid Worker session cookie; (c) session email matches `ADMIN_EMAIL` (case-insensitive); (d) when `CF_ACCESS_AUD` is set, the JWT `aud` claim is validated — strongly recommended in production. See [Deployment: Admin-only routes](deployment.md#admin-only-routes-cloudflare-access-gating). Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8.
 
 ### POST /api/admin/discovery/retry
 
