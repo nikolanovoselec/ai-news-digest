@@ -159,11 +159,11 @@ const initialTheme = cookieTheme ?? 'light';
         knowledge-panel card and disambiguates the site from the
         publisher entity.
 
-        Defensive escape via safeJsonLd: closes </script> sequences and
-        line/paragraph separators that could otherwise break out of
-        the script context if a future caller passes a user-controlled
-        string. Today every value is server-controlled, but the helper
-        makes the path safe by default. */}
+        Defensive escape via safeJsonLd: closes </script> sequences
+        that could otherwise break out of the script context if a
+        future caller passes a user-controlled string. Today every
+        value is server-controlled, but the helper makes the path
+        safe by default. */}
     <script is:inline type="application/ld+json" set:html={safeJsonLd({
       '@context': 'https://schema.org',
       '@graph': [
