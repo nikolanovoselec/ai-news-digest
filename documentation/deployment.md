@@ -51,10 +51,11 @@ CI/CD: `.github/workflows/deploy.yml` triggers on a `workflow_run` event — fir
 
 The deploy job:
 1. Applies D1 migrations (idempotent).
-2. Pushes Worker secrets via `wrangler secret put` (file-redirect form). Conditional secrets (`ADMIN_EMAIL`, `CF_ACCESS_AUD`, `DEV_BYPASS_USER_ID`) are pushed only when the corresponding GitHub Actions secret is non-empty.
-3. Deploys the Worker.
-4. Binds the custom domain extracted from `APP_URL` via the Workers Custom Domains API. Idempotent.
-5. Smoke-tests `GET /` against `APP_URL`, falling back to `*.workers.dev`. Accepts `200` or `303`.
+2. Runs the same two-step security audit as PR Checks (advisory HIGH+, blocking CRITICAL) as a defence-in-depth gate — catches CVEs introduced between the merge and the deploy (transient transitive bumps, Dependabot lockfile regenerations, etc.).
+3. Pushes Worker secrets via `wrangler secret put` (file-redirect form). Conditional secrets (`ADMIN_EMAIL`, `CF_ACCESS_AUD`, `DEV_BYPASS_USER_ID`) are pushed only when the corresponding GitHub Actions secret is non-empty.
+4. Deploys the Worker.
+5. Binds the custom domain extracted from `APP_URL` via the Workers Custom Domains API. Idempotent.
+6. Smoke-tests `GET /` against `APP_URL`, falling back to `*.workers.dev`. Accepts `200` or `303`.
 
 `scripts/e2e-test.sh` is manual only (`bash scripts/e2e-test.sh --force-prod`) and not part of CI deploy — running it triggers a full LLM-cost scrape and mutates the owner's account.
 
@@ -113,7 +114,8 @@ Every push to `develop` (and every PR targeting `main`) runs the following gates
 | Step | Command | What it enforces |
 |---|---|---|
 | Install | `npm install --no-fund --no-audit` | Dependency resolution |
-| Security audit | `npm audit --omit=dev --audit-level=critical` | Blocks on CRITICAL CVEs in the production-dep tree. HIGH+ advisories remain visible in the log for operator triage via Dependabot but do not block the build — the Worker runtime is `workerd`, not Node.js, so most HIGH findings live in build tooling (`@astrojs/cloudflare`, `wrangler`, `miniflare`, `undici`) that never reaches the deployed bundle. |
+| Security audit (advisory) | `npm audit --omit=dev --audit-level=high` (continue-on-error) | HIGH+ advisories surface in the CI log for operator triage via Dependabot but never block the build — the Worker runtime is `workerd`, not Node.js, so most HIGH findings live in build tooling that never reaches the deployed bundle. |
+| Security audit (blocking) | `npm audit --omit=dev --audit-level=critical` | Blocks on CRITICAL CVEs in the production-dep tree. |
 | Lint | `npm run lint` | Oxlint rules |
 | REQ backlink coverage | `node scripts/check-req-backlinks.mjs` | Every `REQ-X-NNN` reference in `src/`, `tests/`, `documentation/`, and `migrations/` resolves to a header in `sdd/`. Fails the build if any reference points at a REQ ID that does not exist in the spec (CF-069). |
 | Dead code | `npm run knip` | No unused exports or files |
