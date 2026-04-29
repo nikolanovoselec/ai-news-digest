@@ -111,8 +111,12 @@ The `KV` namespace uses a structured key scheme. All keys are shared across all 
 | `auth_logout` | 5 / 60s | IP | Fail open |
 | `article_star` | 60 / 60s | User | Fail open |
 | `tags_mutation` | 30 / 60s | User | Fail open |
+| `set_tz` | 30 / 60s | User | Fail open |
+| `discovery_status` | 120 / 60s | User | Fail open |
 
 The `auth_refresh_*` buckets are shared between `POST /api/auth/refresh` and the inline middleware refresh path so an attacker cannot pivot to authenticated GET routes to bypass the explicit endpoint's limit.
+
+`set_tz` and `discovery_status` cover authenticated endpoints that legitimate clients poll on a sub-minute cadence. They key by user id and fail open so a KV outage does not degrade the settings UX.
 
 The fail-mode split exists because sign-in must remain reachable during a KV outage — locking everyone out is worse than letting through a brief burst — while a stolen refresh cookie must not benefit from the same outage to bypass its limit.
 

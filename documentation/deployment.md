@@ -113,13 +113,13 @@ Every push to `develop` (and every PR targeting `main`) runs the following gates
 | Step | Command | What it enforces |
 |---|---|---|
 | Install | `npm install --no-fund --no-audit` | Dependency resolution |
-| Security audit (advisory-only) | `npm audit --omit=dev --audit-level=high` with `continue-on-error: true` | Surfaces HIGH+ runtime-tree advisories; non-blocking — Dependabot is the enforcement path |
+| Security audit | `npm audit --omit=dev --audit-level=critical` | Blocks on CRITICAL CVEs in the production-dep tree. HIGH+ advisories remain visible in the log for operator triage via Dependabot but do not block the build — the Worker runtime is `workerd`, not Node.js, so most HIGH findings live in build tooling (`@astrojs/cloudflare`, `wrangler`, `miniflare`, `undici`) that never reaches the deployed bundle. |
 | Lint | `npm run lint` | Oxlint rules |
 | REQ backlink coverage | `node scripts/check-req-backlinks.mjs` | Every `REQ-X-NNN` reference in `src/`, `tests/`, `documentation/`, and `migrations/` resolves to a header in `sdd/`. Fails the build if any reference points at a REQ ID that does not exist in the spec (CF-069). |
 | Dead code | `npm run knip` | No unused exports or files |
 | Unit + integration tests | `npx vitest run` | Vitest suite |
 
-**Why the audit step is advisory:** the Worker runtime is `workerd`, not Node.js, so most advisories live in build tooling (`@astrojs/cloudflare`, `wrangler`, `miniflare`, `undici`) and never reach the deployed bundle. Failing the build on these would block legitimate work without improving production security. Operators read the advisory list from CI logs and act via the weekly Dependabot PRs.
+**Why the audit gates on CRITICAL only:** the Worker runtime is `workerd`, not Node.js, so most HIGH+ advisories live in build tooling (`@astrojs/cloudflare`, `wrangler`, `miniflare`, `undici`) and never reach the deployed bundle. Gating on CRITICAL still blocks the worst class of CVEs, while HIGH+ findings remain visible in CI logs for operators to act on via the weekly Dependabot PRs. The same CRITICAL threshold runs in the deploy job as a defence-in-depth check after merge.
 
 When the REQ backlink gate fails, either the referenced REQ-ID needs to be added to `sdd/` (if it is a new requirement), or the stale reference in the source/doc file needs to be updated to point at the correct live REQ.
 
