@@ -91,6 +91,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `crypto.ts` | base64url codec, constant-time HMAC compare, cookie reader | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation) |
 | `db.ts` | D1 wrapper with FK pragma | (shared) |
 | `email.ts` | Resend renderer and transport | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email), [REQ-MAIL-002](../sdd/email.md#req-mail-002-non-blocking-email-failure) |
+| `email-html.ts` | Typed HTML builders for the digest email renderer — centralises `escapeHtml` and `headlineRow` so every interpolated value is escaped by default | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email) |
 | `email-data.ts` | Per-user D1 read helpers for the email dispatcher | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email) |
 | `email-dispatch.ts` | 5-minute cron hook; per-tz two-phase D1 strategy with bucket isolation | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email), [REQ-MAIL-002](../sdd/email.md#req-mail-002-non-blocking-email-failure) |
 | `hashtags.ts` | Parse user hashtag list from JSON-encoded D1 column | [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest), [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email) |
@@ -131,6 +132,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `feed-health.ts` | Per-URL fetch-health counter for the self-healing discovery loop | [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking) |
 | `discovery.ts` | LLM discovery pipeline and pending-discovery cron drain | [REQ-DISC-001](../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery), [REQ-DISC-005](../sdd/discovery.md#req-disc-005-discovery-prompt-injection-protection) |
 | `tag-railing-flip.ts` | Shared FLIP animation helper for the tag railing | [REQ-READ-007](../sdd/reading.md#req-read-007-tag-railing-reorder-animation) |
+| `json-ld.ts` | Safe JSON-LD serializer for `<script type="application/ld+json">` blocks — closes the `</script>` early-close vector by rewriting `</` to `<\/` after `JSON.stringify` | [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) |
 
 ### 4.3 Pages and API Routes
 
