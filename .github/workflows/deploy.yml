@@ -44,11 +44,14 @@ jobs:
         run: npm install --no-fund --no-audit
 
       # Defence-in-depth: re-run the same audit gate that PR Checks
-      # used. Catches HIGH+ CVEs introduced between the merge and the
-      # deploy (transient transitive bumps via Dependabot, lockfile
-      # regenerations, etc.). Mirrors the test.yml policy.
-      - name: npm audit (production deps, high+)
-        run: npm audit --omit=dev --audit-level=high
+      # used. Catches CRITICAL CVEs introduced between the merge and
+      # the deploy (transient transitive bumps via Dependabot, lockfile
+      # regenerations, etc.). Mirrors the test.yml policy — gates on
+      # CRITICAL only because HIGH+ findings often land in build-tool
+      # transitives (miniflare/wrangler/undici under @astrojs/cloudflare)
+      # that never reach the deployed Worker bundle.
+      - name: npm audit (production deps, critical+)
+        run: npm audit --omit=dev --audit-level=critical
 
       - name: Build
         run: npm run build
