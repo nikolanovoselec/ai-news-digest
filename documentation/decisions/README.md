@@ -58,15 +58,17 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 ### AD3: Server-side article-body fetching with SSRF guard
 
+**Status:** Accepted (supersedes AD3-original, 2026-04-22, which prohibited server-side fetching)
+
 **Decision:** When a feed snippet is too thin to ground a useful summary, the chunk consumer fetches the article body directly. Each fetch is SSRF-guarded, time-bounded (8 s), and size-capped (1.5 MB); a failed fetch falls back to the snippet, never blocking a summary.
 
-**Rationale:** Workers running from Cloudflare datacenter IPs are an SSRF risk when resolving arbitrary URLs from external feeds, and many publishers rate-limit Cloudflare ranges — but feed snippets are often too short to summarise faithfully, and an SSRF denylist plus strict timeout and size caps reduce the original risk to negligible. Richer prompt context measurably improved summary quality on short-snippet feeds. Fan-out is bounded-concurrency at 20 workers.
+**Context:** The original AD3 (2026-04-22) banned all server-side fetching to avoid SSRF risk and Cloudflare-range rate-limiting by publishers. Reversed on 2026-04-27 during the global-feed rework when it became clear that feed snippets are often too short to summarise faithfully, and that an SSRF denylist plus strict timeout and size caps reduce the original risk to negligible. Richer prompt context measurably improved summary quality on short-snippet feeds.
 
 **Alternatives considered:**
 - Keep the no-fetch posture and accept thin summaries on short-snippet feeds.
 - Use a residential-IP scraping service.
 
-**History:** AD3 originally (2026-04-22) prohibited any server-side fetching. Reversed on 2026-04-27 during the global-feed rework.
+**Rationale:** An SSRF denylist, 8 s timeout, and 1.5 MB size cap bring the risk to negligible. Fan-out is bounded-concurrency at 20 workers. The quality improvement on short-snippet feeds justifies the added complexity.
 
 **Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) AC 8
 

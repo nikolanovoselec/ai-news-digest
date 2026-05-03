@@ -198,8 +198,7 @@ Cron (00/04/08/12/16/20 UTC)
 Coordinator
   ├─ Fan out {tag × source} pairs (concurrency 10)
   ├─ Record per-URL fetch outcome → KV source_health:{url}
-  ├─ Evict discovered URLs at 30 consecutive failures
-  │  └─ If tag's feed list empties, queue rediscovery (user_id='__system__')
+  ├─ Evict URLs at 30 consecutive failures; re-queue discovery if feed list empties
   ├─ Drop candidates older than 48 h; keep undated candidates
   ├─ Canonical-URL dedup across all candidates
   └─ Chunk → enqueue one SCRAPE_CHUNK per chunk
@@ -207,37 +206,28 @@ Coordinator
        ▼
 Chunk consumer (per chunk)
   ├─ Fetch article bodies for short-snippet candidates (concurrency 20)
-  ├─ Single Workers AI call (default model gpt-oss-20b, fallback gpt-oss-120b)
-  ├─ Align LLM output to inputs by echoed index (positional fallback)
-  ├─ Filter LLM tags against the system-approved allowlist
+  ├─ Single Workers AI call; align output to inputs by echoed index
+  ├─ Filter LLM tags against system-approved allowlist
   ├─ LLM-cluster + canonical-URL dedup (first-source-wins)
   ├─ INSERT articles, alt_sources, tags, scrape_run counters (D1 batch)
-  ├─ Atomic completion gate:
-  │    INSERT OR IGNORE scrape_chunk_completions
-  │    SELECT COUNT(*) FROM scrape_chunk_completions WHERE scrape_run_id = ?
-  └─ When count == total_chunks, the consumer that wins
-       UPDATE scrape_runs SET finalize_enqueued = 1
-              WHERE id = ? AND finalize_enqueued = 0
-     stamps the run `ready` and enqueues SCRAPE_FINALIZE
+  └─ Atomic completion gate (D1 — see AD7): last chunk stamps run `ready`,
+     enqueues SCRAPE_FINALIZE
        │
        ▼
 Finalize consumer
   ├─ Skip when ≤ 1 article (finalize_noop)
   ├─ Single Workers AI call over title+source+pub-ts list
-  └─ Per dedup group (size ≥ 2): merge losers into earliest-pub-ts winner
-     via 6-statement D1 batch (alt sources, tags, stars, reads, then DELETE)
+  └─ Per dedup group (≥ 2): merge losers into earliest-pub-ts winner (D1 batch)
 ```
 
 ### 5.2 Operator force-refresh
 
-Implements [REQ-OPS-005](../sdd/observability.md#req-ops-005-admin-force-refresh-endpoint).
+Implements [REQ-OPS-005](../sdd/observability.md#req-ops-005-admin-force-refresh-endpoint). See [`api-reference.md — POST /api/admin/force-refresh`](api-reference.md#post-apiadminforce-refresh-also-get) for the full request/response contract.
 
 ```
 POST /api/admin/force-refresh   (or GET, gated by Cloudflare Access)
   └─ If a 'running' scrape_runs row is < 120 s old: reuse run_id
      Otherwise: INSERT scrape_runs, send SCRAPE_COORDINATOR
-  └─ POST → 303 /settings?force_refresh={ok|reused}&run_id={ulid}
-     GET (Accept: application/json) → 200 { ok, scrape_run_id, reused }
 ```
 
 ### 5.3 Daily retention (03:00 UTC)
