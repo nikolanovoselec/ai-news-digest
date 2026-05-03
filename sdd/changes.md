@@ -6,6 +6,10 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are archived in [`changes-archive-2026-04.md`](changes-archive-2026-04.md).
 
+## 2026-05-03
+
+- REQ-DISC-001 AC 1 + AC 3 narrowed: tags already covered by the curated source registry skip the LLM-discovery path entirely, so a brand or consumer tag whose name collides with another company's namespace (e.g., the `graymatter` tag pulling in Graymatter Robotics articles via the mandatory Google News fallback) no longer pollutes the per-tag source cache. Existing curated tags continue to work via the registry; discovery still runs for any tag not in the registry.
+
 ## 2026-04-29
 
 - REQ-OPS-003 AC 1 corrected (production hotfix): the page styles directive on the security policy now permits inline styles again, since Astro emits component-scoped styles inline at runtime; the script policy stays strict.

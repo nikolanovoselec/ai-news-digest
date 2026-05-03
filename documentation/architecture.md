@@ -131,7 +131,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `system-user.ts` | Sentinel user-id constants (`__system__`, `__e2e__`) | [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking) |
 | `title-overlap.ts` | Token-overlap alignment guard for the chunk consumer | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract) |
 | `feed-health.ts` | Per-URL fetch-health counter for the self-healing discovery loop | [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking) |
-| `discovery.ts` | LLM discovery pipeline and pending-discovery cron drain | [REQ-DISC-001](../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery), [REQ-DISC-005](../sdd/discovery.md#req-disc-005-discovery-prompt-injection-protection) |
+| `discovery.ts` | LLM discovery pipeline and pending-discovery cron drain. Tags covered by the curated registry short-circuit both the user-facing queue and the cron drain — see `hasCuratedSource` in `curated-sources.ts`. | [REQ-DISC-001](../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery), [REQ-DISC-005](../sdd/discovery.md#req-disc-005-discovery-prompt-injection-protection) |
 | `tag-railing-flip.ts` | Shared FLIP animation helper for the tag railing | [REQ-READ-007](../sdd/reading.md#req-read-007-tag-railing-reorder-animation) |
 | `json-ld.ts` | Safe JSON-LD serializer for `<script type="application/ld+json">` blocks — rewrites every `<`, `>`, and `&` byte to its `\uNNNN` JSON form, defeating all HTML state-transition vectors that could escape the script block | [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) AC 6 |
 
