@@ -183,10 +183,16 @@ function teardownModal(): void {
   dialog.dataset['bound'] = '0';
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initModal, { once: true });
-} else {
-  initModal();
+// Guard the top-level side-effect with a `document` check so importing
+// `positionAnchored` from a workerd-pool unit test (no DOM) doesn't
+// throw at module evaluation time. The browser bundle still runs the
+// init wiring on first import.
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initModal, { once: true });
+  } else {
+    initModal();
+  }
+  document.addEventListener('astro:page-load', initModal);
+  document.addEventListener('astro:before-swap', teardownModal);
 }
-document.addEventListener('astro:page-load', initModal);
-document.addEventListener('astro:before-swap', teardownModal);

@@ -126,10 +126,12 @@ function teardownModal() {
   dialog.dataset.bound = '0';
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initModal, { once: true });
-} else {
-  initModal();
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initModal, { once: true });
+  } else {
+    initModal();
+  }
+  document.addEventListener('astro:page-load', initModal);
+  document.addEventListener('astro:before-swap', teardownModal);
 }
-document.addEventListener('astro:page-load', initModal);
-document.addEventListener('astro:before-swap', teardownModal);
