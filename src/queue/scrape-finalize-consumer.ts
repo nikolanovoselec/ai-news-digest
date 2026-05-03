@@ -45,10 +45,12 @@
 import { log } from '~/lib/log';
 import { applyForeignKeysPragma } from '~/lib/db';
 import { FALLBACK_MODEL_ID } from '~/lib/models';
-import { FINALIZE_DEDUP_SYSTEM, finalizeDedupUserPrompt, LLM_PARAMS } from '~/lib/prompts';
+import { FINALIZE_DEDUP_SYSTEM, finalizeDedupUserPrompt, FINALIZE_LLM_PARAMS } from '~/lib/prompts';
 import { parseLLMJson } from '~/lib/generate';
 import { runJsonWithFallback } from '~/lib/llm-json';
 import { pickWinner, buildMergeStatements, type FinalizeRow } from '~/lib/finalize-merge';
+import { normaliseRawDedupGroups } from '~/lib/dedupe';
+import { handleBatch } from '~/lib/queue-handler';
 
 /** Hard cap on candidates per finalize call. Comfortable headroom over
  *  current production loads (~150-200 articles per tick) and well
@@ -72,32 +74,22 @@ interface ArticleRow {
   ingested_at: number;
 }
 
-/** Handle one batch of `scrape-finalize` messages. Queues sets
- *  `max_batch_size = 1` in wrangler.toml so this loop is almost always
- *  length 1; we still iterate to be safe and never let a sibling
- *  message's failure poison the others. */
+/** Handle one batch of `scrape-finalize` messages. Delegates to the
+ *  shared `handleBatch` envelope. Per REQ-PIPE-008 AC 8 we deliberately
+ *  do NOT pass `onTerminalFailure` — the run is already `ready` from
+ *  the chunk consumer's last-chunk write, the articles are visible,
+ *  and only the cross-chunk merge is missing. Operators investigate
+ *  via the `finalize_failed` log event. */
 export async function handleFinalizeBatch(
   batch: MessageBatch<FinalizeJobMessage>,
   env: Env,
 ): Promise<void> {
-  for (const message of batch.messages) {
-    try {
-      await processOneFinalize(env, message.body);
-      message.ack();
-    } catch (err) {
-      log('error', 'digest.generation', {
-        status: 'finalize_failed',
-        scrape_run_id: message.body.scrape_run_id,
-        attempts: message.attempts,
-        detail: String(err).slice(0, 500),
-      });
-      // Per REQ-PIPE-008 AC 8: never flip the run from `ready` to
-      // `failed` here. The articles are real and visible; only the
-      // cross-chunk merge is missing. Operators investigate via the
-      // `finalize_failed` log event.
-      message.retry();
-    }
-  }
+  await handleBatch(batch, env, {
+    process: processOneFinalize,
+    throwLogStatus: 'finalize_failed',
+    extraLogFields: (body) => ({ scrape_run_id: body.scrape_run_id }),
+    // No onTerminalFailure — REQ-PIPE-008 AC 8.
+  });
 }
 
 /** Process a single finalize message end-to-end. Exported for direct
@@ -107,6 +99,27 @@ export async function processOneFinalize(
   body: FinalizeJobMessage,
 ): Promise<void> {
   await applyForeignKeysPragma(env.DB);
+
+  // Step 0 — best-effort upfront short-circuit on queue redelivery.
+  // The atomic UPDATE later in this function is the genuine race
+  // safety net (two concurrent redeliveries can both pass this SELECT
+  // and only one will win the UPDATE). The upfront check exists to
+  // avoid paying full Workers AI cost on every redelivery for runs
+  // that already finalized cleanly — under Queue redelivery storms
+  // that becomes real money. A miss here just falls through to the
+  // existing path; it never produces a wrong outcome.
+  const gateProbe = await env.DB
+    .prepare(`SELECT finalize_recorded FROM scrape_runs WHERE id = ?1`)
+    .bind(body.scrape_run_id)
+    .first<{ finalize_recorded: number }>();
+  if (gateProbe !== null && gateProbe.finalize_recorded === 1) {
+    log('info', 'digest.generation', {
+      status: 'finalize_redelivery_skipped_upfront',
+      scrape_run_id: body.scrape_run_id,
+      reason: 'finalize_recorded_already_set',
+    });
+    return;
+  }
 
   // Step 1 — load surviving articles for the run, capped at 250 by
   // ingested_at DESC so we always prioritise the freshest tail when
@@ -154,7 +167,7 @@ export async function processOneFinalize(
         { role: 'system', content: FINALIZE_DEDUP_SYSTEM },
         { role: 'user', content: finalizeDedupUserPrompt(candidates) },
       ],
-      ...LLM_PARAMS,
+      ...FINALIZE_LLM_PARAMS,
     },
     narrow: (raw) => parseLLMJson(raw),
     onPrimaryFailure: (info) => {
@@ -186,7 +199,7 @@ export async function processOneFinalize(
   const wastedCostUsd = llmRun.wastedCostUsd;
 
   // Step 5 — extract dedup_groups from the parsed payload.
-  const dedupGroups = normaliseDedupGroups(
+  const dedupGroups = normaliseRawDedupGroups(
     (parsed as { dedup_groups?: unknown }).dedup_groups,
   );
 
@@ -274,41 +287,32 @@ export async function processOneFinalize(
     .run();
   const wonRecording = (gateAndStats.meta?.changes ?? 0) === 1;
 
-  log('info', 'digest.generation', {
-    status: 'finalize_ready',
-    scrape_run_id: body.scrape_run_id,
-    article_count: rows.length,
-    groups_merged: groupsMerged,
-    losers_deleted: losersDeleted,
-    tokens_in: tokensIn,
-    tokens_out: tokensOut,
-    estimated_cost_usd: costUsd,
-    cost_recorded: wonRecording,
-    model_used: modelUsed,
-    capped_at_250: rows.length === FINALIZE_CANDIDATE_CAP,
-  });
-}
-
-/** Coerce the LLM's `dedup_groups` payload into a clean `number[][]`.
- *  Same defensive shape-check the chunk consumer applies at
- *  scrape-chunk-consumer.ts:696. */
-function normaliseDedupGroups(value: unknown): number[][] {
-  if (!Array.isArray(value)) return [];
-  const out: number[][] = [];
-  for (const group of value) {
-    if (!Array.isArray(group)) continue;
-    // Dedupe indices within a group: an LLM that emits `[0, 1, 1]` would
-    // otherwise inflate `losers_deleted` and queue redundant merge SQL
-    // for the duplicated index. Set-uniquing collapses each occurrence.
-    const seen = new Set<number>();
-    for (const idx of group) {
-      if (Number.isInteger(idx) && (idx as number) >= 0) {
-        seen.add(idx as number);
-      }
-    }
-    if (seen.size >= 2) out.push(Array.from(seen));
+  if (wonRecording) {
+    log('info', 'digest.generation', {
+      status: 'finalize_ready',
+      scrape_run_id: body.scrape_run_id,
+      article_count: rows.length,
+      groups_merged: groupsMerged,
+      losers_deleted: losersDeleted,
+      tokens_in: tokensIn,
+      tokens_out: tokensOut,
+      estimated_cost_usd: costUsd,
+      cost_recorded: true,
+      model_used: modelUsed,
+      capped_at_250: rows.length === FINALIZE_CANDIDATE_CAP,
+    });
+  } else {
+    // Race lost to a concurrent redelivery that finished first.
+    // Only the fields that describe the outcome of THIS attempt go
+    // here — the per-row counters were already absorbed by the
+    // winning attempt and would mislead operators if repeated.
+    log('info', 'digest.generation', {
+      status: 'finalize_redelivery_skipped',
+      scrape_run_id: body.scrape_run_id,
+      model_used: modelUsed,
+      reason: 'race_lost',
+    });
   }
-  return out;
 }
 
 function toFinalizeRow(r: ArticleRow): FinalizeRow {

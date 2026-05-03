@@ -31,7 +31,7 @@
 
 import {
   PROCESS_CHUNK_SYSTEM,
-  LLM_PARAMS,
+  CHUNK_LLM_PARAMS,
   processChunkUserPrompt,
 } from '~/lib/prompts';
 import {
@@ -40,11 +40,13 @@ import {
 } from '~/lib/generate';
 import {
   mergeClustersByLlmHints,
+  normaliseRawDedupGroups,
   type Candidate,
   type Cluster,
 } from '~/lib/dedupe';
 import { fetchArticleBodies } from '~/lib/article-fetch';
 import { DEFAULT_HASHTAGS } from '~/lib/default-hashtags';
+import { normalizeHashtag } from '~/lib/hashtags';
 import { splitIntoParagraphs } from '~/lib/paragraph-split';
 import { FALLBACK_MODEL_ID } from '~/lib/models';
 import { runJsonWithFallback, previewRawResponse } from '~/lib/llm-json';
@@ -53,6 +55,7 @@ import { generateUlid } from '~/lib/ulid';
 import { applyForeignKeysPragma } from '~/lib/db';
 import { log } from '~/lib/log';
 import { titlesShareAnyToken } from '~/lib/title-overlap';
+import { handleBatch } from '~/lib/queue-handler';
 
 /** Shape of every `scrape-chunks` queue message. Produced by the
  * coordinator in `src/queue/scrape-coordinator.ts`. `candidates` are the
@@ -100,41 +103,27 @@ interface LLMChunkPayload {
   dedup_groups?: unknown;
 }
 
-/** Handle one batch of `scrape-chunks` messages. Queues sets
- * `max_batch_size = 1` in wrangler.toml, so `batch.messages` is almost
- * always length 1 — we still loop to be safe. */
+/** Handle one batch of `scrape-chunks` messages. Delegates the per-
+ * message try/ack/retry/terminal-failure pattern to the shared
+ * `handleBatch` envelope. */
 export async function handleChunkBatch(
   batch: MessageBatch<ChunkJobMessage>,
   env: Env,
 ): Promise<void> {
-  for (const message of batch.messages) {
-    try {
-      await processOneChunk(env, message.body);
-      message.ack();
-    } catch (err) {
-      log('error', 'digest.generation', {
-        status: 'chunk_consumer_throw',
-        scrape_run_id: message.body.scrape_run_id,
-        chunk_index: message.body.chunk_index,
-        attempts: message.attempts,
-        detail: String(err).slice(0, 500),
-      });
+  await handleBatch(batch, env, {
+    process: processOneChunk,
+    throwLogStatus: 'chunk_consumer_throw',
+    extraLogFields: (body) => ({
+      scrape_run_id: body.scrape_run_id,
+      chunk_index: body.chunk_index,
+    }),
+    onTerminalFailure: async (env, body) => {
       // On final retry, mark the parent run as failed so operators
       // and the UI don't see an orphan stuck at status='running'.
-      if (message.attempts >= 3) {
-        try {
-          await finishRun(env.DB, message.body.scrape_run_id, 'failed');
-        } catch (finishErr) {
-          log('error', 'digest.generation', {
-            status: 'chunk_finish_failed_after_throw',
-            scrape_run_id: message.body.scrape_run_id,
-            detail: String(finishErr).slice(0, 500),
-          });
-        }
-      }
-      message.retry();
-    }
-  }
+      await finishRun(env.DB, body.scrape_run_id, 'failed');
+    },
+    terminalFailureLogStatus: 'chunk_finish_failed_after_throw',
+  });
 }
 
 /** Process a single chunk message end-to-end. Exported for direct unit
@@ -231,7 +220,7 @@ export async function processOneChunk(
         { role: 'system', content: PROCESS_CHUNK_SYSTEM },
         { role: 'user', content: processChunkUserPrompt(promptCandidates, allowedTags) },
       ],
-      ...LLM_PARAMS,
+      ...CHUNK_LLM_PARAMS,
     },
     narrow: (raw) => narrowChunkPayload(parseLLMPayload(raw), raw),
     onPrimaryFailure: (info) => {
@@ -268,7 +257,7 @@ export async function processOneChunk(
   const wastedCostUsd = llmRun.wastedCostUsd;
 
   const rawArticles = Array.isArray(parsed.articles) ? parsed.articles : [];
-  const dedupGroups = normaliseDedupGroups(parsed.dedup_groups);
+  const dedupGroups = normaliseRawDedupGroups(parsed.dedup_groups);
 
   // Build one candidate cluster per input row. Each starts as a
   // singleton cluster whose primary is the input candidate plus its
@@ -303,8 +292,6 @@ export async function processOneChunk(
   // Map merged clusters back to their LLM article payloads. A merged
   // cluster at anchor index N uses articles[N] for title/details/tags;
   // the other grouped indices are collapsed into article_sources rows.
-  // Track which input indices made it into which merged cluster.
-  const collapsedSet = buildCollapsedSet(perInputClusters.length, dedupGroups);
 
   interface Survivor {
     cluster: Cluster;
@@ -432,7 +419,10 @@ export async function processOneChunk(
     const seen = new Set<string>();
     for (const t of llmTags) {
       if (typeof t !== 'string') continue;
-      const normalised = t.trim().toLowerCase().replace(/^#/, '');
+      // CF-034 — same normalisation the user-settings write-path applies,
+      // so an LLM-emitted "Cloud Infrastructure" lands as the same canonical
+      // form a user typed "#cloud-infrastructure" into settings.
+      const normalised = normalizeHashtag(t.trim());
       if (normalised === '' || seen.has(normalised)) continue;
       if (!allowedTagSet.has(normalised)) continue;
       seen.add(normalised);
@@ -647,9 +637,6 @@ export async function processOneChunk(
     dropped_for_title_mismatch: droppedForTitleMismatch,
   });
 
-  // Suppress unused-variable warning for collapsedSet; kept for future
-  // per-alternative source attribution refinements.
-  void collapsedSet;
 }
 
 // titlesShareAnyToken / tokenizeTitle moved to ~/lib/title-overlap (CF-058).
@@ -714,23 +701,6 @@ function narrowChunkPayload(
   return { articles: articles as LLMChunkArticle[], dedup_groups: dedupGroups };
 }
 
-/** Coerce an unknown dedup_groups payload into a clean `number[][]`. */
-function normaliseDedupGroups(raw: unknown): number[][] {
-  if (!Array.isArray(raw)) return [];
-  const out: number[][] = [];
-  for (const group of raw) {
-    if (!Array.isArray(group)) continue;
-    const indices: number[] = [];
-    for (const v of group) {
-      if (typeof v === 'number' && Number.isInteger(v) && v >= 0) {
-        indices.push(v);
-      }
-    }
-    if (indices.length >= 2) out.push(indices);
-  }
-  return out;
-}
-
 /** For each merged cluster (in output order), pick the "anchor" input
  * index — the minimum index across the source clusters that were
  * merged. Non-merged clusters have an anchor equal to their own index. */
@@ -766,21 +736,3 @@ function buildAnchorIndices(
   return anchors;
 }
 
-/** Track which input indices were collapsed into a merged cluster so
- * their candidate rows land in `article_sources` rather than creating
- * a new `articles` row. Returned for future per-alternative source
- * attribution; currently referenced via `void` to silence the linter. */
-function buildCollapsedSet(
-  inputCount: number,
-  dedupGroups: number[][],
-): Set<number> {
-  const collapsed = new Set<number>();
-  for (const group of dedupGroups) {
-    const valid = group
-      .filter((i) => Number.isInteger(i) && i >= 0 && i < inputCount)
-      .sort((a, b) => a - b);
-    if (valid.length < 2) continue;
-    for (const i of valid.slice(1)) collapsed.add(i);
-  }
-  return collapsed;
-}
