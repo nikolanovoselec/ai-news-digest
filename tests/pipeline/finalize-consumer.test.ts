@@ -527,6 +527,79 @@ describe('scrape-finalize-consumer — REQ-PIPE-008', () => {
     expect(finalizeRecordedFlag).toBe(1);
   });
 
+  it('REQ-PIPE-008: upfront SELECT short-circuits redelivery before the LLM call', async () => {
+    // The atomic UPDATE later in the function is the genuine race
+    // safety net (two truly concurrent redeliveries can both pass
+    // SELECT and one will lose the UPDATE). The upfront SELECT here
+    // is the cost-saver path: when finalize_recorded is already 1
+    // by the time the redelivered message picks up, we never pay
+    // Workers AI for the discarded result. Pin: when the SELECT
+    // returns finalize_recorded=1, the LLM is NOT called and no
+    // gating UPDATE fires.
+    const rows = [
+      row({ id: 'a', published_at: 100 }),
+      row({ id: 'b', published_at: 200 }),
+    ];
+    const records: SqlRecord[] = [];
+    const prepare = vi.fn().mockImplementation((sql: string) => ({
+      bind: (...params: unknown[]) => ({
+        __sql: sql,
+        __params: params,
+        run: vi.fn().mockImplementation(async () => {
+          records.push({ sql, params, via: 'run' });
+          return { success: true, meta: { changes: 1 } };
+        }),
+        all: vi.fn().mockImplementation(async () => {
+          records.push({ sql, params, via: 'all' });
+          if (sql.includes('FROM articles') && sql.includes('scrape_run_id')) {
+            return { success: true, results: rows };
+          }
+          return { success: true, results: [] };
+        }),
+        first: vi.fn().mockImplementation(async () => {
+          records.push({ sql, params, via: 'first' });
+          // The upfront short-circuit SELECT is the only `.first()`
+          // call early in processOneFinalize. Returning a row with
+          // finalize_recorded=1 is the redelivery-after-completion
+          // scenario that should skip the entire LLM path.
+          if (
+            sql.includes('SELECT finalize_recorded') &&
+            sql.includes('FROM scrape_runs')
+          ) {
+            return { finalize_recorded: 1 };
+          }
+          return null;
+        }),
+      }),
+      run: vi.fn().mockImplementation(async () => {
+        records.push({ sql, params: [], via: 'run' });
+        return { success: true, meta: { changes: 1 } };
+      }),
+    }));
+    const db = {
+      prepare,
+      batch: vi.fn(),
+      exec: vi.fn().mockImplementation(async () => ({ count: 0, duration: 0 })),
+    } as unknown as D1Database;
+    const { env, aiCalls } = makeEnv(db, [aiOk([[0, 1]])]);
+
+    await processOneFinalize(env, MSG);
+
+    // No LLM call: this is the "skip" guarantee. A regression that
+    // forgets the upfront SELECT or the early return would reach
+    // env.AI.run before the gating UPDATE catches the duplicate.
+    expect(aiCalls.length).toBe(0);
+    // No gating UPDATE either: short-circuit means we never reached
+    // the stats fold. A finding of `UPDATE scrape_runs ... finalize_recorded`
+    // here would mean the SELECT path didn't actually short-circuit.
+    const gateUpdate = records.find(
+      (r) =>
+        r.sql.includes('UPDATE scrape_runs') &&
+        r.sql.includes('finalize_recorded = 1'),
+    );
+    expect(gateUpdate).toBeUndefined();
+  });
+
   it('REQ-PIPE-008: replaying the same message produces the same final state and does not double-count', async () => {
     // Mutable row-set shared across both invocations. The merge batch
     // for a real D1 connection would DELETE the loser between passes;

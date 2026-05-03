@@ -323,32 +323,32 @@ export async function revokeRefreshToken(
  * revoke rows without a parallel `session_version` bump (none today)
  * MUST update this contract.
  *
- * **Race:** two concurrent first-time callers may both observe
- * unrevoked rows and both bump. Bounded over-bump is acceptable —
- * `session_version` is monotonically increasing.
+ * **Race:** the prior SELECT-then-batch-UPDATE shape had a TOCTOU
+ * window where another isolate could revoke all rows between SELECT
+ * and UPDATE, leading to an unnecessary session_version bump. We now
+ * gate the bump on the actual `meta.changes` of the conditional
+ * revoke — if zero rows flipped, no bump fires. Two concurrent first-
+ * time callers can still both observe unrevoked rows under the
+ * conditional UPDATE itself (one wins the row flip, the other
+ * observes zero changes and skips); bounded over-bump is acceptable
+ * because `session_version` is monotonically increasing.
  */
 export async function revokeAllForUser(
   db: D1Database,
   userId: string,
   now: number = Math.floor(Date.now() / 1000),
 ): Promise<void> {
-  const existing = await db
+  const revoked = await db
     .prepare(
-      `SELECT 1 FROM refresh_tokens WHERE user_id = ?1 AND revoked_at IS NULL LIMIT 1`,
+      `UPDATE refresh_tokens SET revoked_at = ?2 WHERE user_id = ?1 AND revoked_at IS NULL`,
     )
+    .bind(userId, now)
+    .run();
+  if ((revoked.meta?.changes ?? 0) === 0) return;
+  await db
+    .prepare(`UPDATE users SET session_version = session_version + 1 WHERE id = ?1`)
     .bind(userId)
-    .first();
-  if (existing === null) return;
-  await db.batch([
-    db
-      .prepare(
-        `UPDATE refresh_tokens SET revoked_at = ?2 WHERE user_id = ?1 AND revoked_at IS NULL`,
-      )
-      .bind(userId, now),
-    db
-      .prepare(`UPDATE users SET session_version = session_version + 1 WHERE id = ?1`)
-      .bind(userId),
-  ]);
+    .run();
 }
 
 /**
