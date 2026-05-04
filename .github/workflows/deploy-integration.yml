@@ -1,20 +1,16 @@
 name: Deploy Integration
 
-# Auto-deploy on every push to develop (the staging branch). Mirrors
-# the production deploy.yml pattern: gates on PR Checks completing
-# green so a broken commit on develop never reaches the integration
-# environment. workflow_dispatch is kept as a manual fallback for
-# stuck deploys.
+# Manual trigger ONLY. Operator workflow: land changes on develop
+# normally; when ready to smoke-test on the live edge, hit
+# Actions → Deploy Integration → Run workflow. The deploy always
+# pulls from the current develop HEAD regardless of which branch
+# the dispatch was fired from in the UI.
 #
 # All Cloudflare resources are env-scoped via wrangler.toml's
 # [env.integration] block — separate D1, KV, queues, all with
 # `-integration` suffixes. Crons are intentionally OFF on integration;
 # trigger scrape runs manually via /api/admin/force-refresh.
 on:
-  workflow_run:
-    workflows: ['PR Checks']
-    types: [completed]
-    branches: [develop]
   workflow_dispatch:
 
 concurrency:
@@ -27,11 +23,6 @@ permissions:
 jobs:
   deploy:
     name: Deploy to Cloudflare Workers (integration)
-    # On workflow_run: only deploy when PR Checks ended green on the
-    # develop SHA. On workflow_dispatch (manual re-run): always run.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # GitHub Environment named "integration" — store integration-only
@@ -41,14 +32,12 @@ jobs:
     # not a secret).
     environment: integration
     steps:
-      # On workflow_run we want the SHA the PR-Checks run was for, not
-      # the workflow file's branch (workflow_run defaults to the
-      # workflow's own ref, which can be stale). On manual dispatch the
-      # checkout default — the branch the dispatch was fired from — is
-      # right.
+      # Always deploy develop's current HEAD regardless of which branch
+      # the dispatch was fired from in the UI. Develop is the single
+      # source of truth for what gets smoke-tested on integration.
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          ref: develop
 
       - uses: actions/setup-node@v6
         with:
