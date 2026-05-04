@@ -53,9 +53,14 @@ function init(): void {
   }
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init, { once: true });
-} else {
-  init();
+// CF-013 — guard top-level DOM access so the module is importable in
+// the Workers vitest pool (where `document` is undefined). The
+// browser path runs unchanged when the module loads in the page.
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    init();
+  }
+  document.addEventListener('astro:page-load', init);
 }
-document.addEventListener('astro:page-load', init);
