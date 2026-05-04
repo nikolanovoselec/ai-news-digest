@@ -491,6 +491,86 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 
 ---
 
+### AD20: Idempotency tokens for client scripts loaded BOTH as Pattern B IIFE AND via page-level import must live on `window`
+
+**Status:** Accepted (2026-05-04)
+**Overrides:** none — captures a regression-class so future review passes don't reintroduce it.
+
+**Context:** Client scripts under `src/scripts/*.ts` ship two ways:
+
+- **Pattern B** — compiled by `scripts/build-client-scripts.mjs` into a self-contained IIFE bundle at `public/scripts/<name>.js`, loaded layout-wide by a `<script type="module" src="/scripts/<name>.js">` tag in `src/layouts/Base.astro`. CSP `script-src 'self'` requires self-hosted modules; an inline `<script>` would be CSP-blocked.
+- **Pattern A** — placed under `src/scripts/bundled/` and imported by an Astro component or page; Vite/Astro bundles them into a hashed `_astro/*.js` chunk per page that uses them.
+
+`src/scripts/card-interactions.ts` is exclusively Pattern B (lives at the top level of `src/scripts/`, NOT under `bundled/`). However `src/pages/history.astro` ALSO statically imports `initCardInteractions` from this file so the page can re-bind tag-disclosure click handlers on cards CLONED into the search-filter grid (the layout-wide IIFE only fires on `astro:page-load`, not after JS-driven clone insertion). That static import causes Vite to bundle the *entire* module — including the auto-wire IIFE at the bottom — into history.astro's chunk. The result is **two independent module evaluations** of the same source on /history:
+
+1. The standalone IIFE (Pattern B build) runs on script-tag load.
+2. The Astro-bundled copy runs when history.astro's chunk evaluates.
+
+Each evaluation has its own module-scope closure. Each closure has its own `let starDelegationBound = false`. Each registers its own `document.addEventListener('click', …)`. Two listeners fire per star click: the first flips `aria-pressed` and POSTs; the second sees the already-flipped state and DELETEs. Net effect: every favourite toggle silently reverts. The duplicate listener also persists on `document` across view-transitions, which is why the article-detail page's star button is broken when navigated FROM /history but works when navigated from /digest (whose pages don't import this module).
+
+PRs #182, #184, and #185 all attacked this surface and missed the dual-bundle dimension:
+
+- PR #182 stored the idempotency flag on `documentElement.dataset` — view-transition wipes it.
+- PR #184 moved the flag into module-scope closure — only deduplicates within ONE module instance.
+- PR #185 added a regression test for the documentElement-swap case but couldn't catch the cross-instance case because vitest evaluates the module once.
+
+**Decision:** Idempotency tokens for any client script that is loaded both as Pattern B AND imported page-level MUST live on `window` — the realm-scoped global is the same object across both module evaluations. Module-scope closure variables and DOM-node datasets are insufficient. The pattern looks like:
+
+```ts
+declare global {
+  // eslint-disable-next-line no-var
+  var __cardInteractionsBound: { star?: true; outsideClick?: true } | undefined;
+}
+function getBindFlags() {
+  if (typeof window === 'undefined') return {};
+  if (window.__cardInteractionsBound === undefined) {
+    window.__cardInteractionsBound = {};
+  }
+  return window.__cardInteractionsBound;
+}
+```
+
+**Alternatives considered:**
+
+- **Strip the page-level import; rely solely on the layout-wide auto-wire.** Would close the dual-bundle hole but also strip the page's ability to rebind clones synchronously after filter actions. Possible but requires either (a) exposing `initCardInteractions` on `window` from the IIFE and calling it via `window.__cardInteractions.init(searchGrid)` in history.astro, or (b) letting history.astro fire a custom event that the IIFE listens for. Both are larger refactors.
+- **Move the auto-wire IIFE OUT of `card-interactions.ts` into `card-interactions-bootstrap.ts`.** Then the page-level import would only pull pure functions (no side-effect IIFE). Cleaner architecturally but ties Pattern B-vs-Pattern A to a file-naming convention, and any future page-level importer who imports the bootstrap by mistake re-introduces the bug.
+- **`window`-scoped token (chosen).** Smallest diff, strongest guarantee, works regardless of how many copies of the module run.
+
+**Consequences:**
+
+- All future `src/scripts/*.ts` files that need to register global listeners AND might be imported by a page MUST use the window-scoped token pattern. The closure-flag pattern is a foot-gun.
+- `tests/build/no-page-pattern-b.test.ts` is added as a CI gate: it scans `src/pages/**/*.astro` and `src/components/**/*.astro` for static imports of any top-level `src/scripts/*.ts` (i.e. NOT `src/scripts/bundled/*`). Any such import fails the build with a pointer to this ADR. Future contributors who want to import a script from a page must move it under `src/scripts/bundled/`.
+- The `__resetForTests` helper in `card-interactions.ts` clears `window.__cardInteractionsBound` instead of closure variables.
+
+**Related requirements:** [REQ-STAR-001](../../sdd/reading.md#req-star-001), [REQ-READ-001](../../sdd/reading.md#req-read-001)
+
+---
+
+### AD21: Drop-cap vertical alignment is not portable across non-Charter serif fallbacks
+
+**Status:** Accepted (2026-05-04)
+
+**Context:** `src/pages/digest/[id]/[slug].astro` styles the article's lead paragraph with a `::first-letter` drop cap. The math (font-size 3.6em, line-height 1, margin-bottom -0.34em) was tuned for Charter — the preferred serif on Apple platforms — assuming an ascent ratio of ~0.78 and a cap-height ratio of ~0.66. On Linux and Windows, the `--font-serif` stack falls back to Source Serif Pro, Noto Serif, Cambria, or Times New Roman, which carry different metrics; the cap renders ~0.3em below where the math placed it.
+
+PR #185 attempted to compensate with `margin-top: -0.3em`. The user reported this pulled the cap visibly above line 1's cap-top on the rendering platform and collided with line 2's leading. Reverted to `margin-top: 0` in PR #186.
+
+**Decision:** Accept that the drop cap renders correctly on Charter (Apple) and acceptably (slightly below ideal cap-top) on the other fallbacks. Do NOT attempt CSS-only compensation; the metrics differ too much across fonts. A future improvement can detect the loaded font via `document.fonts.check('1em Charter')` and toggle a CSS variable for per-font tuning, but that is a feature, not a bug fix.
+
+**Alternatives considered:**
+
+- **Static `margin-top` value** — what PR #185 tried. Either fixes Charter at the cost of non-Charter, or vice versa. No single value works.
+- **Use `initial-letter` CSS property** — comment in source notes that initial-letter has bug-prone implementations across browsers (Samsung Browser float-above-line-1 bug, etc.) and was deliberately abandoned in favour of float-based math.
+- **Per-font CSS variable, set via JS feature-detect.** Correct long-term answer; out of scope for a bug-fix.
+
+**Consequences:**
+
+- Drop-cap looks slightly low on Linux/Windows browsers; this is the accepted state.
+- The CSS comment block in `[slug].astro` notes the trap so the next reviewer doesn't try the same `margin-top` adjustment again.
+
+**Related requirements:** [REQ-READ-002](../../sdd/reading.md#req-read-002)
+
+---
+
 ## Related Documentation
 
 - [Architecture](../architecture.md) — System overview and component map
