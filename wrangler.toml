@@ -3,6 +3,21 @@ compatibility_date = "2026-04-01"
 compatibility_flags = ["nodejs_compat"]
 main = "./dist/_worker.js/_merged.mjs"
 assets = { directory = "./dist", binding = "ASSETS" }
+# Disable the *.workers.dev subdomain. Cloudflare Access does NOT enforce
+# its policy on the workers.dev URL — leaving it enabled would let an
+# attacker hit the Worker bypassing Access entirely (see AD11 / CF-031).
+# Forks WITHOUT Cloudflare Access bound may set this back to true; forks
+# WITH Access in production should leave it false to close the bypass.
+workers_dev = false
+
+# IMPORTANT — production resource IDs.
+# `database_id` and the KV `id` below are the live production resources
+# for news.graymatter.ch. Running `wrangler` against this file from an
+# unaudited fork or unfamiliar environment can corrupt prod state in
+# ways that are hard to reverse (e.g., `wrangler d1 migrations apply
+# DB --remote` will mutate the production schema). Forks MUST bootstrap
+# their own resources via `scripts/bootstrap-resources.sh` and replace
+# both IDs before any remote `wrangler` command.
 
 # Custom domain is NOT declared here. Hardcoding the hostname here would
 # force every fork to edit this file before deploy. Instead, the Deploy
@@ -132,5 +147,9 @@ binding = "AI"
 # No [env.integration.triggers] block — crons are intentionally disabled
 # on integration. Trigger scrape runs manually via /api/admin/force-refresh.
 
-[env.integration.vars]
-APP_URL = "https://news.novoselec.ch"
+# APP_URL for integration is NOT hardcoded here. The deploy workflow
+# reads `vars.APP_URL` from the GitHub Environment named "integration"
+# and pushes it as a Worker secret at deploy time. Forks set their
+# own integration hostname under Settings → Environments → integration
+# → Variables → APP_URL. Falls back to the *.workers.dev URL
+# Cloudflare auto-assigns when the variable is unset.

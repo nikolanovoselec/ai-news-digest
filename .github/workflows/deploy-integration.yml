@@ -25,11 +25,16 @@ jobs:
     name: Deploy to Cloudflare Workers (integration)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # GitHub Environment named "integration" — store integration-only
-    # secrets here (OAUTH_JWT_SECRET, GOOGLE_OAUTH_CLIENT_ID, etc.) so
-    # they don't bleed into the production deploy. APP_URL is set in
-    # wrangler.toml [env.integration.vars] (it's the public hostname,
-    # not a secret).
+    # `environment: integration` enables GitHub's standard secret-
+    # resolution fallback: env-scoped secrets win when defined,
+    # otherwise the repo-level secret is used. Default state: no
+    # env-scoped secrets, everything falls through to repo level
+    # (CLOUDFLARE_API_TOKEN, OAUTH_JWT_SECRET, GOOGLE_OAUTH_*).
+    # If integration ever needs a different value (e.g. a separate
+    # JWT secret for cross-env identity isolation), add it under
+    # Settings → Environments → integration; the workflow picks it
+    # up automatically with no code change. APP_URL stays in
+    # wrangler.toml [env.integration.vars] (public hostname).
     environment: integration
     steps:
       # Always deploy develop's current HEAD regardless of which branch
@@ -67,19 +72,49 @@ jobs:
         run: npx --yes wrangler d1 migrations apply DB --remote --env integration
 
       - name: Push Worker secrets (integration)
+        # Secret references mirror deploy.yml exactly so any repo-level
+        # secret automatically reaches integration via env-fallback.
+        # Per-env override: add the secret under Settings → Environments
+        # → integration; GitHub picks the env-scoped value over the
+        # repo-level one.
+        #
+        # APP_URL is sourced from `vars.APP_URL` (a GitHub Environment
+        # *variable*, NOT a secret) — the integration hostname is
+        # public, fork-specific, and the fork operator sets it under
+        # Settings → Environments → integration → Variables. Codeflare
+        # pattern. No hardcoded hostnames in the repo.
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GH_OAUTH_CLIENT_ID: ${{ secrets.GH_OAUTH_CLIENT_ID }}
+          GH_OAUTH_CLIENT_SECRET: ${{ secrets.GH_OAUTH_CLIENT_SECRET }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           OAUTH_JWT_SECRET: ${{ secrets.OAUTH_JWT_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+          DEV_BYPASS_TOKEN: ${{ secrets.DEV_BYPASS_TOKEN }}
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          CF_ACCESS_AUD: ${{ secrets.CF_ACCESS_AUD }}
+          APP_URL: ${{ vars.APP_URL }}
         run: |
           set -e
-          # Required.
-          for name in OAUTH_JWT_SECRET; do
+          # Required: OAUTH_JWT_SECRET signs session cookies, APP_URL
+          # anchors the OAuth-callback host. APP_URL comes from the
+          # GitHub Environment variable (vars.APP_URL); without it the
+          # fork operator hasn't configured the integration target yet.
+          for name in OAUTH_JWT_SECRET APP_URL; do
             if [ -z "${!name:-}" ]; then
-              echo "::error::Required secret '$name' is not set in the integration environment." \
-                   "Add it under Settings → Environments → integration → Add secret."
+              if [ "$name" = "APP_URL" ]; then
+                echo "::error::vars.APP_URL not set." \
+                     "Add it under Settings → Environments → integration → Variables." \
+                     "Value should be the public URL the integration worker will serve" \
+                     "(custom domain like https://news.example.com, or a *.workers.dev URL)."
+              else
+                echo "::error::Required secret '$name' is not set." \
+                     "Add it at the repo level (Settings → Secrets → Actions)" \
+                     "or scope to integration (Settings → Environments → integration)."
+              fi
               exit 1
             fi
             TMP=$(mktemp)
@@ -88,30 +123,84 @@ jobs:
             rm "$TMP"
           done
 
-          # Sign-in providers — Google only on integration (per
-          # operator decision: skip GitHub OAuth setup on integration,
-          # use Google to sign in for testing). The landing page renders
-          # one button per configured provider, so the GitHub button
-          # simply doesn't appear.
-          if [ -n "${GOOGLE_OAUTH_CLIENT_ID:-}" ] && [ -n "${GOOGLE_OAUTH_CLIENT_SECRET:-}" ]; then
-            for name in GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET; do
+          # Sign-in providers — each pair independently optional. Same
+          # logic as deploy.yml: at least one must be configured. Per-
+          # provider rendering on the landing page reflects which
+          # creds reached the worker.
+          PROVIDERS_CONFIGURED=0
+          push_provider_pair() {
+            local label="$1"
+            local id_var="$2"
+            local secret_var="$3"
+            local id_val="${!id_var:-}"
+            local secret_val="${!secret_var:-}"
+            if [ -n "$id_val" ] && [ -n "$secret_val" ]; then
+              for name in "$id_var" "$secret_var"; do
+                TMP=$(mktemp)
+                printf '%s' "${!name}" > "$TMP"
+                npx --yes wrangler secret put "$name" --env integration < "$TMP"
+                rm "$TMP"
+              done
+              echo "$label sign-in: configured"
+              PROVIDERS_CONFIGURED=$((PROVIDERS_CONFIGURED + 1))
+            elif [ -n "$id_val" ] || [ -n "$secret_val" ]; then
+              echo "::error::$label sign-in: set BOTH ${id_var} and ${secret_var}, or neither."
+              exit 1
+            else
+              echo "$label sign-in: not configured"
+            fi
+          }
+          push_provider_pair GitHub GH_OAUTH_CLIENT_ID GH_OAUTH_CLIENT_SECRET
+          push_provider_pair Google GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET
+          if [ "$PROVIDERS_CONFIGURED" -eq 0 ]; then
+            echo "::error::No sign-in provider configured for integration."
+            exit 1
+          fi
+
+          # Optional: Resend (digest emails).
+          if [ -n "${RESEND_API_KEY:-}" ] && [ -n "${RESEND_FROM:-}" ]; then
+            for name in RESEND_API_KEY RESEND_FROM; do
               TMP=$(mktemp)
               printf '%s' "${!name}" > "$TMP"
               npx --yes wrangler secret put "$name" --env integration < "$TMP"
               rm "$TMP"
             done
-            echo "Google sign-in: configured"
-          else
-            echo "::error::Google sign-in not configured for integration." \
-                 "Add GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET to" \
-                 "Settings → Environments → integration."
+          elif [ -n "${RESEND_API_KEY:-}" ] || [ -n "${RESEND_FROM:-}" ]; then
+            echo "::error::Set BOTH RESEND_API_KEY and RESEND_FROM, or neither."
             exit 1
+          else
+            echo "Resend not configured — daily digest emails disabled."
           fi
 
-          # Resend skipped on integration — daily-digest emails disabled.
-          # DEV_BYPASS_TOKEN skipped — no e2e tests against integration yet.
-          # ADMIN_EMAIL / CF_ACCESS_AUD skipped — admin endpoints return 403,
-          # which is the correct default for a single-operator integration env.
+          # Optional: DEV_BYPASS_TOKEN.
+          if [ -n "${DEV_BYPASS_TOKEN:-}" ]; then
+            TMP=$(mktemp)
+            printf '%s' "$DEV_BYPASS_TOKEN" > "$TMP"
+            npx --yes wrangler secret put DEV_BYPASS_TOKEN --env integration < "$TMP"
+            rm "$TMP"
+          fi
+
+          # Wipe any pre-existing DEV_BYPASS_USER_ID secret (matches deploy.yml).
+          npx --yes wrangler secret delete DEV_BYPASS_USER_ID --env integration --force 2>/dev/null \
+            || echo "DEV_BYPASS_USER_ID not set on integration Worker — nothing to clear"
+
+          # Optional: ADMIN_EMAIL.
+          if [ -n "${ADMIN_EMAIL:-}" ]; then
+            TMP=$(mktemp)
+            printf '%s' "$ADMIN_EMAIL" > "$TMP"
+            npx --yes wrangler secret put ADMIN_EMAIL --env integration < "$TMP"
+            rm "$TMP"
+          else
+            echo "ADMIN_EMAIL not configured — admin endpoints will return 403"
+          fi
+
+          # Optional: CF_ACCESS_AUD.
+          if [ -n "${CF_ACCESS_AUD:-}" ]; then
+            TMP=$(mktemp)
+            printf '%s' "$CF_ACCESS_AUD" > "$TMP"
+            npx --yes wrangler secret put CF_ACCESS_AUD --env integration < "$TMP"
+            rm "$TMP"
+          fi
 
       - name: Deploy (integration)
         id: deploy
@@ -137,22 +226,15 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          APP_URL: ${{ vars.APP_URL }}
         run: |
           set -e
-          # APP_URL on integration is set in wrangler.toml [env.integration.vars],
-          # not as a secret. Read it directly from the toml so the bind step
-          # has a canonical source.
-          APP_URL=$(awk '
-            $0 == "[env.integration.vars]" { in_sec=1; next }
-            /^\[/ && in_sec { in_sec=0 }
-            in_sec && $1 == "APP_URL" {
-              n = split($0, parts, "\"")
-              if (n >= 2) { print parts[2]; exit }
-            }
-          ' wrangler.toml)
-
+          # APP_URL comes from the integration GitHub Environment variable
+          # (vars.APP_URL). When unset (fork hasn't configured a custom
+          # domain), the bind step is a no-op and the worker is reachable
+          # only at its *.workers.dev URL.
           if [ -z "$APP_URL" ]; then
-            echo "APP_URL not found in wrangler.toml [env.integration.vars]; skipping custom-domain binding"
+            echo "vars.APP_URL not set — skipping custom-domain bind (workers.dev URL only)"
             exit 0
           fi
           HOST=$(printf '%s' "$APP_URL" | sed -E 's|^[A-Za-z]+://||; s|/.*$||; s|:.*$||')
@@ -226,17 +308,10 @@ jobs:
       - name: Smoke test (integration)
         env:
           WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
+          APP_URL: ${{ vars.APP_URL }}
         run: |
-          # Read APP_URL from wrangler.toml — same source the bind step used.
-          APP_URL=$(awk '
-            $0 == "[env.integration.vars]" { in_sec=1; next }
-            /^\[/ && in_sec { in_sec=0 }
-            in_sec && $1 == "APP_URL" {
-              n = split($0, parts, "\"")
-              if (n >= 2) { print parts[2]; exit }
-            }
-          ' wrangler.toml)
-
+          # Prefer the custom domain (vars.APP_URL) when set, fall back
+          # to the *.workers.dev URL wrangler returned at deploy time.
           for URL in "$APP_URL" "$WORKER_URL"; do
             if [ -z "$URL" ]; then continue; fi
             CODE=$(curl -s --max-time 15 -o /dev/null -w "%{http_code}" "$URL/" || echo "000")
