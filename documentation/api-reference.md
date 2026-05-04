@@ -432,7 +432,7 @@ Each article in `articles[]` includes a `starred: boolean` field reflecting the 
 
 `?q=` and `?tags=` are page-level URL state read client-side; they are not server query params.
 
-**Implements:** [REQ-HIST-001](../sdd/history.md#req-hist-001-day-grouped-article-history) AC 4, AC 5
+**Implements:** [REQ-HIST-001](../sdd/history.md#req-hist-001-day-grouped-article-history) AC 4, AC 5; [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles) AC 6 (SSR-rendered initial star state per card)
 
 ### GET /api/stats
 
