@@ -3,48 +3,47 @@
 //
 // Dashboard card interactions — star toggle + tag-disclosure popover.
 //
-// This module queries every `[data-star-toggle]` and
-// `[data-tag-trigger]` on the page and attaches a direct `click`
-// handler per button. Direct handlers are the most reliable event
-// path across mobile engines (Samsung Browser, iOS Safari in-app
-// webviews) — no capture, no delegation, no preventDefault races
-// with an ancestor anchor. The buttons live OUTSIDE the card's <a>,
-// so the anchor's navigation can't shadow them.
+// Star toggles use ONE document-level click delegation listener bound
+// once at module load. Every `[data-star-toggle]` in the document —
+// /digest, /starred, /history, AND the article-detail header — routes
+// through this single handler. Per-button `addEventListener` was
+// fragile under Astro's view-transition morphing: a button DOM node
+// re-used across SPA navigations kept its `data-bound` flag while
+// losing its closure-bound listener, producing the "clicking the
+// favorite star sometimes does nothing, reload fixes it" intermittent
+// bug. Delegation has nothing to lose because there is nothing
+// per-button to lose.
+//
+// Tag-disclosure triggers stay per-button. They are vulnerable to the
+// same view-transition node-reuse pattern that broke stars, but the
+// failure mode is benign here — a stale handler on a morphed trigger
+// still calls `toggleTagDisclosure`, which queries the live DOM via
+// `closest('[data-tag-disclosure]')` and operates on whatever sibling
+// is currently in the page. If a future regression surfaces "the # tag
+// chip stops opening after navigation", convert this to delegation
+// using the same pattern as `bindStarDelegation`.
 //
 // Exported for unit testing: `initCardInteractions(root)` walks the
-// given root (defaults to `document`) and binds handlers to every
-// button it finds. Safe to re-run on `astro:page-load` — each button
-// is bound at most once via a `data-bound` flag on the element.
+// given root (defaults to `document`) and binds tag-trigger handlers
+// to every button it finds. Safe to re-run on `astro:page-load` —
+// tag-trigger buttons are skipped if already bound. The star
+// delegation is bound once at module load, independent of init calls.
 
 const POPOVER_TTL_MS = 5000;
 const popoverTimers = new WeakMap<HTMLElement, number>();
 
 /**
- * Wire every card button under {@link root} with click handlers.
- * Re-entrant: buttons already bound are skipped. Returns the number
- * of buttons newly bound so tests can assert on it.
+ * Wire every tag-disclosure trigger under {@link root} with click
+ * handlers. Re-entrant: triggers already bound are skipped. Returns
+ * the number of triggers newly bound so tests can assert on it.
+ *
+ * NOTE: star toggles are NOT bound here — they use document-level
+ * delegation set up at module load (see `bindStarDelegation` below).
  */
 export function initCardInteractions(
   root: Document | HTMLElement = document,
 ): number {
   let bound = 0;
-
-  // Star toggles. Each <button data-star-toggle data-article-id=…>
-  // becomes a direct click target. The handler flips aria-pressed
-  // optimistically, POSTs/DELETEs /api/articles/:id/star, and reverts
-  // on non-2xx.
-  root.querySelectorAll<HTMLButtonElement>('[data-star-toggle]').forEach(
-    (button) => {
-      if (button.dataset['bound'] === '1') return;
-      button.dataset['bound'] = '1';
-      button.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        void handleStarClick(button);
-      });
-      bound++;
-    },
-  );
 
   // Tag-disclosure triggers. Each `#` / `#3` button opens the sibling
   // `[data-tag-disclosure]`'s popover with a 5-second auto-close.
@@ -79,6 +78,32 @@ export function initCardInteractions(
   }
 
   return bound;
+}
+
+/**
+ * Bind the document-level star-click delegation. Idempotent via
+ * `data-star-delegation-bound` on documentElement so re-imports or
+ * astro:page-load re-runs never stack listeners. Exported for unit
+ * tests that need to assert idempotency without driving the full
+ * module-load side effects.
+ *
+ * Bubble phase (not capture): pairs naturally with the
+ * `e.stopPropagation()` the handler itself calls, and lets any
+ * card-internal handler opt out by stopping propagation first.
+ */
+export function bindStarDelegation(): void {
+  if (typeof document === 'undefined') return;
+  if (document.documentElement.dataset['starDelegationBound'] === '1') return;
+  document.documentElement.dataset['starDelegationBound'] = '1';
+  document.addEventListener('click', (e) => {
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    const button = target.closest<HTMLButtonElement>('[data-star-toggle]');
+    if (button === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void handleStarClick(button);
+  });
 }
 
 /** POST/DELETE /api/articles/:id/star with optimistic UI. Exported for
@@ -146,6 +171,7 @@ export function closeAllTagPopovers(except?: HTMLElement): void {
 
 // Auto-wire on DOMContentLoaded + every astro:page-load.
 if (typeof document !== 'undefined') {
+  bindStarDelegation();
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => initCardInteractions());
   } else {
