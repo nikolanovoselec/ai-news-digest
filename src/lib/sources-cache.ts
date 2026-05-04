@@ -4,20 +4,20 @@
 // Every writer in the system MUST go through this module. The
 // invariant the coordinator's eviction recheck relies on — that the
 // serialized form of a cache value is byte-equal whenever the logical
-// content is identical — is enforced here by:
+// content is identical — is enforced here by a single, explicit
+// field order in `serialize()`. The two writer call sites previously
+// called `JSON.stringify({ feeds, discovered_at })` inline; a future
+// caller using a different destructure order would silently break
+// the byte-equal compare that the coordinator's read-modify-write
+// race recheck depends on. Centralising fixes this by construction.
 //
-//   1. A single, explicit field order in `serialize()`. The two
-//      writer call sites previously called `JSON.stringify({ feeds,
-//      discovered_at })` inline; a future caller using a different
-//      destructure order would silently break the byte-equal compare
-//      that the coordinator's read-modify-write race recheck depends
-//      on. Centralizing fixes this by construction.
-//
-//   2. A `discovered_at` field on every cache entry. The coordinator
-//      now performs a STRUCTURAL recheck against this monotonic
-//      timestamp instead of a raw byte compare — belt-and-suspenders.
-//      Even if two writers diverge on serialization order, the race
-//      detection still catches the collision.
+// `sourcesCacheRawEqual` is byte-only. An earlier draft of this
+// helper carried a structural `discovered_at` fallback as
+// belt-and-suspenders; review-cycle code-reviewer flagged that two
+// writers colliding on the same `Date.now()` millisecond with
+// genuinely different feeds would have been treated as equivalent —
+// exactly the failure mode the recheck exists to prevent. The byte
+// path is sound now that this module is the single canonical writer.
 //
 // Same anti-pattern AD7 migrated AWAY from for chunk completion. See
 // AD16 for the full reasoning + alternatives considered.

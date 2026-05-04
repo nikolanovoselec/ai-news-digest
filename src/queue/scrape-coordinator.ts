@@ -552,8 +552,10 @@ function curatedToAdapter(curated: CuratedSource): SourceAdapter {
  *
  * Behaviour notes:
  *  - Tags that have since been promoted to CURATED_SOURCES are
- *    skipped AND the orphan KV entry is best-effort deleted in the
- *    same pass (no second sweep needed).
+ *    skipped from the result. CF-017: this function is pure-read
+ *    and does NOT delete the orphan KV entry — `purgeOrphanDiscoveredSources`
+ *    owns that side effect and runs as a separate KV pass before
+ *    the read so the read contract stays read-only.
  *  - KV failures are caught per-key so one transient miss doesn't
  *    abort the whole scan and silently truncate the discovered set.
  *  - `partial: true` signals the caller that one or more keys failed
@@ -872,12 +874,12 @@ export async function applyEvictions(
       // and the next scrape tick will re-evaluate health against the
       // new feed set.
       //
-      // CF-001 / AD16 — recheck uses STRUCTURAL compare on the
-      // canonical raw form (via sourcesCacheRawEqual). Centralised
-      // serialisation in `writeSourcesCache` guarantees byte-equal on
-      // the fast path; if a future writer drifts, the structural
-      // fallback (compare on `discovered_at`) still catches the race
-      // without false-positiving on serialisation order.
+      // CF-001 / AD16 — recheck is BYTE-equal via sourcesCacheRawEqual.
+      // The single-writer invariant (every writer routes through
+      // `writeSourcesCache`) makes byte-equality sound. An earlier
+      // draft used a structural `discovered_at` fallback for
+      // robustness; that fallback was unsafe under same-millisecond
+      // collisions and was tightened to byte-only.
       const latestRaw = await env.KV.get(`sources:${tag}`, 'text');
       if (latestRaw === null || !sourcesCacheRawEqual(latestRaw, raw)) {
         log('info', 'discovery.completed', {
