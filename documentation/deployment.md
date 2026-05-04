@@ -82,10 +82,53 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 
 ### Environment-specific configuration
 
-| Environment | Branch | Notes |
-|---|---|---|
-| Development | `develop` | Active development branch; PR Checks (`test.yml`) fire on every push |
-| Production | `main` | CI deploys on merge to main; deploy is gated on PR Checks success |
+| Environment | Branch | Hostname source | Trigger | Crons |
+|---|---|---|---|---|
+| Development | `develop` | (no deploy) | PR Checks (`test.yml`) fire on every push | n/a |
+| Integration | `develop` | `vars.APP_URL` on the `integration` GitHub Environment | Manual (Actions → Deploy Integration) | OFF |
+| Production | `main` | `secrets.APP_URL` (repo-level) | Auto on merge to main, gated on PR Checks success | ON |
+
+## Integration deployment
+
+**Purpose:** Smoke-test risky changes (major dependency bumps, schema migrations, CSP tightening, animation rewrites) on the live Cloudflare edge before they reach production. Implements [REQ-OPS-006](../sdd/observability.md#req-ops-006-integration-deployment-target). Architectural decision: [AD12](decisions/README.md#ad12-integration-env-separate-cloudflare-resources-manual-trigger-from-develop-crons-disabled).
+
+**Workflow file:** `.github/workflows/deploy-integration.yml`
+
+**Cloudflare resources** (all suffixed `-integration`, fully isolated from prod):
+
+| Resource | Name |
+|---|---|
+| Worker | `ai-news-digest-integration` |
+| D1 | `ai-news-digest-integration` |
+| KV | `ai-news-digest-integration-kv` (auto-derived) |
+| Queues | `scrape-coordinator-integration`, `scrape-chunks-integration`, `scrape-finalize-integration` |
+| Workers AI | shared `AI` binding (no per-env isolation needed) |
+
+**One-time per-fork setup:**
+
+1. **Create the GitHub Environment.** Repo → Settings → Environments → New environment → name it `integration`. The empty environment is what activates the secret-fallback semantics in the workflow.
+2. **Set `APP_URL` as an environment variable** (Variables tab, NOT Secrets — it's a public hostname). The value is the URL the integration worker will serve, e.g., `https://news.example.com` if you have a custom domain on Cloudflare. Leave unset to deploy to the auto-assigned `*.workers.dev` URL.
+3. **Confirm the OAuth callback URL is registered** with whichever providers you use — `${APP_URL}/api/auth/google/callback` and/or `${APP_URL}/api/auth/github/callback`.
+4. **(Optional) Override secrets per-env.** Any secret added under Environments → integration → Secrets takes precedence over the repo-level secret with the same name. Useful for isolating `OAUTH_JWT_SECRET` between prod and integration so a leaked integration JWT can't be replayed against prod.
+
+**How to deploy:**
+
+1. Land the change on `develop` (PR-merged or direct push).
+2. GitHub → Actions → "Deploy Integration" → "Run workflow" → green button.
+3. The branch dropdown in the dispatch dialog is irrelevant — the workflow always pulls `develop`'s current HEAD.
+4. ~3 minutes for first-deploy (resources provisioned), ~2 minutes for subsequent deploys.
+5. Smoke at the URL you set in `vars.APP_URL` (or the `*.workers.dev` URL the deploy log prints).
+
+**Triggering a scrape on integration** (since crons are off):
+
+```bash
+# Sign in at your APP_URL, then:
+curl -i ${APP_URL}/api/admin/force-refresh
+```
+
+**Promotion path** is one-way: develop → integration smoke → develop merged to main → production auto-deploy. No path pushes integration changes back to develop.
+
+**Secret resolution.** `environment: integration` enables GitHub's standard secret-resolution fallback: env-scoped secret wins when defined, otherwise the repo-level secret is used. Default state with no env-scoped secrets matches running without env scoping at all — which is exactly what you want when reusing prod credentials on integration.
 
 ## Cloudflare Resources
 

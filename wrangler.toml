@@ -132,5 +132,9 @@ binding = "AI"
 # No [env.integration.triggers] block — crons are intentionally disabled
 # on integration. Trigger scrape runs manually via /api/admin/force-refresh.
 
-[env.integration.vars]
-APP_URL = "https://news.novoselec.ch"
+# APP_URL for integration is NOT hardcoded here. The deploy workflow
+# reads `vars.APP_URL` from the GitHub Environment named "integration"
+# and pushes it as a Worker secret at deploy time. Forks set their
+# own integration hostname under Settings → Environments → integration
+# → Variables → APP_URL. Falls back to the *.workers.dev URL
+# Cloudflare auto-assigns when the variable is unset.
