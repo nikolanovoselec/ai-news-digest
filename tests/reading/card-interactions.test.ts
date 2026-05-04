@@ -28,6 +28,7 @@ import {
   handleStarClick,
   toggleTagDisclosure,
   closeAllTagPopovers,
+  __resetForTests,
 } from '~/scripts/card-interactions';
 
 /** Minimal mock of a star <button> — only the surface the handler
@@ -343,6 +344,7 @@ describe('initCardInteractions — REQ-STAR-001 + REQ-READ-001 event plumbing', 
   });
 
   it('REQ-STAR-001: bindStarDelegation attaches exactly one document click listener and is idempotent', () => {
+    __resetForTests();
     // The whole point of the dual-handler refactor: ONE document-level
     // listener owns every star-toggle click. A double-bind would fire
     // two fetches per click (POST + DELETE) and the optimistic toggle
@@ -418,6 +420,7 @@ describe('initCardInteractions — REQ-STAR-001 + REQ-READ-001 event plumbing', 
   });
 
   it('REQ-READ-001: outside-click listener stays singleton across documentElement swap (parallel to star-delegation regression)', () => {
+    __resetForTests();
     // Counterpart to the bindStarDelegation regression test above.
     // Same view-transition swap that broke star delegation would also
     // have stacked outside-click listeners on `document` if the

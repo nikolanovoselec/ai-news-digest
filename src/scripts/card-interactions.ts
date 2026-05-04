@@ -52,6 +52,19 @@ let starDelegationBound = false;
 let outsideClickBound = false;
 
 /**
+ * Test-only helper. Resets the module-scope idempotency flags so the
+ * unit tests can re-exercise `bindStarDelegation` / `initCardInteractions`
+ * from a clean slate without resorting to `vi.resetModules()` + dynamic
+ * imports. The production runtime never calls this — flags are
+ * single-binding by design and there is no use case for clearing them
+ * mid-session. Exported behind a `__` prefix so it's visibly internal.
+ */
+export function __resetForTests(): void {
+  starDelegationBound = false;
+  outsideClickBound = false;
+}
+
+/**
  * Wire every tag-disclosure trigger under {@link root} with click
  * handlers. Re-entrant: triggers already bound are skipped. Returns
  * the number of triggers newly bound so tests can assert on it.
