@@ -26,7 +26,6 @@
     "tailwindcss": "^4.2.4"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.9",
     "@cloudflare/vitest-pool-workers": "^0.15.2",
     "@playwright/test": "^1.50.0",
     "@cloudflare/workers-types": "^4.20260422.1",
