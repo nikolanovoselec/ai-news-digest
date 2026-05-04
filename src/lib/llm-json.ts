@@ -30,6 +30,7 @@
 //      diagnostic log line.
 
 import { DEFAULT_MODEL_ID, FALLBACK_MODEL_ID, estimateCost } from '~/lib/models';
+import { log } from '~/lib/log';
 import {
   extractResponsePayload,
   extractTokensIn,
@@ -138,6 +139,20 @@ export async function runJsonWithFallback<T>(
     rawResponse: primaryRaw,
   };
   options.onPrimaryFailure?.(primaryAttempt);
+
+  // CF-022 — emit a structured log every time fallback fires so the
+  // operator can `wrangler tail | grep llm.fallback_invoked` and spot
+  // a degraded primary BEFORE the cost spike of full primary+fallback
+  // tokens accumulates over many ticks. v1 is alert-only; a future
+  // refactor can add a circuit-breaker once the alert cadence is
+  // understood in production.
+  log('warn', 'llm.fallback_invoked', {
+    primary_model: primaryModel,
+    fallback_model: fallbackModel,
+    wasted_tokens_in: primaryTokensIn,
+    wasted_tokens_out: primaryTokensOut,
+    wasted_cost_usd: primaryCostUsd,
+  });
 
   const fallbackResult = (await options.ai.run(fallbackModel, options.params)) as AIRunResponse;
   const fallbackRaw = extractResponsePayload(fallbackResult);

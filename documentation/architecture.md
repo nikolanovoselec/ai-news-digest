@@ -297,21 +297,23 @@ PWA icons render from `public/icons/app-icon.svg` via `scripts/generate-pwa-icon
 
 The site CSP is `script-src 'self'`, which blocks every inline `<script>...</script>` block. Astro inlines page-level `<script>` blocks that contain no `import` statement, so a script written without an import is silently dropped at runtime.
 
-**Pattern A — per-page Astro bundle:** put the script body in `src/scripts/<module>.ts` and import it from the page:
+**Pattern A — Astro-bundled (lives under `src/scripts/bundled/`):** the script is imported from an Astro component or page, and Astro/Vite bundles it into the page's hashed JS:
 
 ```astro
-<script>import '~/scripts/<module>';</script>
+<script>import { toggleTheme } from '~/scripts/bundled/<module>';</script>
 ```
 
-Astro emits the code as an external `<script type="module" src="/_astro/...js">` bundle that CSP allows.
+Astro emits the code as an external `<script type="module" src="/_astro/...js">` bundle that CSP allows. New Pattern A files go directly under `src/scripts/bundled/`; the build script ignores that subdirectory.
 
-**Pattern B — static mirror (layout-wide scripts):** for scripts that must run on every page regardless of which Astro page initiated the navigation (e.g., `card-interactions.ts` running on `/digest`, `/history`, and `/starred`), the compiled output is committed to `public/scripts/<module>.js` and loaded from `Base.astro` directly:
+**Pattern B — static mirror (lives at `src/scripts/<module>.ts`):** for scripts that must run on every page regardless of which Astro page initiated the navigation (e.g., `card-interactions.ts` running on `/digest`, `/history`, and `/starred`), the build script compiles the TypeScript into `public/scripts/<module>.js` and the layout loads it directly:
 
 ```astro
 <script is:inline type="module" src="/scripts/<module>.js"></script>
 ```
 
-The `is:inline` attribute prevents Astro from re-bundling the file. The `public/scripts/` copy must be kept in sync with `src/scripts/<module>.ts` manually (or via build tooling). Scripts currently using this pattern: `page-effects.js`, `card-interactions.js`, `alt-sources-modal.js`.
+The `is:inline` attribute prevents Astro from re-bundling the file. `scripts/build-client-scripts.mjs` rebuilds every Pattern B file on every `npm run build`, so the mirror cannot drift from its source. Scripts currently using this pattern: `page-effects.js`, `card-interactions.js`, `alt-sources-modal.js`, `install-prompt.js`, `offline.js`, `rate-limited.js`, `article-detail.js`, `tag-railing-flip.js`.
+
+Replaces the prior hand-maintained `SKIP` set in `build-client-scripts.mjs` (CF-023).
 
 ---
 

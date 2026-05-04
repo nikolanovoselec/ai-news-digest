@@ -332,7 +332,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 **Consequences:**
 - Reviewing this ADR is a mandatory step on any PR adding `Set-Cookie` for non-auth purposes.
 - Telemetry/analytics integrations must use cookieless approaches (aggregated edge logs, one-shot beacon to a first-party endpoint with no client-side identifier, etc.) or this ADR must be superseded with an explicit decision and a tagline-copy revision.
-- The current cookie inventory documented in `documentation/security.md` is the authoritative list of "essential" cookies; any additions there must justify essentiality in the same PR.
+- Until a dedicated `documentation/security.md` is bootstrapped, the essential cookie inventory lives inline in this ADR set (AD8 covers session + refresh-token cookies; OAuth state and theme cookies are documented at their respective issue sites). When `security.md` is eventually written it consolidates and supersedes those scattered entries.
 
 **Related requirements:** none (this is a product-trust contract, not a behavioral REQ).
 
@@ -342,7 +342,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 
 **Status:** Accepted (2026-05-04)
 
-**Overrides:** `skipped-test:REQ-READ-002,REQ-HIST-001`
+**Overrides:** `skipped-test:REQ-READ-002`, `skipped-test:REQ-HIST-001`
 
 **Decision:** The numeric perf-comparability test (history back-nav ≤ 1.6× digest back-nav, median of 3 samples) in `tests/e2e/view-transition.spec.ts` is permanently skipped. No expiry, no removal trigger.
 
@@ -356,6 +356,32 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - The skip line in `tests/e2e/view-transition.spec.ts` references this ADR rather than `sdd/.user-overrides.md` (which is being phased out per codeflare#266).
 
 **Related requirements:** [REQ-READ-002](../../sdd/reading.md#req-read-002-article-detail-view), [REQ-HIST-001](../../sdd/history.md#req-hist-001-day-grouped-article-history)
+
+---
+
+### AD15: Test pool exercises worker.ts directly; production runs through the Astro-merged entry
+
+**Status:** Accepted (2026-05-04)
+
+**Decision:** Vitest's Workers pool loads `src/worker.ts` directly as the test entry. Production loads `dist/_worker.js/_merged.mjs` (the Astro-built bundle) per the `main` field in `wrangler.toml`. The two entry shapes are intentionally NOT unified.
+
+**Context:** Astro 5's `@astrojs/cloudflare` adapter wraps the Worker in its own SSR-aware fetch handler that composes Astro middleware (security headers, view-transition support, asset routing) before delegating to the user-defined cron/queue handlers in `worker.ts`. Vitest cannot load the merged Astro entry because (a) the bundle is produced by `astro build`, which the test pool doesn't run, and (b) the merged file uses Astro-internal module shapes incompatible with `cloudflare:test`. So tests target `worker.ts` directly and exercise the cron/queue surface plus any HTTP routes that `worker.ts` defines inline. Cross-cutting middleware (e.g., the security-headers middleware in `src/middleware/security-headers.ts`) lives in Astro's wrapper and is bypassed in unit tests by construction.
+
+**Alternatives considered:**
+
+- **Force `npm run build` in the test pool setup.** Rejected: doubles CI wall-time on every test run, and the merged module shape is still incompatible with the Workers pool runtime.
+- **Hand-roll a Worker entry that composes the Astro middleware in code, used by both prod and tests.** Rejected: mirrors what `@astrojs/cloudflare` already does, churn on every Astro upgrade, no test wins because the middleware is exercised end-to-end via Playwright already.
+- **Drop unit tests of cross-cutting middleware entirely.** Rejected: Playwright covers the integration path, but unit tests for individual middleware functions (origin check, rate limit, JWT verify) remain valuable and live in `tests/middleware/`.
+
+**Rationale:** The production middleware chain is verified end-to-end by Playwright (`tests/e2e/csp-violation.spec.ts` and the new `tests/e2e/csp-policy.spec.ts` from D3 below). Unit tests cover middleware functions in isolation. The test/prod entry inversion is acceptable as long as the contract gate stays in Playwright, not in vitest.
+
+**Consequences:**
+
+- New cross-cutting middleware that needs to fire on every response MUST add a Playwright spec exercising it via real `fetch`. A vitest-only test against `worker.ts` will pass while the middleware is silently absent in production.
+- The `src/worker.ts` `fetch` branch that exists for the test pool is dead code in production. Mark it with a comment so a future cleanup doesn't delete it on dead-code analysis grounds.
+- Astro upgrades that change the wrapper's middleware composition (Astro 6's session-driver factory is the active example) require a Playwright run before merge to confirm middleware still fires.
+
+**Related requirements:** [REQ-OPS-003](../../sdd/observability.md#req-ops-003-security-headers-on-every-response)
 
 ---
 

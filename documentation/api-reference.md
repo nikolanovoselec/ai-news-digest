@@ -492,7 +492,7 @@ Implements [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-log
 | `auth.refresh.rate_limited` | Inline middleware or the explicit refresh path hit a refresh rate-limit bucket — request rejected with 429. See [Refresh rate-limit fail mode](#refresh-rate-limit-fail-mode) below for the `bucket` field values. |
 | `rate.limit.kv_error` | KV read/write in the rate-limit helper threw. The caller proceeds per the per-rule fail-mode; `decision` and `kv_op` field values are documented in [Refresh rate-limit fail mode](#refresh-rate-limit-fail-mode). |
 | `article.star.failed` | D1 insert or delete in `POST/DELETE /api/articles/:id/star` threw |
-| `admin.auth.aud_unset_warning` | `CF_ACCESS_AUD` is unset but the Access assertion header is present — the Worker checks header presence only, not the `aud` claim. Emitted once per isolate. See [Deployment: Setting CF_ACCESS_AUD](deployment.md#setting-cf_access_aud-strongly-recommended-in-production). |
+| `admin.auth.aud_unset_warning` | `CF_ACCESS_AUD` is unset but the Access assertion header is present — the Worker checks header presence only, not the `aud` claim. Emitted once per isolate. See [Configuration: Setting CF_ACCESS_AUD](configuration.md#setting-cf_access_aud-strongly-recommended-in-production). |
 
 Raw exception messages appear only in the `detail` field of error-level records; they are never stored in D1 and never returned to clients (see [REQ-OPS-002](../sdd/observability.md#req-ops-002-sanitized-error-surfaces)).
 
