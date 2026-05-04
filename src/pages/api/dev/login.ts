@@ -27,7 +27,7 @@ import { signSession } from '~/lib/session-jwt';
 import { buildSessionCookie } from '~/middleware/auth';
 import { E2E_USER_ID } from '~/lib/system-user';
 import { timingSafeEqualHmac } from '~/lib/crypto';
-import { originOf } from '~/middleware/origin-check';
+import { checkDevEndpointOrigin } from '~/middleware/origin-check';
 import {
   buildRefreshCookie,
   issueRefreshToken,
@@ -53,18 +53,14 @@ export async function POST(context: APIContext): Promise<Response> {
     return new Response('oauth_jwt_secret not set', { status: 500 });
   }
 
-  // Defence-in-depth Origin check (CF-035). The bypass-token gate is
-  // already the primary defence — cross-site browser forms cannot set
-  // the Authorization header. But on the off-chance the endpoint is
-  // accidentally enabled without the bypass token, or a future caller
-  // omits the timing-safe comparison, an Origin guard blocks
-  // browser-driven CSRF on the same axis as every other state-changing
-  // endpoint. Curl-driven CI calls (no Origin header) pass through.
-  const origin = context.request.headers.get('Origin');
-  if (origin !== null && origin !== '' && typeof env.APP_URL === 'string') {
-    if (origin !== originOf(env.APP_URL)) {
-      return new Response(null, { status: 404 });
-    }
+  // Defence-in-depth Origin check (CF-035). Bypass-token gate is the
+  // primary defence; the Origin check blocks browser-driven CSRF on
+  // the same axis as every other state-changing endpoint. Curl-driven
+  // CI calls (no Origin header) pass through. Helper centralised in
+  // ~/middleware/origin-check so both dev endpoints share one
+  // contract.
+  if (!checkDevEndpointOrigin(context.request, env.APP_URL)) {
+    return new Response(null, { status: 404 });
   }
 
   const auth = context.request.headers.get('Authorization') ?? '';

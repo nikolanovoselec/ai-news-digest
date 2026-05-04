@@ -59,5 +59,3 @@ if (document.readyState === 'loading') {
   init();
 }
 document.addEventListener('astro:page-load', init);
-
-export {};

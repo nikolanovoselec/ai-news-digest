@@ -23,7 +23,7 @@ import { startRun } from '~/lib/scrape-run';
 import { DEFAULT_MODEL_ID } from '~/lib/models';
 import { log } from '~/lib/log';
 import { timingSafeEqualHmac } from '~/lib/crypto';
-import { originOf } from '~/middleware/origin-check';
+import { checkDevEndpointOrigin } from '~/middleware/origin-check';
 
 interface DevEnv {
   DEV_BYPASS_TOKEN?: string;
@@ -45,14 +45,11 @@ export async function POST(context: APIContext): Promise<Response> {
     return new Response(null, { status: 404 });
   }
 
-  // Defence-in-depth Origin check (CF-035) — same shape as
+  // Defence-in-depth Origin check (CF-035) — same helper as
   // /api/dev/login. Browser-driven CSRF blocked; curl-driven CI calls
   // (no Origin) pass through.
-  const origin = context.request.headers.get('Origin');
-  if (origin !== null && origin !== '' && typeof env.APP_URL === 'string') {
-    if (origin !== originOf(env.APP_URL)) {
-      return new Response(null, { status: 404 });
-    }
+  if (!checkDevEndpointOrigin(context.request, env.APP_URL)) {
+    return new Response(null, { status: 404 });
   }
 
   const auth = context.request.headers.get('Authorization') ?? '';
