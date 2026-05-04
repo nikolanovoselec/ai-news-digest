@@ -539,7 +539,7 @@ function getBindFlags() {
 **Consequences:**
 
 - All future `src/scripts/*.ts` files that need to register global listeners AND might be imported by a page MUST use the window-scoped token pattern. The closure-flag pattern is a foot-gun.
-- `tests/build/no-page-pattern-b.test.ts` is added as a CI gate: it scans `src/pages/**/*.astro` and `src/components/**/*.astro` for static imports of any top-level `src/scripts/*.ts` (i.e. NOT `src/scripts/bundled/*`). Any such import fails the build with a pointer to this ADR. Future contributors who want to import a script from a page must move it under `src/scripts/bundled/`.
+- `scripts/check-no-page-pattern-b.mjs` is added as a CI gate (run via `node scripts/check-no-page-pattern-b.mjs` in `.github/workflows/test.yml`): it scans `src/pages/**/*.astro` and `src/components/**/*.astro` for static imports of any top-level `src/scripts/*.ts` (i.e. NOT `src/scripts/bundled/*`). Any such import fails the build with a pointer to this ADR. Future contributors who want to import a script from a page must move it under `src/scripts/bundled/`.
 - The `__resetForTests` helper in `card-interactions.ts` clears `window.__cardInteractionsBound` instead of closure variables.
 
 **Related requirements:** [REQ-STAR-001](../../sdd/reading.md#req-star-001), [REQ-READ-001](../../sdd/reading.md#req-read-001)
