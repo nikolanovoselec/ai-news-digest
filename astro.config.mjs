@@ -7,9 +7,18 @@ import AstroPWA from '@vite-pwa/astro';
 export default defineConfig({
   output: 'server',
   adapter: cloudflare({
-    platformProxy: {
-      enabled: true
-    },
+    // platformProxy disabled. @astrojs/cloudflare@13 ships a new
+    // @cloudflare/vite-plugin that, with platformProxy enabled,
+    // tries to start a wrangler REMOTE proxy session at config-load
+    // time (including during `astro check` / typecheck). Remote mode
+    // requires `wrangler login` auth which CI doesn't have, so
+    // typecheck fails before any code is even checked. We don't run
+    // `astro dev` anywhere (no-local-builds rule); production uses
+    // `Astro.locals.runtime.env` directly via the deployed Worker
+    // bindings, no proxy needed. If local dev with bindings is ever
+    // wanted, re-enable with `experimentalRemoteBindings: false` to
+    // pin it to local miniflare instead of remote.
+
     // `imageService: 'compile'` runs sharp only during the build to
     // optimise prerendered images; the deployed Worker never touches
     // sharp, which isn't available in workerd. Silences the "sharp at
