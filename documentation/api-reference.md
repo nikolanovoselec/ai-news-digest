@@ -496,6 +496,12 @@ Implements [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-log
 
 Raw exception messages appear only in the `detail` field of error-level records; they are never stored in D1 and never returned to clients (see [REQ-OPS-002](../sdd/observability.md#req-ops-002-sanitized-error-surfaces)).
 
+#### Rate limiter atomicity
+
+The KV-backed rate limiter does a non-atomic `get`-then-`put`. Concurrent requests racing within the same window can each read N, decide `N < limit`, and write `N+1`, allowing up to roughly `concurrency × limit` through under contention (bounded by KV's propagation delay, typically < 60 s globally). For most routes this is acceptable defence-in-depth — the absolute ceiling stays bounded by the window length.
+
+For `failClosed: true` rules (`AUTH_REFRESH_IP`, `AUTH_REFRESH_USER`) protecting refresh-token spray attacks distributed across concurrent requests, the in-Worker limiter is best treated as defence-in-depth rather than the primary gate. Cloudflare's zone-level Rate Limiting (WAF) is atomic and should be configured in front of `/api/auth/refresh` for production deployments. Without it, a coordinated burst above ~2× the configured limit can succeed during the propagation window (CF-034).
+
 #### Refresh rate-limit fail mode
 
 Refresh rate-limit logs (`auth.refresh.rate_limited`, `rate.limit.kv_error`) carry two extra fields:

@@ -44,7 +44,7 @@ import { tokenizeTitle } from '~/lib/title-overlap';
  *  (hardcoded adapter vs curated wrapper).
  *
  *  Exported for unit testing. Production code should reach this via
- *  {@link preferDirectSources}. */
+ *  {@link preferDirectOverGoogleNews}. */
 export function isGoogleNewsUrl(url: string): boolean {
   try {
     const u = new URL(url);
