@@ -62,6 +62,14 @@ function patternBScriptNames() {
 const IMPORT_REGEX =
   /from\s+['"](?:~\/scripts|\.{1,2}\/(?:\.{1,2}\/)*scripts)\/([a-zA-Z0-9_-]+)(?:\.ts)?['"]/g;
 
+/** Catches the bare side-effect form `import '~/scripts/<name>'` (no
+ *  `from` keyword, no specifier). Side-effect imports bundle the
+ *  module identically to a value import — this would re-introduce
+ *  the AD20 dual-bundle bug if a page used it. The original gate
+ *  missed this shape; flagged in code-review. */
+const SIDE_EFFECT_IMPORT_REGEX =
+  /\bimport\s+['"](?:~\/scripts|\.{1,2}\/(?:\.{1,2}\/)*scripts)\/([a-zA-Z0-9_-]+)(?:\.ts)?['"]/g;
+
 /** True when the import is type-only (`import type { … } from …`).
  *  Type-only imports are erased by tsc and never reach the bundler;
  *  flagging them would be a false positive. */
@@ -74,13 +82,13 @@ function scanDir(rootDir, patternBNames) {
   if (!statSync(rootDir).isDirectory()) return offenders;
   for (const file of listAstroFiles(rootDir)) {
     const src = readFileSync(file, 'utf-8');
-    let match;
+    // Pass 1: `from '~/scripts/<name>'` — the value-position named-
+    // import form. Skips type-only lines (tsc erases them).
     IMPORT_REGEX.lastIndex = 0;
+    let match;
     while ((match = IMPORT_REGEX.exec(src)) !== null) {
       const name = match[1];
       if (!patternBNames.includes(name)) continue;
-      // Walk back to the start of the line containing this match to
-      // skip type-only imports.
       const lineStart = src.lastIndexOf('\n', match.index) + 1;
       const lineEnd = src.indexOf('\n', match.index);
       const line = src.slice(
@@ -88,11 +96,16 @@ function scanDir(rootDir, patternBNames) {
         lineEnd === -1 ? src.length : lineEnd,
       );
       if (isTypeOnlyImport(line)) continue;
-      offenders.push({
-        file,
-        importLine: match[0],
-        script: name,
-      });
+      offenders.push({ file, importLine: match[0], script: name });
+    }
+    // Pass 2: bare `import '~/scripts/<name>'` (side-effect only).
+    // Always flagged — there is no type-only carve-out for the bare
+    // form (it has no specifier).
+    SIDE_EFFECT_IMPORT_REGEX.lastIndex = 0;
+    while ((match = SIDE_EFFECT_IMPORT_REGEX.exec(src)) !== null) {
+      const name = match[1];
+      if (!patternBNames.includes(name)) continue;
+      offenders.push({ file, importLine: match[0], script: name });
     }
   }
   return offenders;
