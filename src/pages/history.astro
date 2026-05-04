@@ -321,14 +321,22 @@ function formatCostUsd(value: number | null | undefined): string {
   // Matching cards are CLONED into the flat grid (cheaper than
   // splicing the live DOM around; the scroll position stays put).
   // Clones have their `data-bound` flags stripped so the shared
-  // `initCardInteractions` helper re-binds the star + tag-disclosure
-  // click handlers on each clone. Without that rebind, the buttons
-  // would be visually present but dead to taps.
+  // tag-trigger init helper re-binds click handlers on each clone.
+  // Without that rebind, the # disclosure buttons would be visually
+  // present but dead to taps. (Star toggles use document-level
+  // delegation set up by the layout-wide IIFE — they don't need a
+  // per-card rebind.)
+  //
+  // Reaches the helper via `window.__cardInteractions.init(root)`,
+  // exposed by the layout-wide IIFE bundle (`/scripts/card-
+  // interactions.js`). Importing the module statically would cause
+  // Astro/Vite to bundle a SECOND copy of the auto-wire IIFE into
+  // this page's chunk, producing duplicate document-level listeners
+  // and breaking favourites — see ADR AD20.
   //
   // Lifecycle: rewire on every astro:page-load (View Transitions
   // rebuild the DOM), and tear down on every astro:before-swap so
   // the previous listener doesn't leak across navigations.
-  import { initCardInteractions } from '~/scripts/card-interactions';
   // REQ-READ-007 — shared FLIP cascade for tag-railing reorder.
   import { flipChipToFront, flipChipToPosition, isFlipLocked } from '~/lib/tag-railing-flip';
   import { normalizeHashtag } from '~/lib/hashtags';
@@ -447,7 +455,9 @@ function formatCostUsd(value: number | null | undefined): string {
       } else {
         searchEmpty.hidden = true;
       }
-      initCardInteractions(searchGrid);
+      // Rebind tag-trigger handlers on the cloned cards via the
+      // window-exposed API (see AD20).
+      window.__cardInteractions?.init(searchGrid);
     };
 
     if (input !== null) {

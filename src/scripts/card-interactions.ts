@@ -32,36 +32,79 @@
 const POPOVER_TTL_MS = 5000;
 const popoverTimers = new WeakMap<HTMLElement, number>();
 
-// Idempotency flags MUST live in this module's closure, NOT on a DOM
-// node attribute. Astro's default view-transition swap replaces
-// `document.documentElement` (so any `dataset.*` flag we set on it is
-// erased), but the `document` object itself is preserved across the
-// swap — so the click listener we registered on `document` persists.
-// The previous fix (PR #182) put the listener on `document` but the
-// flag on `documentElement.dataset`. After the first cross-page nav
-// the flag was clear while the listener was still live, so the
-// `astro:page-load` re-bind path stacked a SECOND listener. Every
-// subsequent star click fired two racing toggles (POST + DELETE) and
-// the star UI flipped to a non-deterministic end state — surfaced as
-// "marking anything as favorite is broken everywhere".
+// Idempotency tokens MUST live on `window`, not in this module's
+// closure and not on a DOM-node dataset attribute. The trap, learned
+// the hard way across PRs #182, #184, #185:
 //
-// Module-scope booleans pair correctly with the document-scope
-// listeners: both live as long as the module's closure does, neither
-// resets on view-transition.
-let starDelegationBound = false;
-let outsideClickBound = false;
+//   1. Listener target. We register on `document.addEventListener` so
+//      the listener survives Astro's view-transition swap (the swap
+//      replaces `document.documentElement`, but `document` itself
+//      survives). PR #182 first uncovered this and bound on `document`.
+//
+//   2. Flag on `documentElement.dataset` (PR #182's mistake). View-
+//      transition wipes the dataset → next astro:page-load re-bind
+//      stacks a second listener → POST/DELETE race.
+//
+//   3. Flag in module closure (PR #184/#185's mistake). Looks fine
+//      under one module load, but THIS FILE IS LOADED TWICE BY DESIGN:
+//
+//         a. Layout-wide as `<script type="module" src="/scripts/
+//            card-interactions.js">` — built by `scripts/build-client-
+//            scripts.mjs` as a self-contained IIFE bundle. CSP forbids
+//            inline scripts, so every script-src 'self' module ships
+//            this way (Pattern B in `documentation/architecture.md`).
+//         b. Statically imported by `src/pages/history.astro:331`
+//            (`import { initCardInteractions } from '~/scripts/card-
+//            interactions'`) so the page can rebind tag-disclosure
+//            triggers on cards CLONED into the search-filter grid.
+//            Astro/Vite bundles the entire module — including the
+//            module-scope auto-wire IIFE at the bottom of this file —
+//            into history.astro's hashed `_astro/*.js` chunk.
+//
+//      The two builds are *separate ES-module instances*. Each closure
+//      has its own `let starDelegationBound = false`. Each registers
+//      its own `document.addEventListener('click', ...)`. Result: two
+//      listeners on /history. Click → POST + DELETE in parallel.
+//      Article-detail when navigated FROM /history inherits the
+//      duplicate listener via `document` survival. Refresh on /digest
+//      drops it because /digest never imports this module page-level.
+//
+//   4. ADR-NN — see `documentation/decisions/README.md` for the full
+//      decision record. CI test `tests/build/no-page-pattern-b.test.ts`
+//      fails the build if any `src/pages/**` adds a static import for
+//      a top-level `src/scripts/*.ts`, preventing the next regression.
+//
+// `window` is the right home for the idempotency token because it is
+// the SAME object across both module instances (one realm, one window
+// — Workers run a single browser-realm context per page). A window
+// property guards against re-binding regardless of how many times the
+// module evaluates.
+declare global {
+  // eslint-disable-next-line no-var
+  var __cardInteractionsBound:
+    | { star?: true; outsideClick?: true }
+    | undefined;
+}
+
+function getBindFlags(): { star?: true; outsideClick?: true } {
+  if (typeof window === 'undefined') return {};
+  if (window.__cardInteractionsBound === undefined) {
+    window.__cardInteractionsBound = {};
+  }
+  return window.__cardInteractionsBound;
+}
 
 /**
- * Test-only helper. Resets the module-scope idempotency flags so the
- * unit tests can re-exercise `bindStarDelegation` / `initCardInteractions`
- * from a clean slate without resorting to `vi.resetModules()` + dynamic
- * imports. The production runtime never calls this — flags are
- * single-binding by design and there is no use case for clearing them
- * mid-session. Exported behind a `__` prefix so it's visibly internal.
+ * Test-only helper. Clears the window-scoped idempotency token so unit
+ * tests can re-exercise `bindStarDelegation` / `initCardInteractions`
+ * from a clean slate without `vi.resetModules()` + dynamic imports.
+ * Production never calls this. Exported behind `__` to flag its
+ * internal status.
  */
 export function __resetForTests(): void {
-  starDelegationBound = false;
-  outsideClickBound = false;
+  if (typeof window !== 'undefined') {
+    window.__cardInteractionsBound = {};
+  }
 }
 
 /**
@@ -92,11 +135,14 @@ export function initCardInteractions(
     },
   );
 
-  // Outside-click closes any open popover. Bound ONCE per module
-  // lifetime via a closure flag (see comment near the flag declaration
-  // for why this can't live on documentElement.dataset).
-  if (root === document && !outsideClickBound) {
-    outsideClickBound = true;
+  // Outside-click closes any open popover. Bound ONCE per *window*
+  // lifetime — see the comment near the bind-flags declaration for
+  // why a closure flag is insufficient (this module is evaluated
+  // twice on /history due to the dual-bundle design; only `window`
+  // is shared between the two evaluations).
+  const flags = getBindFlags();
+  if (root === document && flags.outsideClick !== true) {
+    flags.outsideClick = true;
     document.addEventListener('click', (e) => {
       const target = e.target;
       if (!(target instanceof Element)) return;
@@ -111,10 +157,12 @@ export function initCardInteractions(
 
 /**
  * Bind the document-level star-click delegation. Idempotent via the
- * module-scope `starDelegationBound` closure flag so re-imports or
- * astro:page-load re-runs never stack listeners. Exported for unit
- * tests that need to assert idempotency without driving the full
- * module-load side effects.
+ * `window.__cardInteractionsBound` token so re-imports, astro:page-load
+ * re-runs, AND dual-bundle module-instance evaluation (Pattern B
+ * standalone IIFE + page-bundled import via history.astro) all
+ * converge on a single live listener. Exported for unit tests that
+ * need to assert idempotency without driving the full module-load
+ * side effects.
  *
  * Bubble phase (not capture): pairs naturally with the
  * `e.stopPropagation()` the handler itself calls, and lets any
@@ -122,8 +170,9 @@ export function initCardInteractions(
  */
 export function bindStarDelegation(): void {
   if (typeof document === 'undefined') return;
-  if (starDelegationBound) return;
-  starDelegationBound = true;
+  const flags = getBindFlags();
+  if (flags.star === true) return;
+  flags.star = true;
   document.addEventListener('click', (e) => {
     const target = e.target;
     if (!(target instanceof Element)) return;
@@ -214,13 +263,38 @@ export function closeAllTagPopovers(except?: HTMLElement): void {
 // Auto-wire on DOMContentLoaded + every astro:page-load.
 //
 // bindStarDelegation is safe to call on every astro:page-load — its
-// closure-flag idempotency guarantees a single listener regardless of
-// how many times the page-load event fires. initCardInteractions is
-// called per page-load because tag-disclosure triggers ARE per-button
-// and need rebinding when new cards enter the DOM (e.g. /history's
-// day-grouped grids that lazy-render on `<details>` open). The
-// `data-bound` per-trigger guard inside initCardInteractions keeps
-// re-runs idempotent at the per-trigger level.
+// window-scoped idempotency token guarantees a single listener
+// regardless of how many times page-load fires AND regardless of how
+// many module instances exist on the page (see AD20).
+// initCardInteractions is called per page-load because tag-disclosure
+// triggers ARE per-button and need rebinding when new cards enter the
+// DOM (e.g. /history's day-grouped grids that lazy-render on
+// `<details>` open). The `data-bound` per-trigger guard inside
+// initCardInteractions keeps re-runs idempotent at the per-trigger
+// level.
+//
+// EXTERNAL ENTRY POINT: pages that need to rebind tag-trigger
+// handlers on JS-inserted clones (e.g. history.astro's filter grid
+// clones cards into a flat search-result grid after the layout-wide
+// astro:page-load fires) MUST NOT statically import this module —
+// doing so causes Astro/Vite to bundle the WHOLE file, including
+// this auto-wire IIFE, into the page chunk and produces a SECOND
+// module evaluation alongside the layout-wide IIFE. That bug is
+// documented in AD20.
+//
+// Instead, pages call `window.__cardInteractions.init(root)`. The
+// IIFE exposes the function exactly once per realm — safe even if
+// some future code paths accidentally re-bundle this module.
+declare global {
+  interface Window {
+    __cardInteractions?: {
+      init: (root?: Document | HTMLElement) => number;
+    };
+  }
+}
+if (typeof window !== 'undefined' && window.__cardInteractions === undefined) {
+  window.__cardInteractions = { init: initCardInteractions };
+}
 if (typeof document !== 'undefined') {
   bindStarDelegation();
   if (document.readyState === 'loading') {
