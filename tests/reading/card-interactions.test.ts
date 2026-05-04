@@ -416,6 +416,37 @@ describe('initCardInteractions — REQ-STAR-001 + REQ-READ-001 event plumbing', 
     expect(second).toBe(0);
     expect(button.dataset['bound']).toBe('1');
   });
+
+  it('REQ-READ-001: outside-click listener stays singleton across documentElement swap (parallel to star-delegation regression)', () => {
+    // Counterpart to the bindStarDelegation regression test above.
+    // Same view-transition swap that broke star delegation would also
+    // have stacked outside-click listeners on `document` if the
+    // idempotency flag had stayed on documentElement.dataset. The
+    // closure-flag fix lives in the same module, so this test pins
+    // the second half of the bug class.
+    const calls: { type: string }[] = [];
+    vi.stubGlobal('document', {
+      documentElement: { dataset: {} } as unknown as HTMLElement,
+      addEventListener: (type: string) => {
+        calls.push({ type });
+      },
+      querySelectorAll: () => [] as unknown as NodeListOf<Element>,
+    });
+    const root = globalThis.document;
+
+    initCardInteractions(root);
+    // Simulate Astro view-transition: documentElement is replaced
+    // (its dataset is gone) but `document` itself survives. A
+    // dataset-based flag would clear and the next init call would
+    // stack a second listener on the surviving document.
+    (globalThis.document as unknown as { documentElement: HTMLElement }).documentElement = {
+      dataset: {},
+    } as unknown as HTMLElement;
+    initCardInteractions(root);
+
+    const clickListeners = calls.filter((c) => c.type === 'click');
+    expect(clickListeners.length).toBe(1);
+  });
 });
 
 describe('closeAllTagPopovers — REQ-READ-001 AC 6', () => {

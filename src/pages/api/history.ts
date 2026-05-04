@@ -1,4 +1,6 @@
 // Implements REQ-HIST-001
+// Implements REQ-STAR-001 (per-user star state surfaced on /history;
+//   user-scoping enforced by the `user_id = ?1` bind in the EXISTS join)
 //
 // GET /api/history — day-grouped view of the last 14 days of articles
 // that match the authenticated user's active tags, plus per-day
