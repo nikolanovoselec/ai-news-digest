@@ -87,8 +87,8 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 **Priority:** P1
 **Dependencies:** REQ-SET-003
 **Verification:** Integration test
-**Status:** Deprecated
-**Removed In:** 2026-04-24
+**Status:** Partial
+**Notes:** The model-selection UI is collapsed/hidden in `src/pages/settings.astro`, but `model_id` is still validated and persisted by `GET`/`PUT`/`POST /api/settings`. True removal requires stripping `model_id` from the API contract and migrations first.
 
 ---
 

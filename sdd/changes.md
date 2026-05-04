@@ -9,6 +9,7 @@ Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are a
 ## 2026-05-04
 
 - REQ-OPS-006 added: a parallel integration deployment target lets risky changes (Astro major bumps, schema migrations, CSP tightening, animation rewrites) be smoke-tested on the live Cloudflare edge before reaching production. Integration runs the same code on isolated Cloudflare resources (D1, KV, queues all suffixed `-integration`), is triggered manually only (Actions → Deploy Integration → Run workflow), always pulls develop's HEAD, and has cron triggers disabled so the operator drives the scrape pipeline via force-refresh. Forks set their own integration hostname under Settings → Environments → integration → Variables → APP_URL.
+- REQ-SET-004 status corrected from Deprecated/Removed to Partial: the model-selection UI is hidden in `src/pages/settings.astro`, but `model_id` is still validated and persisted by `GET`/`PUT`/`POST /api/settings`. True removal will require stripping `model_id` from the API contract and migrations first.
 
 ## 2026-05-03
 
