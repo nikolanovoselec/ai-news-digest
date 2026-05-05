@@ -391,7 +391,10 @@ export async function processPendingDiscoveries(
     .bind(limit)
     .all<{ tag: string }>();
 
-  const tags = (rows.results ?? []).map((r) => r.tag).filter((t) => typeof t === 'string' && t !== '');
+  // Apply limit client-side as a belt-and-suspenders guard. The SQL
+  // LIMIT clause is authoritative, but test mocks that return all rows
+  // regardless of the bound parameter would otherwise bypass the cap.
+  const tags = (rows.results ?? []).map((r) => r.tag).filter((t) => typeof t === 'string' && t !== '').slice(0, limit);
 
   for (const tag of tags) {
     // REQ-DISC-001 AC 1 — discovery is short-circuited for tags covered

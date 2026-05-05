@@ -422,8 +422,14 @@ async function filterAndAggregateReSeenClusters(
     // statements (most of which collapsed to no-ops at the SQLite PK).
     // The map is keyed on (article_id, source_url) — the article_sources
     // PK — so duplicates inside the in-memory candidate set never reach
-    // D1. Short-circuit also drops the cluster's own primary_source_url
-    // because article_sources's primary row already lives in articles.
+    // D1. INSERT OR IGNORE handles any duplicate that already lives in
+    // the table (e.g. from a prior re-discovery tick) as a no-op.
+    //
+    // All sources — including the cluster's own primary source_url — are
+    // included. The first time an article is ingested its primary source
+    // has no row in article_sources; on re-discovery we record that this
+    // source is still actively broadcasting the story. INSERT OR IGNORE
+    // makes subsequent re-broadcasts idempotent.
     interface SourceInsert {
       articleId: string;
       sourceName: string;
@@ -434,10 +440,8 @@ async function filterAndAggregateReSeenClusters(
     for (const cluster of reSeenClusters) {
       const articleId = idMap.get(cluster.primary.canonical_url);
       if (articleId === undefined) continue;
-      const primaryUrl = cluster.primary.source_url;
       const sources = [cluster.primary, ...cluster.alternatives];
       for (const src of sources) {
-        if (src.source_url === primaryUrl) continue;
         const key = `${articleId} ${src.source_url}`;
         if (dedup.has(key)) continue;
         dedup.set(key, {

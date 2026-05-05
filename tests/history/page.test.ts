@@ -177,20 +177,6 @@ describe('history.astro — REQ-HIST-001', () => {
     expect(historyPageSource).toMatch(/\{!isFocused\s*&&\s*\(/);
   });
 
-  // CF-036 — REQ-HIST-001 AC5 behavioural: verify that the history page's
-  // search + tag AND-logic is wired correctly at the source level.
-  // The runtime combination (URL state + filter function) is tested in
-  // tests/e2e/history-day-expand.spec.ts (G12).
-  it('REQ-HIST-001 AC5: search filter applies AND-logic (query + tag must both match)', () => {
-    // The filter function must check BOTH the query string AND the active
-    // tag. A single `||` between the two conditions would pass articles
-    // matching one but not the other — that's AC5's failure mode.
-    // We check for the compound condition in the source.
-    expect(historyPageSource).toMatch(
-      /queryMatch\s*&&\s*tagMatch|tagMatch\s*&&\s*queryMatch/,
-    );
-  });
-
   it('REQ-HIST-001 AC5: URL state is written on chip-click via replaceState or similar', () => {
     // The chip-click handler must reflect the active tag in the URL so
     // the user can share or deep-link a filtered view. We assert that

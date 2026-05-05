@@ -60,6 +60,11 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
   };
 }
 
+// Known article IDs that the mock DB treats as existing rows so the
+// CF-012 existence check (SELECT 1 FROM articles WHERE id = ?1) does
+// not return null and produce a spurious 404.
+const KNOWN_ARTICLE_IDS = new Set([ART_1, ART_7, ART_42, ART_99]);
+
 /** In-memory D1 mock backed by a Map keyed by `${user_id}:${article_id}`.
  *  Captures each run() call so tests can inspect bound parameters and
  *  assert user-scoping of writes. */
@@ -78,6 +83,13 @@ function makeDb(user: UserRow | null): {
       bind: (...params: unknown[]) => ({
         first: vi.fn().mockImplementation(async () => {
           if (sql.startsWith('SELECT id, email, gh_login')) return user;
+          // CF-012 article-existence check — return a non-null row for
+          // any ULID in the known set so POST does not short-circuit
+          // with 404 before reaching the INSERT OR IGNORE.
+          if (sql.startsWith('SELECT 1 FROM articles')) {
+            const articleId = params[0] as string;
+            return KNOWN_ARTICLE_IDS.has(articleId) ? { 1: 1 } : null;
+          }
           return null;
         }),
         run: vi.fn().mockImplementation(async () => {
@@ -348,6 +360,11 @@ describe('POST/DELETE /api/articles/:id/star — REQ-STAR-001', () => {
             if (boundId === 'user-A') return userA;
             if (boundId === 'user-B') return userB;
             return null;
+          }
+          // CF-012 article-existence check.
+          if (sql.startsWith('SELECT 1 FROM articles')) {
+            const articleId = params[0] as string;
+            return KNOWN_ARTICLE_IDS.has(articleId) ? { 1: 1 } : null;
           }
           return null;
         }),

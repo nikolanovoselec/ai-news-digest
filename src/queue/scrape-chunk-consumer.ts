@@ -439,7 +439,13 @@ function alignLlmArticlesToInputs(
   useEchoedIndex: boolean;
 } {
   // Build the echoed-index map first.
+  // CF-047: track articles that carry an EXPLICIT but invalid index
+  // (out-of-bounds or null). Those are excluded from positional fallback —
+  // the model deliberately emitted a bad index, which is a different
+  // signal from "the model emitted no index at all". Positional fallback
+  // is only for articles with index === undefined (model omitted the field).
   const articleByIndex = new Map<number, LLMChunkArticle>();
+  const explicitlyInvalid = new Set<number>(); // raw-article positions
   let articlesWithEchoedIndex = 0;
   let duplicateEchoedIndex = 0;
   for (let i = 0; i < rawArticles.length; i += 1) {
@@ -458,6 +464,10 @@ function alignLlmArticlesToInputs(
       } else {
         articleByIndex.set(echoed, art);
       }
+    } else if (echoed !== undefined) {
+      // Explicit but invalid index (null, out-of-bounds integer, string,
+      // non-integer): mark position so positional fallback skips it.
+      explicitlyInvalid.add(i);
     }
   }
   // Use echoed-index lookup only when the model demonstrably adopted the
@@ -471,8 +481,11 @@ function alignLlmArticlesToInputs(
 
   // CF-026: for positional fallback, populate the SAME map from rawArticles
   // so the merge pass always reads from articleByIndex regardless of mode.
+  // CF-047: skip articles with explicitly invalid indices — they had a bad
+  // index value (null / out-of-bounds), not a missing one.
   if (!useEchoedIndex) {
     for (let i = 0; i < rawArticles.length; i++) {
+      if (explicitlyInvalid.has(i)) continue;
       const art = rawArticles[i];
       if (art !== undefined && !articleByIndex.has(i)) {
         articleByIndex.set(i, art);
