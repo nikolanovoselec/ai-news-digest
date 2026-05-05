@@ -307,39 +307,68 @@ jobs:
 
       - name: Smoke test (integration)
         # The wrangler deploy step above is the authoritative success
-        # signal. This step is a sanity check — 2xx/3xx/4xx (including
-        # 401/403 from a Cloudflare Access perimeter, 301 from an
-        # APP_URL set without scheme, or a redirect chain back to the
-        # SSO provider) all confirm routing is alive. Only 5xx fails
-        # the workflow because that's a real server-side regression.
-        # Network-level failures (000) print a warning but do NOT fail
-        # — operators verify via `wrangler tail` when a regression is
-        # suspected.
+        # signal. This step is a sanity check that the worker is
+        # actually reachable AND served the landing page.
+        #
+        # Cloudflare's bot management returns 403 to bare `curl/X.Y.Z`
+        # before the request reaches the worker, so we send a real
+        # User-Agent — without it the smoke test logs a false positive
+        # ("routing alive on 403") on traffic that never made it past
+        # the CF edge. We also assert the response body carries a
+        # brand marker so a 200 with arbitrary content (e.g. an old
+        # version still cached) does not pass.
         env:
           WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
           APP_URL: ${{ vars.APP_URL }}
         run: |
+          UA="Mozilla/5.0 (compatible; ai-news-digest-smoke; +https://github.com/${{ github.repository }})"
+          MARKER="News Digest"
           for URL in "$APP_URL" "$WORKER_URL"; do
             if [ -z "$URL" ]; then continue; fi
-            CODE=$(curl -s --max-time 15 -o /dev/null -w "%{http_code}" "$URL/" || echo "000")
+            BODY=$(mktemp)
+            CODE=$(curl -sS -A "$UA" --max-time 20 -o "$BODY" -w "%{http_code}" "$URL/" || echo "000")
             echo "GET $URL/ → HTTP $CODE"
             case "$CODE" in
               000)
-                echo "::warning::No HTTP response from $URL (network/DNS) — deploy step succeeded; verify manually."
-                echo "- Smoke: ⚠️ no HTTP response from \`$URL\` (network/DNS)" >> "$GITHUB_STEP_SUMMARY"
+                echo "::warning::No HTTP response from $URL (network/DNS)."
+                echo "- Smoke: ⚠️ no HTTP response from \`$URL\`" >> "$GITHUB_STEP_SUMMARY"
+                rm -f "$BODY"
+                ;;
+              200)
+                if grep -q "$MARKER" "$BODY"; then
+                  echo "Worker at $URL returned 200 and served landing page (\"$MARKER\" found)."
+                  echo "- Smoke: ✅ \`$URL\` 200 + landing-page marker" >> "$GITHUB_STEP_SUMMARY"
+                  rm -f "$BODY"
+                  exit 0
+                fi
+                echo "::error::Worker at $URL returned 200 but body did not contain \"$MARKER\" — wrong app served?"
+                echo "- Smoke: ❌ \`$URL\` 200 but missing landing-page marker" >> "$GITHUB_STEP_SUMMARY"
+                head -c 2048 "$BODY"
+                rm -f "$BODY"
+                exit 1
+                ;;
+              403)
+                # 403 from Cloudflare bot management means the request
+                # never reached the worker; we can't conclude anything
+                # about deploy health. Try the next candidate URL.
+                echo "::warning::403 from $URL — likely Cloudflare bot challenge, not a worker response."
+                echo "- Smoke: ⚠️ \`$URL\` 403 (CF bot challenge?) — trying next URL" >> "$GITHUB_STEP_SUMMARY"
+                rm -f "$BODY"
                 ;;
               5??)
                 echo "::error::Worker at $URL returned HTTP $CODE — server-side regression."
                 echo "- Smoke: ❌ \`$URL\` returned HTTP $CODE (5xx)" >> "$GITHUB_STEP_SUMMARY"
+                rm -f "$BODY"
                 exit 1
                 ;;
               *)
-                echo "Worker responded at $URL (HTTP $CODE) — routing alive."
-                echo "- Smoke: ✅ \`$URL\` responded with HTTP $CODE" >> "$GITHUB_STEP_SUMMARY"
-                exit 0
+                echo "::error::Unexpected HTTP $CODE from $URL — deploy possibly broken."
+                echo "- Smoke: ❌ \`$URL\` unexpected HTTP $CODE" >> "$GITHUB_STEP_SUMMARY"
+                rm -f "$BODY"
+                exit 1
                 ;;
             esac
           done
-          echo "::warning::No reachable smoke-test URL responded — deploy step succeeded; verify manually."
-          echo "- Smoke: ⚠️ no reachable URL responded — verify with \`wrangler tail\`" >> "$GITHUB_STEP_SUMMARY"
-          exit 0
+          echo "::error::No smoke-test URL returned 200 with a landing-page marker."
+          echo "- Smoke: ❌ no URL returned a verified landing page" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
