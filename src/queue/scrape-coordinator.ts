@@ -60,16 +60,20 @@ import { SNIPPET_FLOOR } from '~/queue/scrape-chunk-consumer';
  * efficiently while the budget rule keeps long-essay days safe. */
 const MAX_CANDIDATES_PER_CHUNK = 100;
 
-/** Greedy chunk-packer character budget. gpt-oss-120b context is
- * 128K tokens, of which CHUNK_LLM_PARAMS.max_tokens reserves 32K for
- * output. That leaves ~96K tokens for the input prompt. Reserving
- * ~5K for the system prompt + per-candidate framing overhead leaves
- * ~91K tokens for snippet content. At ~3.5 chars/token for English
- * prose that's ~318K chars; we round down to 280K for safety margin
- * against estimator drift on non-English snippets and JSON-escape
- * inflation. The chunk consumer is downstream of this cap — its
- * own per-field BODY_SNIPPET_MAX_CHARS (16K) is the per-candidate
- * ceiling, but a chunk full of those would still fit by design. */
+/** Greedy chunk-packer character budget. The chunk consumer falls back
+ * to gpt-oss-120b on malformed-JSON retry; that fallback's 128K context
+ * is the binding constraint here (the 256K Gemma 4 default has comfortable
+ * headroom). Of the 128K, `CHUNK_LLM_PARAMS.max_tokens` reserves 32K for
+ * output, leaving ~96K tokens for the input prompt. Reserving ~5K for
+ * the system prompt + per-candidate framing leaves ~91K tokens for
+ * snippet content. At ~3.5 chars/token for English prose that's ~318K
+ * chars; we round down to 280K for safety margin against estimator
+ * drift on non-English snippets and JSON-escape inflation. See
+ * `CHUNK_LLM_PARAMS` in `src/lib/prompts.ts` for the same arithmetic
+ * from the output-budget side. The chunk consumer is downstream of this
+ * cap — its own per-field BODY_SNIPPET_MAX_CHARS (16K) is the per-
+ * candidate ceiling, but a chunk full of those would still fit by
+ * design. */
 const CHUNK_INPUT_CHARS_BUDGET = 280_000;
 
 /** Per-candidate framing overhead in the user prompt — the
@@ -151,9 +155,10 @@ const PER_SOURCE_ITEM_CAP = 10;
 
 /** Upper bound on chunks enqueued per tick. Guards against a discovered-
  * tag explosion inflating the candidate pool to unsafe levels. Normal
- * load: 52 curated × 10 items = 520 candidates / 50 per chunk =
- * 11 chunks. Cap at 40 leaves plenty of headroom for a discovered-
- * tag set without exploding LLM cost. */
+ * load: ~520 candidates (52 curated × 10 items) packs into ~5-10 chunks
+ * under the budget-aware packer (`packCandidatesIntoChunks`); cap at
+ * 40 leaves headroom for a discovered-tag set without exploding LLM
+ * cost. */
 const MAX_CHUNKS_PER_TICK = 40;
 
 /** Freshness cutoff for keeping a candidate after the canonical-dedupe

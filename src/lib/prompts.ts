@@ -40,8 +40,10 @@ const LLM_BASE_PARAMS = {
  * because the same chunk gets retried there with the same input. The
  * Workers AI runtime enforces `prompt_tokens + max_tokens ≤ context`,
  * so a value chosen for the 256K default would overflow the 128K
- * fallback. Observed chunk output is ~14K tokens (50 articles × 200-
- * word summaries + JSON overhead); 32K reserves ~2x output headroom
+ * fallback. Observed chunk output is ~14K tokens at typical chunk
+ * sizes (50-100 candidates × ~200-word summaries + JSON overhead, per
+ * the budget-aware packer in `scrape-coordinator.ts`); 32K reserves
+ * ~2x output headroom
  * and leaves ~96K for input on the fallback (~280K chars at ~3.5
  * chars/token), which the coordinator's greedy chunk packer
  * (`scrape-coordinator.ts:CHUNK_INPUT_CHARS_BUDGET`) honours. The 256K
