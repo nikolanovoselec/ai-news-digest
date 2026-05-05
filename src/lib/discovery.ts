@@ -36,6 +36,10 @@ import {
   FEED_MAX_BODY_BYTES,
 } from '~/lib/fetch-policy';
 import { hasCuratedSource } from '~/lib/curated-sources';
+import {
+  recordDiscoveryFailure,
+  clearDiscoveryFailure,
+} from '~/lib/kv/discovery-failures';
 
 const FETCH_TIMEOUT_MS = FEED_FETCH_TIMEOUT_MS;
 const MAX_BODY_BYTES = FEED_MAX_BODY_BYTES;
@@ -43,9 +47,6 @@ const MAX_BODY_BYTES = FEED_MAX_BODY_BYTES;
  * eviction threshold in REQ-DISC-003 AC 2 applied at the tag level:
  * two attempts without a usable feed and the tag is parked. */
 const CONSECUTIVE_FAILURE_LIMIT = 2;
-/** 7-day TTL for failure counters to prevent unbounded KV growth. */
-const FAILURE_COUNTER_TTL_SECONDS = 7 * 24 * 60 * 60;
-
 /** Shape the Workers AI response is expected to conform to. */
 interface LLMDiscoveryPayload {
   feeds?: Array<{
@@ -421,7 +422,7 @@ export async function processPendingDiscoveries(
           discovered_at: Date.now(),
         };
         await writeSourcesCache(env.KV, tag, cacheValue);
-        await env.KV.delete(`discovery_failures:${tag}`);
+        await clearDiscoveryFailure(env.KV, tag);
         await env.DB.prepare('DELETE FROM pending_discoveries WHERE tag = ?1')
           .bind(tag)
           .run();
@@ -448,7 +449,7 @@ export async function processPendingDiscoveries(
           discovered_at: Date.now(),
         };
         await writeSourcesCache(env.KV, tag, emptyCache);
-        await env.KV.delete(`discovery_failures:${tag}`);
+        await clearDiscoveryFailure(env.KV, tag);
         await env.DB.prepare('DELETE FROM pending_discoveries WHERE tag = ?1')
           .bind(tag)
           .run();
@@ -459,9 +460,7 @@ export async function processPendingDiscoveries(
           failure_count: nextCount,
         });
       } else {
-        await env.KV.put(`discovery_failures:${tag}`, String(nextCount), {
-          expirationTtl: FAILURE_COUNTER_TTL_SECONDS,
-        });
+        await recordDiscoveryFailure(env.KV, tag, nextCount);
         failed.push(tag);
         log('warn', 'discovery.completed', {
           tag,

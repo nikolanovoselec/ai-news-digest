@@ -57,6 +57,7 @@ import { applyForeignKeysPragma } from '~/lib/db';
 import { log } from '~/lib/log';
 import { titlesShareAnyToken } from '~/lib/title-overlap';
 import { handleBatch } from '~/lib/queue-handler';
+import { setChunksRemaining } from '~/lib/kv/chunks-remaining';
 
 /** Shape of every `scrape-chunks` queue message. Produced by the
  * coordinator in `src/queue/scrape-coordinator.ts`. `candidates` are the
@@ -595,8 +596,7 @@ export async function processOneChunk(
   // than computed by decrement, so it can never be out of sync with
   // the actual completion state.
   const remaining = Math.max(0, body.total_chunks - completedCount);
-  const counterKey = `scrape_run:${body.scrape_run_id}:chunks_remaining`;
-  await env.KV.put(counterKey, String(remaining), { expirationTtl: 3 * 3600 });
+  await setChunksRemaining(env.KV, body.scrape_run_id, remaining);
 
   if (completedCount >= body.total_chunks) {
     await finishRun(env.DB, body.scrape_run_id, 'ready');

@@ -45,6 +45,7 @@ import {
   writeSourcesCache,
   sourcesCacheRawEqual,
 } from '~/lib/sources-cache';
+import { setChunksRemaining } from '~/lib/kv/chunks-remaining';
 
 /** Max candidates per chunk. Matches the LLM's ~8K input-token budget
  * at the gpt-oss-20b default: ~50 candidate headlines per chunk
@@ -65,11 +66,6 @@ const CHUNK_SIZE = 50;
  * renamed from GLOBAL_CONCURRENCY so the constant doesn't collide
  * with the (separately-bounded) source-fetch fan-out in sources.ts. */
 const COORDINATOR_FETCH_CONCURRENCY = 10;
-
-/** KV counter TTL — 3 hours is generous relative to the 60-minute cron
- * cadence, giving slow chunks ample retry headroom without leaking
- * counter keys forever. */
-const COUNTER_TTL_SECONDS = 3 * 3600;
 
 /** Per-source item cap. Curated feeds frequently expose 50+ items;
  * downstream chunking and the global 10× chunk ceiling make a per-feed
@@ -501,10 +497,7 @@ export async function runCoordinator(
   const keptChunks = capChunks(chunks, MAX_CHUNKS_PER_TICK, scrape_run_id);
   const totalChunks = keptChunks.length;
 
-  const counterKey = `scrape_run:${scrape_run_id}:chunks_remaining`;
-  await env.KV.put(counterKey, String(totalChunks), {
-    expirationTtl: COUNTER_TTL_SECONDS,
-  });
+  await setChunksRemaining(env.KV, scrape_run_id, totalChunks);
 
   // Persist total chunk count on the scrape_runs row so the
   // /api/scrape-status endpoint can compute 'X of Y chunks done'

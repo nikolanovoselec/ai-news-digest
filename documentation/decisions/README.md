@@ -38,6 +38,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | AD24 | Single OAUTH_JWT_SECRET for both session signing and CSRF state | Security | 2026-05-05 |
 | AD25 | Cloudflare Access JWT signature unverified server-side; trust Access edge | Security | 2026-05-05 |
 | AD26 | REQUIREMENTS.md preserved as historical artefact | Documentation | 2026-05-05 |
+| AD27 | All KV writers route through `src/lib/kv/<family>.ts` helpers | Storage | 2026-05-05 |
 
 ---
 
@@ -695,6 +696,34 @@ PR #185 attempted to compensate with `margin-top: -0.3em`. The user reported thi
 - If a future contributor proposes "cleaning up" the root by deleting `REQUIREMENTS.md`, this ADR is the artefact that records the decision to keep it.
 
 **Related requirements:** none (historical artefact, no active REQ binding).
+
+---
+
+### AD27: All KV writers route through `src/lib/kv/<family>.ts` helpers
+
+**Status:** Accepted (2026-05-05)
+
+**Decision:** Every KV writer for a multi-site key family lives in a dedicated helper file under `src/lib/kv/<family>.ts`. Inline `env.KV.put(...)` or `env.KV.delete(...)` calls from queue handlers, page routes, or other lib files are prohibited when the key family has more than one call site.
+
+**Context:** AD16 introduced the single-writer invariant for `sources:{tag}` only (centralised in `src/lib/sources-cache.ts`). Other KV key families had the same problem: inline writers scattered across multiple files with no shared key-format definition. The affected families at the time of this decision were:
+
+- `scrape_run:{id}:chunks_remaining` — written from both the coordinator and the chunk consumer.
+- `discovery_failures:{tag}` — written (put + delete) from `discovery.ts`, `cleanup.ts`, and two admin retry routes.
+
+The `source_health:{url}` family was already centralised in `src/lib/feed-health.ts`, `headlines:{source}:{tag}` in `src/lib/headline-cache.ts`, and rate-limit keys in `src/lib/rate-limit.ts`. Single-call-site readers (e.g., `/api/scrape-status` reading `chunks_remaining`) remain inline — the invariant targets writers and multi-site families only.
+
+**Alternatives considered:**
+
+- **Keep inline writes.** Rejected — same drift class as the `sources:{tag}` race documented in AD16. Multiple writers with no shared key-format definition lead to key-format inconsistencies and make it impossible to audit who mutates a given key family.
+- **Abstract via a single `KvRepository<T>` base class.** Rejected — over-abstracts for thin wrappers that each contain a single `kv.put` / `kv.get` / `kv.delete` call. The generic base class buys nothing except indirection.
+
+**Consequences:**
+
+- New KV key families with more than one writer MUST add a `src/lib/kv/<family>.ts` helper before the first writer lands. Code review should flag inline `env.KV.put(...)` writes outside `src/lib/kv/` or the pre-existing centralised files.
+- Single-call-site reads (e.g., `scrape-status.ts` reading `chunks_remaining`) may remain inline — the invariant is about multi-site writers, not all KV access.
+- Existing files `src/lib/feed-health.ts`, `src/lib/headline-cache.ts`, `src/lib/sources-cache.ts`, and `src/lib/rate-limit.ts` are already compliant; they predate this ADR and serve the same pattern.
+
+**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-llm-assisted-source-discovery-for-per-tag-feeds)
 
 ---
 

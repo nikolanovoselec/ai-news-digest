@@ -32,6 +32,7 @@
 
 import { log } from '~/lib/log';
 import { purgeOldRefreshTokens } from '~/lib/refresh-tokens';
+import { clearDiscoveryFailure } from '~/lib/kv/discovery-failures';
 
 /** Retention window. Articles whose `published_at` is older than this
  * many seconds before `now` are eligible for deletion when no user has
@@ -219,7 +220,7 @@ async function runOrphanTagSweep(env: Env): Promise<number> {
     await Promise.all(
       orphanTags.flatMap((tag) => [
         env.KV.delete(`sources:${tag}`),
-        env.KV.delete(`discovery_failures:${tag}`),
+        clearDiscoveryFailure(env.KV, tag),
       ]),
     );
 
