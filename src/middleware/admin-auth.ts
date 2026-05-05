@@ -103,9 +103,11 @@ export async function requireAdminSession(
   // configured. Without it, CF Access is treated as additive security
   // that an operator can bind in front of the worker but is not
   // mandatory — Layers A+B (session + ADMIN_EMAIL) gate admin alone.
-  const requireAccess =
-    typeof env.CF_ACCESS_AUD === 'string' && env.CF_ACCESS_AUD !== '';
-  if (requireAccess) {
+  const expectedAud =
+    typeof env.CF_ACCESS_AUD === 'string' && env.CF_ACCESS_AUD !== ''
+      ? env.CF_ACCESS_AUD
+      : null;
+  if (expectedAud !== null) {
     const accessJwt = context.request.headers.get('Cf-Access-Jwt-Assertion');
     if (accessJwt === null || accessJwt === '') {
       log('warn', 'admin.auth.denied', { reason: 'missing_access_jwt' });
@@ -115,7 +117,7 @@ export async function requireAdminSession(
       };
     }
     const claims = decodeAccessJwt(accessJwt);
-    if (claims === null || !audMatches(claims.aud, env.CF_ACCESS_AUD)) {
+    if (claims === null || !audMatches(claims.aud, expectedAud)) {
       log('warn', 'admin.auth.denied', { reason: 'access_aud_mismatch' });
       return {
         ok: false,
