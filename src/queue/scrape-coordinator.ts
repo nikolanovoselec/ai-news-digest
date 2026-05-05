@@ -49,6 +49,7 @@ import {
   sourcesCacheRawEqual,
 } from '~/lib/sources-cache';
 import { setChunksRemaining } from '~/lib/kv/chunks-remaining';
+import { SNIPPET_FLOOR } from '~/queue/scrape-chunk-consumer';
 
 /** Hard ceiling on candidates per chunk. The greedy packer below
  * usually fills a chunk to its character budget long before this
@@ -78,8 +79,8 @@ const CHUNK_INPUT_CHARS_BUDGET = 280_000;
 const PER_CANDIDATE_OVERHEAD_CHARS = 400;
 
 /** Median post-fetch body length when the feed snippet is below
- * the chunk-consumer's SNIPPET_FLOOR (400 chars) and a body fetch
- * fires. Used as the estimator's lower-bound for candidates whose
+ * the chunk-consumer's `SNIPPET_FLOOR` and a body fetch fires.
+ * Used as the estimator's lower-bound for candidates whose
  * actual body size the coordinator doesn't know yet — body fetch
  * happens later, in the chunk consumer. Conservative under-estimate
  * is preferred (over-pack a little) over over-estimate (waste budget
@@ -88,15 +89,17 @@ const ESTIMATED_BODY_FETCH_CHARS = 3_000;
 
 /** Estimate the per-candidate char cost the chunk's prompt will
  * incur. When a feed snippet is already attached and large enough
- * (≥ SNIPPET_FLOOR), the chunk consumer skips its own body fetch
- * and the snippet length is the actual cost. Otherwise the consumer
- * will fetch and the body could be anywhere between 0 and SNIPPET_CAP
- * (15K); we use ESTIMATED_BODY_FETCH_CHARS as the median guess.
+ * (≥ `SNIPPET_FLOOR`, imported from the chunk consumer), the
+ * consumer skips its own body fetch and the snippet length is the
+ * actual cost. Otherwise the consumer will fetch and the body could
+ * be anywhere between 0 and SNIPPET_CAP (15K); we use
+ * `ESTIMATED_BODY_FETCH_CHARS` as the median guess.
  *
  * Exported for direct testing. */
 export function estimateCandidateChars(c: ChunkCandidate): number {
   const snippet = c.body_snippet ?? '';
-  const bodyChars = snippet.length >= 400 ? snippet.length : ESTIMATED_BODY_FETCH_CHARS;
+  const bodyChars =
+    snippet.length >= SNIPPET_FLOOR ? snippet.length : ESTIMATED_BODY_FETCH_CHARS;
   return bodyChars + PER_CANDIDATE_OVERHEAD_CHARS;
 }
 
@@ -642,8 +645,10 @@ function flattenToChunkCandidates(
 /**
  * Step 8 — Chunk, prime KV counter, persist chunk_count, and enqueue.
  *
- * Splits `chunkCandidates` into slices of CHUNK_SIZE, hard-caps at
- * MAX_CHUNKS_PER_TICK, primes the `chunks_remaining` KV counter to the
+ * Packs `chunkCandidates` via `packCandidatesIntoChunks` (greedy budget-
+ * aware: respects `CHUNK_INPUT_CHARS_BUDGET` and `MAX_CANDIDATES_PER_CHUNK`,
+ * whichever fires first), hard-caps the resulting chunk array at
+ * `MAX_CHUNKS_PER_TICK`, primes the `chunks_remaining` KV counter to the
  * actual chunk count (so the chunk consumer's completion math starts from
  * the right denominator), persists `chunk_count` on the scrape_runs row
  * for the progress UI, and fan-outs one SCRAPE_CHUNKS message per chunk.

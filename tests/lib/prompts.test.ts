@@ -321,7 +321,6 @@ describe('PROCESS_CHUNK_SYSTEM + processChunkUserPrompt — REQ-PIPE-002', () =>
     ];
     const prompt = processChunkUserPrompt(candidates, ['cloudflare']);
     expect(prompt).toContain(longBody);
-    expect(prompt.indexOf(longBody)).toBeGreaterThan(-1);
     // No ellipsis injected for a body within the cap.
     const ellipsisAfterBody = prompt.indexOf('…', prompt.indexOf(longBody));
     expect(ellipsisAfterBody).toBe(-1);

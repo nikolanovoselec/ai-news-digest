@@ -51,7 +51,7 @@ The deploy job reads these secrets from GitHub Actions. The first two are Cloudf
 | `APP_URL` | Yes | Canonical origin (e.g., `https://digest.example.com`); used in emails, OAuth redirect URIs, and CSRF checks |
 | `DEV_BYPASS_TOKEN` | Conditional | Bearer token that enables `/api/dev/login` and `/api/dev/trigger-scrape`; omit in production |
 | `ADMIN_EMAIL` | Conditional | Operator email that gates `/api/admin/*`; when unset every admin endpoint returns HTTP 403 ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8) |
-| `CF_ACCESS_AUD` | Optional but recommended in production | Cloudflare Access audience tag for `aud`-claim validation on the admin JWT; when unset, only header presence is required ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8). See [Setting `CF_ACCESS_AUD`](#setting-cf_access_aud-strongly-recommended-in-production) below for the full threat model and setup. |
+| `CF_ACCESS_AUD` | Optional | Cloudflare Access audience tag; when set, enables Layer 0 perimeter check (assertion presence + `aud`-claim match) on `/api/admin/*`; when unset, Layer 0 is skipped and admin is gated by session + `ADMIN_EMAIL` alone ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8, AD29). See [Setting `CF_ACCESS_AUD`](#setting-cf_access_aud-strongly-recommended-in-production) for setup. |
 
 ### Setting `CF_ACCESS_AUD` (strongly recommended in production)
 

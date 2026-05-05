@@ -13,28 +13,29 @@ import {
   estimateCandidateChars,
   packCandidatesIntoChunks,
 } from '~/queue/scrape-coordinator';
+import { SNIPPET_FLOOR } from '~/queue/scrape-chunk-consumer';
 
 function makeCandidate(overrides: Partial<ChunkCandidate> = {}): ChunkCandidate {
-  return {
+  const base: ChunkCandidate = {
     canonical_url: 'https://example.com/a',
     source_url: 'https://example.com/a',
     source_name: 'Example',
     title: 'Title',
     published_at: 1_700_000_000,
-    body_snippet: undefined,
     alternatives: [],
-    ...overrides,
   };
+  return { ...base, ...overrides };
 }
 
 describe('estimateCandidateChars (REQ-PIPE-001)', () => {
-  it('uses ESTIMATED_BODY_FETCH_CHARS (3000) when snippet is missing', () => {
-    const cost = estimateCandidateChars(makeCandidate({ body_snippet: undefined }));
+  it('uses ESTIMATED_BODY_FETCH_CHARS (3000) when snippet is omitted', () => {
+    // body_snippet absent — coordinator hasn't fetched it yet.
+    const cost = estimateCandidateChars(makeCandidate());
     // 3000 (estimated body) + 400 (overhead) = 3400
     expect(cost).toBe(3400);
   });
 
-  it('uses ESTIMATED_BODY_FETCH_CHARS when snippet is shorter than SNIPPET_FLOOR (400)', () => {
+  it('uses ESTIMATED_BODY_FETCH_CHARS when snippet is shorter than SNIPPET_FLOOR', () => {
     const cost = estimateCandidateChars(makeCandidate({ body_snippet: 'short' }));
     expect(cost).toBe(3400);
   });
@@ -45,10 +46,19 @@ describe('estimateCandidateChars (REQ-PIPE-001)', () => {
     expect(cost).toBe(5_000 + 400);
   });
 
-  it('treats exactly-SNIPPET_FLOOR snippets as already-fetched (boundary)', () => {
-    const snippet = 'x'.repeat(400);
+  it('treats exactly-SNIPPET_FLOOR snippets as already-fetched (boundary upper)', () => {
+    const snippet = 'x'.repeat(SNIPPET_FLOOR);
     const cost = estimateCandidateChars(makeCandidate({ body_snippet: snippet }));
-    expect(cost).toBe(400 + 400);
+    expect(cost).toBe(SNIPPET_FLOOR + 400);
+  });
+
+  it('treats SNIPPET_FLOOR-1 snippets as not-yet-fetched (boundary lower)', () => {
+    // Pins the `>=` semantics of the comparison. A future refactor that
+    // flipped to `>` would silently change behaviour at exactly
+    // SNIPPET_FLOOR; this test catches that.
+    const snippet = 'x'.repeat(SNIPPET_FLOOR - 1);
+    const cost = estimateCandidateChars(makeCandidate({ body_snippet: snippet }));
+    expect(cost).toBe(3400);
   });
 });
 
@@ -65,9 +75,7 @@ describe('packCandidatesIntoChunks (REQ-PIPE-001)', () => {
       makeCandidate({ canonical_url: `https://example.com/${i}` }),
     );
     const chunks = packCandidatesIntoChunks(candidates, 10_000_000, 100);
-    expect(chunks).toHaveLength(2);
-    expect(chunks[0]).toHaveLength(100);
-    expect(chunks[1]).toHaveLength(100);
+    expect(chunks.map((c) => c.length)).toEqual([100, 100]);
   });
 
   it('packs thin candidates up to the budget cap (280K) when budget binds first', () => {
@@ -78,10 +86,8 @@ describe('packCandidatesIntoChunks (REQ-PIPE-001)', () => {
       makeCandidate({ canonical_url: `https://example.com/${i}` }),
     );
     const chunks = packCandidatesIntoChunks(candidates, 280_000, 200);
-    expect(chunks.length).toBeGreaterThanOrEqual(2);
     // First chunk is full to budget; second carries the remainder.
-    expect(chunks[0].length).toBe(82);
-    expect(chunks[1].length).toBe(100 - 82);
+    expect(chunks.map((c) => c.length)).toEqual([82, 100 - 82]);
     // Total preserved.
     expect(chunks.flat()).toHaveLength(100);
   });

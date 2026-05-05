@@ -326,16 +326,20 @@ jobs:
             case "$CODE" in
               000)
                 echo "::warning::No HTTP response from $URL (network/DNS) — deploy step succeeded; verify manually."
+                echo "- Smoke: ⚠️ no HTTP response from \`$URL\` (network/DNS)" >> "$GITHUB_STEP_SUMMARY"
                 ;;
               5??)
                 echo "::error::Worker at $URL returned HTTP $CODE — server-side regression."
+                echo "- Smoke: ❌ \`$URL\` returned HTTP $CODE (5xx)" >> "$GITHUB_STEP_SUMMARY"
                 exit 1
                 ;;
               *)
                 echo "Worker responded at $URL (HTTP $CODE) — routing alive."
+                echo "- Smoke: ✅ \`$URL\` responded with HTTP $CODE" >> "$GITHUB_STEP_SUMMARY"
                 exit 0
                 ;;
             esac
           done
           echo "::warning::No reachable smoke-test URL responded — deploy step succeeded; verify manually."
+          echo "- Smoke: ⚠️ no reachable URL responded — verify with \`wrangler tail\`" >> "$GITHUB_STEP_SUMMARY"
           exit 0

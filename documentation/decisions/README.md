@@ -38,7 +38,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | AD22 | SSRF defence relies on Workers network sandbox; static IP allowlist is best-effort only | Security | 2026-05-05 |
 | AD23 | Auth-rate-limit fail-closed without WAF backstop | Security | 2026-05-05 |
 | AD24 | Single OAUTH_JWT_SECRET for both session signing and CSRF state | Security | 2026-05-05 |
-| AD25 | Cloudflare Access JWT signature unverified server-side; trust Access edge | Security | 2026-05-05 |
+| AD25 | Cloudflare Access JWT signature unverified server-side; trust Access edge *(Superseded by AD29)* | Security | 2026-05-05 |
 | AD26 | REQUIREMENTS.md preserved as historical artefact | Documentation | 2026-05-05 |
 | AD27 | All KV writers route through `src/lib/kv/<family>.ts` helpers | Storage | 2026-05-05 |
 | AD28 | npm audit gating: HIGH advisory, CRITICAL blocking | Operations | 2026-05-05 |
@@ -657,7 +657,7 @@ PR #185 attempted to compensate with `margin-top: -0.3em`. The user reported thi
 
 ### AD25: Cloudflare Access JWT signature unverified server-side; trust Access edge
 
-**Status:** Accepted (2026-05-05)
+**Status:** Superseded by AD29 (2026-05-05)
 
 **Decision:** Rely on the platform guarantee that requests reaching the worker have already passed Cloudflare Access verification when `CF_ACCESS_AUD` is set. Skip in-worker JWT signature validation in `decodeAccessJwt` (`src/middleware/admin-auth.ts:49-68`).
 
@@ -762,6 +762,7 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 ### AD29: Cloudflare Access is opt-in additive perimeter; ADMIN_EMAIL gates admin alone
 
 **Status:** Accepted (2026-05-05)
+**Supersedes:** AD25
 **Overrides:** behavioral-policy:REQ-AUTH-001
 
 **Decision:** The admin gate (`requireAdminSession` in `src/middleware/admin-auth.ts`) treats Cloudflare Access as an opt-in additive perimeter. The Cloudflare Access assertion check (Layer 0) enforces only when `env.CF_ACCESS_AUD` is configured. When `CF_ACCESS_AUD` is unset, Layer 0 is skipped entirely and admin is gated by Layer A (signed-in worker session) plus Layer B (`ADMIN_EMAIL` match) alone. REQ-AUTH-001 AC 8 was rewritten on the same day to describe the new opt-in policy in user-observable terms; this ADR documents the architectural decision behind that AC change.
