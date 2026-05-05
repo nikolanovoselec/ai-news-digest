@@ -42,6 +42,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | AD26 | REQUIREMENTS.md preserved as historical artefact | Documentation | 2026-05-05 |
 | AD27 | All KV writers route through `src/lib/kv/<family>.ts` helpers | Storage | 2026-05-05 |
 | AD28 | npm audit gating: HIGH advisory, CRITICAL blocking | Operations | 2026-05-05 |
+| AD29 | Cloudflare Access is opt-in additive perimeter; ADMIN_EMAIL gates admin alone | Security | 2026-05-05 |
 
 ---
 
@@ -754,6 +755,34 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 - Re-tightening HIGH+ to blocking requires either (a) eliminating all transitive build-tool CVEs from the dep tree, OR (b) adopting a tool with finer-grained scoping than `npm audit`.
 
 **Related requirements:** none (operational policy; no REQ binding).
+
+---
+
+### AD29: Cloudflare Access is opt-in additive perimeter; ADMIN_EMAIL gates admin alone
+
+**Status:** Accepted (2026-05-05)
+**Overrides:** mechanism-leakage:REQ-AUTH-001
+
+**Decision:** The admin gate (`requireAdminSession` in `src/middleware/admin-auth.ts`) treats Cloudflare Access as an opt-in additive perimeter. The `Cf-Access-Jwt-Assertion` header check (Layer 0) enforces only when `env.CF_ACCESS_AUD` is configured. When `CF_ACCESS_AUD` is unset, Layer 0 is skipped entirely and admin is gated by Layer A (signed-in worker session) plus Layer B (`ADMIN_EMAIL` match) alone.
+
+**Context:** The original three-layer admin gate (CF-001) made `Cf-Access-Jwt-Assertion` mandatory regardless of configuration. Integration deploys without Cloudflare Access bound in front of the worker therefore had admin permanently unreachable: the header is never present, so Layer 1 always rejected with 401 and the operator could not trigger `/api/admin/force-refresh` even when authenticated as the configured `ADMIN_EMAIL`. The same pattern blocks any fork that runs without an Access zone (cost, complexity, or simply not needed at small scale).
+
+**Alternatives considered:**
+
+- **Keep CF Access mandatory; require operators to bind Access on every environment.** Rejected — forces a Zero Trust deploy as a prerequisite for using force-refresh, even on isolated test/staging instances where the perimeter is not warranted. Increases setup friction for forks.
+- **Hard-coded dev bypass via `DEV_BYPASS_TOKEN` for admin routes.** Rejected — `/api/dev/trigger-scrape` already exists for unattended pipeline drives, but threading a bypass into the admin middleware confuses the auth model and forks the policy across two paths. Keeping admin policy declarative (one env var) is cleaner.
+- **Require `CF_ACCESS_AUD` to be set even in environments without Access.** Rejected — that conflates "perimeter configured" (operator decision) with "perimeter enforced server-side" (code policy). The two should be coupled: setting the var IS the way the operator opts into perimeter enforcement.
+
+**Rationale:** ADMIN_EMAIL gating + signed-in OAuth session is sufficient as the baseline admin policy. CF Access is a defence-in-depth perimeter that an operator may add when the security profile warrants it (production, larger deployments). Coupling Layer 0 enforcement to `CF_ACCESS_AUD` presence makes the opt-in explicit: setting the var means the operator has bound Access in front and wants the worker to verify the JWT's `aud` claim; clearing the var means the worker should not assume Access is present and should not reject on its absence.
+
+**Consequences:**
+
+- Production deploys MUST set `CF_ACCESS_AUD` if Cloudflare Access is bound; otherwise the JWT header is forgeable on the auto-assigned `*.workers.dev` URL and admin reduces to ADMIN_EMAIL alone there. The operator's checklist is "bind Access AND set CF_ACCESS_AUD, or take Access off".
+- Integration and forks without Access keep `CF_ACCESS_AUD` unset and rely on session + ADMIN_EMAIL.
+- Discovery retry endpoints (`/api/admin/discovery/*`) inherit the same gate. Their existing tests pass an opaque `Cf-Access-Jwt-Assertion` value that is now ignored unless `CF_ACCESS_AUD` is set in the test env — no behaviour change there.
+- Future review passes that grep the admin path for "Cf-Access-Jwt-Assertion" enforcement should match this ADR's `Overrides:` line and not flag the conditional check as a missing perimeter.
+
+**Related requirements:** REQ-AUTH-001 AC 8.
 
 ---
 
