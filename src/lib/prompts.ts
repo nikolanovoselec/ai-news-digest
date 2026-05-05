@@ -33,13 +33,16 @@ const LLM_BASE_PARAMS = {
 } as const;
 
 /**
- * Chunk-prompt budget — ~50 articles × 150-200 words each
- * (~280 toks/article → ~14K total with JSON overhead). Input side is
- * ~8K tokens for the prompt + candidate list.
+ * Chunk-prompt budget — set to the model's full 128K context. The
+ * earlier 50K reservation was a noisy safety floor; gpt-oss-120b
+ * accepts up to its context window and the actual output stays at
+ * ~14K (50 articles × 200-word summaries + JSON overhead). Pushing
+ * the ceiling up costs nothing on inference and removes any risk
+ * that a long-form essay run with raised snippet caps clips early.
  */
 export const CHUNK_LLM_PARAMS = {
   ...LLM_BASE_PARAMS,
-  max_tokens: 50_000,
+  max_tokens: 128_000,
 } as const;
 
 /**
@@ -166,7 +169,7 @@ Examples (assume the tag is in the allowlist):
 const TITLE_MAX_CHARS = 300;
 const SOURCE_NAME_MAX_CHARS = 100;
 const URL_MAX_CHARS = 1000;
-const BODY_SNIPPET_MAX_CHARS = 2000;
+const BODY_SNIPPET_MAX_CHARS = 15000;
 const DETAILS_MAX_CHARS = 4000;
 
 function sanitizePromptField(value: string, maxChars: number): string {

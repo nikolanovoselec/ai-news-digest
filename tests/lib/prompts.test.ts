@@ -15,9 +15,9 @@ import {
 } from '~/lib/prompts';
 
 describe('LLM param sets — REQ-PIPE-002 / REQ-PIPE-008 / REQ-DISC-001 (CF-023)', () => {
-  it('CHUNK_LLM_PARAMS is the chunk-sized variant (50K tokens) for multi-article output', () => {
+  it('CHUNK_LLM_PARAMS uses the full 128K context window for multi-article output', () => {
     expect(CHUNK_LLM_PARAMS.temperature).toBe(0.6);
-    expect(CHUNK_LLM_PARAMS.max_tokens).toBe(50_000);
+    expect(CHUNK_LLM_PARAMS.max_tokens).toBe(128_000);
     expect(CHUNK_LLM_PARAMS.response_format.type).toBe('json_object');
   });
   it('FINALIZE_LLM_PARAMS is the small-payload variant (4K tokens) for dedup_groups output', () => {
