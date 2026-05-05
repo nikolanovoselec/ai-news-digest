@@ -117,7 +117,7 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 2. GitHub → Actions → "Deploy Integration" → "Run workflow" → green button.
 3. The branch dropdown in the dispatch dialog is irrelevant — the workflow always pulls `develop`'s current HEAD.
 4. ~3 minutes for first-deploy (resources provisioned), ~2 minutes for subsequent deploys.
-5. Smoke at the URL you set in `vars.APP_URL` (or the `*.workers.dev` URL the deploy log prints). The smoke step sends a real User-Agent (bypasses Cloudflare bot management) and asserts the response body contains the landing-page marker `"News Digest"`. Pass: `200` + marker found. Soft-fail (tries next URL): `403` (CF bot challenge or Access perimeter). Hard-fail: `5xx`, `200` without the marker, or any other status. The `wrangler deploy` step remains the authoritative success signal.
+5. After the deploy completes, hit the URL manually. There is no automated smoke step on integration — GHA runner IPs are blocked by Cloudflare bot management at the edge, so a curl from CI reliably returns `403` regardless of worker health. `wrangler deploy` exit code is the authoritative success signal. Open `vars.APP_URL` (or the `*.workers.dev` URL the deploy log prints) in a browser to confirm the worker is reachable.
 
 **Triggering a scrape on integration** (since crons are off):
 
@@ -126,7 +126,7 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 curl -i ${APP_URL}/api/admin/force-refresh
 ```
 
-**Promotion path** is one-way: develop → integration smoke → develop merged to main → production auto-deploy. No path pushes integration changes back to develop.
+**Promotion path** is one-way: develop → integration verify → develop merged to main → production auto-deploy. No path pushes integration changes back to develop.
 
 **Secret resolution.** `environment: integration` enables GitHub's standard secret-resolution fallback: env-scoped secret wins when defined, otherwise the repo-level secret is used. Default state with no env-scoped secrets matches running without env scoping at all — which is exactly what you want when reusing prod credentials on integration.
 
