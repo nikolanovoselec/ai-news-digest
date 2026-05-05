@@ -2,24 +2,26 @@
 
 D1 schema is rebuilt from scratch by every migration in this folder, applied in lexical order. The cron-driven workflow reapplies them on every CI deploy via `wrangler d1 migrations apply`.
 
-## Historical context (CF-010 / CF-020)
+## Historical context (CF-020 reverted)
 
-The current live schema starts at **migration 0003**. Migrations 0001–0002
-described a pre-launch schema (per-user digest jobs, tag-keyed columns,
-separate hashtag table) that was redesigned before the product reached real
-users and have been removed (CF-020). Migration 0003 (`0003_global_feed.sql`)
-was already destructive — it `DROP`s every table from the 0001–0002 era
-and recreates them in the global-feed shape — so removing the squashed
-files has no effect on any deployment.
+The current live schema is the result of `0003_global_feed.sql` redesigning
+the original 0001/0002 shape into the global-feed shape. CF-020 originally
+proposed deleting 0001 + 0002 as redundant, but the test fixtures'
+`applyD1Migrations` walks the entire folder in order: 0003's `DROP TABLE`
+statements assume the 0001 and 0002 tables exist before being dropped. The
+0001/0002 files are kept verbatim as the starting state of every fresh
+test pool / CI run.
 
 REQ comments in `0003_global_feed.sql` and onward describe the **live**
 schema. Spec changes that touch these tables expect the matching SQL to
 live here.
 
-## Migration index (live)
+## Migration index
 
 | # | File | Purpose |
 |---|---|---|
+| 0001 | `0001_initial.sql` | Pre-launch initial schema; live at the start of every replay because 0003 expects these tables to exist before its DROP statements run |
+| 0002 | `0002_article_tags.sql` | Pre-launch tag columns; same replay invariant as 0001 |
 | 0003 | `0003_global_feed.sql` | Drops and recreates the live schema in the global-feed shape (REQ-PIPE-*, REQ-READ-*, REQ-HIST-*, REQ-STAR-*) |
 | 0004 | `0004_system_user.sql` | System-owned `users` row used as the `user_id` foreign key on system-discovered tag rows |
 | 0005 | `0005_auth_links.sql` | Email-claim history for accounts that link a second OAuth provider |
