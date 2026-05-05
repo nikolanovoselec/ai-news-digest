@@ -44,7 +44,7 @@ export const MODELS: ModelOption[] = [
     id: '@cf/google/gemma-4-26b-a4b-it',
     name: 'Gemma 4 26B',
     description:
-      'Default. 256K context, reasoning, Google-instruction-tuned, cheapest output.',
+      'Default. 256K context, Google-instruction-tuned. Cheapest of the featured tier.',
     inputPricePerMtok: 0.10,
     outputPricePerMtok: 0.30,
     category: 'featured',

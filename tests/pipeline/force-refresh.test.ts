@@ -208,6 +208,11 @@ describe('admin-auth gate (CF-001)', () => {
   });
 
   it('CF-001: succeeds when CF_ACCESS_AUD is unset and Cf-Access-Jwt-Assertion is missing (perimeter is opt-in)', async () => {
+    // refreshRequest defaults to a valid admin session cookie (see line ~178);
+    // we override only the access JWT to confirm Layer 0 is genuinely opt-in.
+    // Layers A (session) + B (ADMIN_EMAIL) still apply — and pass — via the
+    // default cookie. A 200 (JSON ok) or 303 (redirect) both mean the gate
+    // accepted the request.
     const fixture: DbFixture = { calls: [] };
     const db = makeDb(fixture);
     const queue = makeQueue({ sent: [] });
@@ -216,7 +221,6 @@ describe('admin-auth gate (CF-001)', () => {
       accessJwt: null,
     });
     const res = await POST(makeContext(req, makeEnv(db, queue)) as never);
-    // 200 (JSON ok) or 303 (redirect) — both indicate the gate passed.
     expect([200, 303]).toContain(res.status);
   });
 

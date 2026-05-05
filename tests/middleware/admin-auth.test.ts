@@ -214,7 +214,7 @@ describe('requireAdminSession — Layer A: session', () => {
   });
 });
 
-describe('requireAdminSession — Layer 3: ADMIN_EMAIL match', () => {
+describe('requireAdminSession — Layer B: ADMIN_EMAIL match', () => {
   it('CF-001: returns 403 when the session email does NOT match ADMIN_EMAIL', async () => {
     const jwt = await signSession(
       { sub: 'user-2', email: 'nobody@example.com', ghl: 'nobody', sv: 1 },

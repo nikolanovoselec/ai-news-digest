@@ -43,6 +43,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | AD27 | All KV writers route through `src/lib/kv/<family>.ts` helpers | Storage | 2026-05-05 |
 | AD28 | npm audit gating: HIGH advisory, CRITICAL blocking | Operations | 2026-05-05 |
 | AD29 | Cloudflare Access is opt-in additive perimeter; ADMIN_EMAIL gates admin alone | Security | 2026-05-05 |
+| AD30 | Cloudflare Access (when bound) MUST cover `*.workers.dev` too; not enforced in worker code | Security | 2026-05-05 |
 
 ---
 
@@ -761,9 +762,9 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 ### AD29: Cloudflare Access is opt-in additive perimeter; ADMIN_EMAIL gates admin alone
 
 **Status:** Accepted (2026-05-05)
-**Overrides:** mechanism-leakage:REQ-AUTH-001
+**Overrides:** behavioral-policy:REQ-AUTH-001
 
-**Decision:** The admin gate (`requireAdminSession` in `src/middleware/admin-auth.ts`) treats Cloudflare Access as an opt-in additive perimeter. The `Cf-Access-Jwt-Assertion` header check (Layer 0) enforces only when `env.CF_ACCESS_AUD` is configured. When `CF_ACCESS_AUD` is unset, Layer 0 is skipped entirely and admin is gated by Layer A (signed-in worker session) plus Layer B (`ADMIN_EMAIL` match) alone.
+**Decision:** The admin gate (`requireAdminSession` in `src/middleware/admin-auth.ts`) treats Cloudflare Access as an opt-in additive perimeter. The Cloudflare Access assertion check (Layer 0) enforces only when `env.CF_ACCESS_AUD` is configured. When `CF_ACCESS_AUD` is unset, Layer 0 is skipped entirely and admin is gated by Layer A (signed-in worker session) plus Layer B (`ADMIN_EMAIL` match) alone. REQ-AUTH-001 AC 8 was rewritten on the same day to describe the new opt-in policy in user-observable terms; this ADR documents the architectural decision behind that AC change.
 
 **Context:** The original three-layer admin gate (CF-001) made `Cf-Access-Jwt-Assertion` mandatory regardless of configuration. Integration deploys without Cloudflare Access bound in front of the worker therefore had admin permanently unreachable: the header is never present, so Layer 1 always rejected with 401 and the operator could not trigger `/api/admin/force-refresh` even when authenticated as the configured `ADMIN_EMAIL`. The same pattern blocks any fork that runs without an Access zone (cost, complexity, or simply not needed at small scale).
 
@@ -777,10 +778,21 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 
 **Consequences:**
 
-- Production deploys MUST set `CF_ACCESS_AUD` if Cloudflare Access is bound; otherwise the JWT header is forgeable on the auto-assigned `*.workers.dev` URL and admin reduces to ADMIN_EMAIL alone there. The operator's checklist is "bind Access AND set CF_ACCESS_AUD, or take Access off".
+- Production deploys with Access bound MUST set `CF_ACCESS_AUD` AND must satisfy AD30 (Access bound to the `*.workers.dev` URL too, or that subdomain disabled). Without both, the perimeter is forgeable from anywhere on the public internet and admin reduces to ADMIN_EMAIL alone.
 - Integration and forks without Access keep `CF_ACCESS_AUD` unset and rely on session + ADMIN_EMAIL.
-- Discovery retry endpoints (`/api/admin/discovery/*`) inherit the same gate. Their existing tests pass an opaque `Cf-Access-Jwt-Assertion` value that is now ignored unless `CF_ACCESS_AUD` is set in the test env — no behaviour change there.
-- Future review passes that grep the admin path for "Cf-Access-Jwt-Assertion" enforcement should match this ADR's `Overrides:` line and not flag the conditional check as a missing perimeter.
+- Discovery retry endpoints (`/api/admin/discovery/*`) inherit the same gate. Their existing tests pass an opaque assertion value that is now ignored unless `CF_ACCESS_AUD` is set in the test env — no behaviour change there.
+- Future review passes that grep the admin path for unconditional Cloudflare Access enforcement should match this ADR's `Overrides:` line and not flag the conditional check as a missing perimeter.
+
+**Related requirements:** REQ-AUTH-001 AC 8.
+
+---
+
+### AD30: `*.workers.dev` perimeter coverage is the operator's responsibility — accepted risk
+
+**Status:** Accepted (2026-05-05)
+**Overrides:** workers-dev-exposure:REQ-AUTH-001
+
+**Decision:** Whether the auto-assigned `*.workers.dev` subdomain sits behind Cloudflare Access is the operator's responsibility, not the worker's. The application code does NOT detect the request host or reject `workers.dev` traffic, and reviewers MUST NOT flag this as a perimeter gap. When an operator binds Access on the custom domain they are expected to also bind it on the `workers.dev` hostname (or disable that hostname) at the Cloudflare dashboard; failing to do so is an accepted risk owned by the operator.
 
 **Related requirements:** REQ-AUTH-001 AC 8.
 

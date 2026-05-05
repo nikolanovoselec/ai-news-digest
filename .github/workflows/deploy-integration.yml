@@ -306,15 +306,15 @@ jobs:
           echo "Custom domain $HOST → $SERVICE (zone $ZONE_ID) attached"
 
       - name: Smoke test (integration)
-        # Informational only — the wrangler deploy step above is the
-        # authoritative success signal. The smoke probe is a "is the
-        # worker responding to HTTP at all" sanity check; any response
-        # (including 401/403 from a Cloudflare Access perimeter, 301
-        # from an APP_URL set without scheme, or a redirect chain back
-        # to the SSO provider) confirms routing is alive. Network-level
-        # failures (000, no connection, DNS fail) print a warning but
-        # do NOT fail the workflow — operators check `wrangler tail`
-        # or the live URL when a regression is suspected.
+        # The wrangler deploy step above is the authoritative success
+        # signal. This step is a sanity check — 2xx/3xx/4xx (including
+        # 401/403 from a Cloudflare Access perimeter, 301 from an
+        # APP_URL set without scheme, or a redirect chain back to the
+        # SSO provider) all confirm routing is alive. Only 5xx fails
+        # the workflow because that's a real server-side regression.
+        # Network-level failures (000) print a warning but do NOT fail
+        # — operators verify via `wrangler tail` when a regression is
+        # suspected.
         env:
           WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
           APP_URL: ${{ vars.APP_URL }}
@@ -326,6 +326,10 @@ jobs:
             case "$CODE" in
               000)
                 echo "::warning::No HTTP response from $URL (network/DNS) — deploy step succeeded; verify manually."
+                ;;
+              5??)
+                echo "::error::Worker at $URL returned HTTP $CODE — server-side regression."
+                exit 1
                 ;;
               *)
                 echo "Worker responded at $URL (HTTP $CODE) — routing alive."

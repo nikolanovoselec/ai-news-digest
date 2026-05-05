@@ -91,11 +91,47 @@ const ESTIMATED_BODY_FETCH_CHARS = 3_000;
  * (≥ SNIPPET_FLOOR), the chunk consumer skips its own body fetch
  * and the snippet length is the actual cost. Otherwise the consumer
  * will fetch and the body could be anywhere between 0 and SNIPPET_CAP
- * (15K); we use ESTIMATED_BODY_FETCH_CHARS as the median guess. */
-function estimateCandidateChars(c: ChunkCandidate): number {
+ * (15K); we use ESTIMATED_BODY_FETCH_CHARS as the median guess.
+ *
+ * Exported for direct testing. */
+export function estimateCandidateChars(c: ChunkCandidate): number {
   const snippet = c.body_snippet ?? '';
   const bodyChars = snippet.length >= 400 ? snippet.length : ESTIMATED_BODY_FETCH_CHARS;
   return bodyChars + PER_CANDIDATE_OVERHEAD_CHARS;
+}
+
+/** Greedy budget-aware chunk packer. Each chunk fills until the next
+ *  candidate would push it past `maxCharsPerChunk` OR the chunk hits
+ *  `maxCandidatesPerChunk`, whichever fires first. The first candidate
+ *  in an empty chunk is always accepted (a single candidate larger
+ *  than the budget gets its own chunk rather than being dropped — the
+ *  consumer's per-field cap takes over downstream).
+ *
+ *  Pure function. Extracted from `chunkAndEnqueue` for direct testing
+ *  of the packing arithmetic without standing up the full coordinator
+ *  pipeline. */
+export function packCandidatesIntoChunks(
+  candidates: ChunkCandidate[],
+  maxCharsPerChunk: number = CHUNK_INPUT_CHARS_BUDGET,
+  maxCandidatesPerChunk: number = MAX_CANDIDATES_PER_CHUNK,
+): ChunkCandidate[][] {
+  const chunks: ChunkCandidate[][] = [];
+  let current: ChunkCandidate[] = [];
+  let currentChars = 0;
+  for (const candidate of candidates) {
+    const cost = estimateCandidateChars(candidate);
+    const wouldExceedBudget = currentChars + cost > maxCharsPerChunk;
+    const wouldExceedCount = current.length >= maxCandidatesPerChunk;
+    if (current.length > 0 && (wouldExceedBudget || wouldExceedCount)) {
+      chunks.push(current);
+      current = [];
+      currentChars = 0;
+    }
+    current.push(candidate);
+    currentChars += cost;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
 }
 
 /** 10-worker semaphore cap for the coordinator's fetch fan-out.
@@ -619,30 +655,16 @@ async function chunkAndEnqueue(
   survivorCount: number,
   scrape_run_id: string,
 ): Promise<void> {
-  // Greedy budget-aware packing. Each candidate's char cost is
-  // estimated (snippet length when known, otherwise the median post-
-  // fetch body length); a chunk fills until the next candidate would
-  // push it past CHUNK_INPUT_CHARS_BUDGET, then a new chunk starts.
-  // MAX_CANDIDATES_PER_CHUNK is the defensive ceiling for thin-snippet
-  // floods. Replaces the prior fixed-50 slicing which under-packed
-  // short-snippet days and could overflow the context on long-essay
-  // days after the snippet cap was raised to 15K.
-  const chunks: ChunkCandidate[][] = [];
-  let current: ChunkCandidate[] = [];
-  let currentChars = 0;
-  for (const candidate of chunkCandidates) {
-    const cost = estimateCandidateChars(candidate);
-    const wouldExceedBudget = currentChars + cost > CHUNK_INPUT_CHARS_BUDGET;
-    const wouldExceedCount = current.length >= MAX_CANDIDATES_PER_CHUNK;
-    if (current.length > 0 && (wouldExceedBudget || wouldExceedCount)) {
-      chunks.push(current);
-      current = [];
-      currentChars = 0;
-    }
-    current.push(candidate);
-    currentChars += cost;
-  }
-  if (current.length > 0) chunks.push(current);
+  // Greedy budget-aware packing — see `packCandidatesIntoChunks`. Each
+  // candidate's char cost is estimated (snippet length when known,
+  // otherwise the median post-fetch body length); a chunk fills until
+  // the next candidate would push it past CHUNK_INPUT_CHARS_BUDGET,
+  // then a new chunk starts. MAX_CANDIDATES_PER_CHUNK is the defensive
+  // ceiling for thin-snippet floods. Replaces the prior fixed-50
+  // slicing which under-packed short-snippet days and could overflow
+  // the context on long-essay days after the snippet cap was raised
+  // to 15K.
+  const chunks = packCandidatesIntoChunks(chunkCandidates);
   // Hard cap: a discovered-tag explosion can't expand the per-tick LLM
   // fan-out past MAX_CHUNKS_PER_TICK. Any excess is deferred to the next
   // 4-hour tick (the existing-URL filter keeps tick-N+1 from re-processing
