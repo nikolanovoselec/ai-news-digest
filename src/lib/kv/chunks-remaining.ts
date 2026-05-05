@@ -50,19 +50,8 @@ export async function setChunksRemaining(
   });
 }
 
-/**
- * Read the chunks-remaining counter for a scrape run.
- *
- * Returns the parsed integer, or `null` on a cache miss or if the stored
- * value cannot be parsed as a finite integer. Callers should treat `null`
- * as "counter not yet written" and surface an appropriate UI fallback.
- */
-export async function getChunksRemaining(
-  kv: KVNamespace,
-  scrape_run_id: string,
-): Promise<number | null> {
-  const raw = await kv.get(chunksRemainingKey(scrape_run_id), 'text');
-  if (raw === null) return null;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : null;
-}
+// `getChunksRemaining` was extracted alongside the writer helpers but
+// has no production caller (the only reader, `/api/scrape-status`,
+// inlines the KV.get to keep the route handler self-contained).
+// Dropped from the public surface. The reader can be reintroduced
+// from this module as soon as a second caller appears.
