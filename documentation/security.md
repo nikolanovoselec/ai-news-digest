@@ -23,7 +23,7 @@ Content-Security-Policy:
   form-action 'self'
 ```
 
-**Notable choices (see AD11 for rationale):**
+**Notable choices (see [AD11](decisions/README.md#ad11-keep-style-src-unsafe-inline-runtime-stylex-writes-are-intentional) for rationale):**
 
 - `style-src 'unsafe-inline'` — Astro emits component-scoped styles as inline `<style>` blocks; runtime FLIP animations write `.style.transform` directly. Both are intentional.
 - `script-src 'self'` only — no eval, no inline scripts. Every client script is served as a static asset.
@@ -55,4 +55,13 @@ The `__Host-` prefix (RFC 6265bis) enforces Secure, Path=/, and no Domain attrib
 
 ## Rate limiting (REQ-AUTH-003)
 
-Auth endpoints (login, callback, refresh) use a fail-closed KV-backed sliding-window rate limiter. See `src/lib/rate-limit.ts` for bucket definitions and `documentation/configuration.md` for the `RATE_LIMIT_KV` binding.
+Auth endpoints (login, callback, refresh) use a fail-closed KV-backed sliding-window rate limiter. See `src/lib/rate-limit.ts` for bucket definitions and [`configuration.md`](configuration.md) for the `KV` namespace binding and key conventions.
+
+---
+
+## Related Documentation
+
+- [`architecture.md`](architecture.md) — Component map and security-headers middleware
+- [`configuration.md`](configuration.md) — KV namespace binding and rate-limit key conventions
+- [`decisions/README.md`](decisions/README.md) — AD8 (cookie policy), AD11 (CSP unsafe-inline), AD13 (no non-essential cookies), AD23 (rate-limit fail-closed)
+- [`../sdd/`](../sdd/) — REQ-OPS-003, REQ-AUTH-001, REQ-AUTH-002, REQ-AUTH-003
