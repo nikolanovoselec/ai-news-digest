@@ -22,7 +22,10 @@ interface SqlRecord {
 interface ArticleRow {
   id: string;
   title: string;
-  details: string;
+  /** JSON-encoded paragraph array — production schema column
+   *  `details_json`. The finalize consumer parses this back into
+   *  a joined body string before sending it to the dedup LLM. */
+  details_json: string;
   published_at: number;
   ingested_at: number;
 }
@@ -127,14 +130,16 @@ function makeEnv(
   return { env, aiCalls };
 }
 
-function row(overrides: Partial<ArticleRow> = {}): ArticleRow {
+function row(overrides: Partial<ArticleRow> & { details?: string } = {}): ArticleRow {
+  const { details, ...rest } = overrides;
+  const detailsBody = details ?? 'Two-sentence default summary body. Not used by most assertions.';
   return {
     id: 'a-default',
     title: 'Default title',
-    details: 'Two-sentence default summary body. Not used by most assertions.',
+    details_json: JSON.stringify([detailsBody]),
     published_at: 1_700_000_000,
     ingested_at: 1_700_000_000,
-    ...overrides,
+    ...rest,
   };
 }
 

@@ -63,13 +63,14 @@ export interface FinalizeJobMessage {
   scrape_run_id: string;
 }
 
-/** Row shape returned by the per-run article fetch. `details` is the
- *  full summary body the chunk consumer wrote; the dedup prompt
- *  consumes it directly (REQ-PIPE-008 AC 1). */
+/** Row shape returned by the per-run article fetch. `details_json`
+ *  is the JSON-encoded paragraph array the chunk consumer wrote
+ *  (column `details_json` in migration 0003). The dedup prompt
+ *  consumes the joined paragraphs directly (REQ-PIPE-008 AC 1). */
 interface ArticleRow {
   id: string;
   title: string;
-  details: string;
+  details_json: string;
   published_at: number;
   ingested_at: number;
 }
@@ -126,7 +127,7 @@ export async function processOneFinalize(
   // the cap bites.
   const result = await env.DB
     .prepare(
-      `SELECT id, title, details, published_at, ingested_at
+      `SELECT id, title, details_json, published_at, ingested_at
          FROM articles
         WHERE scrape_run_id = ?1
         ORDER BY ingested_at DESC
@@ -150,12 +151,25 @@ export async function processOneFinalize(
   // so the LLM's dedup_groups indices map directly back. Title +
   // full body per REQ-PIPE-008 AC 1; source name deliberately
   // omitted as a non-signal.
-  const candidates = rows.map((r, idx) => ({
-    index: idx,
-    title: r.title,
-    details: r.details,
-    published_at: r.published_at,
-  }));
+  const candidates = rows.map((r, idx) => {
+    let body = '';
+    try {
+      const parsed = JSON.parse(r.details_json) as unknown;
+      if (Array.isArray(parsed)) {
+        body = parsed.filter((p): p is string => typeof p === 'string').join('\n\n');
+      } else if (typeof parsed === 'string') {
+        body = parsed;
+      }
+    } catch {
+      body = '';
+    }
+    return {
+      index: idx,
+      title: r.title,
+      details: body,
+      published_at: r.published_at,
+    };
+  });
 
   // Step 4 — primary-then-fallback retry centralised in
   // src/lib/llm-json.ts (CF-009) so chunk + finalize share identical
