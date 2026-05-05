@@ -39,7 +39,7 @@ Generic server-error fallback. Shown when an uncaught exception bubbles up to As
 
 Initiates the OAuth/OIDC authorization-code flow. `{provider}` matches the provider registry (`github`, `google`); unknown names return `404`. Sets a 10-minute `state` cookie and redirects to the provider's authorize URL. Exempt from the Origin check.
 
-**Rate limit:** 10 / 60 s per IP (`auth_login`). Fails open on KV errors. Exhausted → `429` with `Retry-After`.
+**Rate limit:** 10 / 60 s per IP (`auth_login`). Fails closed on KV errors (see [AD23](decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop)). Exhausted → `429` with `Retry-After`.
 
 **Implements:** [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9, [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
@@ -53,7 +53,7 @@ Validates the per-provider `state` cookie, exchanges the code for tokens, extrac
 
 New accounts are seeded with default hashtags, `digest_hour=8`, `email_enabled=1`. Sets the session cookie and redirects to `/digest`.
 
-**Rate limit:** 20 / 60 s per IP (`auth_callback`). Fails open on KV errors.
+**Rate limit:** 20 / 60 s per IP (`auth_callback`). Fails closed on KV errors (see [AD23](decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop)).
 
 **Error responses:**
 | Outcome | Status | Body |
