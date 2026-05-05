@@ -196,6 +196,67 @@ describe('runJsonWithFallback — REQ-PIPE-002 / REQ-PIPE-008', () => {
     const fallbackLogs = logs.filter((l) => String(l.args[0]).includes('llm.fallback_invoked'));
     expect(fallbackLogs).toEqual([]);
   });
+
+  it('falls back when primary ai.run throws (e.g. AiError 3046 timeout)', async () => {
+    // Workers AI surfaces request-timeouts and capacity errors as
+    // thrown AiError objects, not as malformed-JSON responses. The
+    // helper must catch the throw and try the fallback model so a
+    // single hung primary call doesn't mark the entire scrape run
+    // failed via the queue handler's terminal-failure path.
+    const aiThrowingPrimary = {
+      run: vi.fn()
+        .mockImplementationOnce(async () => {
+          throw new Error('AiError: 3046: Request timeout');
+        })
+        .mockImplementationOnce(async () => ({
+          response: '{"articles": [{"title": "fallback rescued"}]}',
+          usage: { input_tokens: 4, output_tokens: 6 },
+        })),
+    };
+    const onPrimaryFailure = vi.fn();
+    const result = await runJsonWithFallback({
+      ai: aiThrowingPrimary,
+      params: { messages: [] },
+      narrow: (raw) => {
+        try {
+          return typeof raw === 'string' ? (JSON.parse(raw) as { articles: unknown[] }) : null;
+        } catch {
+          return null;
+        }
+      },
+      onPrimaryFailure,
+    });
+    expect(aiThrowingPrimary.run).toHaveBeenCalledTimes(2);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.fallbackUsed).toBe(true);
+    expect(result.parsed.articles).toHaveLength(1);
+    expect(onPrimaryFailure).toHaveBeenCalledTimes(1);
+    const info = onPrimaryFailure.mock.calls[0]?.[0] as { rawResponse: unknown };
+    expect(info.rawResponse).toEqual({ error: expect.stringContaining('3046') as unknown });
+  });
+
+  it('returns ok=false when both primary and fallback throw', async () => {
+    const aiBothThrow = {
+      run: vi.fn()
+        .mockImplementationOnce(async () => {
+          throw new Error('AiError: 3046: Request timeout');
+        })
+        .mockImplementationOnce(async () => {
+          throw new Error('AiError: 3035: Capacity unavailable');
+        }),
+    };
+    const result = await runJsonWithFallback({
+      ai: aiBothThrow,
+      params: { messages: [] },
+      narrow: () => null,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(aiBothThrow.run).toHaveBeenCalledTimes(2);
+    expect(result.primary.rawResponse).toEqual({ error: expect.stringContaining('3046') as unknown });
+    expect(result.fallback.rawResponse).toEqual({ error: expect.stringContaining('3035') as unknown });
+  });
 });
 
 describe('previewRawResponse', () => {

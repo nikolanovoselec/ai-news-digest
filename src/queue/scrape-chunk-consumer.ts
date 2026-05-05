@@ -120,9 +120,52 @@ export async function handleChunkBatch(
       chunk_index: body.chunk_index,
     }),
     onTerminalFailure: async (env, body) => {
-      // On final retry, mark the parent run as failed so operators
-      // and the UI don't see an orphan stuck at status='running'.
-      await finishRun(env.DB, body.scrape_run_id, 'failed');
+      // On final retry, decide whether the run is genuinely failed or
+      // partially successful. If at least one sibling chunk has
+      // completed for this run, the run already has user-visible
+      // articles — flapping the status to 'failed' would hide them
+      // from the digest. Mark partial successes as 'ready' (so the
+      // articles surface) and reserve 'failed' for runs where no
+      // chunk completed at all.
+      //
+      // Without this branch a single chunk hitting `AiError: 3046:
+      // Request timeout` after max-retries would mark the entire run
+      // failed even though the other chunks ingested articles, which
+      // we hit on 2026-05-05 (chunks 0+2 ingested 5 articles, chunk 1
+      // timed out, run.status flipped to 'failed').
+      const completed = await countChunkCompletions(env.DB, body.scrape_run_id);
+      const finalStatus: 'ready' | 'failed' = completed > 0 ? 'ready' : 'failed';
+      await finishRun(env.DB, body.scrape_run_id, finalStatus);
+      if (finalStatus === 'ready') {
+        // Enqueue finalize so cross-chunk dedup runs over the chunks
+        // that did complete. Same atomic-lock pattern as the
+        // happy-path enqueue in `recordChunkCompletionAndCheckFinalize`.
+        const lockResult = await env.DB
+          .prepare(
+            'UPDATE scrape_runs SET finalize_enqueued = 1 WHERE id = ?1 AND finalize_enqueued = 0',
+          )
+          .bind(body.scrape_run_id)
+          .run();
+        if ((lockResult.meta?.changes ?? 0) === 1) {
+          try {
+            await env.SCRAPE_FINALIZE.send({ scrape_run_id: body.scrape_run_id });
+          } catch (sendErr) {
+            await env.DB
+              .prepare(
+                'UPDATE scrape_runs SET finalize_enqueued = 0 WHERE id = ?1',
+              )
+              .bind(body.scrape_run_id)
+              .run()
+              .catch(() => {});
+            log('error', 'digest.generation', {
+              status: 'partial_finalize_enqueue_failed',
+              scrape_run_id: body.scrape_run_id,
+              chunk_index: body.chunk_index,
+              detail: String(sendErr).slice(0, 500),
+            });
+          }
+        }
+      }
     },
     terminalFailureLogStatus: 'chunk_finish_failed_after_throw',
   });

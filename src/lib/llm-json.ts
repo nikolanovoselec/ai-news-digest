@@ -136,11 +136,25 @@ export async function runJsonWithFallback<T>(
   // helpers in ~/lib/generate accept the wider AIRunResponse shape
   // (which has an index signature) and gracefully tolerate missing
   // fields, so a single cast at the boundary is safe.
-  const primaryResult = (await options.ai.run(primaryModel, options.params)) as AIRunResponse;
-  const primaryRaw = extractResponsePayload(primaryResult);
-  const primaryParsed = options.narrow(primaryRaw);
-  const primaryTokensIn = extractTokensIn(primaryResult);
-  const primaryTokensOut = extractTokensOut(primaryResult);
+  //
+  // Primary throws (AiError 3046 timeout, network errors, capacity
+  // failures) are caught here and treated identically to JSON-malformed:
+  // emit fallback. Without the catch, a single `AiError: 3046: Request
+  // timeout` on the primary model bypasses the fallback and propagates
+  // straight to the queue handler's terminal-failure path, marking the
+  // entire run failed even though the fallback model could have served
+  // the chunk.
+  let primaryResult: AIRunResponse | null = null;
+  let primaryThrewError: string | null = null;
+  try {
+    primaryResult = (await options.ai.run(primaryModel, options.params)) as AIRunResponse;
+  } catch (err) {
+    primaryThrewError = String(err).slice(0, 500);
+  }
+  const primaryRaw = primaryResult === null ? null : extractResponsePayload(primaryResult);
+  const primaryParsed = primaryResult === null ? null : options.narrow(primaryRaw);
+  const primaryTokensIn = primaryResult === null ? 0 : extractTokensIn(primaryResult);
+  const primaryTokensOut = primaryResult === null ? 0 : extractTokensOut(primaryResult);
   const primaryCostUsd = estimateCost(primaryModel, primaryTokensIn, primaryTokensOut);
 
   if (primaryParsed !== null) {
@@ -164,7 +178,7 @@ export async function runJsonWithFallback<T>(
     tokensIn: primaryTokensIn,
     tokensOut: primaryTokensOut,
     costUsd: primaryCostUsd,
-    rawResponse: primaryRaw,
+    rawResponse: primaryThrewError !== null ? { error: primaryThrewError } : primaryRaw,
   };
   options.onPrimaryFailure?.(primaryAttempt);
 
@@ -184,11 +198,17 @@ export async function runJsonWithFallback<T>(
   // fallbacks occur in a 5-minute window; v1 is alert-only.
   recordFallbackAndMaybeOpenCircuit(primaryModel, fallbackModel);
 
-  const fallbackResult = (await options.ai.run(fallbackModel, options.params)) as AIRunResponse;
-  const fallbackRaw = extractResponsePayload(fallbackResult);
-  const fallbackParsed = options.narrow(fallbackRaw);
-  const fallbackTokensIn = extractTokensIn(fallbackResult);
-  const fallbackTokensOut = extractTokensOut(fallbackResult);
+  let fallbackResult: AIRunResponse | null = null;
+  let fallbackThrewError: string | null = null;
+  try {
+    fallbackResult = (await options.ai.run(fallbackModel, options.params)) as AIRunResponse;
+  } catch (err) {
+    fallbackThrewError = String(err).slice(0, 500);
+  }
+  const fallbackRaw = fallbackResult === null ? null : extractResponsePayload(fallbackResult);
+  const fallbackParsed = fallbackResult === null ? null : options.narrow(fallbackRaw);
+  const fallbackTokensIn = fallbackResult === null ? 0 : extractTokensIn(fallbackResult);
+  const fallbackTokensOut = fallbackResult === null ? 0 : extractTokensOut(fallbackResult);
   const fallbackCostUsd = estimateCost(
     fallbackModel,
     fallbackTokensIn,
@@ -219,7 +239,7 @@ export async function runJsonWithFallback<T>(
       tokensIn: fallbackTokensIn,
       tokensOut: fallbackTokensOut,
       costUsd: fallbackCostUsd,
-      rawResponse: fallbackRaw,
+      rawResponse: fallbackThrewError !== null ? { error: fallbackThrewError } : fallbackRaw,
     },
     wastedTokensIn: primaryTokensIn,
     wastedTokensOut: primaryTokensOut,

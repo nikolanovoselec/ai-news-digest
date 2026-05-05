@@ -58,7 +58,15 @@ import { SNIPPET_FLOOR } from '~/queue/scrape-chunk-consumer';
  * single 800-candidate chunk that times out the consumer. Was 50
  * fixed-size; 100 as a ceiling lets short-snippet days pack
  * efficiently while the budget rule keeps long-essay days safe. */
-const MAX_CANDIDATES_PER_CHUNK = 100;
+// Reduced from 100 → 60 on 2026-05-05: a 87-candidate chunk repeatedly
+// hit `AiError: 3046: Request timeout` against the default Gemma 4
+// model. Workers AI inference time grows superlinearly in prompt size,
+// and the default model's 256K context isn't the binding constraint
+// — wall-clock timeout is. 60 is a safe upper bound that keeps
+// 188-candidate days at 4 chunks (vs 2-3 at 100) without bloating
+// queue traffic; budget-aware packing still chunks earlier on
+// long-essay days.
+const MAX_CANDIDATES_PER_CHUNK = 60;
 
 /** Greedy chunk-packer character budget. The chunk consumer falls back
  * to gpt-oss-120b on malformed-JSON retry; that fallback's 128K context
