@@ -70,10 +70,11 @@ const MAX_CANDIDATES_PER_CHUNK = 100;
  * chars; we round down to 280K for safety margin against estimator
  * drift on non-English snippets and JSON-escape inflation. See
  * `CHUNK_LLM_PARAMS` in `src/lib/prompts.ts` for the same arithmetic
- * from the output-budget side. The chunk consumer is downstream of this
- * cap — its own per-field BODY_SNIPPET_MAX_CHARS (16K) is the per-
- * candidate ceiling, but a chunk full of those would still fit by
- * design. */
+ * from the output-budget side. The chunk consumer's per-field
+ * BODY_SNIPPET_MAX_CHARS (16K) is the per-candidate ceiling — long-
+ * essay chunks hit this budget cap on ~17 max-sized candidates well
+ * before the 100-candidate count cap, which is the intended pack
+ * shape on essay-heavy days. */
 const CHUNK_INPUT_CHARS_BUDGET = 280_000;
 
 /** Per-candidate framing overhead in the user prompt — the
