@@ -11,10 +11,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Spy on the consumer modules BEFORE importing worker.ts so the
 // dispatcher routes to the mocks. Each handler is a vi.fn that records
 // invocation; the test asserts on which mock was called per queue name.
-const mockHandleCoordinator = vi.fn().mockResolvedValue(undefined);
-const mockHandleChunks = vi.fn().mockResolvedValue(undefined);
-const mockHandleFinalize = vi.fn().mockResolvedValue(undefined);
-const mockLog = vi.fn();
+//
+// vi.hoisted is required because vi.mock factories are hoisted to the
+// top of the file at compile time. Plain top-level `const` declarations
+// would not yet be initialised at the moment the hoisted factory runs,
+// triggering "Cannot access 'mockX' before initialization".
+const { mockHandleCoordinator, mockHandleChunks, mockHandleFinalize, mockLog } =
+  vi.hoisted(() => ({
+    mockHandleCoordinator: vi.fn().mockResolvedValue(undefined),
+    mockHandleChunks: vi.fn().mockResolvedValue(undefined),
+    mockHandleFinalize: vi.fn().mockResolvedValue(undefined),
+    mockLog: vi.fn(),
+  }));
 
 vi.mock('~/queue/scrape-coordinator', () => ({
   handleCoordinatorBatch: mockHandleCoordinator,
