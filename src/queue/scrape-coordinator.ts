@@ -173,28 +173,55 @@ export async function runCoordinator(
 ): Promise<void> {
   const { scrape_run_id } = body;
 
-  // --- Step 0: Race guard — bail if this run already fanned out -------
-  //
-  // Queue delivery can double-dispatch the same message (retry-after-
-  // ack-lost, stuck cron re-enqueue). A second run of the coordinator
-  // for the same scrape_run_id would overwrite the KV
-  // chunks_remaining counter AFTER the chunk consumer already
-  // decremented it, breaking the "last chunk calls finishRun" math
-  // and leaving the run stuck as `running` forever.
-  //
-  // CF-002 — atomic CAS race guard. The earlier SELECT-then-act shape
-  // had a TOCTOU window: two concurrent redeliveries (queue retry +
-  // queue lifecycle race) both observed chunk_count == 0 and BOTH
-  // proceeded to fan out. Replacing the SELECT with a conditional
-  // UPDATE that flips chunk_count to a sentinel `-1` makes only ONE
-  // caller win — the second one observes meta.changes === 0 and bails
-  // out cleanly. Mirrors the `finalize_enqueued` atomic-CAS pattern
-  // from migration 0008 (per AD10) and the `chunk_count` invariant
-  // documented in CF-021. The sentinel is rolled back when the real
-  // chunk count is written below; if dispatch crashes, the sentinel
-  // `-1` is recoverable on a subsequent retry that explicitly clears
-  // it (or via `force-refresh` which seeds a fresh run id).
-  let claimedDispatch = false;
+  // Step 0 — race guard: only one coordinator wins per scrape_run_id.
+  const claimed = await claimCoordinatorDispatch(env, scrape_run_id);
+  if (!claimed) return;
+
+  // Step 1 — build full source list (curated + KV-discovered).
+  const allSources = await assembleAllSources(env);
+
+  // Steps 2 + 2b — parallel fetch fan-out, then apply evictions.
+  const rawHeadlines = await fetchSourcesAndApplyEvictions(env, allSources, scrape_run_id);
+
+  // Step 3 — canonicalize, scheme-gate, and freshness-filter.
+  const candidates = buildCandidates(rawHeadlines, scrape_run_id);
+
+  // Step 4 — dedupe duplicate URLs that appear across multiple feeds.
+  const clusters = clusterByCanonical(candidates);
+
+  // Step 5 — filter already-known URLs; aggregate alt-sources for re-seen ones.
+  const { survivors } = await filterAndAggregateReSeenClusters(env, clusters, scrape_run_id);
+
+  // Step 6 — empty-pool guard.
+  if (survivors.length === 0) {
+    await finishRun(env.DB, scrape_run_id, 'ready');
+    log('info', 'digest.generation', { status: 'coordinator_empty_pool', scrape_run_id });
+    return;
+  }
+
+  // Step 7 — flatten dedupe-clusters to chunk-ready candidates.
+  const chunkCandidates = flattenToChunkCandidates(survivors);
+
+  // Step 8 — chunk, prime KV counter, enqueue.
+  await chunkAndEnqueue(env, chunkCandidates, candidates.length, survivors.length, scrape_run_id);
+}
+
+// ---------- step helpers (colocated; not re-exported) ---------------------
+
+/**
+ * Step 0 — Atomic CAS race guard.
+ *
+ * CF-002: flips `chunk_count` to sentinel -1 in a single conditional UPDATE
+ * so only one concurrent coordinator delivery wins the dispatch. Returns
+ * `true` when this caller claimed the slot; `false` when another delivery
+ * already ran (caller should return immediately). On a DB error, falls
+ * through with `true` — the guard is best-effort.
+ *
+ * The sentinel is rolled back when the real chunk count is written in Step 8.
+ * If dispatch crashes, the `-1` is recoverable on a subsequent retry or via
+ * `force-refresh` (which seeds a fresh scrape_run_id).
+ */
+async function claimCoordinatorDispatch(env: Env, scrape_run_id: string): Promise<boolean> {
   try {
     const cas = await env.DB
       .prepare(
@@ -203,29 +230,35 @@ export async function runCoordinator(
       )
       .bind(scrape_run_id)
       .run();
-    claimedDispatch = (cas.meta?.changes ?? 0) === 1;
-    if (!claimedDispatch) {
+    const claimed = (cas.meta?.changes ?? 0) === 1;
+    if (!claimed) {
       log('warn', 'digest.generation', {
         status: 'coordinator_duplicate_dispatch',
         scrape_run_id,
       });
-      return;
+      return false;
     }
+    return true;
   } catch (err) {
     log('warn', 'digest.generation', {
       status: 'coordinator_race_guard_cas_failed',
       scrape_run_id,
       detail: String(err).slice(0, 500),
     });
-    // Fall through — race guard is best-effort. Without the sentinel,
-    // a concurrent caller may double-dispatch; the cost is bounded by
-    // the queue's max-retries budget.
+    // Fall through — race guard is best-effort.
+    return true;
   }
+}
 
-  // --- Step 1: Build the full source list (curated + discovered) -------
-  // CF-017 — purge orphans first (tags promoted to CURATED_SOURCES
-  // since their last discovery), then load. Two passes against the
-  // same KV prefix; the read pass becomes side-effect-free.
+/**
+ * Step 1 — Build the full source list for this tick.
+ *
+ * CF-017: purges orphan `sources:{tag}` entries (tags promoted to
+ * CURATED_SOURCES since their last discovery) BEFORE the read pass so the
+ * read stays side-effect-free. Returns the combined curated + discovered
+ * list ready for the fetch fan-out.
+ */
+async function assembleAllSources(env: Env): Promise<SourceForFetch[]> {
   const { purged: orphansPurged, partial: purgePartial } =
     await purgeOrphanDiscoveredSources(env.KV);
   if (orphansPurged > 0 || purgePartial) {
@@ -245,73 +278,87 @@ export async function runCoordinator(
         'KV scan failed mid-iteration; some discovered tags may be missing from this tick.',
     });
   }
-  const allSources: SourceForFetch[] = [
+  return [
     ...CURATED_SOURCES.map((s) => ({
       adapter: curatedToAdapter(s),
       sourceName: s.name,
       feedUrl: s.feed_url,
-      discoveredTag: null,
+      discoveredTag: null as string | null,
     })),
     ...discoveredSources,
   ];
+}
 
-  // --- Step 2: Fetch all sources in parallel (10-worker semaphore) ----
-  // Health accounting (REQ-DISC-003): every per-source fetch records a
-  // success or failure against `source_health:{url}` in KV. After the
-  // fan-out completes, `fetchAllSources` returns the URLs whose counters
-  // crossed the eviction threshold so the coordinator can act on them.
-  const { rawHeadlines, evictions } = await fetchAllSources(env, allSources);
-
-  // --- Step 2b: Apply evictions (REQ-DISC-003 AC 2-3) ----------------
-  // For each URL that reached the fetch-failure threshold and was
-  // attached to a `sources:{tag}` KV entry, remove the URL from that
-  // tag's feed list. If the removal empties the feed list, enqueue a
-  // system-owned re-discovery row so the next discovery cron repopulates
-  // the tag with a fresh LLM suggestion.
+/**
+ * Steps 2 + 2b — Fetch fan-out, then apply evictions.
+ *
+ * Runs the 10-worker fetch semaphore (Step 2) and then, for any URLs whose
+ * consecutive-failure counter crossed the eviction threshold, removes them
+ * from their `sources:{tag}` KV entry and optionally re-queues the tag for
+ * a fresh LLM discovery pass (Step 2b — REQ-DISC-003 AC 2-3).
+ *
+ * Returns the flat headline array ready for Step 3.
+ */
+async function fetchSourcesAndApplyEvictions(
+  env: Env,
+  sources: SourceForFetch[],
+  scrape_run_id: string,
+): Promise<Array<{ headline: Headline }>> {
+  const { rawHeadlines, evictions } = await fetchAllSources(env, sources);
   if (evictions.length > 0) {
     await applyEvictions(env, evictions, scrape_run_id);
   }
+  return rawHeadlines;
+}
 
-  // --- Step 3: Build candidate records (canonicalize + carry source) --
-  //
-  // Scheme gate: only http(s) candidates survive. A feed returning a
-  // `javascript:` / `data:` / `file:` URL for an article link would
-  // land as an unsafe href on the detail page's "Read at source"
-  // button if we passed it through. Dropping at write time is the
-  // strongest defence (render-time escaping of a literal `javascript:`
-  // value in an href attribute is NOT enough — Astro's escaping
-  // prevents HTML injection but a `javascript:` href is valid HTML).
+/**
+ * Step 3 — Build the candidate pool from raw headlines.
+ *
+ * Applies: scheme gate (http/https only), canonicalization, freshness
+ * filter (48-hour window, missing pubDate kept), and assembles the
+ * `Candidate` shape for downstream dedup.
+ */
+function buildCandidates(
+  rawHeadlines: Array<{ headline: Headline }>,
+  scrape_run_id: string,
+): Candidate[] {
   const candidates: Candidate[] = [];
-  const coordinatorNowSec = Math.floor(Date.now() / 1000);
-  // Drop candidates whose source pubDate is more than 48 hours old.
-  // Cron runs every 4 hours, so anything older than two days has
-  // either been seen on a prior tick (and is already in the pool)
-  // or is a backlog item the feed happens to still emit. Either way,
-  // summarising it wastes LLM budget and clutters the dashboard with
-  // 'new ingest, old publish_at' cards that sort below genuinely
-  // fresh stories and make the feed look stuck. candidates with an
-  // unparsable pubDate (we fall back to coordinatorNowSec) are kept — a
-  // missing date is not the same as a stale date.
-  const staleCutoff = coordinatorNowSec - FRESHNESS_WINDOW_SEC;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const staleCutoff = nowSec - FRESHNESS_WINDOW_SEC;
   let droppedStale = 0;
   let missingPubdateKept = 0;
+
   for (const row of rawHeadlines) {
+    // Scheme gate: only http(s) candidates survive. A feed returning a
+    // `javascript:` / `data:` / `file:` URL for an article link would
+    // land as an unsafe href on the detail page's "Read at source"
+    // button if we passed it through. Dropping at write time is the
+    // strongest defence (render-time escaping of a literal `javascript:`
+    // value in an href attribute is NOT enough — Astro's escaping
+    // prevents HTML injection but a `javascript:` href is valid HTML).
     if (!isSafeWebUrl(row.headline.url)) continue;
     const canonical = canonicalize(row.headline.url);
     if (!isSafeWebUrl(canonical)) continue;
+
     const hasParsedPub =
       typeof row.headline.published_at === 'number' && row.headline.published_at > 0;
-    const pub = hasParsedPub ? (row.headline.published_at as number) : coordinatorNowSec;
+    const pub = hasParsedPub ? (row.headline.published_at as number) : nowSec;
+
+    // Drop candidates whose source pubDate is more than 48 hours old.
+    // Cron runs every 4 hours, so anything older than two days has
+    // either been seen on a prior tick (and is already in the pool)
+    // or is a backlog item the feed happens to still emit. Either way,
+    // summarising it wastes LLM budget and clutters the dashboard with
+    // 'new ingest, old publish_at' cards that sort below genuinely
+    // fresh stories. Candidates with an unparsable pubDate (we fall
+    // back to nowSec) are kept — a missing date is not the same as a
+    // stale date.
     if (hasParsedPub && pub < staleCutoff) {
       droppedStale += 1;
       continue;
     }
-    if (!hasParsedPub) {
-      // Counter so operators can see how often backlog items with no
-      // pubDate slip through the freshness filter — a blind spot of
-      // the 'missing date is not stale date' decision.
-      missingPubdateKept += 1;
-    }
+    if (!hasParsedPub) missingPubdateKept += 1;
+
     candidates.push({
       canonical_url: canonical,
       source_url: row.headline.url,
@@ -323,6 +370,7 @@ export async function runCoordinator(
         : {}),
     });
   }
+
   if (droppedStale > 0 || missingPubdateKept > 0) {
     log('info', 'digest.generation', {
       op: 'coordinator_freshness',
@@ -333,37 +381,33 @@ export async function runCoordinator(
     });
   }
 
-  // --- Step 4: Canonical cluster (dedupe duplicate URLs across sources) -
-  const clusters = clusterByCanonical(candidates);
+  return candidates;
+}
 
-  // --- Step 5: Filter out canonical URLs already in articles -----------
+/**
+ * Step 5 — Filter canonical clusters against existing articles; aggregate
+ * alternative sources for re-seen clusters.
+ *
+ * Returns `{ survivors }` — the clusters whose canonical URL is NOT yet in
+ * the articles table. As a side-effect, writes alternative source rows for
+ * re-seen clusters to `article_sources` using CF-007's batched multi-VALUES
+ * INSERT strategy.
+ *
+ * REQ-PIPE-001 AC 4: re-discovered URLs do NOT re-stamp `ingested_at`. The
+ * primary source on file from the first ingestion stays canonical.
+ */
+async function filterAndAggregateReSeenClusters(
+  env: Env,
+  clusters: ReturnType<typeof clusterByCanonical>,
+  scrape_run_id: string,
+): Promise<{ survivors: ReturnType<typeof clusterByCanonical> }> {
   const existing = await loadExistingCanonicalUrls(
     env.DB,
     clusters.map((c) => c.primary.canonical_url),
   );
-  const survivors = clusters.filter(
-    (c) => !existing.has(c.primary.canonical_url),
-  );
-  // REQ-PIPE-001 AC 4 (revised 2026-05-03): re-discovered URLs do
-  // NOT re-stamp `ingested_at` — the dashboard orders by first
-  // ingestion descending so a re-broadcast of an older story by
-  // some feed must not push it back above genuinely newer arrivals.
-  // The primary source on file from the first ingestion stays the
-  // canonical attribution for the story.
-  //
-  // Multi-source aggregation IS performed here, on every re-
-  // discovery: `INSERT OR IGNORE INTO article_sources` for each
-  // primary + alternative source on the re-seen cluster, keyed on
-  // the existing article's id. The PK `(article_id, source_url)`
-  // collapses any source we already know about; new outlets that
-  // canonicalised to the same URL get appended. The alt-source
-  // modal filters out `articles.primary_source_url` so an idempotent
-  // re-insert of the primary's URL never appears as a "duplicate"
-  // entry in the picker.
-  const reSeenClusters = clusters.filter((c) =>
-    existing.has(c.primary.canonical_url),
-  );
-  let sourcesAppended = 0;
+  const survivors = clusters.filter((c) => !existing.has(c.primary.canonical_url));
+  const reSeenClusters = clusters.filter((c) => existing.has(c.primary.canonical_url));
+
   if (reSeenClusters.length > 0) {
     const idMap = await loadExistingCanonicalToIdMap(
       env.DB,
@@ -393,7 +437,7 @@ export async function runCoordinator(
       const sources = [cluster.primary, ...cluster.alternatives];
       for (const src of sources) {
         if (src.source_url === primaryUrl) continue;
-        const key = `${articleId} ${src.source_url}`;
+        const key = `${articleId} ${src.source_url}`;
         if (dedup.has(key)) continue;
         dedup.set(key, {
           articleId,
@@ -414,7 +458,7 @@ export async function runCoordinator(
       const ROWS_PER_STATEMENT = 25;
       const SQL_PREFIX =
         'INSERT OR IGNORE INTO article_sources (article_id, source_name, source_url, published_at) VALUES ';
-      const STATEMENTS_PER_BATCH = 4; // 4 statements × 25 rows = 100 rows / batch
+      const STATEMENTS_PER_BATCH = 4; // 4 statements x 25 rows = 100 rows / batch
       const statements: D1PreparedStatement[] = [];
       for (let i = 0; i < inserts.length; i += ROWS_PER_STATEMENT) {
         const slice = inserts.slice(i, i + ROWS_PER_STATEMENT);
@@ -426,12 +470,7 @@ export async function runCoordinator(
           .join(', ');
         const params: (string | number)[] = [];
         for (const row of slice) {
-          params.push(
-            row.articleId,
-            row.sourceName,
-            row.sourceUrl,
-            row.publishedAt,
-          );
+          params.push(row.articleId, row.sourceName, row.sourceUrl, row.publishedAt);
         }
         statements.push(env.DB.prepare(SQL_PREFIX + placeholders).bind(...params));
       }
@@ -439,37 +478,32 @@ export async function runCoordinator(
         const slice = statements.slice(i, i + STATEMENTS_PER_BATCH);
         await env.DB.batch(slice);
       }
-      sourcesAppended = inserts.length;
     }
     log('info', 'digest.generation', {
       status: 'coordinator_skipped_existing',
       scrape_run_id,
       re_seen: reSeenClusters.length,
-      sources_appended: sourcesAppended,
+      sources_appended: inserts.length,
     });
   }
 
-  // --- Step 6: Empty-pool guard — close the run immediately -----------
-  if (survivors.length === 0) {
-    await finishRun(env.DB, scrape_run_id, 'ready');
-    log('info', 'digest.generation', {
-      status: 'coordinator_empty_pool',
-      scrape_run_id,
-    });
-    return;
-  }
+  return { survivors };
+}
 
-  // NOTE: body-fetch was moved OUT of the coordinator into the
-  // chunk consumer (src/queue/scrape-chunk-consumer.ts). Running
-  // 500+ HTTP fetches inside the coordinator was exhausting its
-  // execution budget before the SCRAPE_CHUNKS.send() loop could
-  // run — chunks never enqueued, run stayed 'running' forever,
-  // no articles ingested. Per-chunk fetch (100 URLs × 5s / 20
-  // workers ≈ 25s) fits comfortably inside a chunk consumer's
-  // budget and parallelises across chunks.
-
-  // --- Step 7: Flatten clusters into chunk-ready candidates -----------
-  const chunkCandidates: ChunkCandidate[] = survivors.map((c) => {
+/**
+ * Step 7 — Flatten dedupe clusters to chunk-ready candidates.
+ *
+ * NOTE: body-fetch was moved OUT of the coordinator into the chunk consumer
+ * (src/queue/scrape-chunk-consumer.ts). Running 500+ HTTP fetches inside the
+ * coordinator was exhausting its execution budget before the SCRAPE_CHUNKS.send()
+ * loop could run — chunks never enqueued, run stayed 'running' forever, no
+ * articles ingested. Per-chunk fetch fits comfortably inside a chunk consumer's
+ * budget and parallelises across chunks.
+ */
+function flattenToChunkCandidates(
+  survivors: ReturnType<typeof clusterByCanonical>,
+): ChunkCandidate[] {
+  return survivors.map((c) => {
     const existingSnippet = c.primary.body_snippet ?? '';
     return {
       canonical_url: c.primary.canonical_url,
@@ -484,16 +518,32 @@ export async function runCoordinator(
       })),
     };
   });
+}
 
-  // --- Step 8: Chunk + prime KV counter + enqueue ---------------------
+/**
+ * Step 8 — Chunk, prime KV counter, persist chunk_count, and enqueue.
+ *
+ * Splits `chunkCandidates` into slices of CHUNK_SIZE, hard-caps at
+ * MAX_CHUNKS_PER_TICK, primes the `chunks_remaining` KV counter to the
+ * actual chunk count (so the chunk consumer's completion math starts from
+ * the right denominator), persists `chunk_count` on the scrape_runs row
+ * for the progress UI, and fan-outs one SCRAPE_CHUNKS message per chunk.
+ */
+async function chunkAndEnqueue(
+  env: Env,
+  chunkCandidates: ChunkCandidate[],
+  candidatePoolSize: number,
+  survivorCount: number,
+  scrape_run_id: string,
+): Promise<void> {
   const chunks: ChunkCandidate[][] = [];
   for (let i = 0; i < chunkCandidates.length; i += CHUNK_SIZE) {
     chunks.push(chunkCandidates.slice(i, i + CHUNK_SIZE));
   }
   // Hard cap: a discovered-tag explosion can't expand the per-tick LLM
-  // fan-out past MAX_CHUNKS_PER_TICK. Any excess is simply deferred to
-  // the next 4-hour tick (the existing-URL filter keeps tick-N+1 from
-  // re-processing the chunks we emit this tick).
+  // fan-out past MAX_CHUNKS_PER_TICK. Any excess is deferred to the next
+  // 4-hour tick (the existing-URL filter keeps tick-N+1 from re-processing
+  // the chunks emitted this tick).
   const keptChunks = capChunks(chunks, MAX_CHUNKS_PER_TICK, scrape_run_id);
   const totalChunks = keptChunks.length;
 
@@ -529,8 +579,8 @@ export async function runCoordinator(
   log('info', 'digest.generation', {
     status: 'coordinator_enqueued',
     scrape_run_id,
-    candidate_pool: candidates.length,
-    survivors: survivors.length,
+    candidate_pool: candidatePoolSize,
+    survivors: survivorCount,
     total_chunks: totalChunks,
   });
 }
