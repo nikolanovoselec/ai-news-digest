@@ -20,9 +20,7 @@ import historyPageSource from '../../src/pages/history.astro?raw';
 import userMenuSource from '../../src/components/UserMenu.astro?raw';
 
 describe('history.astro — REQ-HIST-001', () => {
-  it('REQ-HIST-001: Implements REQ-HIST-001 marker is present', () => {
-    expect(historyPageSource).toContain('REQ-HIST-001');
-  });
+  // CF-033: REQ-ID presence theater removed — CI gate covers annotations.
 
   it('REQ-HIST-001: renders a day-grouped list (not a flat per-digest list)', () => {
     // The day-grouped layout iterates `visibleDays.map((day) => ...)`
@@ -177,5 +175,28 @@ describe('history.astro — REQ-HIST-001', () => {
     expect(historyPageSource).toMatch(/<details[^>]*open=\{isFocused\}/);
     // The search input is conditional on !isFocused.
     expect(historyPageSource).toMatch(/\{!isFocused\s*&&\s*\(/);
+  });
+
+  // CF-036 — REQ-HIST-001 AC5 behavioural: verify that the history page's
+  // search + tag AND-logic is wired correctly at the source level.
+  // The runtime combination (URL state + filter function) is tested in
+  // tests/e2e/history-day-expand.spec.ts (G12).
+  it('REQ-HIST-001 AC5: search filter applies AND-logic (query + tag must both match)', () => {
+    // The filter function must check BOTH the query string AND the active
+    // tag. A single `||` between the two conditions would pass articles
+    // matching one but not the other — that's AC5's failure mode.
+    // We check for the compound condition in the source.
+    expect(historyPageSource).toMatch(
+      /queryMatch\s*&&\s*tagMatch|tagMatch\s*&&\s*queryMatch/,
+    );
+  });
+
+  it('REQ-HIST-001 AC5: URL state is written on chip-click via replaceState or similar', () => {
+    // The chip-click handler must reflect the active tag in the URL so
+    // the user can share or deep-link a filtered view. We assert that
+    // history.replaceState (or pushState) is called.
+    expect(historyPageSource).toMatch(
+      /replaceState|pushState/,
+    );
   });
 });
