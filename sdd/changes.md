@@ -6,6 +6,10 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are archived in [`changes-archive-2026-04.md`](changes-archive-2026-04.md).
 
+## 2026-05-06
+
+- REQ-READ-001 AC 7 added: dashboard cards now show a `+N` suffix on the source label when the same story has been reported by multiple publishers, so readers can see at a glance that an article was syndicated. The same treatment applies to cards on Search & History and the starred-articles surface.
+
 ## 2026-05-05
 
 - REQ-AUTH-001 AC 8 rewritten: Cloudflare Access is now an opt-in additive perimeter rather than a mandatory layer. Deployments without an Access audience tag configured gate `/api/admin/*` on signed-in session + `ADMIN_EMAIL` match alone; deployments that bind Access MUST set the audience tag for the perimeter to be enforced server-side AND MUST also bind Access to the auto-assigned `*.workers.dev` URL or disable that subdomain (AD30) - without either, the perimeter is forgeable from anywhere on the public internet.
