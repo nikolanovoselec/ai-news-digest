@@ -56,44 +56,43 @@ import { SNIPPET_FLOOR } from '~/queue/scrape-chunk-consumer';
  * hits, but the count cap protects against a flood of thin-snippet
  * candidates (e.g. all-Google-News, ~400 chars each) producing a
  * single 800-candidate chunk that times out the consumer. Was 50
- * fixed-size; 100 as a ceiling lets short-snippet days pack
- * efficiently while the budget rule keeps long-essay days safe. */
-// Reduced from 100 → 25 on 2026-05-05 after observing two regressions
-// at the 60-candidate size on integration:
-//   1. The default Gemma 4 primary model timed out (`AiError: 3046:
-//      Request timeout`) on every 60-candidate chunk — Workers AI
-//      inference time grows superlinearly in prompt size and the
-//      256K context isn't the binding constraint, wall-clock is.
-//   2. The fallback gpt-oss-120b refused 60-candidate chunks with
-//      "creating 60 individual summaries exceeds the practical limits
-//      of this interaction" and returned 0 usable articles, OR
-//      returned 1-2 short summaries that title-overlap-dropped
-//      against 60 input candidates.
+ * fixed-size; 25 as a ceiling lets short-snippet days pack efficiently
+ * while the budget rule keeps long-essay days safe. */
+// Reduced from 100 -> 25 on 2026-05-05 after observing two regressions
+// at the 60-candidate size on integration (the project at the time ran
+// a primary->fallback two-model setup; gpt-oss-120b is now the single
+// model, see DEFAULT_MODEL_ID in src/lib/models.ts):
+//   1. The then-primary model timed out (`AiError: 3046: Request
+//      timeout`) on every 60-candidate chunk - Workers AI inference
+//      time grows superlinearly in prompt size and wall-clock, not
+//      context size, is the binding constraint.
+//   2. The then-fallback model (gpt-oss-120b, now the single model)
+//      refused 60-candidate chunks with "creating 60 individual
+//      summaries exceeds the practical limits of this interaction"
+//      and returned 0 usable articles, OR returned 1-2 short summaries
+//      that title-overlap-dropped against 60 input candidates.
 // A residual 5-candidate chunk in the same run produced 3 articles
-// with `alignment_mode: echoed_index` (60% yield), confirming both
-// models handle small batches correctly.
-//
-// 25 is a conservative size where the Gemma 4 primary completes
-// inside the timeout AND the fallback model treats the request as a
-// reasonable batch. 188-candidate days now pack into ~8 chunks (vs
-// 4 at 60) — more queue traffic but every chunk completes.
+// with `alignment_mode: echoed_index` (60% yield), confirming the
+// model handles small batches correctly. 25 stays conservative under
+// the single-model regime: 188-candidate days now pack into ~8 chunks
+// (vs 4 at 60) - more queue traffic but every chunk completes.
 const MAX_CANDIDATES_PER_CHUNK = 25;
 
-/** Greedy chunk-packer character budget. The chunk consumer falls back
- * to gpt-oss-120b on malformed-JSON retry; that fallback's 128K context
- * is the binding constraint here (the 256K Gemma 4 default has comfortable
- * headroom). Of the 128K, `CHUNK_LLM_PARAMS.max_tokens` reserves 32K for
- * output, leaving ~96K tokens for the input prompt. Reserving ~5K for
- * the system prompt + per-candidate framing leaves ~91K tokens for
- * snippet content. At ~3.5 chars/token for English prose that's ~318K
+/** Greedy chunk-packer character budget. The chunk consumer runs the
+ * single default model (gpt-oss-120b, 128K context); the context
+ * window is the binding constraint here. Of the 128K,
+ * `CHUNK_LLM_PARAMS.max_tokens` reserves 32K for output, leaving
+ * ~96K tokens for the input prompt. Reserving ~5K for the system
+ * prompt + per-candidate framing leaves ~91K tokens for snippet
+ * content. At ~3.5 chars/token for English prose that is ~318K
  * chars; we round down to 280K for safety margin against estimator
  * drift on non-English snippets and JSON-escape inflation. See
  * `CHUNK_LLM_PARAMS` in `src/lib/prompts.ts` for the same arithmetic
  * from the output-budget side. The chunk consumer's per-field
- * BODY_SNIPPET_MAX_CHARS (16K) is the per-candidate ceiling — long-
+ * BODY_SNIPPET_MAX_CHARS (16K) is the per-candidate ceiling - long-
  * essay chunks hit this budget cap on ~17 max-sized candidates well
- * before the 100-candidate count cap, which is the intended pack
- * shape on essay-heavy days. */
+ * before the count cap, which is the intended pack shape on
+ * essay-heavy days. */
 const CHUNK_INPUT_CHARS_BUDGET = 280_000;
 
 /** Per-candidate framing overhead in the user prompt — the
