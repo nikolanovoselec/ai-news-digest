@@ -25,7 +25,7 @@ import { log } from '~/lib/log';
 import { requireAdminSession } from '~/middleware/admin-auth';
 import { applyRefreshCookie } from '~/middleware/auth';
 import { mergeAsAltSource } from '~/lib/finalize-merge';
-import { readCosineThreshold } from '~/lib/embeddings';
+import { readCosineThreshold, deleteVectorsBatched } from '~/lib/embeddings';
 
 /** Default articles scanned per call when the caller omits `batch`. */
 const DEFAULT_BATCH = 100;
@@ -71,7 +71,7 @@ export async function POST(context: APIContext): Promise<Response> {
       if (
         typeof body.batch === 'number' &&
         Number.isFinite(body.batch) &&
-        body.batch > 0
+        body.batch >= 1
       ) {
         batch = Math.min(MAX_BATCH, Math.floor(body.batch));
       }
@@ -201,16 +201,23 @@ async function runHistoricalDedupBatch(
     }
   }
 
+  // Page deletes at 100 ids per call to stay under the platform delete-
+  // batch ceiling — worst case here is `batch` (≤500) outer rows × topK
+  // (5) matches = 2500 ids, well above the single-call limit. Best-effort:
+  // a page failure leaves vectors orphan in Vectorize; the daily cleanup
+  // pass picks them up when the parent D1 row hits retention.
   if (removedIds.size > 0) {
-    try {
-      await env.VECTORIZE.deleteByIds(Array.from(removedIds));
-    } catch (err) {
-      log('warn', 'digest.generation', {
-        status: 'historical_dedup_vectorize_delete_failed',
-        delete_count: removedIds.size,
-        detail: String(err).slice(0, 500),
-      });
-    }
+    await deleteVectorsBatched(
+      env.VECTORIZE,
+      Array.from(removedIds),
+      (err, slice) => {
+        log('warn', 'digest.generation', {
+          status: 'historical_dedup_vectorize_delete_failed',
+          delete_count: slice.length,
+          detail: String(err).slice(0, 500),
+        });
+      },
+    );
   }
 
   // Cursor advances to the LAST scanned article's published_at so the

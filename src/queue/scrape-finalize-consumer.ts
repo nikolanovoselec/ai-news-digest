@@ -39,7 +39,7 @@ import { log } from '~/lib/log';
 import { applyForeignKeysPragma } from '~/lib/db';
 import { mergeAsAltSource } from '~/lib/finalize-merge';
 import { handleBatch } from '~/lib/queue-handler';
-import { readCosineThreshold } from '~/lib/embeddings';
+import { readCosineThreshold, deleteVectorsBatched } from '~/lib/embeddings';
 
 /** Hard cap on candidates per finalize call. Comfortable headroom over
  *  current production loads (~150-200 articles per tick). Vectorize
@@ -226,18 +226,23 @@ export async function processOneFinalize(
   // a failure here leaves the vector orphan in Vectorize, but D1 is
   // canonical. The vector gets garbage-collected by the cleanup pass
   // when its retention cutoff hits (Vectorize.deleteByIds for an
-  // already-deleted id is a no-op).
+  // already-deleted id is a no-op). Pages at 100 ids per call to stay
+  // under the platform delete-batch ceiling — with FINALIZE_CANDIDATE_CAP
+  // = 250 a worst-case "every article merged" tick would otherwise blow
+  // the limit on a single deleteByIds payload.
   if (mergedNewIds.size > 0) {
-    try {
-      await env.VECTORIZE.deleteByIds(Array.from(mergedNewIds));
-    } catch (err) {
-      log('warn', 'digest.generation', {
-        status: 'finalize_vectorize_delete_failed',
-        scrape_run_id: body.scrape_run_id,
-        deleted_id_count: mergedNewIds.size,
-        detail: String(err).slice(0, 500),
-      });
-    }
+    await deleteVectorsBatched(
+      env.VECTORIZE,
+      Array.from(mergedNewIds),
+      (err, slice) => {
+        log('warn', 'digest.generation', {
+          status: 'finalize_vectorize_delete_failed',
+          scrape_run_id: body.scrape_run_id,
+          deleted_id_count: slice.length,
+          detail: String(err).slice(0, 500),
+        });
+      },
+    );
   }
 
   // Step 5 — refuse to flip the gate when Vectorize was hard-down for

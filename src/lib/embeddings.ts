@@ -32,6 +32,12 @@ const MAX_INPUT_CHARS = 1_800;
  *  size. */
 const MAX_BATCH_SIZE = 100;
 
+/** Per-call cap for `Vectorize.deleteByIds`. The platform paginates
+ *  delete requests and rejects oversized payloads — `cleanup.ts` uses
+ *  the same 100 ceiling. Centralised here so every call site batches
+ *  consistently rather than rediscovering the limit. */
+const VECTORIZE_DELETE_BATCH_SIZE = 100;
+
 /** Default cosine threshold when DEDUP_COSINE_THRESHOLD is unset.
  *  Validated 2026-05-06; see the file header for evidence. */
 export const DEFAULT_COSINE_THRESHOLD = 0.85;
@@ -142,4 +148,32 @@ export async function embedTexts(
     }
   }
   return data;
+}
+
+/** Delete vectors by id, paging through {@link VECTORIZE_DELETE_BATCH_SIZE}
+ *  ids per platform call. `Vectorize.deleteByIds` rejects oversized
+ *  payloads, so callers that may accumulate >100 ids (the finalize
+ *  consumer with FINALIZE_CANDIDATE_CAP=250, the historical-dedup
+ *  route with batch up to 500 × topK) must page rather than issue a
+ *  single call.
+ *
+ *  Each page failure is reported via `onPageError` so the caller can
+ *  decide whether to surface the error or treat the delete as best-
+ *  effort cleanup. The function never throws on its own — a thrown
+ *  page propagates to the caller via `onPageError` only. */
+export async function deleteVectorsBatched(
+  vectorize: Pick<VectorizeIndex, 'deleteByIds'>,
+  ids: ReadonlyArray<string>,
+  onPageError?: (err: unknown, slice: string[]) => void,
+): Promise<void> {
+  if (ids.length === 0) return;
+  for (let i = 0; i < ids.length; i += VECTORIZE_DELETE_BATCH_SIZE) {
+    const slice = ids.slice(i, i + VECTORIZE_DELETE_BATCH_SIZE);
+    try {
+      await vectorize.deleteByIds(slice);
+    } catch (err) {
+      if (onPageError !== undefined) onPageError(err, slice);
+      else throw err;
+    }
+  }
 }

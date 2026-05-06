@@ -4,6 +4,7 @@ import {
   buildEmbeddingInput,
   cosineSimilarity,
   embedTexts,
+  deleteVectorsBatched,
   readCosineThreshold,
   EMBEDDING_MODEL_ID,
   DEFAULT_COSINE_THRESHOLD,
@@ -168,5 +169,64 @@ describe('embedTexts', () => {
       embedTexts({ run } as Pick<Ai, 'run'>, huge),
     ).rejects.toThrow(/batch size 200 exceeds cap/);
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe('deleteVectorsBatched', () => {
+  it('REQ-PIPE-003: no-ops when ids is empty (no platform call)', async () => {
+    const deleteByIds = vi.fn();
+    await deleteVectorsBatched({ deleteByIds }, []);
+    expect(deleteByIds).not.toHaveBeenCalled();
+  });
+
+  it('REQ-PIPE-003: passes a small id list through in a single call', async () => {
+    const deleteByIds = vi.fn().mockResolvedValue({ count: 0, ids: [] });
+    const ids = ['a', 'b', 'c'];
+    await deleteVectorsBatched({ deleteByIds }, ids);
+    expect(deleteByIds).toHaveBeenCalledTimes(1);
+    expect(deleteByIds).toHaveBeenCalledWith(ids);
+  });
+
+  it('REQ-PIPE-003: pages oversized lists at the 100-id platform ceiling', async () => {
+    const deleteByIds = vi.fn().mockResolvedValue({ count: 0, ids: [] });
+    const ids = Array.from({ length: 250 }, (_, i) => `id-${i}`);
+    await deleteVectorsBatched({ deleteByIds }, ids);
+    // 250 ids → 100 + 100 + 50 → three calls.
+    expect(deleteByIds).toHaveBeenCalledTimes(3);
+    const firstSlice = deleteByIds.mock.calls[0]![0] as string[];
+    const secondSlice = deleteByIds.mock.calls[1]![0] as string[];
+    const thirdSlice = deleteByIds.mock.calls[2]![0] as string[];
+    expect(firstSlice).toHaveLength(100);
+    expect(secondSlice).toHaveLength(100);
+    expect(thirdSlice).toHaveLength(50);
+    // No id is dropped or duplicated across pages.
+    const flattened = [...firstSlice, ...secondSlice, ...thirdSlice];
+    expect(flattened).toEqual(ids);
+  });
+
+  it('REQ-PIPE-003: with no onPageError, propagates the underlying error', async () => {
+    const deleteByIds = vi.fn().mockRejectedValueOnce(new Error('platform 503'));
+    const ids = ['a', 'b'];
+    await expect(deleteVectorsBatched({ deleteByIds }, ids)).rejects.toThrow(
+      /platform 503/,
+    );
+  });
+
+  it('REQ-PIPE-003: with onPageError, swallows per-page failures and continues paging', async () => {
+    const deleteByIds = vi
+      .fn()
+      .mockResolvedValueOnce({ count: 0, ids: [] })
+      .mockRejectedValueOnce(new Error('platform 503 on page 2'))
+      .mockResolvedValueOnce({ count: 0, ids: [] });
+    const errors: Array<{ err: unknown; sliceLen: number }> = [];
+    const ids = Array.from({ length: 250 }, (_, i) => `id-${i}`);
+    await deleteVectorsBatched({ deleteByIds }, ids, (err, slice) => {
+      errors.push({ err, sliceLen: slice.length });
+    });
+    // All three pages were attempted despite the middle failure.
+    expect(deleteByIds).toHaveBeenCalledTimes(3);
+    expect(errors).toHaveLength(1);
+    expect(String(errors[0]!.err)).toContain('platform 503 on page 2');
+    expect(errors[0]!.sliceLen).toBe(100);
   });
 });
