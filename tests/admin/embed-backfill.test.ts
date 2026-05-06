@@ -46,6 +46,10 @@ interface DbFixture {
   runCalls: Array<{ sql: string; params: unknown[] }>;
   /** Captured batch() submissions. */
   batchCalls: Array<Array<{ sql: string; params: unknown[] }>>;
+  /** Number of pending-SELECTs served so far. The handler's server-side
+   *  loop calls SELECT once per batch; we serve the fixture's rows on
+   *  the first call and an empty page after, so the loop terminates. */
+  selectCalls: number;
 }
 
 function makeDb(fixture: DbFixture): D1Database {
@@ -61,7 +65,9 @@ function makeDb(fixture: DbFixture): D1Database {
       }),
       all: vi.fn().mockImplementation(async () => {
         if (sql.includes('SELECT id, title, details_json')) {
-          return { results: fixture.pending };
+          const page = fixture.selectCalls === 0 ? fixture.pending : [];
+          fixture.selectCalls += 1;
+          return { results: page };
         }
         return { results: [] };
       }),
@@ -138,6 +144,7 @@ async function buildContextAndCall(opts: BuildContextOpts): Promise<{
     remaining: opts.remainingAfter,
     runCalls: [],
     batchCalls: [],
+    selectCalls: 0,
   };
   const db = makeDb(fixture);
   const ai = makeAi(opts.aiFails === true ? { fail: true } : {});
@@ -147,6 +154,7 @@ async function buildContextAndCall(opts: BuildContextOpts): Promise<{
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      Accept: 'application/json',
       Cookie: `${SESSION_COOKIE_NAME}=${cookie}`,
     },
   });
@@ -219,9 +227,16 @@ describe('POST /api/admin/embed-backfill — REQ-PIPE-003', () => {
     // embedded_at + embedding_status='embedded'.
     expect(fixture.batchCalls.length).toBe(1);
     expect(fixture.batchCalls[0]!.length).toBe(2);
-    const body = (await res.json()) as { processed: number; remaining: number };
+    const body = (await res.json()) as {
+      processed: number;
+      remaining: number;
+      done: boolean;
+    };
+    // Server-side loop drains until remaining=0; the second SELECT
+    // returns [] (mocked depletion), so the run completes in-request.
     expect(body.processed).toBe(2);
-    expect(body.remaining).toBe(5);
+    expect(body.remaining).toBe(0);
+    expect(body.done).toBe(true);
   });
 
   it('REQ-PIPE-003: AI failure marks rows as failed and reports processed:0', async () => {
@@ -246,7 +261,8 @@ describe('POST /api/admin/embed-backfill — REQ-PIPE-003', () => {
     expect(res.status).toBe(200);
     expect(body.processed).toBe(0);
     expect(body.failed).toBe(1);
-    expect(body.remaining).toBe(1);
+    // Loop terminates on the next iteration's empty SELECT page.
+    expect(body.remaining).toBe(0);
     // The recovery UPDATE setting embedding_status='failed' was issued.
     const failedUpdate = fixture.runCalls.find((c) =>
       c.sql.includes("embedding_status = 'failed'"),

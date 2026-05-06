@@ -1,34 +1,41 @@
 // Implements REQ-PIPE-003
 // Implements REQ-AUTH-001
 //
-// Operator-only resumable backfill of article embeddings. POST
-// /api/admin/embed-backfill picks up to {@link BATCH_SIZE} articles
-// whose `embedding_status` is NULL or 'failed', embeds them via
-// Workers AI bge-base-en-v1.5, upserts the vectors into Vectorize,
+// Operator-only resumable backfill of article embeddings. POST/GET
+// /api/admin/embed-backfill loops over batches of {@link BATCH_SIZE}
+// articles whose `embedding_status` is NULL or 'failed', embeds them
+// via Workers AI bge-base-en-v1.5, upserts the vectors into Vectorize,
 // and stamps `embedding_status='embedded'` + `embedded_at` on each.
 //
-// Resumable by design: each call processes one batch and returns
-// `{ processed, remaining }`. Operators (or scripted loops via the
-// dev-bypass session) keep calling until `remaining === 0`. Partial
-// failures mark the affected rows `failed` so the next pass retries
-// just those, not the entire backlog.
+// One request drives the whole backfill. The handler keeps batching
+// inside a single isolate until either `done` or the wall-time budget
+// hits. Browser callers (the /settings button) get a 303 redirect back
+// with `?embed=done|partial&processed=N`; scripted callers opting in
+// with `Accept: application/json` get the cumulative JSON shape.
 //
 // Three-layer admin auth (CF-001) — same gate every other admin route
-// uses. No Origin check on POST because the backfill is designed to
-// be driven from curl / scripts; CSRF defence-in-depth on form posts
-// would block the legitimate scripted flow.
+// uses. No Origin check on POST because the backfill is also driven
+// from curl / scripts via the dev-bypass session; CSRF defence-in-
+// depth on form posts would block the legitimate scripted flow.
 
 import type { APIContext } from 'astro';
 import { log } from '~/lib/log';
 import { requireAdminSession } from '~/middleware/admin-auth';
 import { applyRefreshCookie } from '~/middleware/auth';
+import { originOf } from '~/middleware/origin-check';
 import { buildEmbeddingInput, embedTexts } from '~/lib/embeddings';
 
-/** Per-call ceiling. 50 articles × 768-dim ≈ 150 KB of vectors per
+/** Per-batch ceiling. 50 articles × 768-dim ≈ 150 KB of vectors per
  *  upsert — well inside Vectorize batch limits, and small enough that
  *  a single Workers AI call stays under the per-request 2-minute
  *  isolate budget even if the model takes a few seconds. */
 const BATCH_SIZE = 50;
+
+/** Wall-time budget for the server-side loop. Workers cap the isolate
+ *  at ~30s of CPU but allow longer wall time for I/O-bound work; we
+ *  cap below the request-level safety margin so the redirect always
+ *  has time to flush before the platform tears the request down. */
+const LOOP_BUDGET_MS = 240_000;
 
 interface ArticleRow {
   id: string;
@@ -38,36 +45,7 @@ interface ArticleRow {
   primary_source_url: string;
 }
 
-export async function POST(context: APIContext): Promise<Response> {
-  const env = context.locals.runtime.env;
-  const adminAuth = await requireAdminSession(context);
-  if (!adminAuth.ok) return adminAuth.response;
-
-  try {
-    const result = await runOneBackfillBatch(env);
-    return applyRefreshCookie(
-      new Response(JSON.stringify(result, null, 2), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      }),
-      adminAuth,
-    );
-  } catch (err) {
-    log('error', 'digest.generation', {
-      status: 'embed_backfill_failed',
-      detail: String(err).slice(0, 500),
-    });
-    return applyRefreshCookie(
-      new Response(
-        JSON.stringify({ ok: false, error: 'embed_backfill_failed' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } },
-      ),
-      adminAuth,
-    );
-  }
-}
-
-interface BackfillResult {
+interface BatchResult {
   ok: true;
   processed: number;
   failed: number;
@@ -75,7 +53,143 @@ interface BackfillResult {
   done: boolean;
 }
 
-async function runOneBackfillBatch(env: Env): Promise<BackfillResult> {
+interface CumulativeResult {
+  ok: true;
+  processed: number;
+  failed: number;
+  remaining: number;
+  done: boolean;
+  iterations: number;
+  elapsed_ms: number;
+}
+
+export async function POST(context: APIContext): Promise<Response> {
+  return handle(context);
+}
+
+export async function GET(context: APIContext): Promise<Response> {
+  return handle(context);
+}
+
+async function handle(context: APIContext): Promise<Response> {
+  const env = context.locals.runtime.env;
+  if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
+    return new Response('Application not configured', { status: 500 });
+  }
+  const appOrigin = originOf(env.APP_URL);
+  const wantsJson = (context.request.headers.get('Accept') ?? '').includes(
+    'application/json',
+  );
+
+  const adminAuth = await requireAdminSession(context);
+  if (!adminAuth.ok) {
+    if (wantsJson) return adminAuth.response;
+    return new Response(null, {
+      status: 303,
+      headers: { Location: `${appOrigin}/settings?embed=denied` },
+    });
+  }
+
+  const startedAt = Date.now();
+  let totalProcessed = 0;
+  let totalFailed = 0;
+  let lastRemaining = 0;
+  let iterations = 0;
+  let done = false;
+
+  try {
+    for (;;) {
+      const result = await runOneBackfillBatch(env);
+      iterations += 1;
+      totalProcessed += result.processed;
+      totalFailed += result.failed;
+      lastRemaining = result.remaining;
+      if (result.done) {
+        done = true;
+        break;
+      }
+      // Safety: if a batch made zero forward progress (nothing
+      // processed AND nothing newly failed), stop instead of looping
+      // forever. countRemaining > 0 with no progress means the SELECT
+      // returned 0 rows but the count says otherwise — a state we
+      // shouldn't auto-recover from in a tight loop.
+      if (result.processed === 0 && result.failed === 0) {
+        break;
+      }
+      if (Date.now() - startedAt >= LOOP_BUDGET_MS) {
+        break;
+      }
+    }
+  } catch (err) {
+    log('error', 'digest.generation', {
+      status: 'embed_backfill_failed',
+      detail: String(err).slice(0, 500),
+      iterations,
+      processed: totalProcessed,
+    });
+    if (wantsJson) {
+      return applyRefreshCookie(
+        new Response(
+          JSON.stringify({ ok: false, error: 'embed_backfill_failed' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } },
+        ),
+        adminAuth,
+      );
+    }
+    return applyRefreshCookie(
+      new Response(null, {
+        status: 303,
+        headers: { Location: `${appOrigin}/settings?embed=error` },
+      }),
+      adminAuth,
+    );
+  }
+
+  log('info', 'digest.generation', {
+    status: 'embed_backfill_loop_completed',
+    iterations,
+    processed: totalProcessed,
+    failed: totalFailed,
+    remaining: lastRemaining,
+    done,
+    elapsed_ms: Date.now() - startedAt,
+  });
+
+  if (wantsJson) {
+    const body: CumulativeResult = {
+      ok: true,
+      processed: totalProcessed,
+      failed: totalFailed,
+      remaining: lastRemaining,
+      done,
+      iterations,
+      elapsed_ms: Date.now() - startedAt,
+    };
+    return applyRefreshCookie(
+      new Response(JSON.stringify(body, null, 2), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      }),
+      adminAuth,
+    );
+  }
+
+  const status = done ? 'done' : 'partial';
+  const location =
+    `${appOrigin}/settings?embed=${status}` +
+    `&processed=${totalProcessed}` +
+    `&failed=${totalFailed}` +
+    `&remaining=${lastRemaining}`;
+  return applyRefreshCookie(
+    new Response(null, {
+      status: 303,
+      headers: { Location: location },
+    }),
+    adminAuth,
+  );
+}
+
+async function runOneBackfillBatch(env: Env): Promise<BatchResult> {
   const result = await env.DB
     .prepare(
       `SELECT id, title, details_json, published_at, primary_source_url
