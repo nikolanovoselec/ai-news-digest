@@ -47,9 +47,10 @@ describe('DEFAULT_MODEL_ID', () => {
     // Switched 2026-05-05: Gemma 4 26B's 256K context lets the chunk
     // packer carry full 15K-char long-form-essay snippets without
     // splitting; the price drop pays for the cron-tick budget at
-    // scale. Earlier Gemma-class models undershot the 200-250 target;
-    // Gemma 4 is a newer release tested against the current 150-200
-    // word contract on integration first.
+    // scale. Earlier Gemma-class models undershot the 200-250 target.
+    // Gemma 4 was tested against a 150-200 word contract, then
+    // retuned 2026-05-06 to a 100-150 target with explicit grounding
+    // + novelty directives.
     expect(DEFAULT_MODEL_ID).toBe('@cf/google/gemma-4-26b-a4b-it');
   });
 

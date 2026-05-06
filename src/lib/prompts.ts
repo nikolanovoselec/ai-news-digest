@@ -24,7 +24,7 @@
  * - `temperature: 0.6` — warm enough for the model to pick longer
  *   completions over minimum-entropy short replies, cool enough for
  *   stable JSON output. 0.7 was working but 0.6 trims variance on
- *   the shorter 150-200 word target.
+ *   the shorter 100-150 word target.
  * - `response_format` — force JSON output on models that support it.
  */
 const LLM_BASE_PARAMS = {
@@ -117,21 +117,21 @@ Shape:
 
 # DETAILS RULES — THIS IS THE CORE TASK
 
-LENGTH — 150 to 200 WORDS (NON-NEGOTIABLE CONTRACT):
+LENGTH — 100 to 150 WORDS (NON-NEGOTIABLE CONTRACT):
 
-  - The summary MUST be 150-200 words. This is the contract; do not
-    ship under 150. If the snippet feels thin, extend the WHAT and
+  - The summary MUST be 100-150 words. This is the contract; do not
+    ship under 100. If the snippet feels thin, extend the WHAT and
     HOW paragraphs with concrete grounded facts — never pad with
     filler, never repeat, but never cut short either.
-  - Maximum 200 words. Do not exceed.
+  - Maximum 150 words. Do not exceed.
   - Truncated outputs are rejected server-side as malformed. Your
-    target is 150-200; aim for the middle of that range.
+    target is 100-150; aim for the middle of that range.
 
 STRUCTURE — 2 to 3 PARAGRAPHS:
 
   - 2 short paragraphs for a simple story; 3 paragraphs when there is real technical substance to unpack.
   - Paragraph breaks use the JSON escape sequence \\n (one backslash + n).
-  - Each paragraph 3-5 full sentences.
+  - Each paragraph 2-4 full sentences.
   - No bullet lists, no Markdown, no HTML — plaintext only.
 
 PARAGRAPH ROLES:
@@ -140,11 +140,20 @@ PARAGRAPH ROLES:
   2. HOW it works — the technical substance: architecture, API, mechanism, numbers.
   3. IMPACT for the reader (optional third paragraph when the story warrants it) — cost, migration effort, security posture, performance, or a concrete use case.
 
-GROUNDING: Every sentence MUST be grounded in the candidate's snippet. Do not state facts that contradict the snippet. If the snippet is thin, keep the summary short rather than invent detail.
+SOURCE-GROUNDING (read this twice):
 
-Format example — a 3-paragraph, ~170-word summary in the exact format your output must follow:
+  - Every claim must be traceable to a single passage in the snippet. If the candidate snippet does not state a fact, you do not state it either — even if the fact would round out the summary.
+  - Never weld facts from different sections of the article into one sentence. If the article describes mechanism A in §1 and mechanism B in §3, do not write "A with B" — that fuses two distinct claims and corrupts the meaning.
+  - Use the article's own terminology for named mechanisms, products, and protocols. Do not paraphrase them into generic phrasing.
 
-  "Cloudflare released Emdash, an open-source WordPress-inspired platform for Workers. The announcement lands with a public GitHub repo, a curated plugin compatibility layer, and a managed D1-backed content schema. Emdash targets small teams that want the WordPress authoring UX without the self-hosted maintenance burden of running PHP.\\nTechnically, Emdash replaces PHP + MySQL with a TypeScript runtime and an R2-backed media store. The editor is a Gutenberg-style block editor; every block serialises to structured JSON and renders at the edge with no round-trip to an origin database. A compatibility layer imports Yoast, Advanced Custom Fields, and a curated set of popular plugins, giving migrating sites a realistic path forward.\\nFor developers, the practical effect is a WordPress-grade editing UI without the PHP tax. Sites deploy as a single Worker with sub-100ms TTFB globally, the managed schema removes the 'plugin updated, site broke' operations class, and hashed-asset CDN caching is automatic. Teams running WordPress for marketing sites can pilot Emdash on a single domain without retraining the editors they hired."
+PRESERVE-NOVELTY:
+
+  - Identify the most distinctive technical mechanism the article introduces (named protocol, architecture component, named pattern, specific number). Make sure that mechanism appears by name in your summary — do not smooth it into generic "enterprise AI" or "cloud security" phrasing.
+  - If the article's contribution is a specific number (token-reduction percentage, latency, cost figure), keep the number.
+
+Format example — a 2-paragraph, ~120-word summary in the exact format your output must follow:
+
+  "Cloudflare released Emdash, an open-source WordPress-style content platform for Workers. The announcement ships with a public GitHub repo, a curated plugin compatibility layer for Yoast and Advanced Custom Fields, and a managed D1-backed content schema. Emdash targets small teams that want WordPress authoring without the PHP self-hosting burden.\\nTechnically, Emdash replaces PHP + MySQL with a TypeScript runtime and an R2-backed media store. The editor is a Gutenberg-style block editor that serialises every block to structured JSON and renders at the edge with no round-trip to an origin database. Sites deploy as a single Worker with sub-100ms TTFB globally, and hashed-asset CDN caching is automatic."
 
 # TAGS RULES
 
@@ -240,7 +249,7 @@ Return JSON:
     {
       "index": 0,
       "title": "punchy NYT-style headline, 45-80 characters, about candidate [0] specifically",
-      "details": "2-3 paragraphs of 3-5 sentences each, 150-200 words total, separated by \\n (WHAT happened / HOW it works / IMPACT for the reader) — grounded in candidate [0]'s snippet only",
+      "details": "2-3 paragraphs of 2-4 sentences each, 100-150 words total, separated by \\n (WHAT happened / HOW it works / IMPACT for the reader) — grounded in candidate [0]'s snippet only, every claim traceable to a single passage, distinctive mechanism named",
       "tags": ["only tags from the allowlist above"]
     }
   ],

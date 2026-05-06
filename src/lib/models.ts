@@ -24,18 +24,19 @@ export interface ModelOption {
 // long-form-essay snippets without splitting; the price drop pays
 // for the cron-tick budget at scale. Earlier Gemma-class models
 // were dropped because they undershot the 200-250 word target —
-// Gemma 4 is a newer release; flipped on 2026-05-05 to test
-// against the current 150-200 word contract on integration first
-// before touching production.
+// Gemma 4 is a newer release; flipped on 2026-05-05 against a
+// 150-200 word contract, then retuned 2026-05-06 to a 100-150
+// word target with explicit source-grounding + preserve-novelty
+// directives after observing cross-section conflation in long-form
+// output.
 //
-// Fallback stays at @cf/openai/gpt-oss-120b — proven on the 150-200
-// word band, used only when Gemma 4 fails JSON parsing.
+// Fallback stays at @cf/openai/gpt-oss-120b, used only when Gemma 4
+// fails JSON parsing.
 export const DEFAULT_MODEL_ID = '@cf/google/gemma-4-26b-a4b-it';
 
 /** Fallback model the chunk consumer retries with on malformed-JSON
- * output. `@cf/openai/gpt-oss-120b` is proven against the 150-200
- * word contract; Gemma 4 is the cheaper default but unproven on
- * verbosity, so 120B backstops the malformed-JSON retry path. */
+ * output. `@cf/openai/gpt-oss-120b` backstops the chunk consumer when
+ * Gemma 4 produces unparseable JSON. */
 export const FALLBACK_MODEL_ID = '@cf/openai/gpt-oss-120b';
 
 export const MODELS: ModelOption[] = [
