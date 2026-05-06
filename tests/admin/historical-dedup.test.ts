@@ -99,7 +99,12 @@ function makeDb(fixture: DbFixture): D1Database {
       ...ops,
       bind: (...params: unknown[]) => {
         bound.push(...params);
-        return ops;
+        // Return a bound statement that carries `sql` + `params` as
+        // direct properties so D1.batch() can capture them. The mock
+        // batch() casts each entry to { sql, params } and reads those
+        // fields; without these, captured SQL is the empty string and
+        // SQL-shape assertions fail spuriously.
+        return { ...ops, sql, params };
       },
     };
 
