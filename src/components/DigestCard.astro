@@ -1,5 +1,6 @@
 ---
 // Implements REQ-READ-001, REQ-READ-002
+// Implements REQ-READ-001 AC 7 (alt-source "+N" suffix via formatAltSourceLabel)
 // Implements REQ-STAR-001
 // Implements REQ-PIPE-002 (renders per-article tag list from validated tag allowlist)
 //
@@ -8,6 +9,8 @@
 // and an inline `#` disclosure that opens a non-interactive popover
 // with the article's tag list (REQ-READ-001 AC 6).
 //
+import { formatAltSourceLabel } from '~/lib/alt-source-label';
+
 // View Transitions: cards carry the slug as `data-vt-slug` so a single
 // name can be assigned at click time (forward nav) or pre-swap (back
 // nav). NO default `transition:name` is emitted server-side: pages like
@@ -125,6 +128,7 @@ function resolveDisplaySource(): string {
   return '';
 }
 const displaySourceName = resolveDisplaySource();
+const altLabel = formatAltSourceLabel(altCount);
 ---
 
 <article
@@ -152,8 +156,8 @@ const displaySourceName = resolveDisplaySource();
         displaySourceName !== null && displaySourceName !== '' && (
           <span class="digest-card__source">
             {displaySourceName}
-            {altCount > 0 && (
-              <span class="digest-card__alt-count" aria-label={`plus ${altCount} other source${altCount === 1 ? '' : 's'}`}> +{altCount}</span>
+            {altLabel.suffix !== '' && (
+              <span class="digest-card__alt-count" aria-label={altLabel.ariaLabel}>{altLabel.suffix}</span>
             )}
           </span>
         )

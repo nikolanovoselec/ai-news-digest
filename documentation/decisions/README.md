@@ -44,6 +44,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | AD28 | npm audit gating: HIGH advisory, CRITICAL blocking | Operations | 2026-05-05 |
 | AD29 | Cloudflare Access is opt-in additive perimeter; ADMIN_EMAIL gates admin alone | Security | 2026-05-05 |
 | AD30 | Cloudflare Access (when bound) MUST cover `*.workers.dev` too; not enforced in worker code | Security | 2026-05-05 |
+| AD31 | Google News baseline ownership: coordinator owns per-tag GN fan-out; discovery LLM no longer emits GN fallback | Architecture | 2026-05-06 |
 
 ---
 
@@ -796,6 +797,31 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 **Decision:** Whether the auto-assigned `*.workers.dev` subdomain sits behind Cloudflare Access is the operator's responsibility, not the worker's. The application code does NOT detect the request host or reject `workers.dev` traffic, and reviewers MUST NOT flag this as a perimeter gap. When an operator binds Access on the custom domain they are expected to also bind it on the `workers.dev` hostname (or disable that hostname) at the Cloudflare dashboard; failing to do so is an accepted risk owned by the operator.
 
 **Related requirements:** REQ-AUTH-001 AC 8.
+
+---
+
+### AD31: Google News baseline ownership lives at the coordinator, not in discovery
+
+**Status:** Accepted (2026-05-06)
+
+**Decision:** The per-tag Google News query-RSS baseline is owned by the coordinator (REQ-PIPE-001 AC 9), which synthesises a GN source for every tag in the union of (defaults ∪ curated ∪ discovered KV) on every tick. The discovery LLM (REQ-DISC-001 AC 3) is the legacy producer of the same kind of URL, written once into KV `sources:{tag}` for tags without a first-party feed; its prompt instruction to emit a Google News fallback is now redundant. Discovery LLM should be retrained on first-party sources only in a follow-up pass; until then both paths coexist and the prefer-direct-source pass absorbs any minor overlap.
+
+**Context:** Two independent code paths produce a Google News query-RSS source for the same tag. The discovery-LLM path persists per-tag once at first discovery. The coordinator-baseline path synthesises every tick. A discovered non-curated tag without a first-party feed therefore fans out a GN query twice — once via the KV-cached discovery URL, once via coordinator synthesis. The query strings differ slightly (LLM-crafted phrasing vs. tag-with-dashes-as-spaces), so canonical-URL dedup may miss the overlap; the prefer-direct-source pass cleans up downstream when a direct copy lands in the same tick. This was flagged as an unresolved architectural question in the PR #201 review.
+
+**Alternatives considered:**
+
+- **Discovery owns GN, coordinator skips tags whose KV entry already contains GN** — rejected. Discovery runs once per tag at settings save; the KV cache can drift if a tag's needs change. Centralising GN at the coordinator means the baseline is recomputed every tick from the live tag union.
+- **Both paths coexist permanently** — rejected as a stable end-state. The redundant fan-out wastes a small amount of LLM and fetch budget and complicates future debugging when a GN URL turns out to be wrong (which path produced it?).
+
+**Rationale:** The coordinator already owns the per-tick source list; making it the single owner of the GN baseline matches the "coordinator decides which sources fan out" concept. Discovery's job becomes "find first-party feeds for this tag" — a narrower, more useful prompt that should produce better results. Keeping the legacy LLM-emitted GN fallback as a transitional state avoids a same-PR rewrite of the discovery prompt and its tests.
+
+**Consequences:**
+
+- REQ-PIPE-001 AC 9 is the canonical home of GN baseline behaviour; reviewers MUST NOT flag the discovery LLM's GN fallback as a missing capability — it is intentionally redundant during the transition.
+- A follow-up issue should retrain the discovery LLM prompt on first-party sources only and remove the GN fallback instruction. Until then, the existing KV entries continue to fan out and the coordinator-baseline pass absorbs the duplicate.
+- The aggregator-vs-direct dedup pass continues to absorb GN-vs-direct overlap as it does today; no new behaviour is required of it.
+
+**Related requirements:** REQ-PIPE-001 AC 9, REQ-DISC-001 AC 3.
 
 ---
 

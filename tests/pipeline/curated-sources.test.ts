@@ -76,7 +76,7 @@ describe('curated-sources — REQ-PIPE-004', () => {
   });
 });
 
-describe('googleNewsSourceForTag — auto-synthesised per-tag GN feeds', () => {
+describe('googleNewsSourceForTag — REQ-PIPE-001 AC 9 auto-synthesised per-tag GN feeds', () => {
   it('builds a Google News query-RSS source for an uncovered tag with dashes converted to spaces and URL-encoded', () => {
     const synth = googleNewsSourceForTag('supply-chain-security');
     expect(synth).not.toBeNull();

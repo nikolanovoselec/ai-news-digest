@@ -284,7 +284,7 @@ describe('GET /api/history — REQ-HIST-001', () => {
     expect(params.slice(2)).toEqual(['ai', 'cloudflare']);
   });
 
-  it('REQ-HIST-001: alt_source_count from the SQL row surfaces on the wire payload (drives the dashboard card "+N" suffix)', async () => {
+  it('REQ-HIST-001 / REQ-READ-001 AC 7: alt_source_count from the SQL row surfaces on the wire payload (drives the dashboard card "+N" suffix)', async () => {
     const token = await authedToken();
     const dayStartUtc = Math.floor(Date.UTC(2026, 3, 22, 0, 0, 0) / 1000);
     const articles: ArticleRow[] = [
