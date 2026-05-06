@@ -409,7 +409,7 @@ Cross-article same-story sweep. Walks the article pool oldest-first by `publishe
 
 | Method | Auth | Request body |
 |---|---|---|
-| `POST`/`GET` | Admin session | empty (browser button) or `{ "cursor"?: number, "batch"?: number }` for scripted single-batch calls (cursor = `published_at` lower bound; batch defaults to 100, cap 500) |
+| `POST` | Admin session | empty (browser button) or `{ "cursor"?: number, "batch"?: number }` for scripted single-batch calls (cursor = `published_at` lower bound; batch defaults to 100, cap 500) |
 
 **Success (200):** `{ ok: true, scanned: N, merged: M, remaining: K, done: boolean, iterations: I, elapsed_ms: T }`.
 

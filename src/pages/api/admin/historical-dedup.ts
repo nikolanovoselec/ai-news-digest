@@ -83,10 +83,6 @@ export async function POST(context: APIContext): Promise<Response> {
   return handle(context);
 }
 
-export async function GET(context: APIContext): Promise<Response> {
-  return handle(context);
-}
-
 async function handle(context: APIContext): Promise<Response> {
   const env = context.locals.runtime.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
