@@ -75,11 +75,21 @@ Declared in `wrangler.toml`:
 | `KV` | KV namespace | Edge cache for discovered sources, headlines, source health |
 | `SCRAPE_COORDINATOR` | Queue producer | Producer binding — one message per every-4-hours cron tick kicks the coordinator |
 | `SCRAPE_CHUNKS` | Queue producer | Producer binding — one message per ~100-candidate LLM chunk |
-| `SCRAPE_FINALIZE` | Queue producer | Producer binding — one message per scrape run, enqueued by the last chunk consumer after the run is stamped `ready`; triggers the finalize pass ([REQ-PIPE-008](../sdd/generation.md#req-pipe-008-cross-chunk-semantic-dedup-pass)) |
-| `AI` | Workers AI | LLM inference for chunk summarization, source discovery, and the finalize pass (cross-chunk semantic dedup) |
+| `SCRAPE_FINALIZE` | Queue producer | Producer binding — one message per scrape run, enqueued by the last chunk consumer after the run is stamped `ready`; triggers the same-story dedup pass ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history)) |
+| `AI` | Workers AI | LLM inference for chunk summarization and source discovery, plus bge-base-en-v1.5 embedding generation for same-story dedup |
+| `VECTORIZE` | Vectorize index | 768-dim cosine index over every surviving article's embedding; queried in the finalize pass and by the historical re-run sweep ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history)) |
 | `ASSETS` | Fetcher (static assets) | Cloudflare static-asset binding for serving the Astro-built output; falls back to `new Response('news-digest')` in tests |
 
 All three queue consumers run with `max_batch_size = 1` (one isolate per message) and `max_retries = 3`.
+
+## Worker Vars (non-secret)
+
+Declared in `wrangler.toml` under `[vars]`. Forks may override per-environment via `[env.<name>.vars]`.
+
+| Var | Default | Purpose |
+|---|---|---|
+| `QUEUE_MAX_RETRIES` | `"3"` | Single source of truth for the queue retry cap. Read by the consumer batch handler; must match every queue consumer's `max_retries` literal in the same file. ([REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract)) |
+| `DEDUP_COSINE_THRESHOLD` | `"0.85"` | Cosine-similarity threshold for the semantic same-story matcher. Vectorize matches with `score >= threshold` are treated as the same event; lower values catch more pairs at the cost of false merges. Validated 2026-05-06 against the production corpus: 0.85 catches paraphrased same-event articles (cluster pairwise 0.81-0.91) without false-merging different events on the same topic (different events 0.77-0.84). Operators tune per fork without a code change. ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history)) |
 
 ## Cron
 

@@ -173,12 +173,30 @@ function makeEnv(
   kv: KVNamespace,
   aiResponse: unknown,
 ): Env {
+  // env.AI.run is called twice per chunk: once for the chunk LLM
+  // (returns aiResponse), once for the embedding model (returns a
+  // shape the embeddings helper accepts). REQ-PIPE-003.
+  const aiRun = vi.fn().mockImplementation((model: string, params: { text?: string[] }) => {
+    if (model.startsWith('@cf/baai/bge-')) {
+      const count = params.text?.length ?? 0;
+      return Promise.resolve({
+        data: Array.from({ length: count }, () =>
+          Array.from({ length: 768 }, () => 0),
+        ),
+      });
+    }
+    return Promise.resolve(aiResponse);
+  });
   return {
     DB: db,
     KV: kv,
-    AI: {
-      run: vi.fn().mockResolvedValue(aiResponse),
-    } as unknown as Ai,
+    AI: { run: aiRun } as unknown as Ai,
+    VECTORIZE: {
+      upsert: vi.fn().mockResolvedValue({ count: 0, ids: [] }),
+      query: vi.fn().mockResolvedValue({ count: 0, matches: [] }),
+      queryById: vi.fn().mockResolvedValue({ count: 0, matches: [] }),
+      deleteByIds: vi.fn().mockResolvedValue({ count: 0, ids: [] }),
+    } as unknown as VectorizeIndex,
     SCRAPE_COORDINATOR: { send: vi.fn() } as unknown as Queue<unknown>,
     SCRAPE_CHUNKS: { send: vi.fn() } as unknown as Queue<unknown>,
     SCRAPE_FINALIZE: { send: vi.fn() } as unknown as Queue<unknown>,
@@ -253,8 +271,14 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     await processOneChunk(env, makeChunk());
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const runMock = (env.AI as any).run as ReturnType<typeof vi.fn>;
-    expect(runMock).toHaveBeenCalledTimes(1);
-    const [model, params] = runMock.mock.calls[0] as [string, Record<string, unknown>];
+    // env.AI.run is called twice per chunk: once for the chunk LLM,
+    // once for the per-article embedding model (REQ-PIPE-003).
+    expect(runMock).toHaveBeenCalledTimes(2);
+    const chunkCall = runMock.mock.calls.find(
+      (call: unknown[]) => !(call[0] as string).startsWith('@cf/baai/bge-'),
+    ) as [string, Record<string, unknown>] | undefined;
+    expect(chunkCall).toBeDefined();
+    const [model, params] = chunkCall as [string, Record<string, unknown>];
     expect(typeof model).toBe('string');
     expect(model.length).toBeGreaterThan(0);
     const messages = params.messages as Array<{ role: string; content: string }>;
