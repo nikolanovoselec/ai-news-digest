@@ -257,12 +257,16 @@ describe('POST /api/admin/embed-backfill — REQ-PIPE-003', () => {
       processed: number;
       failed: number;
       remaining: number;
+      done: boolean;
     };
     expect(res.status).toBe(200);
     expect(body.processed).toBe(0);
     expect(body.failed).toBe(1);
-    // Loop terminates on the next iteration's empty SELECT page.
-    expect(body.remaining).toBe(0);
+    // Forward-progress guard breaks on processed===0 (persistent AI
+    // outage) so remaining stays at the failed-row count and done
+    // is false — the operator clicks again to retry.
+    expect(body.remaining).toBe(1);
+    expect(body.done).toBe(false);
     // The recovery UPDATE setting embedding_status='failed' was issued.
     const failedUpdate = fixture.runCalls.find((c) =>
       c.sql.includes("embedding_status = 'failed'"),

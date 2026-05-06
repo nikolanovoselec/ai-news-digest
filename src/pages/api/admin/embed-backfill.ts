@@ -104,12 +104,16 @@ async function handle(context: APIContext): Promise<Response> {
         done = true;
         break;
       }
-      // Forward-progress guard: if a batch processed nothing AND
-      // failed nothing, the SELECT returned [] yet countRemaining > 0
-      // (a corrupt state we won't auto-recover from in a tight loop).
-      // Without this the loop would spin a CPU until the platform
-      // killed the request.
-      if (result.processed === 0 && result.failed === 0) {
+      // Forward-progress guard: bail when a batch produced ZERO
+      // successful embeds. The failed rows have already been flipped
+      // to embedding_status='failed' by runOneBackfillBatch, so they
+      // stay in the SELECT predicate — but a persistent AI or
+      // Vectorize outage would otherwise have us re-pull the same
+      // rows on every iteration and burn ~30 wasted AI calls per
+      // click. Bailing on processed===0 means "one click, one shot
+      // at each batch"; the operator clicks again to retry, which is
+      // the right UX when the upstream service is degraded.
+      if (result.processed === 0) {
         break;
       }
     }
