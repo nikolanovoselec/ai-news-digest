@@ -89,7 +89,9 @@ Declared in `wrangler.toml` under `[vars]`. Forks may override per-environment v
 | Var | Default | Purpose |
 |---|---|---|
 | `QUEUE_MAX_RETRIES` | `"3"` | Single source of truth for the queue retry cap. Read by the consumer batch handler; must match every queue consumer's `max_retries` literal in the same file. ([REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract)) |
-| `DEDUP_COSINE_THRESHOLD` | `"0.85"` | Cosine-similarity threshold for the semantic same-story matcher. Vectorize matches with `score >= threshold` are treated as the same event; lower values catch more pairs at the cost of false merges. Validated 2026-05-06 against the production corpus: 0.85 catches paraphrased same-event articles (cluster pairwise 0.81-0.91) without false-merging different events on the same topic (different events 0.77-0.84). Operators tune per fork without a code change. ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history)) |
+| `DEDUP_COSINE_THRESHOLD` | `"0.85"` | Cosine-similarity threshold for semantic same-story matching. Matches at or above this score are merged into the older article as alt-sources; tune lower to catch more pairs, higher to reduce false merges. Operators override per fork without a code change. ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history)) |
+
+The 0.85 default is validated against the production corpus (2026-05-06): same-event article pairs scored 0.81-0.91 pairwise; different events on the same topic scored 0.77-0.84; unrelated topics scored below 0.73. The threshold sits cleanly between the same-event cluster and the different-event band. If the embedding model changes or the corpus shifts substantially, re-validate against a fresh sample before relying on this number.
 
 ## Cron
 
