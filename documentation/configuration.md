@@ -51,9 +51,9 @@ The deploy job reads these secrets from GitHub Actions. The first two are Cloudf
 | `APP_URL` | Yes | Canonical origin (e.g., `https://digest.example.com`); used in emails, OAuth redirect URIs, and CSRF checks |
 | `DEV_BYPASS_TOKEN` | Conditional | Bearer token that enables `/api/dev/login` and `/api/dev/trigger-scrape`; omit in production |
 | `ADMIN_EMAIL` | Conditional | Operator email that gates `/api/admin/*`; when unset every admin endpoint returns HTTP 403 ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8) |
-| `CF_ACCESS_AUD` | Optional | Cloudflare Access audience tag; when set, enables Layer 0 perimeter check (assertion presence + `aud`-claim match) on `/api/admin/*`; when unset, Layer 0 is skipped and admin is gated by session + `ADMIN_EMAIL` alone ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8, AD29). See [Setting `CF_ACCESS_AUD`](#setting-cf_access_aud-strongly-recommended-in-production) for setup. |
+| `CF_ACCESS_AUD` | Optional | Cloudflare Access audience tag; when set, enables Layer 0 perimeter check (assertion presence + `aud`-claim match) on `/api/admin/*`; when unset, Layer 0 is skipped and admin is gated by session + `ADMIN_EMAIL` alone ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8, AD29). See [Setting `CF_ACCESS_AUD`](#setting-cf_access_aud-production-when-binding-cloudflare-access) for setup. |
 
-### Setting `CF_ACCESS_AUD` (strongly recommended in production)
+### Setting `CF_ACCESS_AUD` (production, when binding Cloudflare Access)
 
 `CF_ACCESS_AUD` is optional. Per AD29, Cloudflare Access is opt-in additive perimeter: when this var is unset, admin is gated by signed-in session + `ADMIN_EMAIL` alone — appropriate for forks and integration deploys where binding Access in front of the worker is overkill.
 

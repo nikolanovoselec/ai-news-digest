@@ -181,7 +181,7 @@ The Worker gate enforces checks in order: when `CF_ACCESS_AUD` is set, the reque
 
 When Access is bound to the custom domain, follow AD30: also bind it to the auto-assigned `*.workers.dev` URL OR disable that subdomain in Workers & Pages → Settings → Domains & Routes. Without this, an attacker hitting the worker via the unbound `workers.dev` URL bypasses the Access perimeter entirely (the baseline Worker gate still enforces session + ADMIN_EMAIL, but the Access layer's promise is broken).
 
-See [Configuration: Setting `CF_ACCESS_AUD`](configuration.md#setting-cf_access_aud-strongly-recommended-in-production) for the full setup flow.
+See [Configuration: Setting `CF_ACCESS_AUD`](configuration.md#setting-cf_access_aud-production-when-binding-cloudflare-access) for the full setup flow.
 
 ### Paths to gate
 
