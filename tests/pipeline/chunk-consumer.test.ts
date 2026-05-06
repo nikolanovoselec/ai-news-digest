@@ -196,7 +196,7 @@ function makeEnv(
       query: vi.fn().mockResolvedValue({ count: 0, matches: [] }),
       queryById: vi.fn().mockResolvedValue({ count: 0, matches: [] }),
       deleteByIds: vi.fn().mockResolvedValue({ count: 0, ids: [] }),
-    } as unknown as VectorizeIndex,
+    } as unknown as Vectorize,
     SCRAPE_COORDINATOR: { send: vi.fn() } as unknown as Queue<unknown>,
     SCRAPE_CHUNKS: { send: vi.fn() } as unknown as Queue<unknown>,
     SCRAPE_FINALIZE: { send: vi.fn() } as unknown as Queue<unknown>,

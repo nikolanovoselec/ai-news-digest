@@ -162,7 +162,7 @@ export async function embedTexts(
  *  effort cleanup. The function never throws on its own — a thrown
  *  page propagates to the caller via `onPageError` only. */
 export async function deleteVectorsBatched(
-  vectorize: Pick<VectorizeIndex, 'deleteByIds'>,
+  vectorize: Pick<Vectorize, 'deleteByIds'>,
   ids: ReadonlyArray<string>,
   onPageError?: (err: unknown, slice: string[]) => void,
 ): Promise<void> {

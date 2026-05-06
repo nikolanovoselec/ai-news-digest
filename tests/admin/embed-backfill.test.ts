@@ -99,7 +99,7 @@ function makeAi(opts: { fail?: boolean } = {}): Ai {
   } as unknown as Ai;
 }
 
-function makeVectorize(opts: { fail?: boolean } = {}): VectorizeIndex {
+function makeVectorize(opts: { fail?: boolean } = {}): Vectorize {
   return {
     upsert: vi.fn().mockImplementation(async () => {
       if (opts.fail) throw new Error('Vectorize backend offline');
@@ -108,7 +108,7 @@ function makeVectorize(opts: { fail?: boolean } = {}): VectorizeIndex {
     query: vi.fn(),
     queryById: vi.fn(),
     deleteByIds: vi.fn(),
-  } as unknown as VectorizeIndex;
+  } as unknown as Vectorize;
 }
 
 async function adminCookieJwt(): Promise<string> {
@@ -129,7 +129,7 @@ async function buildContextAndCall(opts: BuildContextOpts): Promise<{
   res: Response;
   fixture: DbFixture;
   ai: Ai;
-  vectorize: VectorizeIndex;
+  vectorize: Vectorize;
 }> {
   const fixture: DbFixture = {
     pending: opts.pending,
@@ -138,8 +138,8 @@ async function buildContextAndCall(opts: BuildContextOpts): Promise<{
     batchCalls: [],
   };
   const db = makeDb(fixture);
-  const ai = makeAi({ fail: opts.aiFails });
-  const vectorize = makeVectorize({ fail: opts.vectorizeFails });
+  const ai = makeAi(opts.aiFails === true ? { fail: true } : {});
+  const vectorize = makeVectorize(opts.vectorizeFails === true ? { fail: true } : {});
   const cookie = await adminCookieJwt();
   const req = new Request(`${APP_URL}/api/admin/embed-backfill`, {
     method: 'POST',

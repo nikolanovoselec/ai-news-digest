@@ -102,7 +102,7 @@ function makeMockDb(opts: {
 }
 
 interface MockVectorize {
-  binding: VectorizeIndex;
+  binding: Vectorize;
   queryByIdMock: ReturnType<typeof vi.fn>;
   deleteMock: ReturnType<typeof vi.fn>;
 }
@@ -121,13 +121,13 @@ function makeMockVectorize(matchesById: Map<string, VectorizeMatch[]>): MockVect
       query: vi.fn(),
       upsert: vi.fn(),
       deleteByIds: deleteMock,
-    } as unknown as VectorizeIndex,
+    } as unknown as Vectorize,
     queryByIdMock,
     deleteMock,
   };
 }
 
-function makeEnv(db: D1Database, vectorize: VectorizeIndex): Env {
+function makeEnv(db: D1Database, vectorize: Vectorize): Env {
   return {
     DB: db,
     VECTORIZE: vectorize,

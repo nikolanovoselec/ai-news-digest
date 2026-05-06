@@ -20,7 +20,7 @@ interface Env {
   // Cloudflare Vectorize index used for semantic article dedup.
   // 768-dim cosine, populated by the chunk-consumer + admin
   // backfill route. See REQ-PIPE-003 + AD33.
-  VECTORIZE: VectorizeIndex;
+  VECTORIZE: Vectorize;
   ASSETS: Fetcher;
 
   // Secrets
