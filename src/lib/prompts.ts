@@ -33,22 +33,18 @@ const LLM_BASE_PARAMS = {
 } as const;
 
 /**
- * Chunk-prompt OUTPUT budget. The chunk consumer uses `DEFAULT_MODEL_ID`
- * (Gemma 4 26B, 256K context) on the happy path and falls back to
- * `FALLBACK_MODEL_ID` (gpt-oss-120b, 128K context) on malformed-JSON
- * retry — the fallback's smaller context is the binding constraint
- * because the same chunk gets retried there with the same input. The
- * Workers AI runtime enforces `prompt_tokens + max_tokens ≤ context`,
- * so a value chosen for the 256K default would overflow the 128K
- * fallback. Observed chunk output is ~14K tokens at typical chunk
- * sizes (50-100 candidates × ~200-word summaries + JSON overhead, per
- * the budget-aware packer in `scrape-coordinator.ts`); 32K reserves
- * ~2x output headroom
- * and leaves ~96K for input on the fallback (~280K chars at ~3.5
- * chars/token), which the coordinator's greedy chunk packer
- * (`scrape-coordinator.ts:CHUNK_INPUT_CHARS_BUDGET`) honours. The 256K
- * default has comfortable headroom either way. User-selected budget
- * models in `MODELS` are never wired here.
+ * Chunk-prompt OUTPUT budget. The chunk consumer runs `DEFAULT_MODEL_ID`
+ * once per chunk (single-model architecture; no fallback). The Workers
+ * AI runtime enforces `prompt_tokens + max_tokens ≤ contextTokens`, and
+ * the smallest reasonable context in `MODELS` (128K for gpt-oss-120b)
+ * is the binding constraint. Observed chunk output is ~14K tokens at
+ * typical chunk sizes (50-100 candidates × ~120-word summaries + JSON
+ * overhead, per the budget-aware packer in `scrape-coordinator.ts`);
+ * 32K reserves ~2x output headroom and leaves ~96K for input
+ * (~280K chars at ~3.5 chars/token), which the coordinator's greedy
+ * chunk packer (`scrape-coordinator.ts:CHUNK_INPUT_CHARS_BUDGET`)
+ * honours. Larger-context models simply leave more headroom.
+ * User-selected budget models in `MODELS` are never wired here.
  */
 export const CHUNK_LLM_PARAMS = {
   ...LLM_BASE_PARAMS,

@@ -1,7 +1,13 @@
 // Tests for src/lib/llm-json.ts — REQ-PIPE-002 + REQ-PIPE-008 (CF-009).
+//
+// Single-model architecture (2026-05-06): the helper runs ONE model
+// per call. Earlier primary→fallback semantics were removed when the
+// project consolidated on a single default model. The previous
+// fallback / waste-counter / circuit-breaker tests were removed
+// alongside the code that produced them.
 
 import { describe, it, expect, vi } from 'vitest';
-import { runJsonWithFallback, previewRawResponse } from '~/lib/llm-json';
+import { runJson, previewRawResponse } from '~/lib/llm-json';
 
 function makeAi(responses: Array<{ response: string; usage?: { input_tokens?: number; output_tokens?: number } }>) {
   let i = 0;
@@ -14,35 +20,29 @@ function makeAi(responses: Array<{ response: string; usage?: { input_tokens?: nu
   };
 }
 
-describe('runJsonWithFallback — REQ-PIPE-002 / REQ-PIPE-008', () => {
-  it('REQ-PIPE-002: primary success path returns ok=true with zero waste', async () => {
+describe('runJson — REQ-PIPE-002 / REQ-PIPE-008', () => {
+  it('REQ-PIPE-002: success path returns ok=true with token counts', async () => {
     const ai = makeAi([
       { response: '{"articles": [{"title": "ok"}]}', usage: { input_tokens: 10, output_tokens: 20 } },
     ]);
-    const result = await runJsonWithFallback({
+    const result = await runJson({
       ai,
       params: { messages: [] },
       narrow: (raw) => (typeof raw === 'string' ? (JSON.parse(raw) as { articles: unknown[] }) : null),
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.fallbackUsed).toBe(false);
     expect(result.parsed.articles).toHaveLength(1);
     expect(result.tokensIn).toBe(10);
     expect(result.tokensOut).toBe(20);
-    expect(result.wastedTokensIn).toBe(0);
-    expect(result.wastedTokensOut).toBe(0);
-    expect(result.wastedCostUsd).toBe(0);
     expect(ai.run).toHaveBeenCalledTimes(1);
   });
 
-  it('REQ-PIPE-002: primary fails, fallback succeeds — fallbackUsed=true with waste counters from primary', async () => {
+  it('REQ-PIPE-002: parse failure returns ok=false with attempt info', async () => {
     const ai = makeAi([
       { response: 'malformed not json', usage: { input_tokens: 5, output_tokens: 7 } },
-      { response: '{"articles": [{"title": "fallback win"}]}', usage: { input_tokens: 11, output_tokens: 13 } },
     ]);
-    const onPrimaryFailure = vi.fn();
-    const result = await runJsonWithFallback({
+    const result = await runJson({
       ai,
       params: { messages: [] },
       narrow: (raw) => {
@@ -52,210 +52,50 @@ describe('runJsonWithFallback — REQ-PIPE-002 / REQ-PIPE-008', () => {
           return null;
         }
       },
-      onPrimaryFailure,
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.fallbackUsed).toBe(true);
-    expect(result.tokensIn).toBe(11);
-    expect(result.tokensOut).toBe(13);
-    expect(result.wastedTokensIn).toBe(5);
-    expect(result.wastedTokensOut).toBe(7);
-    // onPrimaryFailure fires exactly once with primary AttemptInfo.
-    expect(onPrimaryFailure).toHaveBeenCalledTimes(1);
-    const info = onPrimaryFailure.mock.calls[0]?.[0] as { tokensIn: number; tokensOut: number; rawResponse: unknown };
-    expect(info.tokensIn).toBe(5);
-    expect(info.tokensOut).toBe(7);
-    expect(info.rawResponse).toBe('malformed not json');
-  });
-
-  it('REQ-PIPE-002: both fail — ok=false with both AttemptInfos populated', async () => {
-    const ai = makeAi([
-      { response: 'bad1', usage: { input_tokens: 3, output_tokens: 4 } },
-      { response: 'bad2', usage: { input_tokens: 6, output_tokens: 8 } },
-    ]);
-    const result = await runJsonWithFallback({
-      ai,
-      params: { messages: [] },
-      narrow: () => null,
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.primary.tokensIn).toBe(3);
-    expect(result.primary.tokensOut).toBe(4);
-    expect(result.primary.rawResponse).toBe('bad1');
-    expect(result.fallback.tokensIn).toBe(6);
-    expect(result.fallback.tokensOut).toBe(8);
-    expect(result.fallback.rawResponse).toBe('bad2');
-    expect(result.wastedTokensIn).toBe(3);
-    expect(result.wastedTokensOut).toBe(4);
+    expect(result.attempt.tokensIn).toBe(5);
+    expect(result.attempt.tokensOut).toBe(7);
+    expect(result.attempt.rawResponse).toBe('malformed not json');
+    expect(ai.run).toHaveBeenCalledTimes(1);
   });
 
-  it('REQ-PIPE-002: onPrimaryFailure is NOT called when primary succeeds', async () => {
+  it('REQ-PIPE-002: model override is honoured', async () => {
     const ai = makeAi([
-      { response: '{"ok": true}', usage: { input_tokens: 1, output_tokens: 1 } },
+      { response: '{"x": 1}', usage: { input_tokens: 1, output_tokens: 1 } },
     ]);
-    const onPrimaryFailure = vi.fn();
-    await runJsonWithFallback({
+    const result = await runJson({
       ai,
       params: { messages: [] },
       narrow: (raw) => (typeof raw === 'string' ? (JSON.parse(raw) as Record<string, unknown>) : null),
-      onPrimaryFailure,
+      model: 'custom-model',
     });
-    expect(onPrimaryFailure).not.toHaveBeenCalled();
     expect(ai.run).toHaveBeenCalledTimes(1);
-  });
-
-  it('REQ-PIPE-002: primaryModel/fallbackModel overrides are honoured', async () => {
-    const ai = makeAi([
-      { response: 'bad', usage: { input_tokens: 1, output_tokens: 1 } },
-      { response: '{}', usage: { input_tokens: 1, output_tokens: 1 } },
-    ]);
-    const result = await runJsonWithFallback({
-      ai,
-      params: { messages: [] },
-      narrow: (raw) => (raw === '{}' ? {} : null),
-      primaryModel: 'custom-primary',
-      fallbackModel: 'custom-fallback',
-    });
-    expect(ai.run).toHaveBeenCalledTimes(2);
-    expect(ai.run.mock.calls[0]?.[0]).toBe('custom-primary');
-    expect(ai.run.mock.calls[1]?.[0]).toBe('custom-fallback');
+    expect(ai.run.mock.calls[0]?.[0]).toBe('custom-model');
     if (!result.ok) return;
-    expect(result.modelUsed).toBe('custom-fallback');
+    expect(result.modelUsed).toBe('custom-model');
   });
 
-  it('CF-022: emits structured llm.fallback_invoked log when primary fails and fallback is taken', async () => {
-    // Pin the operator-alert contract — `wrangler tail | grep
-    // llm.fallback_invoked` must surface every fallback take, with
-    // model identity + waste counters in the payload. A future
-    // refactor that renames the event (or drops the call) would
-    // silently disable the cost-spike alert without this test.
-    const ai = makeAi([
-      { response: 'not json', usage: { input_tokens: 9, output_tokens: 11 } },
-      { response: '{"articles": [{"title": "fb"}]}', usage: { input_tokens: 4, output_tokens: 7 } },
-    ]);
-    const logs: Array<{ args: unknown[] }> = [];
-    const spy = vi.spyOn(console, 'log').mockImplementation((...args) => {
-      logs.push({ args });
-    });
-    try {
-      const result = await runJsonWithFallback({
-        ai,
-        params: { messages: [] },
-        narrow: (raw) => {
-          if (typeof raw !== 'string') return null;
-          try {
-            return JSON.parse(raw) as { articles: unknown[] };
-          } catch {
-            return null;
-          }
-        },
-        primaryModel: 'p-model',
-        fallbackModel: 'f-model',
-      });
-      expect(result.ok).toBe(true);
-    } finally {
-      spy.mockRestore();
-    }
-    const fallbackLogs = logs
-      .map((l) => {
-        try {
-          return JSON.parse(String(l.args[0])) as Record<string, unknown>;
-        } catch {
-          return null;
-        }
-      })
-      .filter((r): r is Record<string, unknown> => r !== null && r.event === 'llm.fallback_invoked');
-    expect(fallbackLogs).toHaveLength(1);
-    const payload = fallbackLogs[0] as Record<string, unknown>;
-    expect(payload.primary_model).toBe('p-model');
-    expect(payload.fallback_model).toBe('f-model');
-    expect(payload.wasted_tokens_in).toBe(9);
-    expect(payload.wasted_tokens_out).toBe(11);
-    expect(typeof payload.wasted_cost_usd).toBe('number');
-  });
-
-  it('CF-022: does NOT emit llm.fallback_invoked on primary success', async () => {
-    const ai = makeAi([
-      { response: '{"articles": []}', usage: { input_tokens: 1, output_tokens: 1 } },
-    ]);
-    const logs: Array<{ args: unknown[] }> = [];
-    const spy = vi.spyOn(console, 'log').mockImplementation((...args) => {
-      logs.push({ args });
-    });
-    try {
-      await runJsonWithFallback({
-        ai,
-        params: { messages: [] },
-        narrow: (raw) => (typeof raw === 'string' ? (JSON.parse(raw) as { articles: unknown[] }) : null),
-      });
-    } finally {
-      spy.mockRestore();
-    }
-    const fallbackLogs = logs.filter((l) => String(l.args[0]).includes('llm.fallback_invoked'));
-    expect(fallbackLogs).toEqual([]);
-  });
-
-  it('falls back when primary ai.run throws (e.g. AiError 3046 timeout)', async () => {
+  it('returns ok=false with a captured error when ai.run throws (e.g. AiError 3046 timeout)', async () => {
     // Workers AI surfaces request-timeouts and capacity errors as
-    // thrown AiError objects, not as malformed-JSON responses. The
-    // helper must catch the throw and try the fallback model so a
-    // single hung primary call doesn't mark the entire scrape run
-    // failed via the queue handler's terminal-failure path.
-    const aiThrowingPrimary = {
-      run: vi.fn()
-        .mockImplementationOnce(async () => {
-          throw new Error('AiError: 3046: Request timeout');
-        })
-        .mockImplementationOnce(async () => ({
-          response: '{"articles": [{"title": "fallback rescued"}]}',
-          usage: { input_tokens: 4, output_tokens: 6 },
-        })),
+    // thrown AiError objects. The helper must catch the throw and
+    // surface it as `ok: false` so the queue handler can decide
+    // whether to retry (single-model architecture: no fallback).
+    const aiThrowing = {
+      run: vi.fn().mockImplementationOnce(async () => {
+        throw new Error('AiError: 3046: Request timeout');
+      }),
     };
-    const onPrimaryFailure = vi.fn();
-    const result = await runJsonWithFallback({
-      ai: aiThrowingPrimary,
+    const result = await runJson({
+      ai: aiThrowing,
       params: { messages: [] },
-      narrow: (raw) => {
-        try {
-          return typeof raw === 'string' ? (JSON.parse(raw) as { articles: unknown[] }) : null;
-        } catch {
-          return null;
-        }
-      },
-      onPrimaryFailure,
+      narrow: (raw) => (typeof raw === 'string' ? (JSON.parse(raw) as { articles: unknown[] }) : null),
     });
-    expect(aiThrowingPrimary.run).toHaveBeenCalledTimes(2);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.fallbackUsed).toBe(true);
-    expect(result.parsed.articles).toHaveLength(1);
-    expect(onPrimaryFailure).toHaveBeenCalledTimes(1);
-    const info = onPrimaryFailure.mock.calls[0]?.[0] as { rawResponse: unknown };
-    expect(info.rawResponse).toEqual({ error: expect.stringContaining('3046') as unknown });
-  });
-
-  it('returns ok=false when both primary and fallback throw', async () => {
-    const aiBothThrow = {
-      run: vi.fn()
-        .mockImplementationOnce(async () => {
-          throw new Error('AiError: 3046: Request timeout');
-        })
-        .mockImplementationOnce(async () => {
-          throw new Error('AiError: 3035: Capacity unavailable');
-        }),
-    };
-    const result = await runJsonWithFallback({
-      ai: aiBothThrow,
-      params: { messages: [] },
-      narrow: () => null,
-    });
+    expect(aiThrowing.run).toHaveBeenCalledTimes(1);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(aiBothThrow.run).toHaveBeenCalledTimes(2);
-    expect(result.primary.rawResponse).toEqual({ error: expect.stringContaining('3046') as unknown });
-    expect(result.fallback.rawResponse).toEqual({ error: expect.stringContaining('3035') as unknown });
+    expect(result.attempt.rawResponse).toEqual({ error: expect.stringContaining('3046') as unknown });
   });
 });
 

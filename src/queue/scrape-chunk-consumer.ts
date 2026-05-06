@@ -52,8 +52,7 @@ import { fetchArticleBodies } from '~/lib/article-fetch';
 import { DEFAULT_HASHTAGS } from '~/lib/default-hashtags';
 import { normalizeHashtag } from '~/lib/hashtags';
 import { splitIntoParagraphs } from '~/lib/paragraph-split';
-import { FALLBACK_MODEL_ID } from '~/lib/models';
-import { runJsonWithFallback, previewRawResponse, asAiBinding } from '~/lib/llm-json';
+import { runJson, previewRawResponse, asAiBinding } from '~/lib/llm-json';
 import { addChunkStats, finishRun } from '~/lib/scrape-run';
 import { recordChunkCompletion, countChunkCompletions } from '~/lib/articles-repo';
 import { generateUlid } from '~/lib/ulid';
@@ -209,7 +208,7 @@ export async function processOneChunk(
   // Fetch article bodies; build prompt-ready candidates.
   const { promptCandidates } = await fetchAndBuildPromptCandidates(env, body);
 
-  // LLM call (primary + fallback).
+  // LLM call (single-model; throws on parse failure for queue retry).
   const { llmRun, rawArticles, dedupGroups } = await runChunkLLM(
     env,
     body,
@@ -269,12 +268,9 @@ export async function processOneChunk(
     completedCount,
   } = await recordChunkCompletionAndCheckFinalize(env, body);
 
-  const wastedTokensIn = llmRun.wastedTokensIn;
-  const wastedTokensOut = llmRun.wastedTokensOut;
-  const wastedCostUsd = llmRun.wastedCostUsd;
-  const tokensIn = llmRun.tokensIn + wastedTokensIn;
-  const tokensOut = llmRun.tokensOut + wastedTokensOut;
-  const costUsd = llmRun.costUsd + wastedCostUsd;
+  const tokensIn = llmRun.tokensIn;
+  const tokensOut = llmRun.tokensOut;
+  const costUsd = llmRun.costUsd;
   const articlesIngested = prepared.length;
   const articlesDeduped = body.candidates.length - articlesIngested;
 
@@ -398,9 +394,9 @@ async function fetchAndBuildPromptCandidates(
 }
 
 /**
- * Run the LLM call (primary model with fallback) for a chunk.
+ * Run the LLM call (single model) for a chunk.
  *
- * Throws `Error('chunk_invalid_json')` when both models fail to produce
+ * Throws `Error('chunk_invalid_json')` when the model fails to produce
  * valid JSON — this tells the queue handler to retry the chunk message.
  * Returns the successful run result plus the parsed articles and dedup groups.
  */
@@ -417,13 +413,13 @@ async function runChunkLLM(
   // at the call site triggers a TS2339 error on the never-reachable
   // failure branch.
   llmRun: Extract<
-    Awaited<ReturnType<typeof runJsonWithFallback<LLMChunkPayload>>>,
+    Awaited<ReturnType<typeof runJson<LLMChunkPayload>>>,
     { ok: true }
   >;
   rawArticles: LLMChunkArticle[];
   dedupGroups: number[][];
 }> {
-  const llmRun = await runJsonWithFallback<LLMChunkPayload>({
+  const llmRun = await runJson<LLMChunkPayload>({
     ai: asAiBinding(env.AI),
     params: {
       messages: [
@@ -433,19 +429,6 @@ async function runChunkLLM(
       ...CHUNK_LLM_PARAMS,
     },
     narrow: (raw) => narrowChunkPayload(parseLLMPayload(raw), raw),
-    onPrimaryFailure: (info) => {
-      log('warn', 'digest.generation', {
-        status: 'chunk_invalid_json_fallback_try',
-        scrape_run_id: body.scrape_run_id,
-        chunk_index: body.chunk_index,
-        primary_model: info.modelUsed,
-        fallback_model: FALLBACK_MODEL_ID,
-        primary_tokens_in: info.tokensIn,
-        primary_tokens_out: info.tokensOut,
-        primary_cost_usd: info.costUsd,
-        primary_response_preview: previewRawResponse(info.rawResponse),
-      });
-    },
   });
 
   if (!llmRun.ok) {
@@ -453,10 +436,10 @@ async function runChunkLLM(
       status: 'chunk_invalid_json',
       scrape_run_id: body.scrape_run_id,
       chunk_index: body.chunk_index,
-      fallback_model: llmRun.fallback.modelUsed,
-      fallback_tokens_in: llmRun.fallback.tokensIn,
-      fallback_tokens_out: llmRun.fallback.tokensOut,
-      fallback_response_preview: previewRawResponse(llmRun.fallback.rawResponse),
+      model_used: llmRun.attempt.modelUsed,
+      tokens_in: llmRun.attempt.tokensIn,
+      tokens_out: llmRun.attempt.tokensOut,
+      response_preview: previewRawResponse(llmRun.attempt.rawResponse),
     });
     throw new Error('chunk_invalid_json');
   }
