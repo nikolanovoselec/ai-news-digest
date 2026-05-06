@@ -273,28 +273,28 @@ Return ONE JSON object, nothing else. No prose, no code fences, no text before "
 Shape:
 {"dedup_groups":[[0,3],[1,2,5]]}
 
-- "dedup_groups": arrays of input-candidate indices that describe the same news event (e.g. TechCrunch and The Verge both covering the same vendor announcement; vendor blog and HN mirror; press release and reporter's write-up). Only include groups of size >= 2.
+- "dedup_groups": arrays of input-candidate indices that describe the same news event (e.g. TechCrunch and The Verge both covering the same vendor announcement; vendor blog and HN mirror; press release and reporter's write-up; two publishers framing the same launch with different headlines). Only include groups of size >= 2.
 - Use [] when no groups describe the same event.
-- Be CONSERVATIVE: only group items when you are confident they describe the SAME news event, not just the same broad topic. Two unrelated stories about Kubernetes are NOT a group; two articles about the same Kubernetes 1.34 release announcement ARE.
-- Ground every grouping decision in the SUMMARY BODY, not the headline alone. Two articles with similar-sounding titles but disjoint factual content are NOT the same event. Two articles whose bodies describe the same announcement / incident / release / paper ARE the same event even if their titles read very differently.
+- Group items when their bodies describe the same announcement, launch, version release, feature rollout, partnership, acquisition, funding round, incident, outage, security disclosure, paper, or benchmark. Different headline angles on one event ARE the same event.
+- Ground every grouping decision in the SUMMARY BODY, not the headline alone. Two articles whose bodies describe the same underlying event ARE the same event even if their headlines read very differently. Two articles with similar-sounding headlines but disjoint factual content are NOT.
 
 # WHAT COUNTS AS THE SAME EVENT
 
-- Same vendor + same product launch / version release / feature announcement.
+- Same vendor + same product launch / version release / feature announcement, including reframings (e.g. "Anthropic launches financial-services AI agents", "Anthropic rolls out bank-friendly agents", "Anthropic deploys agents for Wall Street tasks" all describe one launch).
 - Same incident / outage / security disclosure.
 - Same acquisition / funding round / partnership.
 - Same paper / research finding / benchmark result.
 
 # WHAT DOES NOT COUNT
 
-- Two stories about the same product but covering different features / different versions.
-- Two stories about the same vendor but unrelated launches.
-- Two opinion pieces on the same topic from different angles.
-- Two studies / audits / benchmarks on the same topic citing DIFFERENT numbers, methodology, or authors. Example: "25% of MCP servers vulnerable" and "6.2% of MCP servers vulnerable" are DIFFERENT studies and must NEVER be merged, even though both bodies discuss MCP RCE risk. The numerical specificity is the load-bearing signal — when in doubt, leave them ungrouped.
+- Two stories about the same product but covering DIFFERENT features or DIFFERENT versions.
+- Two stories about the same vendor but UNRELATED launches.
+- Two opinion pieces on the same topic from different angles with no shared event anchor.
+- Two studies / audits / benchmarks on the same topic citing DIFFERENT numbers, methodology, or authors. Example: "25% of MCP servers vulnerable" and "6.2% of MCP servers vulnerable" are DIFFERENT studies and must NEVER be merged. The numerical specificity is the load-bearing signal — when you see different numbers cited, leave them ungrouped.
 
-# WHEN IN DOUBT, DO NOT MERGE
+# CALIBRATION
 
-A false split (two cards in the digest that could have been one) is cheap. A false merge (one of two real stories disappears) is expensive — the user loses a story they would have read. Default to splitting; only group when the bodies overlap on the SAME specific facts (same numbers, same names, same date, same product version).`;
+When two items share a vendor name in the title AND their summary bodies describe the same launch / version / partnership / disclosure, MERGE them. The reading experience suffers more from one story shown three times than from one related story folded in. The single hard guard is the "different numbers / methodology / authors" rule above — when bodies cite different specific numbers for the same headline topic, do NOT merge.`;
 
 /**
  * Build the user message for the cross-chunk dedup call. Each candidate

@@ -32,6 +32,7 @@ import {
 } from '~/lib/sources';
 import { canonicalize } from '~/lib/canonical-url';
 import { clusterByCanonical, type Candidate } from '~/lib/dedupe';
+import { mergeBySameSourceTitleSimilarity } from '~/lib/title-dedup';
 import {
   loadExistingCanonicalToIdMap,
   loadExistingCanonicalUrls,
@@ -298,18 +299,25 @@ export async function runCoordinator(
   // Step 5 — filter already-known URLs; aggregate alt-sources for re-seen ones.
   const { survivors } = await filterAndAggregateReSeenClusters(env, clusters, scrape_run_id);
 
+  // Step 5b — same-source title-similarity merge. Catches the Google
+  // News topical-aggregation case where one upstream feed produces
+  // multiple framings of the same event (different canonical URLs, so
+  // canonical-URL clustering misses them; same body topic, but the
+  // finalize-pass LLM is unreliable at that scale).
+  const dedupedSurvivors = mergeBySameSourceTitleSimilarity(survivors);
+
   // Step 6 — empty-pool guard.
-  if (survivors.length === 0) {
+  if (dedupedSurvivors.length === 0) {
     await finishRun(env.DB, scrape_run_id, 'ready');
     log('info', 'digest.generation', { status: 'coordinator_empty_pool', scrape_run_id });
     return;
   }
 
   // Step 7 — flatten dedupe-clusters to chunk-ready candidates.
-  const chunkCandidates = flattenToChunkCandidates(survivors);
+  const chunkCandidates = flattenToChunkCandidates(dedupedSurvivors);
 
   // Step 8 — chunk, prime KV counter, enqueue.
-  await chunkAndEnqueue(env, chunkCandidates, candidates.length, survivors.length, scrape_run_id);
+  await chunkAndEnqueue(env, chunkCandidates, candidates.length, dedupedSurvivors.length, scrape_run_id);
 }
 
 // ---------- step helpers (colocated; not re-exported) ---------------------
