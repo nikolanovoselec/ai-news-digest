@@ -96,6 +96,15 @@ async function handle(context: APIContext): Promise<Response> {
   // in the SELECT predicate.
   const reembed = context.url.searchParams.get('reembed') === '1';
   if (reembed) {
+    if (context.request.method !== 'POST') {
+      if (wantsJson) {
+        return new Response(
+          JSON.stringify({ ok: false, error: 'reembed requires POST' }),
+          { status: 405, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response('reembed requires POST', { status: 405 });
+    }
     await env.DB
       .prepare(`UPDATE articles SET embedding_status = 'failed'`)
       .run();

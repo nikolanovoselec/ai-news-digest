@@ -877,7 +877,8 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 - Migration 0012 adds the `source_snippet TEXT` column. Historical rows leave it NULL; `buildEmbeddingInput` falls back to `details_json` for those rows so re-embed produces a valid (but less precise) vector.
 - `DEDUP_SAME_VENDOR_PENALTY` is exposed as an env var (default 0.05). Setting it to `0` disables the offset for forks that ingest different corpora.
 - The chunk-consumer now writes the union of `primary.body_snippet` and each alt's `body_snippet` into `source_snippet` so the embedding sees the widest available source-text surface.
-- The historical 1321 production articles (and 124 integration articles) were embedded against the old LLM-summary input. The `?reembed=1` flag re-embeds them against `details_json` (since they have no `source_snippet`). True precision improvement compounds as new scrape ticks accumulate `source_snippet` rows; the same-vendor penalty applies immediately to every queried pair.
+- The historical 1321 production articles (and 124 integration articles) were embedded against the old LLM-summary input. The `?reembed=1` flag re-embeds them against `details_json` (since they have no `source_snippet`).
+- True precision improvement compounds as new scrape ticks accumulate `source_snippet` rows. The same-vendor penalty applies immediately to every queried pair regardless of `source_snippet` presence.
 - The dedup-diag diagnostic now also reports `adjusted_score` (cosine minus penalty when same-vendor) and `same_vendor_penalty`, so an operator inspecting a pair sees the value the merge decision actually compares.
 - The eTLD+1 helper (`src/lib/etld.ts`) is the same-publisher decision; it intentionally avoids the Public Suffix List dependency. If the corpus ingests UK / AU / NZ regional press, swap to PSL.
 

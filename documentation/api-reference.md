@@ -392,11 +392,12 @@ Resumable embedding backfill for articles whose `embedding_status` is `NULL` or 
 
 | Method | Auth | Request body | Query params |
 |---|---|---|---|
-| `POST`/`GET` | Admin session | empty | `?reembed=1` (optional) — flips every row to `embedding_status='failed'` before the loop runs so the entire corpus re-embeds against the current `buildEmbeddingInput` definition |
+| `POST` | Admin session | empty | `?reembed=1` (optional) — flips every row to `embedding_status='failed'` before the loop runs so the entire corpus re-embeds against the current `buildEmbeddingInput` definition. Requires `POST`; `GET` with `?reembed=1` returns `405`. |
+| `GET` | Admin session | empty | none — runs one batch without the reembed flag |
 
 **Success (200):** `{ ok: true, processed: N, failed: M, remaining: K, done: boolean }` — `done` is `true` when `remaining` is 0 after the call. A row whose embed or upsert fails is stamped `'failed'` and counted under `failed`; the next call retries it.
 
-**Error responses:** `401 unauthorized` | `403 forbidden` | `500 "Backfill failed"`.
+**Error responses:** `401 unauthorized` | `403 forbidden` | `405 "reembed requires POST"` (GET with `?reembed=1`) | `500 "Backfill failed"`.
 
 **Implements:** [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history) (AC 12 for `?reembed=1`)
 
