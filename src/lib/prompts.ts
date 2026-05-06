@@ -174,7 +174,6 @@ const URL_MAX_CHARS = 1000;
 // upstream regression that produced a 30K-char snippet would still
 // be clamped here. Defense-in-depth, per CF-013.
 const BODY_SNIPPET_MAX_CHARS = 16000;
-const DETAILS_MAX_CHARS = 4000;
 
 function sanitizePromptField(value: string, maxChars: number): string {
   const stripped = value.replace(/`{3,}/g, '[code-block]');
