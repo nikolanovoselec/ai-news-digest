@@ -420,7 +420,7 @@ A scripted caller may opt into the legacy synchronous path by sending `{ "cursor
 |---|---|---|
 | `POST` | Admin session | empty (browser button) → enqueue-and-return; OR `{ "cursor"?: { "pa": number, "id": string }, "batch"?: number }` for scripted single-batch calls (composite cursor — `pa` is a `published_at` Unix-second lower bound, `id` is the ULID lower bound for equal-time tie-breaking; batch defaults to 25, cap 500) |
 
-**Success (200, kicker path):** `{ ok: true, run_id: string, enqueued: true, started_at: number }`.
+**Success (202, kicker path):** `{ ok: true, run_id: string, enqueued: true, started_at: number }`.
 
 **Success (200, sync batch path):** `{ ok: true, scanned: N, merged: M, remaining: K, next_cursor: { pa: number, id: string } | null, done: boolean, elapsed_ms: T }`.
 
