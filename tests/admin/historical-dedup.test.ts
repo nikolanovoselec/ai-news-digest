@@ -427,18 +427,56 @@ describe('POST /api/admin/historical-dedup — REQ-PIPE-003', () => {
   });
 
   // -----------------------------------------------------------------------
-  // AC 4: Newer match required — equal or older published_at is skipped
+  // AC 4: Newer match required — older published_at always skipped; equal-
+  // time matches are tie-broken by ULID (lower id wins). Without the tie-
+  // break, two articles ingested in the same scrape tick that share a
+  // `published_at` could never fold into each other (the strict `>` filter
+  // rejected both directions), which is what stuck the 2026-05-07 Palo
+  // Alto / BTIG-$216 cluster on prod.
   // -----------------------------------------------------------------------
-  it('REQ-PIPE-003: match with published_at <= self.published_at is skipped; merged:0', async () => {
+  it('REQ-PIPE-003: older match (strictly less published_at) is skipped; merged:0', async () => {
     const SELF_ID = 'article-self';
-    const MATCH_ID = 'article-same-age';
-    const PUBLISHED_AT = 1_700_000_000;
+    const OLDER_ID = 'article-older';
 
     const { res, fixture, vectorize } = await buildContextAndCall({
       articles: [
         {
           id: SELF_ID,
-          published_at: PUBLISHED_AT,
+          published_at: 1_700_000_000,
+          primary_source_url: 'https://acme.example/self',
+        },
+      ],
+      existenceGuardResults: {
+        [OLDER_ID]: { present: 1 },
+      },
+      remainingCount: 0,
+      queryByIdResults: {
+        [SELF_ID]: singleMatch({
+          id: OLDER_ID,
+          score: 0.95,
+          published_at: 1_699_999_900,
+        }),
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { merged: number };
+    expect(body.merged).toBe(0);
+    expect(fixture.batchCalls.length).toBe(0);
+    const deleteByIds = vectorize.deleteByIds as ReturnType<typeof vi.fn>;
+    expect(deleteByIds).not.toHaveBeenCalled();
+  });
+
+  it('REQ-PIPE-003: equal-time match with HIGHER ULID is merged into self', async () => {
+    // self.id < match.id at the same published_at → self wins, match folds.
+    const SELF_ID = '01AAAAAAAAAAAAAAAAAAAAAAAA';
+    const MATCH_ID = '01ZZZZZZZZZZZZZZZZZZZZZZZZ';
+
+    const { res, fixture, vectorize } = await buildContextAndCall({
+      articles: [
+        {
+          id: SELF_ID,
+          published_at: 1_700_000_000,
           primary_source_url: 'https://acme.example/self',
         },
       ],
@@ -450,8 +488,43 @@ describe('POST /api/admin/historical-dedup — REQ-PIPE-003', () => {
         [SELF_ID]: singleMatch({
           id: MATCH_ID,
           score: 0.95,
-          // same timestamp as self — the route requires strictly NEWER
-          published_at: PUBLISHED_AT,
+          published_at: 1_700_000_000,
+        }),
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { merged: number };
+    expect(body.merged).toBe(1);
+    expect(fixture.batchCalls.length).toBe(1);
+    const deleteByIds = vectorize.deleteByIds as ReturnType<typeof vi.fn>;
+    expect(deleteByIds).toHaveBeenCalledWith([MATCH_ID]);
+  });
+
+  it('REQ-PIPE-003: equal-time match with LOWER ULID is skipped (tie-break)', async () => {
+    // self.id > match.id at the same published_at → match is "older" by
+    // tie-break. self does not absorb match (the other direction will,
+    // when self becomes the match in a later iteration).
+    const SELF_ID = '01ZZZZZZZZZZZZZZZZZZZZZZZZ';
+    const MATCH_ID = '01AAAAAAAAAAAAAAAAAAAAAAAA';
+
+    const { res, fixture, vectorize } = await buildContextAndCall({
+      articles: [
+        {
+          id: SELF_ID,
+          published_at: 1_700_000_000,
+          primary_source_url: 'https://acme.example/self',
+        },
+      ],
+      existenceGuardResults: {
+        [MATCH_ID]: { present: 1 },
+      },
+      remainingCount: 0,
+      queryByIdResults: {
+        [SELF_ID]: singleMatch({
+          id: MATCH_ID,
+          score: 0.95,
+          published_at: 1_700_000_000,
         }),
       },
     });
@@ -459,7 +532,6 @@ describe('POST /api/admin/historical-dedup — REQ-PIPE-003', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { merged: number };
     expect(body.merged).toBe(0);
-
     expect(fixture.batchCalls.length).toBe(0);
     const deleteByIds = vectorize.deleteByIds as ReturnType<typeof vi.fn>;
     expect(deleteByIds).not.toHaveBeenCalled();

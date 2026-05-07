@@ -319,11 +319,19 @@ async function runHistoricalDedupBatch(
         ? match.score - sameVendorPenalty
         : match.score;
       // We're walking oldest-first: any match with strictly NEWER
-      // published_at is a candidate to fold into self. Older or
-      // equal-time matches are skipped — they were either already
-      // processed (so `match.id` would have absorbed self in a prior
-      // step) or would orphan equal-time pairs (out of scope).
-      if (matchPublishedAt <= self.published_at) continue;
+      // published_at is a candidate to fold into self. Older matches
+      // were already processed (so `match.id` would have absorbed
+      // self in a prior step). Equal-time pairs are tie-broken by
+      // ULID — lower ULID = older creation = wins. Without the tie-
+      // break, two articles ingested in the same scrape tick that
+      // share a `published_at` timestamp could never fold into each
+      // other (the strict `>` filter rejected both directions). The
+      // 2026-05-07 prod audit found Palo Alto / BTIG-$216 pair stuck
+      // at the same `published_at = 1778082516` for exactly this
+      // reason; the tie-break unblocks it.
+      if (matchPublishedAt < self.published_at) continue;
+      if (matchPublishedAt === self.published_at && self.id >= match.id)
+        continue;
       const isAutoMerge = adjustedScore >= threshold;
       const isBorderline =
         !isAutoMerge && adjustedScore >= rerankFloor;
