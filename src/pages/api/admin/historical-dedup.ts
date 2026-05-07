@@ -47,21 +47,20 @@ import { sameVendor } from '~/lib/etld';
 
 /** Default articles scanned per call when the caller omits `batch`.
  *  Sized so a single batch's worst-case (25 × Vectorize.queryById +
- *  up to MAX_RERANKS_PER_BATCH × 5-10s LLM rerank) fits comfortably
- *  inside Cloudflare's ~100s edge cut even before the wall-clock
- *  guard fires. The browser-side loop drives many short calls. */
+ *  up to MAX_RERANKS_PER_BATCH LLM reranks at p99 ~1.5s each) stays
+ *  well under Cloudflare's ~100s edge cut. The browser-side loop in
+ *  /settings drives many short calls via next_cursor. */
 const DEFAULT_BATCH = 25;
 
 /** Hard cap so a malformed `batch: 99999` doesn't blow the isolate
  *  budget. */
 const MAX_BATCH = 500;
 
-/** Hard ceiling on LLM rerank calls inside a single batch. With one-
- *  batch-per-request and 25 articles per batch (~10s of Vectorize+D1
- *  work) plus this cap of 4 × ≤10s LLM (per-call timeout enforced in
- *  rerankBorderlinePair), total worst case ~50s — solidly under the
- *  ~100s edge cut. Skipped borderline pairs are re-evaluated on
- *  later sweeps when the corpus has shifted. */
+/** Hard ceiling on LLM rerank calls inside a single batch. Direct
+ *  Workers AI probes show gpt-oss-120b at p99 ~1.5s per call; capping
+ *  at 4 keeps the rerank contribution to a batch under ~6s on the
+ *  long tail. Borderline pairs skipped because the cap was hit are
+ *  re-evaluated on later sweeps when the corpus has shifted. */
 const MAX_RERANKS_PER_BATCH = 4;
 
 /** TopK for each Vectorize query. Five gives the dedup loop enough
@@ -91,12 +90,11 @@ interface CumulativeResult {
   scanned: number;
   merged: number;
   remaining: number;
-  /** Cursor to thread into the next call so we don't rescan already-
-   *  visited articles when the wall-clock budget bails out mid-sweep.
-   *  null when the sweep is complete. */
+  /** Cursor to thread into the next call so the browser-side loop in
+   *  /settings doesn't rescan already-visited articles. null when
+   *  the sweep is complete. */
   next_cursor: number | null;
   done: boolean;
-  iterations: number;
   elapsed_ms: number;
 }
 
@@ -153,7 +151,6 @@ async function handle(context: APIContext): Promise<Response> {
   let totalScanned = 0;
   let totalMerged = 0;
   let lastRemaining = 0;
-  let iterations = 1;
   let done = false;
 
   // Single-batch-per-request. The previous server-side for(;;) loop
@@ -173,7 +170,6 @@ async function handle(context: APIContext): Promise<Response> {
     log('error', 'digest.generation', {
       status: 'historical_dedup_failed',
       detail: String(err).slice(0, 500),
-      iterations,
       scanned: totalScanned,
     });
     if (wantsJson) {
@@ -195,8 +191,7 @@ async function handle(context: APIContext): Promise<Response> {
   }
 
   log('info', 'digest.generation', {
-    status: 'historical_dedup_loop_completed',
-    iterations,
+    status: 'historical_dedup_batch_completed',
     scanned: totalScanned,
     merged: totalMerged,
     remaining: lastRemaining,
@@ -212,7 +207,6 @@ async function handle(context: APIContext): Promise<Response> {
       remaining: lastRemaining,
       next_cursor: done ? null : cursor,
       done,
-      iterations,
       elapsed_ms: Date.now() - startedAt,
     };
     return applyRefreshCookie(
