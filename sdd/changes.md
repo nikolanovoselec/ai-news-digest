@@ -10,6 +10,7 @@ Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are a
 
 - REQ-READ-001 AC 2 extended: the dashboard countdown now flips to an "Update in progress…" indicator at first paint when a scrape run is already in flight, so readers landing mid-run see live state instead of a misleading countdown until the next tick.
 - REQ-OPS-005 AC 1 reworded: the parenthetical caller attribution ("from the Settings page button" / "for direct URL visits and operator scripts") was stale once the unified pipeline button switched to GET-with-Accept-JSON, so the AC now states the dual-method contract without naming specific callers.
+- REQ-OPS-008 added (Status: Partial): the settings surface exposes a single "Run pipeline now" action that chains scrape, embed-backfill, and oldest-first dedup with an optional pre-phase that wipes and re-embeds the entire pool. Status text streams per phase and an in-flight run survives navigation away from the surface so the operator can return mid-run and see where the pipeline is.
 
 ## 2026-05-06
 
