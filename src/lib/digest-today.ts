@@ -114,6 +114,9 @@ export async function loadTodayPayload(
 
   // Flag any in-flight scrape so the dashboard renders "Update in
   // progress…" on first paint without waiting for the client poll.
+  // scrape_runs is a global, fan-out-for-all-users table (no user_id
+  // column) — the scrape pipeline runs once per cron tick across the
+  // whole corpus, so this probe is correctly user-agnostic.
   let scrapeRunning = false;
   try {
     const runningRow = await db

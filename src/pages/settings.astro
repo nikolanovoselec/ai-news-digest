@@ -1160,11 +1160,12 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
       clearPipelineState();
       return;
     }
-    if (saved.runId === undefined) return;
+    const savedRunId = saved.runId;
+    if (savedRunId === undefined) return;
     void (async () => {
       try {
         const res = await fetch(
-          `/api/scrape-status?run_id=${encodeURIComponent(saved.runId as string)}`,
+          `/api/scrape-status?run_id=${encodeURIComponent(savedRunId)}`,
           { credentials: 'same-origin', headers: { Accept: 'application/json' } },
         );
         if (!res.ok) return;
@@ -1173,9 +1174,11 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
           status.textContent = `${saved.msg} - completed while you were away.`;
           clearPipelineState();
         } else {
-          // Re-pin scrape progress polling for the in-flight run so
-          // the live "X% - N articles ingested" line reappears.
-          pinnedRunId = saved.runId as string;
+          // Re-pin scrape progress polling for the in-flight run so the
+          // existing 5s pollScrapeProgress() interval (started by
+          // wireScrapeProgress earlier in init()) starts using the
+          // saved run_id on its next tick.
+          pinnedRunId = savedRunId;
         }
       } catch {
         /* ignore - stale state will age out */
