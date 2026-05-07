@@ -240,7 +240,7 @@ Up to 29 articles from the article pool filtered by the user's active hashtags. 
 
 Both responses carry a `Set-Cookie` refresh when the session is within 5 minutes of expiry, so polling during a long scrape never expires the session.
 
-**Polled by:** `/digest` (swaps countdown for "Update in progress"), `/settings` Run pipeline now section (5 s poll for live scrape-run progress; also consumed by the pipeline orchestrator to gate phase transitions ([REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-from-the-settings-surface))).
+**Polled by:** `/digest` (swaps countdown for "Update in progress"), `/settings` Administration section (5 s poll for live scrape-run progress; also consumed by the pipeline orchestrator to gate phase transitions for both **Full pipeline run** and **Refresh feeds** ([REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-from-the-settings-surface))).
 
 **Implements:** [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation) AC 4, [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection)
 
@@ -381,9 +381,9 @@ POST enforces Origin; GET is exempt (so operators can bookmark or `curl`).
 
 | Method | Caller | Success response |
 |---|---|---|
-| `POST` | Form submit (legacy; the **Run pipeline now** button on `/settings` uses `GET` with `Accept: application/json`) | `303` → `/settings?force_refresh={ok\|reused}` |
+| `POST` | Form submit (legacy; the Administration buttons on `/settings` use `GET` with `Accept: application/json`) | `303` → `/settings?force_refresh={ok\|reused}` |
 | `GET` | Browser direct | `303` → `/settings?force_refresh={ok\|reused\|denied}` |
-| `GET` | Scripted or **Run pipeline now** orchestrator (`Accept: application/json`) | `200 { ok: true, scrape_run_id, reused }` |
+| `GET` | Scripted, **Full pipeline run**, or **Refresh feeds** orchestrator (`Accept: application/json`) | `200 { ok: true, scrape_run_id, reused }` |
 
 **Error responses:** `401 unauthorized` | `403 forbidden` | `500 "Failed to dispatch coordinator"`.
 
