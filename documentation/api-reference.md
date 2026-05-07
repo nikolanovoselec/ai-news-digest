@@ -418,7 +418,7 @@ The handler keeps batching inside a single isolate until `done: true` or the pla
 |---|---|---|
 | `POST` | Admin session | empty (browser button) or `{ "cursor"?: { "pa": number, "id": string }, "batch"?: number }` for scripted single-batch calls (composite cursor — `pa` is a `published_at` Unix-second lower bound, `id` is the ULID lower bound for equal-time tie-breaking; batch defaults to 100, cap 500) |
 
-**Success (200):** `{ ok: true, scanned: N, merged: M, next_cursor: { pa: number, id: string } | null, remaining: K, done: boolean, iterations: I, elapsed_ms: T }`. `next_cursor` is the composite resume token to seed the next call; `null` when the sweep is complete (`done: true`). Pass the object verbatim as `cursor` in the next request body.
+**Success (200):** `{ ok: true, scanned: N, merged: M, remaining: K, next_cursor: { pa: number, id: string } | null, done: boolean, elapsed_ms: T }`. `next_cursor` is the composite resume token to seed the next call; `null` when the sweep is complete (`done: true`). Pass the object verbatim as `cursor` in the next request body.
 
 **Error responses:** `401 unauthorized` | `403 forbidden` | `500 historical_dedup_failed`.
 
