@@ -206,10 +206,13 @@ export async function processOneDedupSweep(
   // status='running' guard above would short-circuit if a
   // double-process landed) and re-attempts the enqueue.
   if (!result.done && result.next_cursor !== null) {
-    await env.DEDUP_SWEEP.send({
+    const next: DedupSweepMessage = {
       run_id: body.run_id,
       cursor: result.next_cursor,
-      batch: body.batch,
-    });
+    };
+    if (body.batch !== undefined) {
+      next.batch = body.batch;
+    }
+    await env.DEDUP_SWEEP.send(next);
   }
 }
