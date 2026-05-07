@@ -145,10 +145,18 @@ export async function rerankBorderlinePair(
           { role: 'system', content: RERANK_SYSTEM },
           { role: 'user', content: buildRerankUser(a, b) },
         ],
-        // Tight token budget: the answer is one boolean wrapped in
-        // JSON. Higher max_tokens just lets the model ramble before
-        // emitting the JSON we need.
-        max_tokens: 32,
+        // gpt-oss-120b is a reasoning model: it spends ~150-220 tokens
+        // on internal reasoning_content BEFORE emitting the final
+        // assistant content. A 32-token cap (which we shipped initially
+        // thinking the answer was tiny) was entirely consumed by
+        // reasoning, returning content=null with finish_reason='length'
+        // and silently failing every rerank — the parser saw null,
+        // returned ok=false, and the function returned not-same-event
+        // for every borderline pair. 256 tokens lets reasoning finish
+        // and leaves headroom for the {"same_event": true|false}
+        // payload. Verified against production AI gateway: typical
+        // total response 700-1000ms.
+        max_tokens: 256,
         temperature: 0,
       },
       narrow: (raw) => narrowRerankPayload(raw),
