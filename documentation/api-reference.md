@@ -412,13 +412,13 @@ Resumable embedding backfill for articles whose `embedding_status` is `NULL` or 
 
 Cross-article same-story sweep. Walks the article pool oldest-first by `published_at`; for each article, queries Vectorize for top-K matches whose `published_at` is strictly newer. Auto-merge-band matches (>= `DEDUP_COSINE_THRESHOLD`) fold into the current (older) article via `mergeAsAltSource` without an LLM call. Borderline-band matches (>= `DEDUP_RERANK_FLOOR`, < `DEDUP_COSINE_THRESHOLD`) go to a binary same-event judgment by the language model and merge only on a positive verdict. Each invocation caps rerank calls to prevent budget exhaustion; the cap is logged when hit.
 
-The handler keeps batching inside a single isolate until `done: true` or the platform tears the request down (Cloudflare edge cuts at ~100s with 524). Browser callers get a 303 redirect back to `/settings?dedup=done|partial&scanned=N&merged=M&remaining=K`; scripted callers opting in with `Accept: application/json` get the cumulative JSON shape and may pass `{ cursor, batch }` to seed the starting cursor and per-iteration batch size.
+Each call runs exactly one bounded batch and returns. The browser-side loop in `/settings` drives iteration via the returned `next_cursor` so no single request risks exceeding Cloudflare's ~100s edge cut. Browser callers (the `/settings` Full pipeline run button) get a 303 redirect back to `/settings?dedup=done|partial&scanned=N&merged=M&remaining=K`; scripted callers opting in with `Accept: application/json` get the per-batch JSON shape and may pass `{ cursor, batch }` to seed the starting cursor and per-batch size.
 
 | Method | Auth | Request body |
 |---|---|---|
-| `POST` | Admin session | empty (browser button) or `{ "cursor"?: number, "batch"?: number }` for scripted single-batch calls (cursor = `published_at` lower bound; batch defaults to 100, cap 500) |
+| `POST` | Admin session | empty (browser button) or `{ "cursor"?: number, "batch"?: number }` for scripted single-batch calls (cursor = `published_at` lower bound; batch defaults to 25, cap 500) |
 
-**Success (200):** `{ ok: true, scanned: N, merged: M, remaining: K, done: boolean, iterations: I, elapsed_ms: T }`.
+**Success (200):** `{ ok: true, scanned: N, merged: M, remaining: K, done: boolean, next_cursor: number | null, elapsed_ms: T }`.
 
 **Error responses:** `401 unauthorized` | `403 forbidden` | `500 historical_dedup_failed`.
 
