@@ -170,6 +170,17 @@ export async function processOneDedupSweep(
   // is 0 and we log the skip; we still attempt the continuation send
   // below because the original send may itself have failed (which is
   // how this redelivery happened in the first place).
+  //
+  // Trade-off (explicit): "always send on skip" can briefly fork the
+  // chain — if the original message both UPDATEd successfully AND
+  // sent its continuation, then was redelivered (worker preempted
+  // before ack), the redelivery's send re-enqueues a duplicate
+  // continuation. Each downstream consumer's own CAS rejects exactly
+  // one of the duplicates per advance, so counters stay truthful and
+  // the chain converges in linear time. Wasted CPU is bounded; data
+  // integrity is preserved. The alternative — skip the send on CAS
+  // miss — silently kills the chain whenever the original send was
+  // the actual failure, which is the worse failure mode.
   const now = Math.floor(Date.now() / 1000);
   const newStatus = result.done ? 'done' : 'running';
   const updateMeta = await env.DB

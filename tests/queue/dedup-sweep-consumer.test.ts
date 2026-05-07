@@ -174,6 +174,11 @@ describe('processOneDedupSweep — REQ-PIPE-003 AC 9', () => {
     // Update keeps status='running' because remaining > 0.
     expect(calls.updateCalls.length).toBe(1);
     expect(calls.updateCalls[0]!.params[1]).toBe('running');
+    // CAS guard binds the incoming message cursor at positions 9/10
+    // (params[8]/[9]) — null for the first batch — so redelivery of
+    // the same message can be detected and skipped.
+    expect(calls.updateCalls[0]!.params[8]).toBeNull();
+    expect(calls.updateCalls[0]!.params[9]).toBeNull();
     // Exactly one continuation message; cursor advances to the last
     // scanned article, batch is preserved verbatim.
     expect(sends.length).toBe(1);
@@ -306,6 +311,11 @@ describe('processOneDedupSweep — REQ-PIPE-003 AC 9', () => {
     });
     // UPDATE was issued (with CAS predicate); it just didn't match.
     expect(updateCalls.length).toBe(1);
+    // CAS predicate carries the incoming message cursor at param
+    // positions 9/10 (1-indexed in SQL → 8/9 in the JS bind array).
+    // body.cursor was null for this redelivered first-batch case.
+    expect(updateCalls[0]!.params[8]).toBeNull();
+    expect(updateCalls[0]!.params[9]).toBeNull();
     // Continuation still fires — chain stays alive.
     expect(sends.length).toBe(1);
     expect(sends[0]).toEqual({
