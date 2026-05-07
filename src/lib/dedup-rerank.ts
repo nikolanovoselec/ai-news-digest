@@ -1,21 +1,24 @@
 // Implements REQ-PIPE-009
 //
 // LLM re-rank pass for borderline cosine pairs. Sits between the
-// auto-merge band (cosine >= DEDUP_COSINE_THRESHOLD, default 0.85) and
-// the distinct band (cosine < DEDUP_RERANK_FLOOR, default 0.72). Pairs
+// auto-merge band (cosine >= DEDUP_COSINE_THRESHOLD, default 0.78) and
+// the distinct band (cosine < DEDUP_RERANK_FLOOR, default 0.70). Pairs
 // in [floor, threshold) are sent to the LLM for a binary same-event
 // judgment so embedding-only blind spots do not leak through as
 // duplicates.
 //
 // Why this layer exists. bge-base-en-v1.5 sometimes scores
-// genuinely-same-event pairs in the 0.72-0.85 band when the two
+// genuinely-same-event pairs in the borderline band when the two
 // summaries take different angles on the same news (e.g. "Romania PM
 // ousted in no-confidence vote" vs "Romania government collapses as
 // far-right coalition forms" - cosine 0.75). Lowering the threshold
-// to catch these would reintroduce the false-merges 0.85 was tuned to
-// prevent (validation showed distinct same-publisher announcements
-// also live in 0.77-0.84). The LLM judges the borderline band only
-// so the fast-path bands stay clean.
+// arbitrarily to catch these would reintroduce the false-merges the
+// threshold was tuned to prevent (distinct same-publisher
+// announcements also live in the 0.77-0.84 range). The LLM judges
+// only the borderline band so the fast-path bands stay clean. The
+// 2026-05-07 prod audit (AD36) shifted the band downward from
+// [0.72, 0.85) to [0.70, 0.78) after same-news-cycle clusters were
+// observed at 0.73-0.80.
 //
 // Cost. Per scrape tick: ~20-30 new articles, expected 2-5 borderline
 // pairs => 2-5 LLM calls. Per historical-dedup operator invocation:
@@ -25,11 +28,12 @@ import { runJson, asAiBinding } from '~/lib/llm-json';
 import { log } from '~/lib/log';
 
 /** Default lower bound of the borderline band. Cosines strictly below
- *  this value skip the LLM and stay distinct. Validated against the
- *  same 2026-05-06 sweep that pinned the upper threshold: pairs scoring
- *  below 0.72 in production were unrelated topics, never legitimate
- *  duplicates. */
-export const DEFAULT_RERANK_FLOOR = 0.72;
+ *  this value skip the LLM and stay distinct. Lowered from 0.72 to
+ *  0.70 on 2026-05-07 alongside the threshold drop (0.85 → 0.78) so
+ *  same-news-cycle pairs in the lower tail (PANW valuation week at
+ *  0.7286-0.7293) reach the LLM rather than being filtered out
+ *  pre-rerank. */
+export const DEFAULT_RERANK_FLOOR = 0.70;
 
 /** Hard cap on snippet bytes sent per article. Keeps the prompt under
  *  ~1k tokens regardless of upstream body length so the LLM call stays
@@ -79,10 +83,10 @@ function narrowRerankPayload(raw: unknown): RerankPayload | null {
 
 const RERANK_SYSTEM = [
   'You are a news deduplication assistant.',
-  'Decide whether two article snippets describe the SAME news event.',
+  'Decide whether two article snippets are part of the SAME news cycle for the SAME subject.',
   'Answer ONLY with strict JSON: {"same_event": true} or {"same_event": false}.',
-  'Same event = same underlying real-world occurrence (e.g. the same vote, the same product launch, the same acquisition), even when the headlines frame it differently.',
-  'Different events = different occurrences in the same domain (e.g. two distinct product launches by the same company, two separate funding rounds).',
+  'Same news cycle = either (a) reporting on the same underlying real-world occurrence (e.g. the same vote, the same product launch, the same CVE advisory, the same acquisition), OR (b) closely-coupled follow-on coverage of one subject within the same news cycle (e.g. multiple analyst takes on the same company\'s outlook published the same week, multiple security outlets covering the same vulnerability, multiple write-ups of the same earnings call).',
+  'Different = different occurrences with no shared underlying news driver (e.g. an acquisition versus a product launch by the same company, a CVE advisory versus a marketing announcement, a Q1 earnings call versus a Q2 earnings call).',
   'When unsure, prefer false. False is the conservative answer.',
 ].join(' ');
 

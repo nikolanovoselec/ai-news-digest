@@ -75,7 +75,8 @@ interface Env {
   // top-K match scores at or above this are merged into the older
   // article as alt-sources (REQ-PIPE-003). String-typed for parity
   // with QUEUE_MAX_RETRIES; the runtime parses to float and falls
-  // back to 0.85 when unset.
+  // back to 0.78 when unset (lowered from 0.85 on 2026-05-07; see
+  // AD36 and src/lib/embeddings.ts header).
   DEDUP_COSINE_THRESHOLD?: string;
   // Same-vendor cosine penalty subtracted before the threshold gate
   // when both articles' primary_source_url resolve to the same eTLD+1
@@ -84,6 +85,8 @@ interface Env {
   // Lower bound of the LLM-rerank borderline band (REQ-PIPE-009).
   // Cosines in [DEDUP_RERANK_FLOOR, DEDUP_COSINE_THRESHOLD) are sent
   // to the LLM for a binary same-event judgment. Below the floor:
-  // distinct, no LLM call. Default 0.72; clamped to [0, 1] at runtime.
+  // distinct, no LLM call. Default 0.70 (lowered from 0.72 on
+  // 2026-05-07 alongside the threshold drop; see AD36); clamped to
+  // [0, 1] at runtime.
   DEDUP_RERANK_FLOOR?: string;
 }
