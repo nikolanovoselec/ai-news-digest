@@ -44,12 +44,30 @@ import {
 import { readRerankFloor, rerankBorderlinePair } from '~/lib/dedup-rerank';
 import { sameVendor } from '~/lib/etld';
 
-/** Default articles scanned per call when the caller omits `batch`. */
-const DEFAULT_BATCH = 100;
+/** Default articles scanned per call when the caller omits `batch`.
+ *  Sized so a single batch's worst-case (25 × Vectorize.queryById +
+ *  up to MAX_RERANKS_PER_BATCH × 5-10s LLM rerank) fits comfortably
+ *  inside Cloudflare's ~100s edge cut even before the wall-clock
+ *  guard fires. The browser-side loop drives many short calls. */
+const DEFAULT_BATCH = 25;
 
 /** Hard cap so a malformed `batch: 99999` doesn't blow the isolate
  *  budget. */
 const MAX_BATCH = 500;
+
+/** Wall-clock budget for the OUTER loop, between batches. Cloudflare
+ *  cuts requests at ~100s; this returns partial progress before
+ *  that. The smaller per-batch budget protects against any SINGLE
+ *  batch exceeding 100s on a paraphrase-heavy slice. */
+const ELAPSED_BUDGET_MS = 60_000;
+
+/** Hard ceiling on LLM rerank calls inside a single batch. The most
+ *  variable cost in the inner loop — gpt-oss-120b at temp=0 typically
+ *  2-5s per call but can spike to 10-15s under load. Bounding this
+ *  prevents one batch's worst case from blowing past the edge cut.
+ *  Borderline pairs skipped because of the cap stay in the corpus and
+ *  will be re-evaluated on the next operator-driven sweep. */
+const MAX_RERANKS_PER_BATCH = 8;
 
 /** TopK for each Vectorize query. Five gives the dedup loop enough
  *  signal to pick the best newer match while keeping per-call
@@ -78,6 +96,10 @@ interface CumulativeResult {
   scanned: number;
   merged: number;
   remaining: number;
+  /** Cursor to thread into the next call so we don't rescan already-
+   *  visited articles when the wall-clock budget bails out mid-sweep.
+   *  null when the sweep is complete. */
+  next_cursor: number | null;
   done: boolean;
   iterations: number;
   elapsed_ms: number;
@@ -160,6 +182,12 @@ async function handle(context: APIContext): Promise<Response> {
       if (result.scanned === 0) {
         break;
       }
+      // Wall-clock budget — return partial progress before the
+      // Cloudflare edge cut so the browser-side loop can drive
+      // forward instead of seeing a 524 / "Failed to fetch".
+      if (Date.now() - startedAt >= ELAPSED_BUDGET_MS) {
+        break;
+      }
     }
   } catch (err) {
     log('error', 'digest.generation', {
@@ -202,6 +230,7 @@ async function handle(context: APIContext): Promise<Response> {
       scanned: totalScanned,
       merged: totalMerged,
       remaining: lastRemaining,
+      next_cursor: done ? null : cursor,
       done,
       iterations,
       elapsed_ms: Date.now() - startedAt,
@@ -340,6 +369,11 @@ async function runHistoricalDedupBatch(
       if (stillThere === null) continue;
 
       if (isBorderline) {
+        // Cap LLM rerank calls per batch — the variable cost ceiling
+        // that keeps any single batch under Cloudflare's edge cut.
+        // Skipped borderline pairs are not merged in this sweep but
+        // are re-evaluated on the next operator-driven run.
+        if (rerankCallsThisBatch >= MAX_RERANKS_PER_BATCH) continue;
         rerankCallsThisBatch += 1;
         const sameEvent = await rerankBorderlinePair(
           env,
