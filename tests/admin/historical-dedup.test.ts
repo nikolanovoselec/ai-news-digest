@@ -38,15 +38,23 @@ const ADMIN_USER_ROW = {
 
 interface ArticleRow {
   id: string;
+  title?: string;
+  source_snippet?: string | null;
   published_at: number;
   primary_source_url: string;
+}
+
+interface ExistenceGuardEntry {
+  present: number;
+  title?: string;
+  source_snippet?: string | null;
 }
 
 interface DbFixture {
   /** Articles returned by the main paginated SELECT. */
   articles: ArticleRow[];
   /** Keyed by article id — controls the D1 existence guard response. */
-  existenceGuardResults: Record<string, { present: number } | null>;
+  existenceGuardResults: Record<string, ExistenceGuardEntry | null>;
   /** Value returned by the remaining-count SELECT. */
   remainingCount: number;
   /** Captured batch() submissions. */
@@ -69,20 +77,29 @@ function makeDb(fixture: DbFixture): D1Database {
           return { c: fixture.remainingCount };
         }
 
-        // Existence guard: SELECT 1 AS present FROM articles WHERE id = ?1
-        if (sql.includes('SELECT 1 AS present FROM articles')) {
+        // Existence + rerank-data guard:
+        // SELECT id, title, source_snippet FROM articles WHERE id = ?1
+        if (sql.includes('SELECT id, title, source_snippet FROM articles')) {
           const matchId = bound[0] as string;
           const result = fixture.existenceGuardResults[matchId];
-          return result !== undefined ? result : null;
+          if (result === undefined || result === null) return null;
+          return {
+            id: matchId,
+            title: result.title ?? '',
+            source_snippet: result.source_snippet ?? null,
+          };
         }
 
         return null;
       }),
 
       all: vi.fn().mockImplementation(async () => {
-        // Main article page SELECT — only fires for the articles query
+        // Main article page SELECT - only fires for the articles query.
+        // SELECT shape: id, title, source_snippet, published_at,
+        // primary_source_url FROM articles WHERE embedding_status =
+        // 'embedded'.
         if (
-          sql.includes('SELECT id, published_at') &&
+          sql.includes('SELECT id, title, source_snippet, published_at') &&
           sql.includes("embedding_status = 'embedded'")
         ) {
           fixture.allCalls.push({ sql, params: [...bound] });
@@ -153,19 +170,25 @@ async function adminCookieJwt(): Promise<string> {
 
 interface BuildContextOpts {
   articles: ArticleRow[];
-  existenceGuardResults?: Record<string, { present: number } | null>;
+  existenceGuardResults?: Record<string, ExistenceGuardEntry | null>;
   remainingCount?: number;
   queryByIdResults?: Record<string, VectorizeMatches>;
   deleteByIdsFails?: boolean;
   body?: object;
   /** Pass false to send the request without a session cookie. */
   authenticated?: boolean;
+  /** AI binding for rerank tests. Defaults to a mock that always
+   *  returns same_event:false so legacy tests stay exercised under
+   *  the auto-merge path. */
+  aiRun?: (model: string, params: Record<string, unknown>) => Promise<unknown>;
+  rerankFloor?: string;
 }
 
 async function buildContextAndCall(opts: BuildContextOpts): Promise<{
   res: Response;
   fixture: DbFixture;
   vectorize: Vectorize;
+  aiRun: ReturnType<typeof vi.fn> | ((model: string, params: Record<string, unknown>) => Promise<unknown>);
 }> {
   const fixture: DbFixture = {
     articles: opts.articles,
@@ -197,12 +220,17 @@ async function buildContextAndCall(opts: BuildContextOpts): Promise<{
   }
   const req = new Request(`${APP_URL}/api/admin/historical-dedup`, init);
 
+  const aiRun =
+    opts.aiRun ??
+    vi.fn().mockResolvedValue({ response: '{"same_event":false}' });
   const env = {
     DB: db,
     VECTORIZE: vectorize,
+    AI: { run: aiRun },
     OAUTH_JWT_SECRET: SECRET,
     ADMIN_EMAIL,
     APP_URL,
+    DEDUP_RERANK_FLOOR: opts.rerankFloor,
     // DEDUP_COSINE_THRESHOLD intentionally absent — exercises the default 0.85
   } as unknown as Env;
 
@@ -214,7 +242,7 @@ async function buildContextAndCall(opts: BuildContextOpts): Promise<{
   } as never;
 
   const res = await POST(context);
-  return { res, fixture, vectorize };
+  return { res, fixture, vectorize, aiRun };
 }
 
 // Helper to build a VectorizeMatches object with a single match
@@ -677,5 +705,125 @@ describe('POST /api/admin/historical-dedup — REQ-PIPE-003', () => {
     const body = (await res.json()) as { merged: number };
     expect(body.merged).toBe(1);
     expect(fixture.batchCalls.length).toBeGreaterThan(0);
+  });
+
+  it('REQ-PIPE-009: borderline cosine with LLM yes -> merges newer article', async () => {
+    const SELF_ID = 'older';
+    const MATCH_ID = 'newer';
+    const aiRun = vi
+      .fn()
+      .mockResolvedValue({ response: '{"same_event":true}' });
+    const { res, fixture, vectorize } = await buildContextAndCall({
+      articles: [
+        {
+          id: SELF_ID,
+          title: 'Romania Government Collapses',
+          source_snippet: 'Coalition lost majority in vote.',
+          published_at: 1_700_000_500,
+          primary_source_url: 'https://oldsite.example/x',
+        },
+      ],
+      existenceGuardResults: {
+        [MATCH_ID]: {
+          present: 1,
+          title: 'Romania PM Ousted in No-Confidence Vote',
+          source_snippet: 'Bolojan removed after coalition collapse.',
+        },
+      },
+      remainingCount: 0,
+      queryByIdResults: {
+        [SELF_ID]: singleMatch({
+          id: MATCH_ID,
+          score: 0.78,
+          published_at: 1_700_001_000,
+          primary_source_url: 'https://newsite.example/y',
+        }),
+      },
+      aiRun,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { merged: number };
+    expect(body.merged).toBe(1);
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(fixture.batchCalls.length).toBeGreaterThan(0);
+    const deleteByIds = vectorize.deleteByIds as ReturnType<typeof vi.fn>;
+    expect(deleteByIds).toHaveBeenCalled();
+  });
+
+  it('REQ-PIPE-009: borderline cosine with LLM no -> stays distinct', async () => {
+    const SELF_ID = 'older';
+    const MATCH_ID = 'newer';
+    const aiRun = vi
+      .fn()
+      .mockResolvedValue({ response: '{"same_event":false}' });
+    const { res, fixture, vectorize } = await buildContextAndCall({
+      articles: [
+        {
+          id: SELF_ID,
+          title: 'OpenAI Releases GPT-7',
+          source_snippet: 'Multimodal grounding model.',
+          published_at: 1_700_000_500,
+          primary_source_url: 'https://oldsite.example/x',
+        },
+      ],
+      existenceGuardResults: {
+        [MATCH_ID]: {
+          present: 1,
+          title: 'OpenAI Announces Sora 2',
+          source_snippet: 'Improved video model.',
+        },
+      },
+      remainingCount: 0,
+      queryByIdResults: {
+        [SELF_ID]: singleMatch({
+          id: MATCH_ID,
+          score: 0.78,
+          published_at: 1_700_001_000,
+          primary_source_url: 'https://newsite.example/y',
+        }),
+      },
+      aiRun,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { merged: number };
+    expect(body.merged).toBe(0);
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(fixture.batchCalls.length).toBe(0);
+    const deleteByIds = vectorize.deleteByIds as ReturnType<typeof vi.fn>;
+    expect(deleteByIds).not.toHaveBeenCalled();
+  });
+
+  it('REQ-PIPE-009: cosine below floor does not invoke LLM', async () => {
+    const SELF_ID = 'older';
+    const MATCH_ID = 'newer';
+    const aiRun = vi.fn();
+    const { res } = await buildContextAndCall({
+      articles: [
+        {
+          id: SELF_ID,
+          title: 'A',
+          source_snippet: 'a',
+          published_at: 1_700_000_500,
+          primary_source_url: 'https://oldsite.example/x',
+        },
+      ],
+      existenceGuardResults: {
+        [MATCH_ID]: { present: 1, title: 'B', source_snippet: 'b' },
+      },
+      remainingCount: 0,
+      queryByIdResults: {
+        [SELF_ID]: singleMatch({
+          id: MATCH_ID,
+          score: 0.5,
+          published_at: 1_700_001_000,
+          primary_source_url: 'https://newsite.example/y',
+        }),
+      },
+      aiRun,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { merged: number };
+    expect(body.merged).toBe(0);
+    expect(aiRun).not.toHaveBeenCalled();
   });
 });

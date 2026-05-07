@@ -1,5 +1,6 @@
 // Implements REQ-PIPE-003
 // Implements REQ-PIPE-008
+// Implements REQ-PIPE-009
 //
 // Cross-tick semantic dedup pass for the global-feed pipeline. Runs
 // once per scrape tick AFTER all chunks have written their articles +
@@ -44,6 +45,11 @@ import {
   readSameVendorPenalty,
   deleteVectorsBatched,
 } from '~/lib/embeddings';
+import {
+  readRerankFloor,
+  rerankBorderlinePair,
+  RERANK_BATCH_CAP,
+} from '~/lib/dedup-rerank';
 import { sameVendor } from '~/lib/etld';
 
 /** Hard cap on candidates per finalize call. Comfortable headroom over
@@ -66,6 +72,8 @@ export interface FinalizeJobMessage {
 
 interface ArticleRow {
   id: string;
+  title: string;
+  source_snippet: string | null;
   published_at: number;
   ingested_at: number;
   primary_source_url: string;
@@ -119,7 +127,7 @@ export async function processOneFinalize(
   // them later.
   const result = await env.DB
     .prepare(
-      `SELECT id, published_at, ingested_at, primary_source_url
+      `SELECT id, title, source_snippet, published_at, ingested_at, primary_source_url
          FROM articles
         WHERE scrape_run_id = ?1
           AND embedding_status = 'embedded'
@@ -144,14 +152,21 @@ export async function processOneFinalize(
 
   const threshold = readCosineThreshold(env);
   const sameVendorPenalty = readSameVendorPenalty(env);
+  const rerankFloor = readRerankFloor(env);
 
   // Step 2 — for each article, query Vectorize for top-K matches and
   // pick the oldest sufficiently-similar older article (if any).
+  // Auto-merge band wins outright; if no auto-merge match exists but a
+  // borderline match (>= floor, < threshold) does, the LLM rerank
+  // decides whether to merge. REQ-PIPE-009.
   const statements: D1PreparedStatement[] = [];
   const mergedNewIds = new Set<string>();
   let losersDeleted = 0;
   let queriesAttempted = 0;
   let queriesFailed = 0;
+  let rerankCalls = 0;
+  let rerankAccepts = 0;
+  let rerankCapHit = false;
 
   for (const self of rows) {
     if (mergedNewIds.has(self.id)) continue; // already merged this pass
@@ -177,8 +192,11 @@ export async function processOneFinalize(
     }
 
     const matches = queryResult.matches ?? [];
-    let bestMatchId: string | null = null;
-    let bestMatchPublishedAt = Number.POSITIVE_INFINITY;
+    let autoMatchId: string | null = null;
+    let autoMatchPublishedAt = Number.POSITIVE_INFINITY;
+    let borderMatchId: string | null = null;
+    let borderMatchPublishedAt = Number.POSITIVE_INFINITY;
+    let borderMatchScore = 0;
 
     for (const match of matches) {
       if (match.id === self.id) continue;
@@ -204,16 +222,77 @@ export async function processOneFinalize(
       const adjustedScore = sameEtld1
         ? match.score - sameVendorPenalty
         : match.score;
-      if (adjustedScore < threshold) continue;
       // Only merge into STRICTLY older articles. Equal-published_at
       // matches (rare, possible for press-release feeds publishing the
       // same minute) keep both rows so the standalone tiebreak rule
       // from REQ-PIPE-008 AC 2 still applies elsewhere.
       if (matchPublishedAt >= self.published_at) continue;
-      if (matchPublishedAt < bestMatchPublishedAt) {
-        bestMatchId = match.id;
-        bestMatchPublishedAt = matchPublishedAt;
+      if (adjustedScore >= threshold) {
+        if (matchPublishedAt < autoMatchPublishedAt) {
+          autoMatchId = match.id;
+          autoMatchPublishedAt = matchPublishedAt;
+        }
+      } else if (adjustedScore >= rerankFloor) {
+        // Track the highest-scoring borderline match (oldest tiebreak).
+        // We rerank at most one pair per article so the strongest
+        // candidate gets the LLM call.
+        if (
+          adjustedScore > borderMatchScore ||
+          (adjustedScore === borderMatchScore &&
+            matchPublishedAt < borderMatchPublishedAt)
+        ) {
+          borderMatchId = match.id;
+          borderMatchPublishedAt = matchPublishedAt;
+          borderMatchScore = adjustedScore;
+        }
       }
+    }
+
+    let bestMatchId = autoMatchId;
+    if (bestMatchId === null && borderMatchId !== null) {
+      if (rerankCalls >= RERANK_BATCH_CAP) {
+        if (!rerankCapHit) {
+          rerankCapHit = true;
+          log('warn', 'digest.generation', {
+            status: 'finalize_rerank_cap_hit',
+            scrape_run_id: body.scrape_run_id,
+            cap: RERANK_BATCH_CAP,
+          });
+        }
+        continue;
+      }
+      const existingArticle = await env.DB
+        .prepare(
+          `SELECT id, title, source_snippet FROM articles WHERE id = ?1`,
+        )
+        .bind(borderMatchId)
+        .first<{ id: string; title: string; source_snippet: string | null }>();
+      if (existingArticle === null) continue;
+      rerankCalls += 1;
+      const sameEvent = await rerankBorderlinePair(
+        env,
+        {
+          id: self.id,
+          title: self.title,
+          snippet: self.source_snippet,
+        },
+        {
+          id: existingArticle.id,
+          title: existingArticle.title,
+          snippet: existingArticle.source_snippet,
+        },
+      );
+      log('info', 'digest.generation', {
+        status: 'finalize_rerank_decision',
+        scrape_run_id: body.scrape_run_id,
+        new_article_id: self.id,
+        existing_article_id: borderMatchId,
+        cosine: borderMatchScore,
+        same_event: sameEvent,
+      });
+      if (!sameEvent) continue;
+      rerankAccepts += 1;
+      bestMatchId = borderMatchId;
     }
 
     if (bestMatchId === null) continue;
@@ -308,6 +387,9 @@ export async function processOneFinalize(
       cost_recorded: true,
       capped_at_250: rows.length === FINALIZE_CANDIDATE_CAP,
       cosine_threshold: threshold,
+      rerank_floor: rerankFloor,
+      rerank_calls: rerankCalls,
+      rerank_accepts: rerankAccepts,
     });
   } else {
     log('info', 'digest.generation', {
