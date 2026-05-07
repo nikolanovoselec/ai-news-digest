@@ -1,21 +1,24 @@
 // Implements REQ-PIPE-009
 //
 // LLM re-rank pass for borderline cosine pairs. Sits between the
-// auto-merge band (cosine >= DEDUP_COSINE_THRESHOLD, default 0.85) and
-// the distinct band (cosine < DEDUP_RERANK_FLOOR, default 0.72). Pairs
+// auto-merge band (cosine >= DEDUP_COSINE_THRESHOLD, default 0.78) and
+// the distinct band (cosine < DEDUP_RERANK_FLOOR, default 0.70). Pairs
 // in [floor, threshold) are sent to the LLM for a binary same-event
 // judgment so embedding-only blind spots do not leak through as
 // duplicates.
 //
 // Why this layer exists. bge-base-en-v1.5 sometimes scores
-// genuinely-same-event pairs in the 0.72-0.85 band when the two
+// genuinely-same-event pairs in the borderline band when the two
 // summaries take different angles on the same news (e.g. "Romania PM
 // ousted in no-confidence vote" vs "Romania government collapses as
 // far-right coalition forms" - cosine 0.75). Lowering the threshold
-// to catch these would reintroduce the false-merges 0.85 was tuned to
-// prevent (validation showed distinct same-publisher announcements
-// also live in 0.77-0.84). The LLM judges the borderline band only
-// so the fast-path bands stay clean.
+// arbitrarily to catch these would reintroduce the false-merges the
+// threshold was tuned to prevent (distinct same-publisher
+// announcements also live in the 0.77-0.84 range). The LLM judges
+// only the borderline band so the fast-path bands stay clean. The
+// 2026-05-07 prod audit (AD36) shifted the band downward from
+// [0.72, 0.85) to [0.70, 0.78) after same-news-cycle clusters were
+// observed at 0.73-0.80.
 //
 // Cost. Per scrape tick: ~20-30 new articles, expected 2-5 borderline
 // pairs => 2-5 LLM calls. Per historical-dedup operator invocation:
