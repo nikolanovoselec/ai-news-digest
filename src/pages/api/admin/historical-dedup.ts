@@ -145,15 +145,27 @@ async function handle(context: APIContext): Promise<Response> {
     const raw = await context.request.text();
     if (raw !== '') {
       const body = JSON.parse(raw) as { cursor?: unknown; batch?: unknown };
-      if (
-        typeof body.cursor === 'object' &&
-        body.cursor !== null &&
-        typeof (body.cursor as { pa?: unknown }).pa === 'number' &&
-        Number.isFinite((body.cursor as { pa: number }).pa) &&
-        typeof (body.cursor as { id?: unknown }).id === 'string'
-      ) {
-        const c = body.cursor as { pa: number; id: string };
-        cursor = { pa: c.pa, id: c.id };
+      if (body.cursor !== undefined) {
+        if (
+          typeof body.cursor === 'object' &&
+          body.cursor !== null &&
+          typeof (body.cursor as { pa?: unknown }).pa === 'number' &&
+          Number.isFinite((body.cursor as { pa: number }).pa) &&
+          typeof (body.cursor as { id?: unknown }).id === 'string'
+        ) {
+          const c = body.cursor as { pa: number; id: string };
+          cursor = { pa: c.pa, id: c.id };
+        } else {
+          // A legacy `cursor: <number>` shape (from a tab held open
+          // across the 2026-05-07 deploy) silently fails this guard
+          // and `cursor` stays null, so the sweep restarts from the
+          // beginning of the corpus. Log so the case surfaces if it
+          // ever happens in production.
+          log('warn', 'digest.generation', {
+            status: 'historical_dedup_invalid_cursor',
+            cursor_type: typeof body.cursor,
+          });
+        }
       }
       if (
         typeof body.batch === 'number' &&

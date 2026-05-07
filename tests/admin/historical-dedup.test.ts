@@ -658,9 +658,13 @@ describe('POST /api/admin/historical-dedup — REQ-PIPE-003', () => {
     const body2 = (await res2.json()) as {
       scanned: number;
       done: boolean;
+      next_cursor: { pa: number; id: string } | null;
     };
     expect(body2.scanned).toBe(1);
     expect(body2.done).toBe(true);
+    // When the sweep is done, next_cursor is null so the client loop
+    // breaks instead of looping forever on a stale resume key.
+    expect(body2.next_cursor).toBeNull();
     // Sanity check: silence unused-binding warning on fix1 by asserting
     // its allCalls captured the expected SQL shape on the first batch.
     const firstSelect = fix1.allCalls[0]!;
