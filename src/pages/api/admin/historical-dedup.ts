@@ -51,6 +51,14 @@ const DEFAULT_BATCH = 100;
  *  budget. */
 const MAX_BATCH = 500;
 
+/** Wall-clock budget for the inner loop. Cloudflare's edge cuts
+ *  requests at ~100s; the LLM rerank for borderline pairs makes a
+ *  full-corpus sweep blow past that. Returning partial progress
+ *  before the cut lets the browser-side loop in /settings drive the
+ *  sweep across many short requests instead of one long one that
+ *  surfaces as "Failed to fetch". */
+const ELAPSED_BUDGET_MS = 60_000;
+
 /** TopK for each Vectorize query. Five gives the dedup loop enough
  *  signal to pick the best newer match while keeping per-call
  *  latency bounded. */
@@ -78,6 +86,10 @@ interface CumulativeResult {
   scanned: number;
   merged: number;
   remaining: number;
+  /** Cursor to thread into the next call so we don't rescan already-
+   *  visited articles when the wall-clock budget bails out mid-sweep.
+   *  null when the sweep is complete. */
+  next_cursor: number | null;
   done: boolean;
   iterations: number;
   elapsed_ms: number;
@@ -160,6 +172,12 @@ async function handle(context: APIContext): Promise<Response> {
       if (result.scanned === 0) {
         break;
       }
+      // Wall-clock budget — return partial progress before the
+      // Cloudflare edge cut so the browser-side loop can drive
+      // forward instead of seeing a 524 / "Failed to fetch".
+      if (Date.now() - startedAt >= ELAPSED_BUDGET_MS) {
+        break;
+      }
     }
   } catch (err) {
     log('error', 'digest.generation', {
@@ -202,6 +220,7 @@ async function handle(context: APIContext): Promise<Response> {
       scanned: totalScanned,
       merged: totalMerged,
       remaining: lastRemaining,
+      next_cursor: done ? null : cursor,
       done,
       iterations,
       elapsed_ms: Date.now() - startedAt,
