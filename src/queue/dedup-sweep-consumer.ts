@@ -159,9 +159,20 @@ export async function processOneDedupSweep(
   }
 
   // Step 1 — fold this batch's progress into the audit row.
+  //
+  // CAS guard on the incoming cursor: queues are at-least-once, so a
+  // redelivered message must not double-increment scanned/merged/
+  // batch_count. We require the saved last_cursor to equal THIS
+  // message's incoming cursor — true for the natural first delivery
+  // (saved was advanced by the previous batch to exactly this point),
+  // false for a redelivery (saved already moved on to the outgoing
+  // cursor on the original successful run). On CAS skip, meta.changes
+  // is 0 and we log the skip; we still attempt the continuation send
+  // below because the original send may itself have failed (which is
+  // how this redelivery happened in the first place).
   const now = Math.floor(Date.now() / 1000);
   const newStatus = result.done ? 'done' : 'running';
-  await env.DB
+  const updateMeta = await env.DB
     .prepare(
       `UPDATE dedup_runs
           SET status = ?2,
@@ -174,7 +185,9 @@ export async function processOneDedupSweep(
               updated_at = ?8,
               error = NULL
         WHERE id = ?1
-          AND status = 'running'`,
+          AND status = 'running'
+          AND last_cursor_pa IS ?9
+          AND last_cursor_id IS ?10`,
     )
     .bind(
       body.run_id,
@@ -185,11 +198,14 @@ export async function processOneDedupSweep(
       result.next_cursor?.id ?? null,
       result.remaining,
       now,
+      body.cursor?.pa ?? null,
+      body.cursor?.id ?? null,
     )
     .run();
 
+  const applied = (updateMeta.meta?.changes ?? 0) > 0;
   log('info', 'digest.generation', {
-    status: 'dedup_sweep_batch_done',
+    status: applied ? 'dedup_sweep_batch_done' : 'dedup_sweep_batch_skip_retry',
     dedup_run_id: body.run_id,
     scanned: result.scanned,
     merged: result.merged,
@@ -197,6 +213,7 @@ export async function processOneDedupSweep(
     next_cursor_pa: result.next_cursor?.pa ?? null,
     next_cursor_id: result.next_cursor?.id ?? null,
     done: result.done,
+    cas_applied: applied,
   });
 
   // Step 2 — chain the next batch when the sweep is not yet complete.
