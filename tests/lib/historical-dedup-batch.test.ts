@@ -22,7 +22,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runHistoricalDedupBatch } from '~/lib/historical-dedup';
 
-const DEFAULT_THRESHOLD = 0.78;
+const DEFAULT_THRESHOLD = 0.88;
 
 interface ArticleRow {
   id: string;
@@ -468,8 +468,8 @@ describe('runHistoricalDedupBatch — REQ-PIPE-003', () => {
   it('REQ-PIPE-003 AC 11: same-vendor pair just above threshold falls below penalty (no merge)', async () => {
     const SELF_ID = 'self';
     const MATCH_ID = 'old';
-    // score=0.82 is just above DEFAULT_COSINE_THRESHOLD=0.78; the
-    // same-vendor penalty (-0.05) pushes the adjusted score to 0.77,
+    // score=0.91 is just above DEFAULT_COSINE_THRESHOLD=0.88; the
+    // same-vendor penalty (-0.05) pushes the adjusted score to 0.86,
     // which is below threshold but above DEFAULT_RERANK_FLOOR=0.70 so
     // the LLM rerank fires. With the default `same_event:false` mock
     // the pair stays distinct (merged=0).
@@ -485,7 +485,7 @@ describe('runHistoricalDedupBatch — REQ-PIPE-003', () => {
       queryByIdResults: {
         [SELF_ID]: singleMatch({
           id: MATCH_ID,
-          score: 0.82,
+          score: 0.91,
           published_at: 1_700_001_000,
           primary_source_url: 'https://news.example.com/old',
         }),
@@ -536,7 +536,7 @@ describe('runHistoricalDedupBatch — REQ-PIPE-003', () => {
       queryByIdResults: {
         [SELF_ID]: singleMatch({
           id: MATCH_ID,
-          score: 0.87,
+          score: 0.89,
           published_at: 1_700_001_000,
           primary_source_url: 'https://other-publisher.example/old',
         }),
@@ -616,6 +616,109 @@ describe('runHistoricalDedupBatch — REQ-PIPE-003', () => {
     expect(result.merged).toBe(0);
     expect(aiRun).toHaveBeenCalledTimes(1);
     expect(fixture.batchCalls.length).toBe(0);
+  });
+
+  it('REQ-PIPE-003 AC 13: match outside the 72h time window is skipped despite high cosine', async () => {
+    const SELF_ID = 'self';
+    const MATCH_ID = 'older-by-9-days';
+    const SELF_PA = 1_700_000_000;
+    const NINE_DAYS_LATER = SELF_PA + 9 * 24 * 60 * 60;
+    // Score is well above the auto-merge threshold but the match is 9
+    // days newer — outside the default 72h news-cycle window. Hard
+    // gate skips it before the cosine check; merged stays 0 and no
+    // Vectorize delete is issued.
+    const { result, fixture, vectorize } = await callBatch({
+      articles: [
+        {
+          id: SELF_ID,
+          published_at: SELF_PA,
+          primary_source_url: 'https://acme.example/self',
+        },
+      ],
+      existenceGuardResults: { [MATCH_ID]: { present: 1 } },
+      queryByIdResults: {
+        [SELF_ID]: singleMatch({
+          id: MATCH_ID,
+          score: 0.95,
+          published_at: NINE_DAYS_LATER,
+          primary_source_url: 'https://other.example/post',
+        }),
+      },
+    });
+    expect(result.merged).toBe(0);
+    expect(fixture.batchCalls.length).toBe(0);
+    expect(vectorize.deleteByIds).not.toHaveBeenCalled();
+  });
+
+  it('REQ-PIPE-003 AC 13: match exactly at the 72h boundary is included (boundary inclusive)', async () => {
+    const SELF_ID = 'self';
+    const MATCH_ID = 'older-by-72h-exact';
+    const SELF_PA = 1_700_000_000;
+    const SEVENTY_TWO_HOURS = 72 * 60 * 60;
+    const { result, fixture } = await callBatch({
+      articles: [
+        {
+          id: SELF_ID,
+          published_at: SELF_PA,
+          primary_source_url: 'https://acme.example/self',
+        },
+      ],
+      existenceGuardResults: { [MATCH_ID]: { present: 1 } },
+      queryByIdResults: {
+        [SELF_ID]: singleMatch({
+          id: MATCH_ID,
+          score: 0.95,
+          published_at: SELF_PA + SEVENTY_TWO_HOURS,
+          primary_source_url: 'https://other.example/post',
+        }),
+      },
+    });
+    expect(result.merged).toBe(1);
+    expect(fixture.batchCalls.length).toBeGreaterThan(0);
+  });
+
+  it('REQ-PIPE-003 AC 13: time window is env-tunable (DEDUP_TIME_WINDOW_SECONDS=60 blocks a 5-minute spread)', async () => {
+    const SELF_ID = 'self';
+    const MATCH_ID = 'older-by-5-min';
+    const SELF_PA = 1_700_000_000;
+    const FIVE_MINUTES = 5 * 60;
+    // Override the window to 60 seconds via env. A 5-minute delta is
+    // outside that tighter window, so the match is skipped despite a
+    // 0.95 cosine.
+    const fixture: DbFixture = {
+      articles: [
+        {
+          id: SELF_ID,
+          published_at: SELF_PA,
+          primary_source_url: 'https://acme.example/self',
+        },
+      ],
+      existenceGuardResults: { [MATCH_ID]: { present: 1 } },
+      remainingCount: 0,
+      batchCalls: [],
+      allCalls: [],
+    };
+    const db = makeDb(fixture);
+    const vectorize = makeVectorize({
+      queryByIdResults: {
+        [SELF_ID]: singleMatch({
+          id: MATCH_ID,
+          score: 0.95,
+          published_at: SELF_PA + FIVE_MINUTES,
+          primary_source_url: 'https://other.example/post',
+        }),
+      },
+    });
+    const env = {
+      DB: db,
+      VECTORIZE: vectorize,
+      AI: { run: vi.fn() },
+      DEDUP_TIME_WINDOW_SECONDS: '60',
+    } as unknown as Env;
+    const result = await runHistoricalDedupBatch(env, null, 100);
+    expect(result.merged).toBe(0);
+    expect(fixture.batchCalls.length).toBe(0);
+    expect(vectorize.deleteByIds).not.toHaveBeenCalled();
   });
 
   it('REQ-PIPE-009: cosine below floor does not invoke LLM', async () => {

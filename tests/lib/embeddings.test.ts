@@ -7,9 +7,11 @@ import {
   deleteVectorsBatched,
   readCosineThreshold,
   readSameVendorPenalty,
+  readTimeWindowSeconds,
   EMBEDDING_MODEL_ID,
   DEFAULT_COSINE_THRESHOLD,
   DEFAULT_SAME_VENDOR_PENALTY,
+  DEFAULT_TIME_WINDOW_SECONDS,
 } from '~/lib/embeddings';
 
 describe('buildEmbeddingInput', () => {
@@ -166,6 +168,40 @@ describe('readCosineThreshold', () => {
     expect(readCosineThreshold({ DEDUP_COSINE_THRESHOLD: 'banana' })).toBe(
       DEFAULT_COSINE_THRESHOLD,
     );
+  });
+});
+
+describe('readTimeWindowSeconds', () => {
+  it('REQ-PIPE-003 AC 13: returns the default (72h) when env var is unset', () => {
+    expect(readTimeWindowSeconds({})).toBe(DEFAULT_TIME_WINDOW_SECONDS);
+    expect(DEFAULT_TIME_WINDOW_SECONDS).toBe(259_200);
+  });
+
+  it('parses a valid positive number from the env', () => {
+    expect(readTimeWindowSeconds({ DEDUP_TIME_WINDOW_SECONDS: '86400' })).toBe(
+      86_400,
+    );
+  });
+
+  it('falls back to the default on zero or negative values (never disables the gate silently)', () => {
+    expect(readTimeWindowSeconds({ DEDUP_TIME_WINDOW_SECONDS: '0' })).toBe(
+      DEFAULT_TIME_WINDOW_SECONDS,
+    );
+    expect(readTimeWindowSeconds({ DEDUP_TIME_WINDOW_SECONDS: '-1' })).toBe(
+      DEFAULT_TIME_WINDOW_SECONDS,
+    );
+  });
+
+  it('falls back to the default on non-numeric values', () => {
+    expect(
+      readTimeWindowSeconds({ DEDUP_TIME_WINDOW_SECONDS: 'banana' }),
+    ).toBe(DEFAULT_TIME_WINDOW_SECONDS);
+  });
+
+  it('accepts a very large number to effectively disable the time gate', () => {
+    expect(
+      readTimeWindowSeconds({ DEDUP_TIME_WINDOW_SECONDS: '999999999' }),
+    ).toBe(999_999_999);
   });
 });
 

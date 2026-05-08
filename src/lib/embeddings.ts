@@ -41,11 +41,18 @@ const MAX_BATCH_SIZE = 100;
 const VECTORIZE_DELETE_BATCH_SIZE = 100;
 
 /** Default cosine threshold when DEDUP_COSINE_THRESHOLD is unset.
- *  Lowered from 0.85 to 0.78 on 2026-05-07 after a prod audit found
- *  same-news-cycle clusters (PAN-OS zero-day reporting at 0.75-0.78,
- *  PANW valuation week at 0.73-0.80) sat below the previous threshold.
- *  See documentation/decisions/ for the calibration write-up. */
-export const DEFAULT_COSINE_THRESHOLD = 0.78;
+ *  Raised from 0.78 to 0.88 on 2026-05-08 after a 13-source false-merge
+ *  cluster appeared in production on a dense theme topic ("AI agent
+ *  security/identity/governance") where independent articles routinely
+ *  scored 0.78-0.86 on cosine alone. The 0.78-0.88 stripe is now the
+ *  LLM rerank band rather than auto-merge. */
+export const DEFAULT_COSINE_THRESHOLD = 0.88;
+
+/** Default time-window in seconds when DEDUP_TIME_WINDOW_SECONDS is
+ *  unset. Same-event clusters publish in one news cycle; pairs whose
+ *  published_at differ by more than this are never merged regardless
+ *  of cosine. 259200 = 72h. */
+export const DEFAULT_TIME_WINDOW_SECONDS = 259_200;
 
 /** Default same-vendor cosine penalty when DEDUP_SAME_VENDOR_PENALTY is
  *  unset. Subtracted from the raw cosine when both articles resolve to
@@ -67,6 +74,22 @@ export function readCosineThreshold(env: Pick<Env, 'DEDUP_COSINE_THRESHOLD'>): n
   const parsed = Number.parseFloat(raw);
   if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
     return DEFAULT_COSINE_THRESHOLD;
+  }
+  return parsed;
+}
+
+/** Read the runtime time-window in seconds from env, with a safe
+ *  fallback. Parses the env var (string-typed in wrangler.toml). A
+ *  zero or negative value falls back to the default rather than
+ *  silently disabling the time-window gate. */
+export function readTimeWindowSeconds(
+  env: Pick<Env, 'DEDUP_TIME_WINDOW_SECONDS'>,
+): number {
+  const raw = env.DEDUP_TIME_WINDOW_SECONDS;
+  if (typeof raw !== 'string' || raw === '') return DEFAULT_TIME_WINDOW_SECONDS;
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_TIME_WINDOW_SECONDS;
   }
   return parsed;
 }

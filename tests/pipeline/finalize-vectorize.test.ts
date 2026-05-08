@@ -672,4 +672,122 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
     expect(aiRun).not.toHaveBeenCalled();
     expect(mockVec.deleteMock).not.toHaveBeenCalled();
   });
+
+  it('REQ-PIPE-003 AC 13: match outside the 72h time window is skipped despite high cosine', async () => {
+    const newId = 'new-1';
+    const oldId = 'old-9-days-ago';
+    const NEW_PA = 1_700_000_000;
+    const NINE_DAYS = 9 * 24 * 60 * 60;
+    const mockDb = makeMockDb({
+      articleRows: [
+        {
+          id: newId,
+          published_at: NEW_PA,
+          ingested_at: NEW_PA,
+          primary_source_url: 'https://newsite.example/post/2',
+        },
+      ],
+      existsIds: new Set([oldId]),
+    });
+    // High cosine but match is 9 days older — outside the 72h window
+    // so the time-window guard skips before any threshold check.
+    const matches = new Map<string, VectorizeMatch[]>();
+    matches.set(newId, [
+      {
+        id: oldId,
+        score: 0.95,
+        metadata: {
+          published_at: NEW_PA - NINE_DAYS,
+          primary_source_url: 'https://oldsite.example/post/1',
+        },
+      } as unknown as VectorizeMatch,
+    ]);
+    const mockVec = makeMockVectorize(matches);
+    const env = makeEnv(mockDb.db, mockVec.binding);
+    await processOneFinalize(env, { scrape_run_id: 'r1' });
+    // No merge statements were issued (no article_sources INSERTs).
+    const mergeStmts = mockDb.calls.filter((c) =>
+      c.sql.includes('INSERT INTO article_sources'),
+    );
+    expect(mergeStmts).toHaveLength(0);
+    expect(mockVec.deleteMock).not.toHaveBeenCalled();
+  });
+
+  it('REQ-PIPE-003 AC 13: match within the time window merges normally', async () => {
+    const newId = 'new-1';
+    const oldId = 'old-2-days-ago';
+    const NEW_PA = 1_700_000_000;
+    const TWO_DAYS = 2 * 24 * 60 * 60;
+    const mockDb = makeMockDb({
+      articleRows: [
+        {
+          id: newId,
+          published_at: NEW_PA,
+          ingested_at: NEW_PA,
+          primary_source_url: 'https://newsite.example/post/2',
+        },
+      ],
+      existsIds: new Set([oldId]),
+    });
+    const matches = new Map<string, VectorizeMatch[]>();
+    matches.set(newId, [
+      {
+        id: oldId,
+        score: 0.95,
+        metadata: {
+          published_at: NEW_PA - TWO_DAYS,
+          primary_source_url: 'https://oldsite.example/post/1',
+        },
+      } as unknown as VectorizeMatch,
+    ]);
+    const mockVec = makeMockVectorize(matches);
+    const env = makeEnv(mockDb.db, mockVec.binding);
+    await processOneFinalize(env, { scrape_run_id: 'r1' });
+    const mergeStmts = mockDb.calls.filter((c) =>
+      c.sql.includes('INSERT INTO article_sources'),
+    );
+    expect(mergeStmts.length).toBeGreaterThanOrEqual(1);
+    expect(mockVec.deleteMock).toHaveBeenCalledWith([newId]);
+  });
+
+  it('REQ-PIPE-003 AC 13: time window is env-tunable (DEDUP_TIME_WINDOW_SECONDS=60 blocks a 5-minute spread)', async () => {
+    const newId = 'new-1';
+    const oldId = 'old-5-min-ago';
+    const NEW_PA = 1_700_000_000;
+    const FIVE_MIN = 5 * 60;
+    const mockDb = makeMockDb({
+      articleRows: [
+        {
+          id: newId,
+          published_at: NEW_PA,
+          ingested_at: NEW_PA,
+          primary_source_url: 'https://newsite.example/post/2',
+        },
+      ],
+      existsIds: new Set([oldId]),
+    });
+    const matches = new Map<string, VectorizeMatch[]>();
+    matches.set(newId, [
+      {
+        id: oldId,
+        score: 0.95,
+        metadata: {
+          published_at: NEW_PA - FIVE_MIN,
+          primary_source_url: 'https://oldsite.example/post/1',
+        },
+      } as unknown as VectorizeMatch,
+    ]);
+    const mockVec = makeMockVectorize(matches);
+    // Override window to 60s — five-minute delta is now outside.
+    const env = {
+      ...makeEnv(mockDb.db, mockVec.binding),
+      DEDUP_TIME_WINDOW_SECONDS: '60',
+    } as unknown as Env;
+    await processOneFinalize(env, { scrape_run_id: 'r1' });
+    const mergeStmts = mockDb.calls.filter((c) =>
+      c.sql.includes('INSERT INTO article_sources'),
+    );
+    expect(mergeStmts).toHaveLength(0);
+    expect(mockVec.deleteMock).not.toHaveBeenCalled();
+  });
 });
