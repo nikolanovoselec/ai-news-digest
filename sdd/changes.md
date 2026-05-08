@@ -8,6 +8,7 @@ Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are a
 
 ## 2026-05-08
 
+- REQ-OPS-008 AC 6 rewritten: a terminal pipeline status (success, denied by the auth gate, or kick-time error) now persists across page reloads within the freshness window so the operator can see the outcome on return. The previous auto-clear behavior dropped denied/error feedback the moment it rendered.
 - REQ-OPS-008 AC 4 reworded: a "Full pipeline run" no longer depends on the operator's browser tab staying open. Once the run is activated, every phase advances server-side; closing the tab, navigating away, or losing network mid-run no longer interrupts the pipeline, and reopening the surface restores live progress from the run's audit state. Status moves from Partial to Implemented.
 - REQ-PIPE-003 same-tick dedup hardened: same-story pairs surviving a single scrape tick now reliably collapse via the cross-chunk finalize pass even when many merges land at once. The earlier shape silently dropped every merge in a busy tick (cosines well above the same-story bar but no merge applied) when the per-tick batch grew large, leaving same-event clusters visibly duplicated until the next historical sweep.
 
