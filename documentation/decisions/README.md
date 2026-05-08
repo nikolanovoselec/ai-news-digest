@@ -1041,7 +1041,9 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 
 **Decision:** `DEDUP_COSINE_THRESHOLD` rises from `"0.78"` to `"0.88"` on production and integration, widening the LLM-rerank borderline band from `[0.70, 0.78)` to `[0.70, 0.88)`. A new `DEDUP_TIME_WINDOW_SECONDS` env var (default `"259200"`, 72h) gates the match-filter loop in both the finalize-consumer and the historical-dedup batch helper: pairs whose `published_at` differ by more than this window are skipped before the cosine check, regardless of score. The rerank prompt and `mergeAsAltSource` plumbing are unchanged.
 
-**Context:** A 2026-05-08 production sweep produced a visible 13-source false-merge cluster on the Hacker News article "Bridging the AI Agent Authority Gap" (`01KQ206AW96SW3KSJA0626V7M5` on `news.graymatter.ch`). Articles spanning **9 days** (Apr 23 → May 2) on the broad theme "AI agent security/identity/governance" — including the operator's own blog post — collapsed onto the Hacker News story as alt-sources. Inspection showed the cluster members are independent events (separate WorkOS posts on OAuth-for-agents and on MCP authentication, separate InfoQ presentations, a Palo Alto Networks blog, etc.) that share topical vocabulary, not the same announcement re-reported by multiple outlets. The 0.78 threshold from AD36 was tuned against tightly-bounded news-cycle clusters (PAN-OS zero-day, PANW valuation week) but did not anticipate dense theme topics where independent events score 0.78-0.86 on cosine alone.
+**Context:** A 2026-05-08 production sweep produced a visible 13-source false-merge cluster on the Hacker News article "Bridging the AI Agent Authority Gap" (`01KQ206AW96SW3KSJA0626V7M5` on `news.graymatter.ch`). Articles spanning **9 days** (Apr 23 → May 2) on the broad theme "AI agent security/identity/governance" — including the operator's own blog post — collapsed onto the Hacker News story as alt-sources. The cluster members are independent events (separate WorkOS posts on OAuth-for-agents and MCP authentication, InfoQ presentations, a Palo Alto Networks blog) that share topical vocabulary, not the same announcement re-reported by multiple outlets.
+
+The 0.78 threshold from AD36 was tuned against tightly-bounded news-cycle clusters (PAN-OS zero-day, PANW valuation week) but did not anticipate dense theme topics where independent events score 0.78-0.86 on cosine alone.
 
 **Alternatives considered:**
 
@@ -1054,7 +1056,7 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 
 **Consequences:**
 
-- The LLM rerank band widens from 8 cosine points to 18, raising rerank call volume per finalize tick. At typical scrape sizes (≤200 articles per tick) this adds a handful of LLM calls per tick — well under the cron CPU budget.
+- The LLM rerank band widens from 8 cosine points to 18, raising rerank call volume per finalize tick. At typical scrape sizes (≤200 articles per tick) this adds a handful of LLM calls — well under the cron CPU budget.
 - This fix is forward-only; existing false-merge clusters stay merged. To un-merge manually: list `article_sources` rows for the surviving article id, drop false-positive rows, re-scrape the dropped source URLs so the next ingestion embeds them as standalone articles.
 - `DEDUP_TIME_WINDOW_SECONDS` is the env-var lever for tuning the window; the `DEDUP_COSINE_THRESHOLD` lever is unchanged in shape (only the value moved). Both are runtime-tunable without redeploy.
 - Two new structured log lines: `finalize_match_skipped_time_window` and `historical_dedup_match_skipped_time_window`, each carrying `delta_seconds`, `self_id`, `match_id`. These let operators measure how often the time-window gate fires versus how often the cosine gate fires — useful for future calibration.
