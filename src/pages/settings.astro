@@ -1083,14 +1083,16 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
       // Full pipeline (REQ-OPS-008). One POST kicks the orchestrator;
       // every phase runs in the queue consumer. The browser is
       // display-only — closing the tab does not interrupt the run.
-      const kickRes = await fetch('/api/admin/pipeline-run', {
-        method: 'POST',
+      // GET (not POST) because Cloudflare Access intercepts state-
+      // changing POSTs on /api/admin/* and bounces them through SSO,
+      // which the browser fetch in CORS mode cannot follow. Mirrors
+      // the force-refresh kicker pattern. Three-layer admin auth still
+      // gates the endpoint server-side.
+      const kickUrl =
+        '/api/admin/pipeline-run?mode=' + (wipe ? 'wipe' : 'full');
+      const kickRes = await fetch(kickUrl, {
         credentials: 'same-origin',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ mode: wipe ? 'wipe' : 'full' }),
+        headers: { Accept: 'application/json' },
       });
       if (!kickRes.ok) throw new Error(`pipeline-run HTTP ${kickRes.status}`);
       const kickBody = (await kickRes.json()) as {

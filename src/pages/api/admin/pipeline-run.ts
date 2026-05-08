@@ -12,11 +12,21 @@
 // computed before scraping resumes.
 //
 // Three-layer admin auth (CF-001) — same gate every other admin route
-// uses. checkDevEndpointOrigin is the CSRF gate: no Origin header
-// (curl / dev-bypass) passes; a browser-driven cross-origin POST is
-// rejected. This route returns 403 instead of the dev-endpoint's 404
-// silence — operators behind CF Access have already authenticated, so
-// leaking endpoint existence is not a concern here.
+// uses. checkDevEndpointOrigin is the CSRF gate on POST: no Origin
+// header (curl / dev-bypass) passes; a browser-driven cross-origin
+// POST is rejected. This route returns 403 instead of the dev-
+// endpoint's 404 silence — operators behind CF Access have already
+// authenticated, so leaking endpoint existence is not a concern here.
+//
+// GET handler exists for the same reason as force-refresh.ts: when CF
+// Access fronts /api/admin/*, it intercepts state-changing POSTs even
+// with a valid CF_AppSession and bounces them through SSO, returning
+// the user as a GET to the original URL. Browsers fetching POST in
+// CORS mode cannot follow that cross-origin redirect ("Failed to
+// fetch"). Accepting GET lets the settings-page kicker survive Access
+// without form-callback gymnastics. GET is idempotent in spec but the
+// underlying queue dispatch is not — three-layer admin auth still
+// gates both methods.
 
 import type { APIContext } from 'astro';
 import { log } from '~/lib/log';
@@ -99,6 +109,119 @@ export async function POST(context: APIContext): Promise<Response> {
                   error = ?3
             WHERE id = ?1
               AND status = 'running'`,
+        )
+        .bind(pipelineRunId, now, String(err).slice(0, 500))
+        .run();
+    } catch {
+      /* swallow */
+    }
+    if (wantsJson) {
+      return applyRefreshCookie(
+        new Response(
+          JSON.stringify({ ok: false, error: 'pipeline_kick_failed' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } },
+        ),
+        adminAuth,
+      );
+    }
+    return applyRefreshCookie(
+      new Response(null, {
+        status: 303,
+        headers: { Location: `${appOrigin}/settings?pipeline=error` },
+      }),
+      adminAuth,
+    );
+  }
+
+  log('info', 'digest.generation', {
+    status: 'pipeline_kicked',
+    pipeline_run_id: pipelineRunId,
+    mode,
+    initial_phase: initialPhase,
+  });
+
+  if (wantsJson) {
+    const body: KickResult = {
+      ok: true,
+      pipeline_run_id: pipelineRunId,
+      mode,
+      current_phase: initialPhase,
+      started_at: now,
+    };
+    return applyRefreshCookie(
+      new Response(JSON.stringify(body, null, 2), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      }),
+      adminAuth,
+    );
+  }
+
+  return applyRefreshCookie(
+    new Response(null, {
+      status: 303,
+      headers: {
+        Location: `${appOrigin}/settings?pipeline=enqueued&pipeline_run_id=${encodeURIComponent(pipelineRunId)}`,
+      },
+    }),
+    adminAuth,
+  );
+}
+
+export async function GET(context: APIContext): Promise<Response> {
+  const env = context.locals.runtime.env;
+  if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
+    return new Response('Application not configured', { status: 500 });
+  }
+  const appOrigin = originOf(env.APP_URL);
+  const wantsJson = (context.request.headers.get('Accept') ?? '').includes(
+    'application/json',
+  );
+
+  const adminAuth = await requireAdminSession(context);
+  if (!adminAuth.ok) {
+    if (wantsJson) return adminAuth.response;
+    return new Response(null, {
+      status: 303,
+      headers: { Location: `${appOrigin}/settings?pipeline=denied` },
+    });
+  }
+
+  const url = new URL(context.request.url);
+  const mode: 'full' | 'wipe' =
+    url.searchParams.get('mode') === 'wipe' ? 'wipe' : 'full';
+  const initialPhase: PipelinePhase =
+    mode === 'wipe' ? 'reembed_flip' : 'scrape_kick';
+  const pipelineRunId = generateUlid();
+  const now = Math.floor(Date.now() / 1000);
+
+  try {
+    await env.DB
+      .prepare(
+        `INSERT INTO pipeline_runs
+           (id, status, mode, current_phase, embed_processed, embed_remaining,
+            started_at, updated_at)
+         VALUES (?1, 'running', ?2, ?3, 0, 0, ?4, ?4)`,
+      )
+      .bind(pipelineRunId, mode, initialPhase, now)
+      .run();
+    await env.PIPELINE_JOBS.send({
+      pipeline_run_id: pipelineRunId,
+      phase: initialPhase,
+    });
+  } catch (err) {
+    log('error', 'digest.generation', {
+      status: 'pipeline_kick_failed',
+      pipeline_run_id: pipelineRunId,
+      detail: String(err).slice(0, 500),
+    });
+    try {
+      await env.DB
+        .prepare(
+          `UPDATE pipeline_runs
+              SET status = 'failed', updated_at = ?2,
+                  error = ?3
+            WHERE id = ?1 AND status = 'running'`,
         )
         .bind(pipelineRunId, now, String(err).slice(0, 500))
         .run();
