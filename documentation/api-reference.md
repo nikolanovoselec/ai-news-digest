@@ -454,7 +454,7 @@ Polling endpoint for the queue-driven historical-dedup sweep. Returns a snapshot
 
 Kicker for the backend-driven full pipeline run. Creates a `pipeline_runs` audit row and enqueues exactly one `pipeline-jobs` queue message; the consumer (`src/queue/pipeline-consumer.ts`) drives the seven phases server-side without depending on the operator's browser tab. Used by the **Full pipeline run** button on `/settings`.
 
-**Auth:** Admin session required. No Origin check on POST (the dev-bypass curl flow drives this same endpoint).
+**Auth:** Admin session required. Origin check applies (CSRF gate via `checkDevEndpointOrigin`): requests with no `Origin` header pass (curl / dev-bypass); a browser-sent cross-origin `Origin` is rejected with `403 forbidden_origin`.
 
 **Request body (JSON, optional):**
 
@@ -464,7 +464,7 @@ Kicker for the backend-driven full pipeline run. Creates a `pipeline_runs` audit
 
 **Success (202):** `{ ok: true, pipeline_run_id: string, mode: 'full'|'wipe', current_phase: string, started_at: number }`.
 
-**Error responses:** `401 unauthorized` | `403 forbidden` | `500 pipeline_kick_failed`.
+**Error responses:** `401 unauthorized` | `403 forbidden_origin` (cross-origin browser POST) | `500 pipeline_kick_failed`.
 
 **Implements:** [REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-from-the-settings-surface)
 
