@@ -107,7 +107,7 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 | Worker | `ai-news-digest-integration` |
 | D1 | `ai-news-digest-integration` |
 | KV | `ai-news-digest-integration-kv` (auto-derived) |
-| Queues | `scrape-coordinator-integration`, `scrape-chunks-integration`, `scrape-finalize-integration`, `dedup-sweep-integration` |
+| Queues | `scrape-coordinator-integration`, `scrape-chunks-integration`, `scrape-finalize-integration`, `dedup-sweep-integration`, `pipeline-jobs-integration` |
 | Workers AI | shared `AI` binding (no per-env isolation needed) |
 | Vectorize | `ai-news-embeddings-integration` |
 
