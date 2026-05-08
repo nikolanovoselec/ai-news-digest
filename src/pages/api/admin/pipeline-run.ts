@@ -1,40 +1,46 @@
 // Implements REQ-OPS-008
 // Implements REQ-AUTH-001
 //
-// Operator-only kicker for the backend-driven full pipeline run. POST
-// /api/admin/pipeline-run creates one `pipeline_runs` row and enqueues
-// exactly one `pipeline-jobs` queue message; the consumer drives the
-// rest of the phases without an open browser tab.
+// Operator-only kicker for the backend-driven full pipeline run.
+// Creates one `pipeline_runs` row and enqueues exactly one
+// `pipeline-jobs` queue message; the consumer drives the rest of the
+// phases without an open browser tab.
 //
-// Body (JSON, optional): `{ "mode": "full" | "wipe" }`. Defaults to
-// 'full' (keep existing embeddings, scrape + dedup). 'wipe' starts at
-// reembed_flip — every article's embedding is invalidated and re-
-// computed before scraping resumes.
+// Mode (`full` or `wipe`):
+//   - `full` (default): keep existing embeddings, scrape + dedup.
+//   - `wipe`: start at reembed_flip — every article's embedding is
+//             invalidated and re-computed before scraping resumes.
 //
-// Three-layer admin auth (CF-001) — same gate every other admin route
-// uses. checkDevEndpointOrigin is the CSRF gate on POST: no Origin
-// header (curl / dev-bypass) passes; a browser-driven cross-origin
-// POST is rejected. This route returns 403 instead of the dev-
-// endpoint's 404 silence — operators behind CF Access have already
-// authenticated, so leaking endpoint existence is not a concern here.
+// HTTP methods:
+//   - POST  — accepts `{"mode": "full"|"wipe"}` JSON or form body.
+//             Origin check (checkDevEndpointOrigin) gates browser-
+//             driven cross-origin POSTs; curl/dev-bypass passes.
+//   - GET   — accepts `?mode=full|wipe` query string. Required because
+//             Cloudflare Access intercepts state-changing POSTs on
+//             /api/admin/* even with a valid CF_AppSession and bounces
+//             them through SSO; browsers fetching POST in CORS mode
+//             cannot follow the cross-origin redirect ("Failed to
+//             fetch"). Mirrors the force-refresh.ts pattern.
+//             For `mode=wipe` GET specifically applies a defense-in-
+//             depth `Sec-Fetch-Site` check so a malicious cross-origin
+//             `<img src=…>` cannot escalate to a destructive
+//             re-embed; same-origin and direct-navigation traffic
+//             passes, cross-site triggers are rejected.
 //
-// GET handler exists for the same reason as force-refresh.ts: when CF
-// Access fronts /api/admin/*, it intercepts state-changing POSTs even
-// with a valid CF_AppSession and bounces them through SSO, returning
-// the user as a GET to the original URL. Browsers fetching POST in
-// CORS mode cannot follow that cross-origin redirect ("Failed to
-// fetch"). Accepting GET lets the settings-page kicker survive Access
-// without form-callback gymnastics. GET is idempotent in spec but the
-// underlying queue dispatch is not — three-layer admin auth still
-// gates both methods.
+// Three-layer admin auth (CF-001) gates both methods.
 
 import type { APIContext } from 'astro';
 import { log } from '~/lib/log';
-import { requireAdminSession } from '~/middleware/admin-auth';
+import {
+  requireAdminSession,
+  type AdminAuthResult,
+} from '~/middleware/admin-auth';
 import { applyRefreshCookie } from '~/middleware/auth';
 import { checkDevEndpointOrigin, originOf } from '~/middleware/origin-check';
 import { generateUlid } from '~/lib/ulid';
 import type { PipelinePhase } from '~/queue/pipeline-consumer';
+
+type AdminAuthOk = Extract<AdminAuthResult, { ok: true }>;
 
 interface KickResult {
   ok: true;
@@ -73,7 +79,71 @@ export async function POST(context: APIContext): Promise<Response> {
     });
   }
 
-  const mode = await parseMode(context.request);
+  const mode = await parseModeFromBody(context.request);
+  return runKick(env, adminAuth, appOrigin, wantsJson, mode);
+}
+
+export async function GET(context: APIContext): Promise<Response> {
+  const env = context.locals.runtime.env;
+  if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
+    return new Response('Application not configured', { status: 500 });
+  }
+  const appOrigin = originOf(env.APP_URL);
+  const wantsJson = (context.request.headers.get('Accept') ?? '').includes(
+    'application/json',
+  );
+
+  const adminAuth = await requireAdminSession(context);
+  if (!adminAuth.ok) {
+    if (wantsJson) return adminAuth.response;
+    return new Response(null, {
+      status: 303,
+      headers: { Location: `${appOrigin}/settings?pipeline=denied` },
+    });
+  }
+
+  const url = new URL(context.request.url);
+  const requestedMode: 'full' | 'wipe' =
+    url.searchParams.get('mode') === 'wipe' ? 'wipe' : 'full';
+
+  // Defense-in-depth on the destructive `wipe` path. Browsers send
+  // `Sec-Fetch-Site: same-origin` for fetches/links from this origin,
+  // `none` for typed-URL navigations, and `cross-site` for malicious
+  // <img>/<link> triggers from another origin. CF Access already
+  // gates the request, but a cross-origin `wipe` trigger from an
+  // operator's other authenticated tab would otherwise re-embed the
+  // entire corpus. `full` mode does not have this risk (it just
+  // mirrors the cron) so it accepts any fetch-site value.
+  if (requestedMode === 'wipe') {
+    const fetchSite = context.request.headers.get('sec-fetch-site');
+    if (
+      fetchSite !== null &&
+      fetchSite !== 'same-origin' &&
+      fetchSite !== 'none'
+    ) {
+      if (wantsJson) {
+        return new Response(
+          JSON.stringify({ ok: false, error: 'forbidden_origin' }),
+          { status: 403, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response('Forbidden', { status: 403 });
+    }
+  }
+
+  return runKick(env, adminAuth, appOrigin, wantsJson, requestedMode);
+}
+
+// Shared kick path used by both POST and GET. Inserts the audit row,
+// enqueues the first phase message, and shapes the response (JSON 202
+// for scripts, 303 to /settings for browsers).
+async function runKick(
+  env: Env,
+  adminAuth: AdminAuthOk,
+  appOrigin: string,
+  wantsJson: boolean,
+  mode: 'full' | 'wipe',
+): Promise<Response> {
   const initialPhase: PipelinePhase =
     mode === 'wipe' ? 'reembed_flip' : 'scrape_kick';
   const pipelineRunId = generateUlid();
@@ -89,7 +159,6 @@ export async function POST(context: APIContext): Promise<Response> {
       )
       .bind(pipelineRunId, mode, initialPhase, now)
       .run();
-
     await env.PIPELINE_JOBS.send({
       pipeline_run_id: pipelineRunId,
       phase: initialPhase,
@@ -168,120 +237,7 @@ export async function POST(context: APIContext): Promise<Response> {
   );
 }
 
-export async function GET(context: APIContext): Promise<Response> {
-  const env = context.locals.runtime.env;
-  if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
-    return new Response('Application not configured', { status: 500 });
-  }
-  const appOrigin = originOf(env.APP_URL);
-  const wantsJson = (context.request.headers.get('Accept') ?? '').includes(
-    'application/json',
-  );
-
-  const adminAuth = await requireAdminSession(context);
-  if (!adminAuth.ok) {
-    if (wantsJson) return adminAuth.response;
-    return new Response(null, {
-      status: 303,
-      headers: { Location: `${appOrigin}/settings?pipeline=denied` },
-    });
-  }
-
-  const url = new URL(context.request.url);
-  const mode: 'full' | 'wipe' =
-    url.searchParams.get('mode') === 'wipe' ? 'wipe' : 'full';
-  const initialPhase: PipelinePhase =
-    mode === 'wipe' ? 'reembed_flip' : 'scrape_kick';
-  const pipelineRunId = generateUlid();
-  const now = Math.floor(Date.now() / 1000);
-
-  try {
-    await env.DB
-      .prepare(
-        `INSERT INTO pipeline_runs
-           (id, status, mode, current_phase, embed_processed, embed_remaining,
-            started_at, updated_at)
-         VALUES (?1, 'running', ?2, ?3, 0, 0, ?4, ?4)`,
-      )
-      .bind(pipelineRunId, mode, initialPhase, now)
-      .run();
-    await env.PIPELINE_JOBS.send({
-      pipeline_run_id: pipelineRunId,
-      phase: initialPhase,
-    });
-  } catch (err) {
-    log('error', 'digest.generation', {
-      status: 'pipeline_kick_failed',
-      pipeline_run_id: pipelineRunId,
-      detail: String(err).slice(0, 500),
-    });
-    try {
-      await env.DB
-        .prepare(
-          `UPDATE pipeline_runs
-              SET status = 'failed', updated_at = ?2,
-                  error = ?3
-            WHERE id = ?1 AND status = 'running'`,
-        )
-        .bind(pipelineRunId, now, String(err).slice(0, 500))
-        .run();
-    } catch {
-      /* swallow */
-    }
-    if (wantsJson) {
-      return applyRefreshCookie(
-        new Response(
-          JSON.stringify({ ok: false, error: 'pipeline_kick_failed' }),
-          { status: 500, headers: { 'Content-Type': 'application/json' } },
-        ),
-        adminAuth,
-      );
-    }
-    return applyRefreshCookie(
-      new Response(null, {
-        status: 303,
-        headers: { Location: `${appOrigin}/settings?pipeline=error` },
-      }),
-      adminAuth,
-    );
-  }
-
-  log('info', 'digest.generation', {
-    status: 'pipeline_kicked',
-    pipeline_run_id: pipelineRunId,
-    mode,
-    initial_phase: initialPhase,
-  });
-
-  if (wantsJson) {
-    const body: KickResult = {
-      ok: true,
-      pipeline_run_id: pipelineRunId,
-      mode,
-      current_phase: initialPhase,
-      started_at: now,
-    };
-    return applyRefreshCookie(
-      new Response(JSON.stringify(body, null, 2), {
-        status: 202,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      }),
-      adminAuth,
-    );
-  }
-
-  return applyRefreshCookie(
-    new Response(null, {
-      status: 303,
-      headers: {
-        Location: `${appOrigin}/settings?pipeline=enqueued&pipeline_run_id=${encodeURIComponent(pipelineRunId)}`,
-      },
-    }),
-    adminAuth,
-  );
-}
-
-async function parseMode(request: Request): Promise<'full' | 'wipe'> {
+async function parseModeFromBody(request: Request): Promise<'full' | 'wipe'> {
   try {
     const raw = await request.text();
     if (raw === '') return 'full';
@@ -290,7 +246,6 @@ async function parseMode(request: Request): Promise<'full' | 'wipe'> {
       if (body.mode === 'wipe') return 'wipe';
       return 'full';
     }
-    // form-encoded body from a button submit
     const params = new URLSearchParams(raw);
     return params.get('mode') === 'wipe' ? 'wipe' : 'full';
   } catch {
