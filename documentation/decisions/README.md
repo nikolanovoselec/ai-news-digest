@@ -52,6 +52,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | AD36 | Lower dedup auto-merge threshold to 0.78 and remove the per-batch rerank cap | Architecture | 2026-05-07 |
 | AD37 | Full pipeline run is backend-orchestrated; browser tab is display-only | Architecture | 2026-05-08 |
 | AD38 | CF Access-protected admin endpoints must be invoked via top-level navigation, not fetch() | Security | 2026-05-08 |
+| AD39 | Raise dedup auto-merge threshold to 0.88 and gate merges to a 72h news-cycle window | Architecture | 2026-05-08 |
 
 ---
 
@@ -1031,6 +1032,37 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 - The settings page must handle the `?pipeline=` URL parameter on load and convert it to localStorage state before any polling logic runs.
 
 **Related requirements:** [REQ-OPS-008](../../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-from-the-settings-surface) (AC 6 - terminal state persistence survives reload), [REQ-OPS-005](../../sdd/observability.md#req-ops-005-admin-force-refresh-endpoint)
+
+---
+
+### AD39: Raise dedup auto-merge threshold to 0.88 and gate merges to a 72h news-cycle window
+
+**Status:** Accepted (2026-05-08)
+
+**Decision:** `DEDUP_COSINE_THRESHOLD` rises from `"0.78"` to `"0.88"` on production and integration, widening the LLM-rerank borderline band from `[0.70, 0.78)` to `[0.70, 0.88)`. A new `DEDUP_TIME_WINDOW_SECONDS` env var (default `"259200"`, 72h) gates the match-filter loop in both the finalize-consumer and the historical-dedup batch helper: pairs whose `published_at` differ by more than this window are skipped before the cosine check, regardless of score. The rerank prompt and `mergeAsAltSource` plumbing are unchanged.
+
+**Context:** A 2026-05-08 production sweep produced a visible 13-source false-merge cluster on the Hacker News article "Bridging the AI Agent Authority Gap" (`01KQ206AW96SW3KSJA0626V7M5` on `news.graymatter.ch`). Articles spanning **9 days** (Apr 23 → May 2) on the broad theme "AI agent security/identity/governance" — including the operator's own blog post — collapsed onto the Hacker News story as alt-sources. The cluster members are independent events (separate WorkOS posts on OAuth-for-agents and MCP authentication, InfoQ presentations, a Palo Alto Networks blog) that share topical vocabulary, not the same announcement re-reported by multiple outlets.
+
+The 0.78 threshold from AD36 was tuned against tightly-bounded news-cycle clusters (PAN-OS zero-day, PANW valuation week) but did not anticipate dense theme topics where independent events score 0.78-0.86 on cosine alone.
+
+**Alternatives considered:**
+
+- **Raise threshold to 0.85 only.** Rejected. 0.85 still leaves several pairs from the false-merge cluster above the auto-merge bar; the empirical floor of dense-theme false-positives sits closer to 0.86 in the 2026-05-08 audit.
+- **Add LLM rerank above the auto-merge threshold.** Rejected as incoherent. Reranking a trusted band signals a misplaced threshold. Raising auto-merge is the correct fix; the uncertain stripe then falls into the rerank band.
+- **Add the time-window gate without raising the threshold.** Rejected as insufficient. Some cluster pairs were within 24h; the time window kills multi-day spread but same-day dense-theme cases still need LLM disambiguation, which only triggers below auto-merge.
+- **Re-run historical dedup with the new constants to un-merge the cluster.** Rejected. Loser article rows were deleted and their vectors removed by `mergeAsAltSource`; un-merging requires re-scraping the original URLs and re-embedding, which is a separate operation. This fix is forward-only.
+
+**Rationale:** The merge contract is "same news event, not same topic." A 9-day spread on a dense theme is by construction never one event. The time-window gate is a hard filter the operator can reason about without understanding cosine geometry. The threshold raise widens the LLM rerank band so dense-theme cases at 0.78-0.88 get a binary "same event yes/no" judgment instead of auto-merging. The two knobs together cover the two failure modes the AD36 calibration missed: cross-news-cycle theme drift (time window) and within-news-cycle topical similarity (rerank band).
+
+**Consequences:**
+
+- The LLM rerank band widens from 8 cosine points to 18, raising rerank call volume per finalize tick. At typical scrape sizes (≤200 articles per tick) this adds a handful of LLM calls — well under the cron CPU budget.
+- This fix is forward-only; existing false-merge clusters stay merged. To un-merge manually: list `article_sources` rows for the surviving article id, drop false-positive rows, re-scrape the dropped source URLs so the next ingestion embeds them as standalone articles.
+- `DEDUP_TIME_WINDOW_SECONDS` is the env-var lever for tuning the window; the `DEDUP_COSINE_THRESHOLD` lever is unchanged in shape (only the value moved). Both are runtime-tunable without redeploy.
+- Two new structured log lines: `finalize_match_skipped_time_window` and `historical_dedup_match_skipped_time_window`, each carrying `delta_seconds`, `self_id`, `match_id`. These let operators measure how often the time-window gate fires versus how often the cosine gate fires — useful for future calibration.
+- The `dedup-diag` admin endpoint already surfaces cosine + threshold + same-publisher flag (REQ-PIPE-003 AC 10); time-delta is observable from the diag's published_at fields without an explicit additional surface.
+
+**Related requirements:** [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history) (AC 13 added), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-rerank-for-borderline-cosine-pairs)
 
 ---
 

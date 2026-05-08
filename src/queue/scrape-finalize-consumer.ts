@@ -15,10 +15,11 @@
 //      up by the admin embed-backfill + historical-dedup routes once
 //      their vectors land.
 //   2. For each article, runs `VECTORIZE.query(topK=5)` and filters
-//      matches to (a) different article id, (b) cosine score >=
-//      DEDUP_COSINE_THRESHOLD (default 0.78 per the 2026-05-07 prod
-//      audit; see AD36), (c) match `published_at < self.published_at`
-//      so older articles always win.
+//      matches to (a) different article id, (b) within the 72h
+//      news-cycle window (DEDUP_TIME_WINDOW_SECONDS), (c) cosine
+//      score >= DEDUP_COSINE_THRESHOLD (default 0.88 per the
+//      2026-05-08 false-merge audit; see AD39), (d) match
+//      `published_at < self.published_at` so older articles always win.
 //   3. When at least one match qualifies: pick the OLDEST match by
 //      `published_at`, batch the 6-statement `mergeAsAltSource` SQL
 //      (existing wins, new becomes alt-source, new row deleted), and
@@ -44,6 +45,7 @@ import { handleBatch } from '~/lib/queue-handler';
 import {
   readCosineThreshold,
   readSameVendorPenalty,
+  readTimeWindowSeconds,
   deleteVectorsBatched,
 } from '~/lib/embeddings';
 import { readRerankFloor, rerankBorderlinePair } from '~/lib/dedup-rerank';
@@ -150,6 +152,7 @@ export async function processOneFinalize(
   const threshold = readCosineThreshold(env);
   const sameVendorPenalty = readSameVendorPenalty(env);
   const rerankFloor = readRerankFloor(env);
+  const timeWindowSeconds = readTimeWindowSeconds(env);
 
   // Step 2 — for each article, query Vectorize for top-K matches and
   // pick the oldest sufficiently-similar older article (if any).
@@ -214,6 +217,22 @@ export async function processOneFinalize(
       const matchPublishedAt =
         typeof meta?.published_at === 'number' ? meta.published_at : null;
       if (matchPublishedAt === null) continue;
+      // Hard time-window gate — pairs further apart than the configured
+      // window are not the same news event regardless of how high the
+      // cosine score is. Cuts dense-theme false-merges (e.g. "AI agent
+      // governance") that score above the cosine ceiling on topical
+      // overlap alone. Applied BEFORE same-vendor penalty + threshold.
+      const deltaSeconds = Math.abs(self.published_at - matchPublishedAt);
+      if (deltaSeconds > timeWindowSeconds) {
+        log('info', 'digest.generation', {
+          status: 'finalize_match_skipped_time_window',
+          scrape_run_id: body.scrape_run_id,
+          self_id: self.id,
+          match_id: match.id,
+          delta_seconds: deltaSeconds,
+        });
+        continue;
+      }
       // Apply the same-vendor cosine penalty BEFORE the threshold gate.
       // Same-publisher pairs (cloud.google.com vs blog.google,
       // workos.com vs blog.workos.com) consistently produced inflated
