@@ -81,9 +81,16 @@ interface Env {
   // top-K match scores at or above this are merged into the older
   // article as alt-sources (REQ-PIPE-003). String-typed for parity
   // with QUEUE_MAX_RETRIES; the runtime parses to float and falls
-  // back to 0.78 when unset (lowered from 0.85 on 2026-05-07; see
-  // AD36 and src/lib/embeddings.ts header).
+  // back to 0.88 when unset (raised from 0.78 on 2026-05-08 after a
+  // 13-source false-merge cluster; see AD39 and src/lib/embeddings.ts
+  // header).
   DEDUP_COSINE_THRESHOLD?: string;
+  // Maximum allowed difference in published_at (seconds) between two
+  // articles for them to be considered the same event (REQ-PIPE-003).
+  // Pairs further apart are never merged regardless of cosine. The
+  // runtime parses to a positive number and falls back to 259200
+  // (72h) when unset.
+  DEDUP_TIME_WINDOW_SECONDS?: string;
   // Same-vendor cosine penalty subtracted before the threshold gate
   // when both articles' primary_source_url resolve to the same eTLD+1
   // (REQ-PIPE-003 AC 11). Default 0.05; clamped to [0, 1] at runtime.

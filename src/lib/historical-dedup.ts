@@ -23,6 +23,7 @@ import { mergeAsAltSource } from '~/lib/finalize-merge';
 import {
   readCosineThreshold,
   readSameVendorPenalty,
+  readTimeWindowSeconds,
   deleteVectorsBatched,
 } from '~/lib/embeddings';
 import { readRerankFloor, rerankBorderlinePair } from '~/lib/dedup-rerank';
@@ -85,6 +86,7 @@ export async function runHistoricalDedupBatch(
   const threshold = readCosineThreshold(env);
   const sameVendorPenalty = readSameVendorPenalty(env);
   const rerankFloor = readRerankFloor(env);
+  const timeWindowSeconds = readTimeWindowSeconds(env);
 
   // Walk articles by ascending (published_at, id), starting strictly
   // after the supplied composite cursor (or from the beginning when
@@ -156,6 +158,20 @@ export async function runHistoricalDedupBatch(
       const matchPublishedAt =
         typeof meta?.published_at === 'number' ? meta.published_at : null;
       if (matchPublishedAt === null) continue;
+      // Hard time-window gate — pairs published further apart than the
+      // configured window are not the same news event regardless of
+      // cosine. Cuts dense-theme false-merges from cross-news-cycle
+      // matches (REQ-PIPE-003).
+      const deltaSeconds = Math.abs(self.published_at - matchPublishedAt);
+      if (deltaSeconds > timeWindowSeconds) {
+        log('info', 'digest.generation', {
+          status: 'historical_dedup_match_skipped_time_window',
+          self_id: self.id,
+          match_id: match.id,
+          delta_seconds: deltaSeconds,
+        });
+        continue;
+      }
       // Same-vendor cosine penalty (REQ-PIPE-003 AC 11). Subtracts
       // the configured offset before comparing to the threshold so
       // same-publisher pairs need a stronger signal than cross-
