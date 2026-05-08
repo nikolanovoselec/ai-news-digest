@@ -706,8 +706,8 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
     const env = makeEnv(mockDb.db, mockVec.binding);
     await processOneFinalize(env, { scrape_run_id: 'r1' });
     // No merge statements were issued (no article_sources INSERTs).
-    const mergeStmts = mockDb.calls.filter((c) =>
-      c.sql.includes('INSERT INTO article_sources'),
+    const mergeStmts = mockDb.calls.filter(
+      (c) => c.sql.includes('article_sources') && c.sql.includes('INSERT'),
     );
     expect(mergeStmts).toHaveLength(0);
     expect(mockVec.deleteMock).not.toHaveBeenCalled();
@@ -743,8 +743,8 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
     const mockVec = makeMockVectorize(matches);
     const env = makeEnv(mockDb.db, mockVec.binding);
     await processOneFinalize(env, { scrape_run_id: 'r1' });
-    const mergeStmts = mockDb.calls.filter((c) =>
-      c.sql.includes('INSERT INTO article_sources'),
+    const mergeStmts = mockDb.calls.filter(
+      (c) => c.sql.includes('article_sources') && c.sql.includes('INSERT'),
     );
     expect(mergeStmts.length).toBeGreaterThanOrEqual(1);
     expect(mockVec.deleteMock).toHaveBeenCalledWith([newId]);
@@ -784,8 +784,8 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
       DEDUP_TIME_WINDOW_SECONDS: '60',
     } as unknown as Env;
     await processOneFinalize(env, { scrape_run_id: 'r1' });
-    const mergeStmts = mockDb.calls.filter((c) =>
-      c.sql.includes('INSERT INTO article_sources'),
+    const mergeStmts = mockDb.calls.filter(
+      (c) => c.sql.includes('article_sources') && c.sql.includes('INSERT'),
     );
     expect(mergeStmts).toHaveLength(0);
     expect(mockVec.deleteMock).not.toHaveBeenCalled();
