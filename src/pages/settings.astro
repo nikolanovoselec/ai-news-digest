@@ -1080,90 +1080,20 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
         return;
       }
 
-      // Full pipeline (REQ-OPS-008). One POST kicks the orchestrator;
-      // every phase runs in the queue consumer. The browser is
-      // display-only — closing the tab does not interrupt the run.
-      // GET (not POST) because Cloudflare Access intercepts state-
-      // changing POSTs on /api/admin/* and bounces them through SSO,
-      // which the browser fetch in CORS mode cannot follow. Mirrors
-      // the force-refresh kicker pattern. Three-layer admin auth still
-      // gates the endpoint server-side.
+      // Full pipeline (REQ-OPS-008). The browser does a top-level
+      // navigation to the kicker; CF Access protects /api/admin/* and
+      // a fetch() in CORS mode cannot follow the cross-origin SSO
+      // redirect. A real navigation lets the browser walk the full
+      // CF_AppSession → SSO → endpoint → 303 chain natively. The
+      // endpoint inserts the audit row, enqueues the orchestrator
+      // message, then 303s back to /settings?pipeline=enqueued&
+      // pipeline_run_id=…; init() picks that up on the return load
+      // and resumes polling from the saved state.
+      setStatus('Kicking pipeline…');
       const kickUrl =
         '/api/admin/pipeline-run?mode=' + (wipe ? 'wipe' : 'full');
-      const kickRes = await fetch(kickUrl, {
-        credentials: 'same-origin',
-        headers: { Accept: 'application/json' },
-      });
-      if (!kickRes.ok) throw new Error(`pipeline-run HTTP ${kickRes.status}`);
-      const kickBody = (await kickRes.json()) as {
-        ok: boolean;
-        pipeline_run_id: string;
-      };
-      if (!kickBody.ok || kickBody.pipeline_run_id === undefined) {
-        throw new Error('pipeline-run missing pipeline_run_id');
-      }
-      const pipelineRunId = kickBody.pipeline_run_id;
-      writePipelineState({
-        msg: `Pipeline queued — run ${pipelineRunId.slice(0, 6)}…`,
-        runId: pipelineRunId,
-      });
-      setStatus(`Pipeline queued — run ${pipelineRunId.slice(0, 6)}…`);
-
-      const POLL_INTERVAL_MS = 5000;
-      const POLL_MAX_TICKS = 720; // 1 hour safety cap
-      let ticks = 0;
-      while (ticks < POLL_MAX_TICKS) {
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-        ticks += 1;
-        const sRes = await fetch(
-          `/api/admin/pipeline-status?id=${encodeURIComponent(pipelineRunId)}`,
-          {
-            credentials: 'same-origin',
-            headers: { Accept: 'application/json' },
-          },
-        );
-        if (!sRes.ok) continue;
-        const sBody = (await sRes.json()) as {
-          ok: boolean;
-          status: 'running' | 'done' | 'failed';
-          current_phase: string;
-          embed_processed: number;
-          embed_remaining: number;
-          error: string | null;
-          scrape: {
-            articles_ingested: number;
-            articles_deduped: number;
-          } | null;
-          dedup: {
-            scanned: number;
-            merged: number;
-            remaining: number;
-          } | null;
-          done: boolean;
-          failed: boolean;
-        };
-        if (!sBody.ok) continue;
-        if (sBody.failed) {
-          throw new Error(
-            `pipeline failed${sBody.error !== null ? `: ${sBody.error}` : ''}`,
-          );
-        }
-        // Pin the scrape run id so wireScrapeProgress() paints the
-        // ingest progress bar against the same run we're driving.
-        if (
-          pinnedRunId === undefined &&
-          sBody.scrape !== null &&
-          sBody.current_phase !== 'reembed_flip' &&
-          sBody.current_phase !== 'reembed_drain'
-        ) {
-          // pipeline-status doesn't expose scrape_run_id at the top
-          // level; the existing scrape progress widget falls back to
-          // the most recent running row, which is fine here.
-        }
-        setStatus(formatPipelineStatus(sBody));
-        if (sBody.done) break;
-      }
-      writePipelineState({ done: true });
+      window.location.assign(kickUrl);
+      return;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setStatus(`Failed: ${msg}`);
@@ -1196,6 +1126,47 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
     }
     if (fullBtn === null && refreshBtn === null) return;
 
+    // Return-from-kicker handler. The Full pipeline run button does a
+    // top-level navigation to /api/admin/pipeline-run?mode=… (CF
+    // Access protects /api/admin/* and a fetch() in CORS mode cannot
+    // follow the cross-origin SSO redirect). The kicker 303s back to
+    // /settings?pipeline=enqueued&pipeline_run_id=…  on success, or
+    // pipeline=denied|error on failure. Convert that URL signal into
+    // localStorage state so the existing resume-polling block below
+    // picks it up, then strip the params so a manual reload doesn't
+    // reprocess the same callback.
+    try {
+      const pipelineParams = new URLSearchParams(window.location.search);
+      const pipelineState = pipelineParams.get('pipeline');
+      if (pipelineState !== null && pipelineState !== '') {
+        const runId = pipelineParams.get('pipeline_run_id') ?? '';
+        if (pipelineState === 'enqueued' && runId !== '') {
+          writePipelineState({
+            msg: `Pipeline queued — run ${runId.slice(0, 6)}…`,
+            runId,
+          });
+        } else if (pipelineState === 'denied') {
+          writePipelineState({
+            msg: 'Pipeline kick denied — admin auth failed.',
+            done: true,
+          });
+        } else if (pipelineState === 'error') {
+          writePipelineState({
+            msg: 'Pipeline kick failed — check logs.',
+            done: true,
+          });
+        }
+        pipelineParams.delete('pipeline');
+        pipelineParams.delete('pipeline_run_id');
+        const next = pipelineParams.toString();
+        const newUrl =
+          window.location.pathname + (next === '' ? '' : '?' + next);
+        window.history.replaceState({}, '', newUrl);
+      }
+    } catch {
+      /* leave saved state alone if URL parsing fails */
+    }
+
     // Restore the most recent pipeline status on page load so an
     // operator who navigated away mid-run sees the last phase text
     // (and a follow-up "completed while you were away" if the scrape
@@ -1218,6 +1189,11 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
       try {
         // Try pipeline-status first — if the saved id is a pipeline
         // run, the orchestrator may still be running on the backend.
+        // First call is a probe: if pipeline-status returns ok=true,
+        // the saved id IS a pipeline run and we keep polling until
+        // the orchestrator reports done/failed. If the probe fails
+        // (404, ok=false, network error), fall through to the
+        // scrape-status one-shot for refresh-mode runs.
         const pRes = await fetch(
           `/api/admin/pipeline-status?id=${encodeURIComponent(savedRunId)}`,
           { credentials: 'same-origin', headers: { Accept: 'application/json' } },
@@ -1236,13 +1212,51 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
             dedup?: { scanned: number; merged: number; remaining: number } | null;
           };
           if (pBody.ok && pBody.status !== undefined) {
+            const formatPiped = (
+              b: typeof pBody,
+            ): string =>
+              formatPipelineStatus(b as Parameters<typeof formatPipelineStatus>[0]);
             if (pBody.status === 'done' || pBody.status === 'failed') {
-              status.textContent = `${saved.msg} - ${pBody.status} while you were away.`;
+              status.textContent = `${pBody.status} while you were away.`;
               clearPipelineState();
-            } else {
-              status.textContent = formatPipelineStatus(
-                pBody as Parameters<typeof formatPipelineStatus>[0],
+              return;
+            }
+            status.textContent = formatPiped(pBody);
+            writePipelineState({ msg: status.textContent, runId: savedRunId });
+            // Live poll until terminal. The orchestrator runs on the
+            // backend regardless; this loop only mirrors its progress
+            // into the visible status line. Closing the tab is safe.
+            const POLL_INTERVAL_MS = 5000;
+            const POLL_MAX_TICKS = 720; // 1 hour safety cap
+            let ticks = 0;
+            while (ticks < POLL_MAX_TICKS) {
+              await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+              ticks += 1;
+              const sRes = await fetch(
+                `/api/admin/pipeline-status?id=${encodeURIComponent(savedRunId)}`,
+                {
+                  credentials: 'same-origin',
+                  headers: { Accept: 'application/json' },
+                },
               );
+              if (!sRes.ok) continue;
+              const sBody = (await sRes.json()) as typeof pBody & {
+                done?: boolean;
+                failed?: boolean;
+                error?: string | null;
+              };
+              if (!sBody.ok || sBody.status === undefined) continue;
+              const text = formatPiped(sBody);
+              status.textContent = text;
+              writePipelineState({ msg: text, runId: savedRunId });
+              if (sBody.status === 'done' || sBody.status === 'failed') {
+                status.textContent =
+                  sBody.status === 'failed' && sBody.error != null
+                    ? `Failed: ${sBody.error}`
+                    : `${sBody.status}.`;
+                clearPipelineState();
+                return;
+              }
             }
             return;
           }
