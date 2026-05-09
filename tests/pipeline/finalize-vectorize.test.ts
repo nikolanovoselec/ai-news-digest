@@ -150,6 +150,22 @@ function makeMockVectorize(matchesById: Map<string, VectorizeMatch[]>): MockVect
   };
 }
 
+interface MockSweepQueue {
+  binding: Queue;
+  sends: unknown[];
+}
+
+function makeMockSweepQueue(): MockSweepQueue {
+  const sends: unknown[] = [];
+  const send = vi.fn().mockImplementation(async (msg: unknown) => {
+    sends.push(msg);
+  });
+  return {
+    binding: { send, sendBatch: vi.fn() } as unknown as Queue,
+    sends,
+  };
+}
+
 function makeEnv(
   db: D1Database,
   vectorize: Vectorize,
@@ -159,11 +175,13 @@ function makeEnv(
     cosineThreshold?: string;
     highConfidenceCosine?: string;
     aiBinding?: { run: (model: string, params: Record<string, unknown>) => Promise<unknown> };
+    sweepQueue?: Queue;
   } = {},
 ): Env {
   return {
     DB: db,
     VECTORIZE: vectorize,
+    DEDUP_SWEEP: opts.sweepQueue ?? makeMockSweepQueue().binding,
     AI: opts.aiBinding ?? {
       run: vi.fn().mockResolvedValue({ response: '{"same_event":false}' }),
     },
@@ -941,5 +959,133 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
     );
     expect(mergeStmts).toHaveLength(0);
     expect(mockVec.deleteMock).not.toHaveBeenCalled();
+  });
+
+  // AD41 — bidirectional finalize merge. The newly-ingested article
+  // can be the OLDER side of the pair (slow-aggregator copy that
+  // arrives in a later tick with an earlier published_at than its
+  // already-stored match). The merge must still fire, with the late-
+  // arriving older article as winner.
+  it('REQ-PIPE-003 AC 15 (AD41): late-arriving older article absorbs already-stored newer match', async () => {
+    const lateOlderId = 'late-older-1'; // just-ingested, OLDER published_at
+    const storedNewerId = 'stored-newer-1'; // already in D1, NEWER published_at
+    const mockDb = makeMockDb({
+      articleRows: [
+        {
+          id: lateOlderId,
+          title: 'Late older title',
+          source_snippet: 'snippet',
+          published_at: 1_000_000, // OLDER
+          ingested_at: 2_000_500, // ingested later
+          primary_source_url: 'https://kron4.example/post/1',
+        },
+      ],
+      existsIds: new Set([storedNewerId]),
+    });
+    const matches = new Map<string, VectorizeMatch[]>();
+    matches.set(lateOlderId, [
+      {
+        id: storedNewerId,
+        score: 0.93, // raw above high-confidence band (cross-eTLD anyway)
+        metadata: {
+          published_at: 1_050_000, // NEWER than self by 50k seconds (~14h, < 72h window)
+          primary_source_url: 'https://latimes.example/post/2',
+        },
+      } as unknown as VectorizeMatch,
+    ]);
+    const mockVec = makeMockVectorize(matches);
+    const env = makeEnv(mockDb.db, mockVec.binding);
+
+    await processOneFinalize(env, { scrape_run_id: 'r1' });
+
+    // Merge must have fired with the LATE-ARRIVING-OLDER article
+    // (lateOlderId) as winner — its id binds to ?1 in the alt-source
+    // INSERT, the already-stored newer one (storedNewerId) is the
+    // loser at ?2.
+    const insertSourceStmt = mockDb.calls.find((c) =>
+      c.sql.includes('FROM articles WHERE id = ?2'),
+    );
+    expect(insertSourceStmt?.params[0]).toBe(lateOlderId);
+    expect(insertSourceStmt?.params[1]).toBe(storedNewerId);
+    // The Vectorize delete targets the LOSER (storedNewerId), not self.
+    expect(mockVec.deleteMock).toHaveBeenCalledTimes(1);
+    expect(mockVec.deleteMock).toHaveBeenCalledWith([storedNewerId]);
+  });
+
+  // AD41 — automatic post-tick dedup sweep. After a successful finalize
+  // (gate flipped, wonRecording=true), exactly one DEDUP_SWEEP message
+  // is enqueued with a non-null cursor scoped to the recent past, so
+  // pairs the per-tick pass cannot see (Vectorize indexing latency,
+  // late-arriving-older articles, etc.) get a second chance via the
+  // queue-driven historical sweep.
+  it('REQ-PIPE-003 AC 16 (AD41): enqueues a DEDUP_SWEEP message after successful finalize', async () => {
+    const mockDb = makeMockDb({
+      articleRows: [
+        {
+          id: 'a-1',
+          title: 't',
+          source_snippet: 's',
+          published_at: 2000,
+          ingested_at: 2000,
+          primary_source_url: 'https://a.example/x',
+        },
+      ],
+      flipChanges: 1,
+    });
+    const matches = new Map<string, VectorizeMatch[]>();
+    matches.set('a-1', []); // no candidates → no per-tick merge
+    const mockVec = makeMockVectorize(matches);
+    const sweepQueue = makeMockSweepQueue();
+    const env = makeEnv(mockDb.db, mockVec.binding, {
+      sweepQueue: sweepQueue.binding,
+    });
+
+    await processOneFinalize(env, { scrape_run_id: 'r1' });
+
+    expect(sweepQueue.sends).toHaveLength(1);
+    const msg = sweepQueue.sends[0] as {
+      run_id: string;
+      cursor: { pa: number; id: string } | null;
+    };
+    expect(typeof msg.run_id).toBe('string');
+    expect(msg.run_id.length).toBeGreaterThan(0);
+    expect(msg.cursor).not.toBeNull();
+    expect(msg.cursor?.id).toBe('');
+    expect(msg.cursor?.pa).toBeGreaterThan(0); // some recent epoch second
+    // The cursor must seed the sweep at "now - 48h" — i.e., NOT 0
+    // (which would scan the full corpus). 24h is a generous lower
+    // bound; AUTO_SWEEP_LOOKBACK_SECONDS is 48h.
+    const now = Math.floor(Date.now() / 1000);
+    expect(msg.cursor?.pa).toBeGreaterThan(now - 49 * 3600);
+    expect(msg.cursor?.pa).toBeLessThan(now - 24 * 3600);
+  });
+
+  // AD41 — auto-sweep is best-effort. When the gate flip races and
+  // loses (concurrent finalize redelivery), the auto-sweep MUST NOT
+  // fire — only the winner enqueues the sweep, otherwise duplicate
+  // sweeps would race on the same recent corpus tail.
+  it('REQ-PIPE-003 AC 16 (AD41): does NOT enqueue DEDUP_SWEEP when gate flip loses race', async () => {
+    const mockDb = makeMockDb({
+      articleRows: [
+        {
+          id: 'a-1',
+          title: 't',
+          source_snippet: 's',
+          published_at: 2000,
+          ingested_at: 2000,
+          primary_source_url: 'https://a.example/x',
+        },
+      ],
+      flipChanges: 0, // race lost — UPDATE found no rows where finalize_recorded=0
+    });
+    const mockVec = makeMockVectorize(new Map([['a-1', []]]));
+    const sweepQueue = makeMockSweepQueue();
+    const env = makeEnv(mockDb.db, mockVec.binding, {
+      sweepQueue: sweepQueue.binding,
+    });
+
+    await processOneFinalize(env, { scrape_run_id: 'r1' });
+
+    expect(sweepQueue.sends).toHaveLength(0);
   });
 });
