@@ -291,38 +291,6 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
     expect(mockVec.deleteMock).not.toHaveBeenCalled();
   });
 
-  it('REQ-PIPE-003: never merges into a match with strictly newer published_at', async () => {
-    const newId = 'new-1';
-    const newerId = 'newer-1';
-    const mockDb = makeMockDb({
-      articleRows: [
-        {
-          id: newId,
-          published_at: 2000,
-          ingested_at: 2000,
-          primary_source_url: 'https://newsite.example/post/2',
-        },
-      ],
-      existsIds: new Set([newerId]),
-    });
-    const matches = new Map<string, VectorizeMatch[]>();
-    matches.set(newId, [
-      {
-        id: newerId,
-        score: 0.95,
-        metadata: {
-          published_at: 3000,
-          primary_source_url: 'https://other.example/a',
-        },
-      } as unknown as VectorizeMatch,
-    ]);
-    const mockVec = makeMockVectorize(matches);
-    const env = makeEnv(mockDb.db, mockVec.binding);
-
-    await processOneFinalize(env, { scrape_run_id: 'r1' });
-    expect(mockVec.deleteMock).not.toHaveBeenCalled();
-  });
-
   it('REQ-PIPE-003 AD40: equal-published_at pair merges when self has newer ULID (tie-break)', async () => {
     // self.id='new-1' > match.id='equal-1' lexicographically (n > e),
     // so self is the newer ULID and should fold into match — parallels
@@ -360,10 +328,14 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
     expect(mockVec.deleteMock).toHaveBeenCalledWith([newId]);
   });
 
-  it('REQ-PIPE-003 AD40: equal-published_at pair skipped when self has older ULID (other side merges)', async () => {
+  it('REQ-PIPE-003 AC 15 (AD41): equal-published_at pair merges when self has older ULID (match folds into self)', async () => {
     // self.id='aaa-1' < match.id='zzz-1' lexicographically, so self is
-    // the older ULID. The opposite-direction iteration will merge zzz-1
-    // into aaa-1; this side must skip to avoid double-merge.
+    // the older ULID and wins the tie-break. With bidirectional finalize
+    // (AD41), the merge fires in this iteration with self as winner —
+    // the match (zzz-1) is deleted from Vectorize. Pre-AD41 this side
+    // skipped on the assumption the other iteration would handle it,
+    // which left clusters un-merged when the match was already stored
+    // and never re-finalized.
     const selfId = 'aaa-1';
     const matchId = 'zzz-1';
     const mockDb = makeMockDb({
@@ -392,7 +364,9 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
     const env = makeEnv(mockDb.db, mockVec.binding);
 
     await processOneFinalize(env, { scrape_run_id: 'r1' });
-    expect(mockVec.deleteMock).not.toHaveBeenCalled();
+    // Match folds INTO self → loser is matchId, winner is selfId.
+    expect(mockVec.deleteMock).toHaveBeenCalledTimes(1);
+    expect(mockVec.deleteMock).toHaveBeenCalledWith([matchId]);
   });
 
   it('REQ-PIPE-003 AD40: high-confidence raw cosine auto-merges same-vendor pair (penalty bypassed)', async () => {
@@ -1010,6 +984,87 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
     // The Vectorize delete targets the LOSER (storedNewerId), not self.
     expect(mockVec.deleteMock).toHaveBeenCalledTimes(1);
     expect(mockVec.deleteMock).toHaveBeenCalledWith([storedNewerId]);
+  });
+
+  // AD41 — bidirectional finalize must skip a candidate that was
+  // already absorbed by an earlier iteration in the same pass. Without
+  // the `losersDeleted.has(match.id)` guard, the second iteration
+  // would attempt to merge against an article whose D1 row had just
+  // been folded into the previous winner, producing either a
+  // duplicate alt-source insert or a 404 on the loser-side fetch.
+  it('REQ-PIPE-003 AC 15 (AD41): skips a Vectorize match that an earlier iteration in the same pass already absorbed', async () => {
+    // Two newly-ingested rows A and B share the same Vectorize match
+    // X (already stored). A iterates first and absorbs X (A is older,
+    // selfIsOlder=true → X is loser). When B's iteration runs, X
+    // re-appears in B's Vectorize results (the vector hasn't been
+    // physically deleted yet — that happens in the trailing
+    // deleteByIds batch). The skip must fire so B does NOT attempt a
+    // second merge against X.
+    const aId = 'a-older';
+    const bId = 'b-newer';
+    const xId = 'x-already-stored';
+    const mockDb = makeMockDb({
+      articleRows: [
+        {
+          id: aId,
+          title: 'a',
+          source_snippet: 's',
+          published_at: 1_000_000,
+          ingested_at: 2_000_000,
+          primary_source_url: 'https://aaa.example/post',
+        },
+        {
+          id: bId,
+          title: 'b',
+          source_snippet: 's',
+          published_at: 1_500_000, // newer than A, still inside 72h window vs X
+          ingested_at: 2_000_001,
+          primary_source_url: 'https://bbb.example/post',
+        },
+      ],
+      existsIds: new Set([xId]),
+    });
+    const matches = new Map<string, VectorizeMatch[]>();
+    // A's match list returns X (high-confidence cosine, ~14h delta).
+    matches.set(aId, [
+      {
+        id: xId,
+        score: 0.95,
+        metadata: {
+          published_at: 1_050_000,
+          primary_source_url: 'https://ccc.example/post',
+        },
+      } as unknown as VectorizeMatch,
+    ]);
+    // B's match list ALSO returns X — but X has just been absorbed
+    // into A and lives in losersDeleted. The skip must fire.
+    matches.set(bId, [
+      {
+        id: xId,
+        score: 0.95,
+        metadata: {
+          published_at: 1_050_000,
+          primary_source_url: 'https://ccc.example/post',
+        },
+      } as unknown as VectorizeMatch,
+    ]);
+    const mockVec = makeMockVectorize(matches);
+    const env = makeEnv(mockDb.db, mockVec.binding);
+
+    await processOneFinalize(env, { scrape_run_id: 'r1' });
+
+    // Exactly ONE Vectorize delete (X), enqueued by A's iteration.
+    // B's iteration must NOT have produced a second delete call.
+    expect(mockVec.deleteMock).toHaveBeenCalledTimes(1);
+    expect(mockVec.deleteMock).toHaveBeenCalledWith([xId]);
+    // Exactly ONE alt-source insert — A absorbed X. B must not have
+    // produced a second insert against X.
+    const insertSourceCalls = mockDb.calls.filter((c) =>
+      c.sql.includes('FROM articles WHERE id = ?2'),
+    );
+    expect(insertSourceCalls).toHaveLength(1);
+    expect(insertSourceCalls[0]?.params[0]).toBe(aId);
+    expect(insertSourceCalls[0]?.params[1]).toBe(xId);
   });
 
   // AD41 — automatic post-tick dedup sweep. After a successful finalize

@@ -705,10 +705,36 @@ async function enqueueAutoSweep(
     )
     .bind(sweepRunId, cursorPa, now)
     .run();
-  await env.DEDUP_SWEEP.send({
-    run_id: sweepRunId,
-    cursor: { pa: cursorPa, id: '' },
-  });
+  try {
+    // `id: ''` is the lowest sortable string; the consumer's resume
+    // predicate (pa = cursorPa AND id > '') is functionally
+    // "everything at exactly cursorPa or newer." The operator path
+    // sends `cursor: null` to start at the corpus head; the auto-path
+    // is scoped to a recent window so we seed an explicit floor.
+    await env.DEDUP_SWEEP.send({
+      run_id: sweepRunId,
+      cursor: { pa: cursorPa, id: '' },
+    });
+  } catch (err) {
+    // Mirror the operator path: flip the run to status='failed' so
+    // operators polling dedup_runs can distinguish a transient queue
+    // send failure from a sweep that's genuinely still running.
+    await env.DB
+      .prepare(
+        `UPDATE dedup_runs
+            SET status='failed',
+                error=?2,
+                updated_at=?3
+          WHERE id=?1`,
+      )
+      .bind(
+        sweepRunId,
+        err instanceof Error ? err.message : String(err),
+        Math.floor(Date.now() / 1000),
+      )
+      .run();
+    throw err;
+  }
   log('info', 'digest.generation', {
     status: 'finalize_auto_sweep_enqueued',
     scrape_run_id,
