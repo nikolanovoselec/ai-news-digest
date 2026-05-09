@@ -718,21 +718,31 @@ async function enqueueAutoSweep(
   } catch (err) {
     // Mirror the operator path: flip the run to status='failed' so
     // operators polling dedup_runs can distinguish a transient queue
-    // send failure from a sweep that's genuinely still running.
-    await env.DB
-      .prepare(
-        `UPDATE dedup_runs
-            SET status='failed',
-                error=?2,
-                updated_at=?3
-          WHERE id=?1`,
-      )
-      .bind(
-        sweepRunId,
-        err instanceof Error ? err.message : String(err),
-        Math.floor(Date.now() / 1000),
-      )
-      .run();
+    // send failure from a sweep that's genuinely still running. Swallow
+    // any secondary D1 error from the UPDATE itself — the primary
+    // error is the queue send failure and must reach the caller; a
+    // failed status-flip would only mask it. The `status='running'`
+    // guard prevents double-flipping a row that some other path
+    // already moved out of running.
+    try {
+      await env.DB
+        .prepare(
+          `UPDATE dedup_runs
+              SET status='failed',
+                  error=?2,
+                  updated_at=?3
+            WHERE id=?1 AND status='running'`,
+        )
+        .bind(
+          sweepRunId,
+          err instanceof Error ? err.message : String(err),
+          Math.floor(Date.now() / 1000),
+        )
+        .run();
+    } catch {
+      // Intentionally swallowed; original `err` below is the real
+      // failure operators need to see.
+    }
     throw err;
   }
   log('info', 'digest.generation', {

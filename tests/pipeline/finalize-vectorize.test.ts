@@ -1017,7 +1017,13 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
           id: bId,
           title: 'b',
           source_snippet: 's',
-          published_at: 1_500_000, // newer than A, still inside 72h window vs X
+          // ~14h newer than X (50_000s delta) — strictly inside the
+          // default 72h window so the time-window gate cannot mask
+          // the skip-branch discriminator. Without `losersDeleted
+          // .has(match.id)` at consumer.ts:302, B would proceed to
+          // merge X (selfIsOlder=false → match older → self folds
+          // into match) and produce a SECOND alt-source insert.
+          published_at: 1_100_000,
           ingested_at: 2_000_001,
           primary_source_url: 'https://bbb.example/post',
         },
@@ -1142,5 +1148,56 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
     await processOneFinalize(env, { scrape_run_id: 'r1' });
 
     expect(sweepQueue.sends).toHaveLength(0);
+  });
+
+  // AD41 — when DEDUP_SWEEP.send rejects mid-flight (transient queue
+  // outage, throttling), the dedup_runs row inserted by enqueueAutoSweep
+  // must be flipped to status='failed' with the captured error message
+  // so operators polling dedup_runs can distinguish a stuck-running row
+  // from a sweep that's genuinely still walking. Mirrors the operator
+  // path's behavior in /api/admin/historical-dedup.
+  it('REQ-PIPE-003 AC 16 (AD41): flips dedup_runs to status=failed when queue.send rejects', async () => {
+    const mockDb = makeMockDb({
+      articleRows: [
+        {
+          id: 'a-1',
+          title: 't',
+          source_snippet: 's',
+          published_at: 2000,
+          ingested_at: 2000,
+          primary_source_url: 'https://a.example/x',
+        },
+      ],
+    });
+    const mockVec = makeMockVectorize(new Map([['a-1', []]]));
+    const sendErr = new Error('queue down');
+    const failingQueue: Queue = {
+      send: vi.fn().mockRejectedValue(sendErr),
+      sendBatch: vi.fn(),
+    } as unknown as Queue;
+    const env = makeEnv(mockDb.db, mockVec.binding, {
+      sweepQueue: failingQueue,
+    });
+
+    // The outer caller in processOneFinalize swallows the error and
+    // logs `finalize_auto_sweep_enqueue_failed`, so this resolves.
+    await processOneFinalize(env, { scrape_run_id: 'r1' });
+
+    // The dedup_runs row was first inserted with status='running'.
+    const insertCall = mockDb.calls.find(
+      (c) =>
+        c.sql.includes('INSERT INTO dedup_runs') &&
+        (c.params[1] === undefined || c.sql.includes("'running'")),
+    );
+    expect(insertCall).toBeDefined();
+    // The error path then UPDATEs the same row to status='failed' with
+    // the captured error message bound at ?2.
+    const failUpdate = mockDb.calls.find(
+      (c) =>
+        c.sql.includes("status='failed'") &&
+        c.sql.includes('UPDATE dedup_runs'),
+    );
+    expect(failUpdate).toBeDefined();
+    expect(failUpdate?.params[1]).toBe(sendErr.message);
   });
 });
