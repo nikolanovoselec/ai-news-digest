@@ -1203,7 +1203,9 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
     );
     expect(failUpdate).toBeDefined();
     expect(failUpdate?.params[0]).toBe(sweepRunId);
-    expect(failUpdate?.params[1]).toBe(sendErr.message);
+    // String(err) for an Error instance yields "Error: queue down"
+    // (matches the operator path's coercion in /api/admin/historical-dedup).
+    expect(failUpdate?.params[1]).toBe(String(sendErr));
     // Pin the new `AND status='running'` guard so a regression that
     // drops it (allowing double-flips of an already-failed row) lands
     // on a failing assertion.
@@ -1283,6 +1285,15 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
       sweepQueue: failingQueue,
     });
 
+    // Spy on the structured log channel so we can assert that the
+    // ORIGINAL queue-send error is what reaches the caller, not the
+    // secondary D1 transient error. Without the inner try/catch in
+    // enqueueAutoSweep, the secondary error would propagate and the
+    // outer log line would carry 'd1 transient' instead — defeating
+    // the purpose of the catch and misleading operators about the
+    // real failure cause.
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
     // Outer try/catch in processOneFinalize swallows the rethrown
     // primary error. Test contract: this resolves cleanly.
     await expect(
@@ -1295,5 +1306,17 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
       c.sql.includes("status='failed'"),
     );
     expect(failUpdate).toBeDefined();
+
+    // Load-bearing assertion: the outer log line must reference the
+    // queue-send error, not the secondary D1 error. console.log is
+    // called with a JSON string per src/lib/log.ts.
+    const enqueueFailedLog = logSpy.mock.calls
+      .map((args) => String(args[0]))
+      .find((line) => line.includes('finalize_auto_sweep_enqueue_failed'));
+    expect(enqueueFailedLog).toBeDefined();
+    expect(enqueueFailedLog).toContain('queue down');
+    expect(enqueueFailedLog).not.toContain('d1 transient');
+
+    logSpy.mockRestore();
   });
 });
