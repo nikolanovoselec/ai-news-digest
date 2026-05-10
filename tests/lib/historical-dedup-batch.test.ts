@@ -393,7 +393,13 @@ describe('runHistoricalDedupBatch — REQ-PIPE-003', () => {
     expect(vectorize.deleteByIds).toHaveBeenCalledWith([MATCH_ID]);
   });
 
-  it('REQ-PIPE-003: equal-time match with LOWER ULID is skipped (tie-break)', async () => {
+  it('REQ-PIPE-003 / AD42: equal-time match with LOWER ULID folds self IN (PASS 1)', async () => {
+    // Pre-AD42 historical-dedup walked oldest-first and only absorbed
+    // strictly-newer matches into self, silently skipping equal-time
+    // matches with a lower ULID (the "tie-break older" side). AD42's
+    // bidirectional PASS 1 now picks them up: when a match is auto-band
+    // AND tie-break-older-than-self, self folds INTO match (mirroring
+    // the finalize-consumer's bidirectional path from AD41).
     const SELF_ID = '01ZZZZZZZZZZZZZZZZZZZZZZZZ';
     const MATCH_ID = '01AAAAAAAAAAAAAAAAAAAAAAAA';
     const { result, fixture, vectorize } = await callBatch({
@@ -413,9 +419,9 @@ describe('runHistoricalDedupBatch — REQ-PIPE-003', () => {
         }),
       },
     });
-    expect(result.merged).toBe(0);
-    expect(fixture.batchCalls.length).toBe(0);
-    expect(vectorize.deleteByIds).not.toHaveBeenCalled();
+    expect(result.merged).toBe(1);
+    expect(fixture.batchCalls.length).toBe(1);
+    expect(vectorize.deleteByIds).toHaveBeenCalledWith([SELF_ID]);
   });
 
   it('REQ-PIPE-003: stale Vectorize match missing from D1 is skipped', async () => {
