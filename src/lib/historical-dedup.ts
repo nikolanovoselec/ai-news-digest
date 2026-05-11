@@ -135,17 +135,30 @@ export async function runHistoricalDedupBatch(
   let merged = 0;
   let rerankCallsThisBatch = 0;
   let rerankAccepts = 0;
+  // CF-004: align with scrape-finalize-consumer total-outage behavior.
+  // finalize throws when `queriesFailed === queriesAttempted > 0` so the
+  // gate stays un-flipped and queue retries cover Vectorize recovery.
+  // historical-dedup previously logged + `continue`d, letting the cursor
+  // advance past failed selves and silently leaving cross-tick duplicates
+  // unmerged during a corpus-wide outage. We now track attempts/failures
+  // and short-circuit the batch on total outage, returning `done: false`
+  // with the INPUT cursor unchanged so the queue-driven sweep re-attempts
+  // the same range on the next message instead of skipping it.
+  let queriesAttempted = 0;
+  let queriesFailed = 0;
 
   for (const self of rows) {
     if (removedIds.has(self.id)) continue;
 
     let queryResult: VectorizeMatches;
+    queriesAttempted += 1;
     try {
       queryResult = await env.VECTORIZE.queryById(self.id, {
         topK: VECTORIZE_TOPK,
         returnMetadata: 'all',
       });
     } catch (err) {
+      queriesFailed += 1;
       log('warn', 'digest.generation', {
         status: 'historical_dedup_query_failed',
         article_id: self.id,
@@ -366,6 +379,35 @@ export async function runHistoricalDedupBatch(
       removedIds.add(match.id);
       merged += 1;
     }
+  }
+
+  // CF-004 total-outage gate. If every Vectorize query in this batch
+  // failed, the dedup decision for every row is "unknown" — advancing
+  // the cursor would silently strand same-event cross-tick pairs once
+  // Vectorize recovers, mirroring the production failure mode the
+  // scrape-finalize-consumer already guards against by throwing.
+  // Short-circuit with the INPUT cursor preserved so the queue-driven
+  // self-chain re-attempts the same range on the next consumer message
+  // (queue back-pressure provides the retry delay). The admin endpoint
+  // surface this as `done: false` with the same cursor — operators can
+  // re-poll once Vectorize is healthy.
+  if (queriesAttempted > 0 && queriesFailed === queriesAttempted) {
+    log('error', 'digest.generation', {
+      status: 'historical_dedup_vectorize_total_outage',
+      scanned: rows.length,
+      queries_attempted: queriesAttempted,
+      queries_failed: queriesFailed,
+      cursor_pa: cursor?.pa ?? null,
+      cursor_id: cursor?.id ?? null,
+    });
+    return {
+      ok: true,
+      scanned: rows.length,
+      merged: 0,
+      next_cursor: cursor,
+      remaining: rows.length,
+      done: false,
+    };
   }
 
   // Page deletes at 100 ids per call to stay under the platform delete-
