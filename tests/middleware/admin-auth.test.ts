@@ -18,7 +18,11 @@ const ADMIN_EMAIL = 'admin@example.com';
 function makeAccessJwt(claims: Record<string, unknown>): string {
   const enc = new TextEncoder();
   const headerB64 = base64UrlEncode(enc.encode(JSON.stringify({ alg: 'RS256' })));
-  const payloadB64 = base64UrlEncode(enc.encode(JSON.stringify(claims)));
+  // CF-007-R: decodeAccessJwt now validates `exp`. Default to a future
+  // expiry so existing tests stay green; callers exercising the
+  // expired-token path pass an explicit `exp` claim that overrides this.
+  const withExp = { exp: Math.floor(Date.now() / 1000) + 600, ...claims };
+  const payloadB64 = base64UrlEncode(enc.encode(JSON.stringify(withExp)));
   // Signature is opaque to the decoder (we never verify it in-Worker —
   // Cloudflare Access already verified before forwarding).
   return `${headerB64}.${payloadB64}.signature`;
