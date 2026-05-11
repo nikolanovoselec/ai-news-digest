@@ -147,10 +147,14 @@ QUEUE_MAX_RETRIES = "3"
 DEDUP_COSINE_THRESHOLD = "0.88"
 # REQ-PIPE-003 - hard time-window in seconds for the dedup match
 # filter. Pairs whose published_at differ by more than this are not
-# the same news event regardless of cosine. 259200 = 72h. Catches
-# cross-news-cycle false merges (e.g. the 9-day spread on the AD39
-# cluster) before the cosine check.
-DEDUP_TIME_WINDOW_SECONDS = "259200"
+# the same news event regardless of cosine. 1209600 = 14d, matched
+# exactly to RETENTION_SECONDS in src/queue/cleanup.ts so the dedup
+# gate considers every article alive in the corpus and nothing falls
+# off the back end before being compared. Bumped 2026-05-11 from 72h
+# after observing four Palo Alto Networks stock-pump articles spread
+# across 100h with cosines 0.79-0.89; the 72h window cut off the
+# 0.89-cosine pair (clearly same news cycle) at 75h and let it land.
+DEDUP_TIME_WINDOW_SECONDS = "1209600"
 # REQ-PIPE-003 AC 11 - same-vendor cosine penalty, subtracted from
 # the raw cosine before the threshold gate when both articles share
 # an eTLD+1. Lifts the effective same-publisher threshold to 0.83,
@@ -207,7 +211,7 @@ QUEUE_MAX_RETRIES = "3"
 DEDUP_COSINE_THRESHOLD = "0.88"
 # REQ-PIPE-003 - same time-window as production. See top-level vars
 # block for rationale.
-DEDUP_TIME_WINDOW_SECONDS = "259200"
+DEDUP_TIME_WINDOW_SECONDS = "1209600"
 # REQ-PIPE-003 AC 11 - see top-level vars block for rationale.
 DEDUP_SAME_VENDOR_PENALTY = "0.05"
 # REQ-PIPE-009 - see top-level vars block for rationale.

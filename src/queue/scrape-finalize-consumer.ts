@@ -16,7 +16,7 @@
 //      up by the admin embed-backfill + historical-dedup routes once
 //      their vectors land.
 //   2. For each article, runs `VECTORIZE.query(topK=5)` and filters
-//      matches to (a) different article id, (b) within the 72h
+//      matches to (a) different article id, (b) within the 14d
 //      news-cycle window (DEDUP_TIME_WINDOW_SECONDS), (c) cosine
 //      score >= DEDUP_COSINE_THRESHOLD (default 0.88 per the
 //      2026-05-08 false-merge audit; see AD39), (d) match
@@ -678,22 +678,25 @@ async function flipGate(
 }
 
 /** Lookback window for the post-tick auto-sweep. Aligned with
- *  `DEDUP_TIME_WINDOW_SECONDS` (72h, AD39) so the cursor scope and
- *  the per-pair time-window gate cover the same span — the previous
- *  48h-cursor / 72h-window mismatch (AD41) created a ~24h dead zone
- *  where pairs that the time-window check accepted as same-event
- *  could no longer be reached because the older anchor had aged out
- *  of the cursor. Prod evidence: Cloudflare-layoffs cluster
- *  2026-05-10, 13 articles spanning 70h, anchor at pa=05-07 20:23
- *  fell out of the 48h cursor on 05-09 20:23 and the cluster
- *  fragmented into 6 winners. AD42 widens this to 72h and pairs the
- *  change with a bidirectional historical-dedup so a later-arriving
- *  newer article can fold into an older anchor that's now in scope.
- *  Overlapping 4h ticks remain deliberate (each pair gets multiple
- *  chances at the eventual-consistency window). The full corpus
- *  stays accessible via the operator-triggered
- *  /api/admin/historical-dedup endpoint when needed. */
-const AUTO_SWEEP_LOOKBACK_SECONDS = 72 * 3600;
+ *  `DEDUP_TIME_WINDOW_SECONDS` (14d, bumped 2026-05-11 from 72h) so
+ *  the cursor scope and the per-pair time-window gate cover the same
+ *  span. REQ-PIPE-003 AC 17 mandates this equality — any pair the
+ *  per-pair gate accepts must be reachable by the automatic post-tick
+ *  matcher, otherwise cross-cycle clusters fragment.
+ *
+ *  History: started at 48h, widened to 72h after the
+ *  Cloudflare-layoffs cluster (2026-05-10, 13 articles spanning 70h,
+ *  anchor fell out of cursor) per AD41/AD42. Now 14d to match the
+ *  article-retention window: the dedup gate considers every article
+ *  alive in the corpus, so the auto-sweep must reach all of them. The
+ *  full corpus is also accessible via the operator-triggered
+ *  /api/admin/historical-dedup endpoint when needed.
+ *
+ *  Cost: each tick enqueues ONE sweep message that paginates through
+ *  the lookback window via the queue consumer. Wall-time is unaffected
+ *  (consumer rate-limits itself); the cost is N more Vectorize queries
+ *  per tick, bounded by corpus size (~1500 articles at retention). */
+const AUTO_SWEEP_LOOKBACK_SECONDS = 14 * 24 * 3600;
 
 /** Enqueue a single dedup-sweep continuation message scoped to the
  *  last {@link AUTO_SWEEP_LOOKBACK_SECONDS}. Mirrors the body shape
