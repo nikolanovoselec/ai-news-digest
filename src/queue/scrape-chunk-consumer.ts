@@ -141,6 +141,16 @@ export async function handleChunkBatch(
       const completed = await countChunkCompletions(env.DB, body.scrape_run_id);
       const finalStatus: 'ready' | 'failed' = completed > 0 ? 'ready' : 'failed';
       await finishRun(env.DB, body.scrape_run_id, finalStatus);
+      if (finalStatus === 'failed') {
+        // CF-001: no finalize will run for this scrape_run; stamp the
+        // gate so runScrapeWait sees a terminal state and the pipeline
+        // exits via the failed-status check.
+        await env.DB
+          .prepare(`UPDATE scrape_runs SET finalize_recorded = 1 WHERE id = ?1`)
+          .bind(body.scrape_run_id)
+          .run()
+          .catch(() => {});
+      }
       if (finalStatus === 'ready') {
         // Enqueue finalize so cross-chunk dedup runs over the chunks
         // that did complete. Same atomic-lock pattern as the
