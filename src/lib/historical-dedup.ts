@@ -29,7 +29,7 @@ import {
   deleteVectorsBatched,
 } from '~/lib/embeddings';
 import { readRerankFloor, rerankBorderlinePair } from '~/lib/dedup-rerank';
-import { sameVendor } from '~/lib/etld';
+import { classifyMatchPair } from '~/lib/bidirectional-dedup';
 
 /** Default articles scanned per call when the caller omits `batch`.
  *  Sized so a single batch's worst-case (25 × Vectorize.queryById +
@@ -186,40 +186,28 @@ export async function runHistoricalDedupBatch(
     // auto-merge candidate STRICTLY OLDER than self. If found, self
     // folds into that anchor and we move to the next outer row — self
     // is now a loser, no further matches matter.
+    const classifierParams = {
+      threshold,
+      sameVendorPenalty,
+      rerankFloor,
+      timeWindowSeconds,
+      highConfidenceCosine,
+    };
     let foldIntoOlder: { id: string; pa: number } | null = null;
     for (const match of matches) {
       if (match.id === self.id) continue;
       if (removedIds.has(match.id)) continue;
-      const meta = match.metadata as
-        | { published_at?: unknown; primary_source_url?: unknown }
-        | undefined;
-      const matchPublishedAt =
-        typeof meta?.published_at === 'number' ? meta.published_at : null;
-      if (matchPublishedAt === null) continue;
-      const deltaSeconds = Math.abs(self.published_at - matchPublishedAt);
-      if (deltaSeconds > timeWindowSeconds) continue;
-      // Only the strict-older direction. Equal-time + lower ULID also
-      // counts as "older" — same tie-break as AD39's equal-time path.
-      const matchIsOlder =
-        matchPublishedAt < self.published_at ||
-        (matchPublishedAt === self.published_at && match.id < self.id);
-      if (!matchIsOlder) continue;
-      const isHighConfidence = match.score >= highConfidenceCosine;
-      const matchUrl =
-        typeof meta?.primary_source_url === 'string'
-          ? meta.primary_source_url
-          : '';
-      const sameEtld1 =
-        matchUrl !== '' && sameVendor(self.primary_source_url, matchUrl);
-      const adjustedScore = sameEtld1 && !isHighConfidence
-        ? match.score - sameVendorPenalty
-        : match.score;
-      const isAutoMerge = isHighConfidence || adjustedScore >= threshold;
-      if (!isAutoMerge) continue;
+      const c = classifyMatchPair(self, match, classifierParams);
+      if (c.kind !== 'eligible') continue;
+      // PASS 1 — only strict-older direction (selfIsOlder=false ⇒
+      // match is older). Auto-merge band only; borderline candidates
+      // are handled by PASS 2's rerank path.
+      if (c.selfIsOlder) continue;
+      if (!c.isAutoMerge) continue;
       // Prefer the OLDEST auto-merge match — the deepest-rooted anchor
       // for the cluster.
-      if (foldIntoOlder === null || matchPublishedAt < foldIntoOlder.pa) {
-        foldIntoOlder = { id: match.id, pa: matchPublishedAt };
+      if (foldIntoOlder === null || c.matchPublishedAt < foldIntoOlder.pa) {
+        foldIntoOlder = { id: match.id, pa: c.matchPublishedAt };
       }
     }
 
@@ -269,57 +257,27 @@ export async function runHistoricalDedupBatch(
     for (const match of matches) {
       if (match.id === self.id) continue;
       if (removedIds.has(match.id)) continue;
-      const meta = match.metadata as
-        | { published_at?: unknown; primary_source_url?: unknown }
-        | undefined;
-      const matchPublishedAt =
-        typeof meta?.published_at === 'number' ? meta.published_at : null;
-      if (matchPublishedAt === null) continue;
-      // Hard time-window gate — pairs published further apart than the
-      // configured window are not the same news event regardless of
-      // cosine. Cuts dense-theme false-merges from cross-news-cycle
-      // matches (REQ-PIPE-003).
-      const deltaSeconds = Math.abs(self.published_at - matchPublishedAt);
-      if (deltaSeconds > timeWindowSeconds) {
+      const c = classifyMatchPair(self, match, classifierParams);
+      if (c.kind === 'no_metadata') continue;
+      if (c.kind === 'out_of_window') {
+        // Hard time-window gate — pairs published further apart than
+        // the configured window are not the same news event regardless
+        // of cosine. Cuts dense-theme false-merges from cross-news-
+        // cycle matches (REQ-PIPE-003).
         log('info', 'digest.generation', {
           status: 'historical_dedup_match_skipped_time_window',
           self_id: self.id,
           match_id: match.id,
-          delta_seconds: deltaSeconds,
+          delta_seconds: c.deltaSeconds,
         });
         continue;
       }
-      // High-confidence band (AD40, 2026-05-09): pairs whose RAW
-      // cosine clears `highConfidenceCosine` auto-merge unconditionally,
-      // bypassing the same-vendor penalty. Mirrors the finalize-
-      // consumer behaviour so the per-tick and operator-sweep paths
-      // make consistent decisions on near-duplicate-headline pairs.
-      const isHighConfidence = match.score >= highConfidenceCosine;
-      // Same-vendor cosine penalty (REQ-PIPE-003 AC 11). Subtracts
-      // the configured offset before comparing to the threshold so
-      // same-publisher pairs need a stronger signal than cross-
-      // publisher pairs to merge — neutralises publisher-style
-      // boilerplate inflating cosines on LLM-summary embeddings.
-      // Skipped when the pair is already in the high-confidence band.
-      const matchUrl =
-        typeof meta?.primary_source_url === 'string'
-          ? meta.primary_source_url
-          : '';
-      const sameEtld1 =
-        matchUrl !== '' && sameVendor(self.primary_source_url, matchUrl);
-      const adjustedScore = sameEtld1 && !isHighConfidence
-        ? match.score - sameVendorPenalty
-        : match.score;
       // PASS 2 only handles the strictly-newer direction. Older
-      // matches were the responsibility of PASS 1 above. Equal-time
-      // pairs are tie-broken by ULID (lower ULID = older = wins).
-      if (matchPublishedAt < self.published_at) continue;
-      if (matchPublishedAt === self.published_at && self.id >= match.id)
-        continue;
-      const isAutoMerge = isHighConfidence || adjustedScore >= threshold;
-      const isBorderline =
-        !isAutoMerge && adjustedScore >= rerankFloor;
-      if (!isAutoMerge && !isBorderline) continue;
+      // matches were the responsibility of PASS 1 above. selfIsOlder
+      // already encodes the equal-time ULID tie-break (lower id = older).
+      if (!c.selfIsOlder) continue;
+      const adjustedScore = c.adjustedScore;
+      if (!c.isAutoMerge && !c.isBorderline) continue;
 
       // Confirm the newer article still exists in D1; Vectorize may
       // hold a vector whose D1 row was retention-deleted in the
@@ -334,7 +292,7 @@ export async function runHistoricalDedupBatch(
         .first<{ id: string; title: string; source_snippet: string | null }>();
       if (stillThere === null) continue;
 
-      if (isBorderline) {
+      if (c.isBorderline) {
         // No per-batch rerank cap — the queue consumer has a 15-min
         // wall-clock budget per message; the prior 4-rerank cap was
         // a leftover from the synchronous browser-loop era and was
