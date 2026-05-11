@@ -6,9 +6,9 @@
 // Implements REQ-SET-006
 // Implements REQ-AUTH-001
 //
-// GET /api/settings — return the authenticated user's settings snapshot
+// GET /api/settings - return the authenticated user's settings snapshot
 // plus a `first_run` boolean derived from the onboarding-complete rule.
-// PUT /api/settings — validate every field server-side and persist.
+// PUT /api/settings - validate every field server-side and persist.
 //
 // Validation invariants (REQ-SET-002/003/004/005):
 //   - hashtags: array of strings, each matching /^[a-z0-9-]{2,32}$/,
@@ -40,23 +40,8 @@ import { isValidTz } from '~/lib/tz';
 import { requireSession } from '~/middleware/auth';
 import { checkOrigin, originOf } from '~/middleware/origin-check';
 
-import { HASHTAG_REGEX, normalizeHashtag } from '~/lib/hashtags';
-
-/** Maximum hashtags per user (REQ-SET-002 AC 6).
- *  Sized to give new accounts headroom above the default seed; the
- *  spec AC tracks the actual gap. */
-export const MAX_HASHTAGS = 25;
-
-/** Shape accepted from the PUT body. All fields are `unknown` because the
- *  body arrives untyped — validation narrows types field-by-field. */
-interface PutSettingsBody {
-  hashtags?: unknown;
-  digest_hour?: unknown;
-  digest_minute?: unknown;
-  tz?: unknown;
-  model_id?: unknown;
-  email_enabled?: unknown;
-}
+import { HASHTAG_REGEX, MAX_HASHTAGS, normalizeHashtag } from '~/lib/hashtags';
+import { SettingsPutBodySchema } from '~/lib/schemas/settings';
 
 /** Shape of the users row subset we read on GET. */
 interface UserSettingsRow {
@@ -110,7 +95,7 @@ function isIntegerInRange(value: unknown, min: number, max: number): value is nu
  * Identify tags in {@link incoming} that do not yet have a
  * `sources:<tag>` KV entry AND are not already covered by the curated
  * source registry. Tags covered by a curated source short-circuit
- * discovery — see {@link hasCuratedSource} for the rationale (REQ-DISC-001
+ * discovery - see {@link hasCuratedSource} for the rationale (REQ-DISC-001
  * AC 1). Runs the lookups in parallel since KV `get` is a network call
  * per tag.
  */
@@ -136,6 +121,15 @@ export async function GET(context: APIContext): Promise<Response> {
 
   const auth = await requireSession(context.request, env);
   if (!auth.ok) return auth.response;
+
+  // CF-027 (Cycle 1 review): cap runaway polling. SETTINGS_READ is
+  // 120/min/user - double-headroom above legitimate page-render reads.
+  const rl = await enforceRateLimit(
+    env,
+    RATE_LIMIT_RULES.SETTINGS_READ,
+    auth.user.id,
+  );
+  if (!rl.ok) return rateLimitResponse(rl.retryAfter);
 
   let row: UserSettingsRow | null;
   try {
@@ -206,16 +200,27 @@ export async function PUT(context: APIContext): Promise<Response> {
     return rateLimitResponse(rl.retryAfter);
   }
 
-  let body: PutSettingsBody;
+  // CF-013: parse + shape-validate the body with Zod instead of an
+  // unchecked `as` cast. The per-field error codes below
+  // (`invalid_hashtags`, `invalid_time`, etc.) are preserved by
+  // keeping every field `unknown` in the schema; Zod's job here is
+  // (a) reject non-object bodies, (b) reject unknown extra fields via
+  // `.strict()`.
+  let rawBody: unknown;
   try {
-    body = (await context.request.json()) as PutSettingsBody;
+    rawBody = await context.request.json();
   } catch {
     return errorResponse('bad_request');
   }
+  const parsed = SettingsPutBodySchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return errorResponse('bad_request');
+  }
+  const body = parsed.data;
 
-  // REQ-SET-002 — hashtags. Hashtags are now managed on the /digest page
+  // REQ-SET-002 - hashtags. Hashtags are now managed on the /digest page
   // (tag strip at top) via POST /api/tags. PUT /api/settings only handles
-  // them when the caller explicitly includes a `hashtags` field — this
+  // them when the caller explicitly includes a `hashtags` field - this
   // keeps the endpoint usable from older clients and from tests without
   // requiring every caller to re-send them.
   let hashtags: string[] | null = null;
@@ -227,7 +232,7 @@ export async function PUT(context: APIContext): Promise<Response> {
     hashtags = tagsCheck.tags;
   }
 
-  // REQ-SET-003 — schedule (hour + minute + tz)
+  // REQ-SET-003 - schedule (hour + minute + tz)
   if (!isIntegerInRange(body.digest_hour, 0, 23)) {
     return errorResponse('invalid_time');
   }
@@ -246,7 +251,7 @@ export async function PUT(context: APIContext): Promise<Response> {
   }
   const tz = body.tz;
 
-  // REQ-SET-004 — model_id must be a catalog entry
+  // REQ-SET-004 - model_id must be a catalog entry
   if (
     typeof body.model_id !== 'string' ||
     !MODELS.some((m) => m.id === body.model_id)
@@ -255,13 +260,41 @@ export async function PUT(context: APIContext): Promise<Response> {
   }
   const modelId = body.model_id;
 
-  // REQ-SET-005 — email_enabled must be a strict boolean
+  // REQ-SET-005 - email_enabled must be a strict boolean
   if (typeof body.email_enabled !== 'boolean') {
     return errorResponse('invalid_email_enabled');
   }
   const emailEnabledInt = body.email_enabled ? 1 : 0;
 
   const nowSec = Math.floor(Date.now() / 1000);
+
+  // CF-028: detect first-tag sync before the UPDATE rewrites
+  // hashtags_json. When the user had no tags before this PUT, every
+  // discovery row enqueued below gets priority=10 so the dedicated
+  // discovery cron jumps them ahead of the steady-state queue. A read
+  // failure falls back to priority=0 - the save still succeeds.
+  let priorHashtagsJson: string | null = null;
+  let priorReadFailed = false;
+  try {
+    const priorRow = await env.DB.prepare(
+      'SELECT hashtags_json FROM users WHERE id = ?1',
+    )
+      .bind(auth.user.id)
+      .first<{ hashtags_json: string | null }>();
+    priorHashtagsJson = priorRow !== null ? priorRow.hashtags_json : null;
+  } catch (err) {
+    priorReadFailed = true;
+    log('warn', 'settings.update.failed', {
+      user_id: auth.user.id,
+      op: 'prior_hashtags_read',
+      error_code: 'internal_error',
+      detail: String(err).slice(0, 500),
+    });
+  }
+  const priorTags = priorReadFailed ? [] : parseHashtagsJson(priorHashtagsJson);
+  const isFirstTagSync =
+    !priorReadFailed &&
+    (priorHashtagsJson === null || priorHashtagsJson === '' || priorTags.length === 0);
 
   try {
     if (hashtags !== null) {
@@ -289,22 +322,28 @@ export async function PUT(context: APIContext): Promise<Response> {
   }
 
   // Queue discovery for any hashtags that do not yet have KV source
-  // entries. Failures here are logged but do not fail the save — the
+  // entries. Failures here are logged but do not fail the save - the
   // discovery cron will pick them up later, and worst case the user
   // re-saves after the next deploy.
   let discovering: string[] = [];
   try {
     discovering = hashtags !== null ? await findTagsNeedingDiscovery(env.KV, hashtags) : [];
     if (discovering.length > 0) {
+      // CF-028: first-tag-sync rows get priority=10 so the dedicated
+      // discovery cron drains them on the next tick. Steady-state
+      // additions stay at priority=0.
+      const priority = isFirstTagSync ? 10 : 0;
       const stmts = discovering.map((tag) =>
         env.DB.prepare(
-          'INSERT OR IGNORE INTO pending_discoveries (user_id, tag, added_at) VALUES (?1, ?2, ?3)',
-        ).bind(auth.user.id, tag, nowSec),
+          'INSERT OR IGNORE INTO pending_discoveries (user_id, tag, added_at, priority) VALUES (?1, ?2, ?3, ?4)',
+        ).bind(auth.user.id, tag, nowSec, priority),
       );
       await env.DB.batch(stmts);
       log('info', 'discovery.queued', {
         user_id: auth.user.id,
         tags: discovering,
+        first_tag_sync: isFirstTagSync,
+        priority,
       });
     }
   } catch (err) {
@@ -331,7 +370,7 @@ export async function PUT(context: APIContext): Promise<Response> {
  * The settings page primarily POSTs JSON via fetch from a JS submit
  * handler, but if that handler ever fails to bind (CSP block, mobile
  * webview quirks, ClientRouter race), the browser would default to a
- * GET on the form's current URL with values as query params — silently
+ * GET on the form's current URL with values as query params - silently
  * losing every save. The form now declares `method="post"
  * action="/api/settings"`, so the unhandled native submit hits this
  * POST path with a `application/x-www-form-urlencoded` body.
@@ -342,7 +381,7 @@ export async function PUT(context: APIContext): Promise<Response> {
  */
 export async function POST(context: APIContext): Promise<Response> {
   const env = context.locals.runtime.env;
-  // Native form submissions can't render JSON error bodies — the browser
+  // Native form submissions can't render JSON error bodies - the browser
   // would navigate to the JSON and show raw text. Every error path here
   // 303-redirects back to /settings?error=<code> so the page can render
   // the error inline and the user keeps editing without re-typing.
@@ -378,12 +417,12 @@ export async function POST(context: APIContext): Promise<Response> {
   }
 
   // The form sends `hour` and `minute` as separate fields (two
-  // <select>s on the page — see settings.astro for why we don't use
+  // <select>s on the page - see settings.astro for why we don't use
   // <input type="time">). We also accept the legacy single `time`
   // HH:MM string for back-compat with any stale page in flight when
   // this deploys.
   //
-  // Precedence: when both shapes are present, `hour`+`minute` wins —
+  // Precedence: when both shapes are present, `hour`+`minute` wins -
   // the fresh UI submits both because the form posts every field, and
   // a stale `<input name="time">` cannot exist in the same payload as
   // the new selects unless the page is mid-roll. Treat empty strings

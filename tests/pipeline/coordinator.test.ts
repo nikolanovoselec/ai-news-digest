@@ -1,4 +1,4 @@
-// Tests for src/queue/scrape-coordinator.ts — REQ-PIPE-001.
+// Tests for src/queue/scrape-coordinator.ts - REQ-PIPE-001.
 //
 // The coordinator fetches CURATED_SOURCES + discovered-tag feeds,
 // canonical-dedupes the pool, filters already-seen canonical URLs,
@@ -170,7 +170,7 @@ function stubFetchEmpty(): void {
   );
 }
 
-describe('scrape-coordinator — REQ-PIPE-001', () => {
+describe('scrape-coordinator - REQ-PIPE-001', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -185,7 +185,7 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
     const { queue, sends } = makeChunksQueue();
     const env = makeEnv(db, kv, queue);
     await runCoordinator(env, { scrape_run_id: 'run-1' });
-    // At least one chunk sent — curated registry is non-empty.
+    // At least one chunk sent - curated registry is non-empty.
     expect(sends.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -229,23 +229,22 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
     }
   });
 
-  it('REQ-PIPE-001: sets KV chunks_remaining counter to the chunk count with 3-hour TTL', async () => {
+  it('REQ-PIPE-001 / CF-007: does NOT write the legacy KV chunks_remaining mirror', async () => {
+    // CF-007 removed the KV dual-write. /api/scrape-status now derives
+    // chunks_remaining from a D1 COUNT on scrape_chunk_completions.
+    // Guard: no KV put with the legacy key — a regression would
+    // re-introduce dashboard drift.
     stubFetchWithItems(1);
     const { db } = makeDb();
-    const { kv, store } = makeKv();
-    const { queue, sends } = makeChunksQueue();
+    const { kv } = makeKv();
+    const { queue } = makeChunksQueue();
     const env = makeEnv(db, kv, queue);
     await runCoordinator(env, { scrape_run_id: 'run-4' });
-    const counter = store.get('scrape_run:run-4:chunks_remaining');
-    expect(counter).toBeDefined();
-    expect(Number(counter)).toBe(sends.length);
     const putMock = kv.put as ReturnType<typeof vi.fn>;
     const putCall = putMock.mock.calls.find(
       (c: unknown[]) => c[0] === 'scrape_run:run-4:chunks_remaining',
     );
-    expect(putCall).toBeDefined();
-    const opts = putCall![2] as { expirationTtl: number };
-    expect(opts.expirationTtl).toBe(3 * 3600);
+    expect(putCall).toBeUndefined();
   });
 
   it('REQ-PIPE-001: candidates inherit published_at from the feed pubDate (not ingestion time)', async () => {
@@ -254,7 +253,7 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
     // nowSec; it must now read <pubDate> and thread it through to the
     // chunk message.
     //
-    // The pubDate is 12 hours ago — comfortably newer than the
+    // The pubDate is 12 hours ago - comfortably newer than the
     // coordinator's 48-hour freshness cutoff so the candidate
     // survives that filter. The assertion below confirms the parsed
     // value is threaded through unchanged.
@@ -288,7 +287,7 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
     const allCandidates = (sends as Array<{ candidates: Array<{ published_at: number }> }>)
       .flatMap((m) => m.candidates);
     expect(allCandidates.length).toBeGreaterThan(0);
-    // Every candidate must carry the old pubDate — NOT the ingestion
+    // Every candidate must carry the old pubDate - NOT the ingestion
     // clock. A deviation of more than a minute from the parsed value
     // means nowSec leaked back in.
     for (const c of allCandidates) {
@@ -338,7 +337,7 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
     // Regression guard for the "HashiCorp Vault pinned to the top of
     // the dashboard for 8 hours" bug. A feed that emits a backlog
     // item from 3 weeks ago should NOT survive the coordinator's
-    // freshness filter — LLM budget is wasted summarising it and the
+    // freshness filter - LLM budget is wasted summarising it and the
     // stale pubDate clutters the dashboard below genuinely fresh
     // stories. A 12-hour-old item in the same feed must still survive.
     const staleMs = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days ago
@@ -416,7 +415,7 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
     // AC 4 (revised 2026-05-03): the dashboard now orders by FIRST
     // ingestion descending. A 4-hour-old article still actively
     // emitted by its source feed must NOT bubble back to the top of
-    // the dashboard above genuinely newer arrivals — that would defeat
+    // the dashboard above genuinely newer arrivals - that would defeat
     // the whole point of the change. Pin the absence of any
     // `UPDATE articles SET ingested_at` statement when the only
     // candidate URL is already known.
@@ -449,7 +448,7 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
   it('REQ-PIPE-001 AC7 (CF-040): item with null pubDate is kept, NOT treated as stale', async () => {
     // A missing pubDate falls back to ingestion time so it always
     // passes the freshness filter. It must NOT be dropped just because
-    // the parsed date field is absent — that would silently blackhole
+    // the parsed date field is absent - that would silently blackhole
     // feeds that don't emit <pubDate> (many legitimate blogs).
     const rss =
       `<rss><channel>` +
@@ -470,11 +469,63 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
     const env = makeEnv(db, kv, queue);
     await runCoordinator(env, { scrape_run_id: 'run-ac7-null-pubdate' });
 
-    // The item must survive into a chunk message — not be dropped.
+    // The item must survive into a chunk message - not be dropped.
     const allCandidates = (sends as Array<{ candidates: Array<{ title: string }> }>)
       .flatMap((m) => m.candidates);
     const found = allCandidates.find((c) => c.title === 'No pubdate');
     expect(found).toBeDefined();
+  });
+
+  // CF-023 - REQ-PIPE-001 AC: per-feed fetch failures are isolated.
+  // Bug-class: if fetchAllSources propagated a single feed's throw to
+  // the caller, ALL feeds in that tick would produce zero candidates,
+  // the run would see an empty pool, and finishRun(ready) would fire
+  // with no articles - users see a blank digest. The real failure
+  // (one bad URL) would be invisible.
+  it('REQ-PIPE-001 (CF-023): single feed fetch failure is isolated - other feeds still produce candidates', async () => {
+    // First call to fetch throws (simulates a 500 / DNS failure on
+    // one curated source). All subsequent calls return a valid RSS
+    // feed with one item each so the coordinator still produces candidates
+    // from the healthy sources.
+    let callCount = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => {
+        callCount += 1;
+        if (callCount === 1) {
+          // First source throws - simulates network failure.
+          return Promise.reject(new Error('ECONNREFUSED: connection refused'));
+        }
+        // All other sources return one item.
+        const rss =
+          `<rss><channel><item>` +
+          `<title>Healthy story ${callCount}</title>` +
+          `<link>https://healthy${callCount}.example.com/a</link>` +
+          `</item></channel></rss>`;
+        return Promise.resolve(
+          new Response(rss, {
+            status: 200,
+            headers: { 'content-type': 'application/rss+xml' },
+          }),
+        );
+      }),
+    );
+
+    const { db } = makeDb();
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+    await runCoordinator(env, { scrape_run_id: 'run-feed-isolation' });
+
+    // Healthy sources must still produce at least one chunk - the one
+    // throwing feed must NOT abort the whole run.
+    expect(sends.length).toBeGreaterThanOrEqual(1);
+    // All candidates in every chunk come from healthy sources (none
+    // reference the URL pattern from the failing first fetch).
+    const allCandidates = (
+      sends as Array<{ candidates: Array<{ source_url: string }> }>
+    ).flatMap((m) => m.candidates);
+    expect(allCandidates.length).toBeGreaterThan(0);
   });
 
   it('REQ-PIPE-001: when pool is empty, finishRun(ready) is called immediately', async () => {

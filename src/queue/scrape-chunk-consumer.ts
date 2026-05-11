@@ -25,8 +25,8 @@
 //   7. Writes articles + article_sources + article_tags in a single D1
 //      batch (atomic — partial failure rolls back).
 //   8. Accumulates chunk stats into the scrape_runs row via addChunkStats.
-//   9. Decrements the KV chunks_remaining counter; the last chunk calls
-//      finishRun(run_id, 'ready'), closing the run.
+//   9. The last chunk (detected via the D1 completion count matching
+//      total_chunks) calls finishRun(run_id, 'ready'), closing the run.
 //
 // Retry contract: throwing from the handler marks the message for queue
 // retry up to `max_retries` in wrangler.toml. We throw on
@@ -61,7 +61,6 @@ import { applyForeignKeysPragma } from '~/lib/db';
 import { log } from '~/lib/log';
 import { titlesShareAnyToken } from '~/lib/title-overlap';
 import { handleBatch } from '~/lib/queue-handler';
-import { setChunksRemaining } from '~/lib/kv/chunks-remaining';
 import { buildEmbeddingInput, embedTexts } from '~/lib/embeddings';
 
 /** Shape of every `scrape-chunks` queue message. Produced by the
@@ -329,9 +328,11 @@ export async function processOneChunk(
   await upsertVectors(env, prepared, body);
 
   // Record completion + conditionally enqueue finalize.
+  // `completedCount` is returned for the chunk-status API (status route reads
+  // it from D1 directly) but not consumed here, hence the leading underscore.
   const {
     isFirstCompletion,
-    completedCount,
+    completedCount: _completedCount,
   } = await recordChunkCompletionAndCheckFinalize(env, body);
 
   const tokensIn = llmRun.tokensIn;
@@ -350,9 +351,9 @@ export async function processOneChunk(
     });
   }
 
-  // Keep the legacy KV counter in sync for /api/scrape-status.
-  const remaining = Math.max(0, body.total_chunks - completedCount);
-  await setChunksRemaining(env.KV, body.scrape_run_id, remaining);
+  // CF-007 (Cycle 1 review): legacy KV chunks_remaining counter
+  // removed. /api/scrape-status derives the value from
+  // `scrape_chunk_completions` (D1 is the source of truth per AD7).
 
   log('info', 'digest.generation', {
     status: 'chunk_ready',

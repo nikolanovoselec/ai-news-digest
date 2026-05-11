@@ -1,4 +1,4 @@
-// Tests for src/queue/pipeline-consumer.ts — REQ-OPS-008.
+// Tests for src/queue/pipeline-consumer.ts - REQ-OPS-008.
 //
 // The pipeline-consumer drives the seven phases of a "Full pipeline
 // run" via self-chained `pipeline-jobs` queue messages. Coverage:
@@ -22,7 +22,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Hoisted mocks: we don't want the helpers (kickCoordinator,
 // runOneBackfillBatch) to actually execute their internal logic in
-// these unit tests — we just want to verify that the consumer
+// these unit tests - we just want to verify that the consumer
 // dispatches them correctly and reacts to their return values.
 vi.mock('~/lib/kick-coordinator', () => ({
   kickCoordinator: vi.fn(),
@@ -114,7 +114,7 @@ beforeEach(() => {
   vi.mocked(runOneBackfillBatch).mockReset();
 });
 
-describe('processOnePipelineMessage — REQ-OPS-008', () => {
+describe('processOnePipelineMessage - REQ-OPS-008', () => {
   it('short-circuits without throwing when audit row is missing', async () => {
     const { db, calls } = makeDb({ pipelineRow: null });
     const { queue: pq, sends } = makeQueue();
@@ -431,6 +431,88 @@ describe('processOnePipelineMessage — REQ-OPS-008', () => {
       pipeline_run_id: RUN_ID,
       phase: 'dedup_wait',
     });
+  });
+
+  // CF-023 - REQ-PIPE-001 AC 10: a stuck scrape_wait loop that has
+  // re-enqueued itself more than SCRAPE_WAIT_MAX_ITERATIONS (12) times
+  // must force-fail the scrape_run and mark the pipeline run failed
+  // instead of looping forever. Bug-class: without the cap a queue
+  // saturation or finalize-consumer crash leaves a pipeline run stuck
+  // at 'running' until an operator manually resets it - operators see
+  // a ghost run on the history page but no failure signal.
+  it('REQ-PIPE-001 AC 10 (CF-023): scrape_wait exceeding SCRAPE_WAIT_MAX_ITERATIONS marks scrape_run failed and pipeline failed', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      // wait_iterations = 13 > SCRAPE_WAIT_MAX_ITERATIONS (12) triggers
+      // the stall exit. The scrape is still 'running' (finalize never
+      // finished), so scrapeRow reflects a stuck-in-progress state.
+      const { db, calls } = makeDb({
+        pipelineRow: {
+          id: RUN_ID,
+          status: 'running',
+          mode: 'full',
+          current_phase: 'scrape_wait',
+          scrape_run_id: '01SCRAPERUN0000000000000BB',
+          dedup_run_id: null,
+          embed_processed: 0,
+          embed_remaining: 0,
+        },
+        // Cast to include wait_iterations - the D1 stub returns this
+        // object verbatim from first(), and the production code reads
+        // wait_iterations from it.
+        scrapeRow: {
+          status: 'running',
+          finalize_recorded: 0,
+          wait_iterations: 13,
+        } as { status: string; finalize_recorded: number },
+      });
+      const { queue: pq, sends } = makeQueue();
+      const env = {
+        DB: db,
+        PIPELINE_JOBS: pq,
+        SCRAPE_COORDINATOR: makeQueue().queue,
+        DEDUP_SWEEP: makeQueue().queue,
+      } as unknown as Env;
+      await processOnePipelineMessage(env, {
+        pipeline_run_id: RUN_ID,
+        phase: 'scrape_wait',
+      });
+
+      // The scrape_run must be force-failed by the stall path.
+      const scrapeForced = calls.updates.find(
+        (c) =>
+          c.sql.includes('UPDATE scrape_runs') &&
+          c.sql.includes("status = 'failed'"),
+      );
+      expect(scrapeForced).toBeDefined();
+
+      // The pipeline run itself must also be marked failed.
+      const pipelineFailed = calls.updates.find(
+        (c) =>
+          c.sql.includes('UPDATE pipeline_runs') &&
+          c.sql.includes("status = 'failed'"),
+      );
+      expect(pipelineFailed).toBeDefined();
+
+      // No re-enqueue into PIPELINE_JOBS - the loop must stop.
+      expect(sends.length).toBe(0);
+
+      // The structured error log with 'pipeline_scrape_wait_capped'
+      // must have fired so operators can see the stall promptly.
+      const cappedLog = consoleSpy.mock.calls.find((args: unknown[]) => {
+        const payload = args[0];
+        return (
+          typeof payload === 'string' &&
+          payload.includes('pipeline_scrape_wait_capped')
+        );
+      });
+      expect(cappedLog).toBeDefined();
+      const logPayload = cappedLog![0] as string;
+      expect(logPayload).toContain('"level":"error"');
+      expect(logPayload).toContain('"scrape_run_id":"01SCRAPERUN0000000000000BB"');
+    } finally {
+      consoleSpy.mockRestore();
+    }
   });
 
   it('dedup_wait flips pipeline to status=done when dedup_runs.status=done', async () => {

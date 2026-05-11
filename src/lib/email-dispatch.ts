@@ -38,11 +38,12 @@
 
 import { isValidTz, localDateInTz, localHourMinuteInTz, localMidnightUnixInTz } from '~/lib/tz';
 import { log } from '~/lib/log';
+import { mapConcurrent } from '~/lib/concurrency';
 import { renderDigestReadyEmail, sendEmail } from '~/lib/email';
 import {
   selectUnreadHeadlinesForUser,
   tagTallySinceMidnight,
-  type Headline,
+  type EmailHeadline,
   type TagTally,
 } from '~/lib/email-data';
 import { parseHashtags } from '~/lib/hashtags';
@@ -111,9 +112,15 @@ export async function dispatchDailyEmails(env: Env): Promise<void> {
     return;
   }
 
-  for (const { tz } of tzRows) {
+  // CF-003 (Cycle 1 review): the prior shape ran tzs sequentially, so
+  // a slow tz at the head of the list head-of-line-blocked every other
+  // tz behind it. With ~24 tzs in the worst case and ~60s for slow
+  // Resend calls per tz, the 5-minute cron window was at risk. Fan out
+  // to 4 concurrent tz batches so the tail tz doesn't wait for the
+  // head's Resend latency.
+  await mapConcurrent(tzRows, 4, async ({ tz }) => {
     await dispatchForTz(env, tz, now);
-  }
+  });
 }
 
 // ---------- helpers -------------------------------------------------------
@@ -142,9 +149,13 @@ async function dispatchForTz(env: Env, tz: string, now: number): Promise<void> {
   // this loop iteration shares it (their tz column matches).
   const sinceMidnightUnix = localMidnightUnixInTz(now, tz);
 
-  for (const user of users) {
+  // CF-003 (Cycle 1 review): per-user Resend calls in series cost ~N seconds
+  // for N users in the same tz bucket. mapConcurrent at 8 caps blast radius
+  // on Resend (the 100-req/sec free-tier ceiling stays unbroken at this
+  // width) while collapsing N-sequential-await into ~ceil(N/8) waves.
+  await mapConcurrent(users, 8, async (user) => {
     await processOneUser(env, user, localDate, sinceMidnightUnix);
-  }
+  });
 }
 
 /**
@@ -204,7 +215,7 @@ async function processOneUser(
     // Fetch headlines + tally independently (Promise.allSettled, not
     // Promise.all) so a failure in one doesn't collapse the other.
     // A headlines-fetch failure cascades to the skip path below.
-    let headlines: Headline[] = [];
+    let headlines: EmailHeadline[] = [];
     let tally: TagTally[] = [];
     let totalSinceMidnight: number | null = 0;
     const [hSettled, tSettled] = await Promise.allSettled([

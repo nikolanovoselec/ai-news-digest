@@ -31,6 +31,11 @@ import { requireSession } from '~/middleware/auth';
 import { localDateInTz, DEFAULT_TZ } from '~/lib/tz';
 import { parseJsonStringArray as parseStringArray } from '~/lib/json-string-array';
 import { parseHashtags } from '~/lib/hashtags';
+// CF-019 limb 2: WireArticle now lives in ~/lib/types as the single
+// source of truth. Re-exported here so `import { WireArticle } from
+// '~/pages/api/history'` callers keep compiling.
+import type { WireArticle } from '~/lib/types';
+export type { WireArticle } from '~/lib/types';
 
 /** 14 days of history per REQ-HIST-001 AC 1 (extended from 7 → 14
  *  per issue #97 alongside REQ-PIPE-005's retention window). */
@@ -69,26 +74,6 @@ interface ScrapeRunRow {
 }
 
 
-/** Wire shape for an article inside a day group. */
-export interface WireArticle {
-  id: string;
-  title: string;
-  primary_source_name: string | null;
-  primary_source_url: string | null;
-  published_at: number;
-  details: string[];
-  tags: string[];
-  /** Number of additional sources beyond the primary. Drives the
-   *  `+N` suffix on the dashboard card source label. */
-  alt_source_count: number;
-  /** Per-user star state. Drives the DigestCard's initial
-   *  aria-pressed + filled/outline glyph render on /history. Without
-   *  this, articles the user has already starred render as un-starred
-   *  on the history dashboard until a hard refresh AFTER the user
-   *  toggles them again. */
-  starred: boolean;
-}
-
 /** Wire shape for a scrape_runs tick inside a day group. */
 interface WireTick {
   id: string;
@@ -116,7 +101,13 @@ interface HistoryResponse {
   days: DayGroup[];
 }
 
-export async function GET(context: APIContext): Promise<Response> {
+// CF-031: narrowed context type so SSR frontmatter callers
+// (history.astro) can pass `{ request, locals, url }` without an
+// `as unknown as APIContext` cast. Astro's runtime still hands in
+// a full APIContext when the route fires over HTTP.
+export async function GET(
+  context: Pick<APIContext, 'request' | 'locals'>,
+): Promise<Response> {
   const env = context.locals.runtime.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
     return errorResponse('app_not_configured');

@@ -6,6 +6,10 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are archived in [`changes-archive-2026-04.md`](changes-archive-2026-04.md).
 
+## 2026-05-11
+
+- REQ-DISC-001 AC 2 reworded: a brand-new account's first hashtag now jumps the discovery queue so its first digest reflects discovered feeds on the next cron tick instead of waiting behind older pending tags. The previous behaviour ordered the queue strictly by enqueue time, which could leave a new user up to 10 minutes behind the steady-state backlog before any feeds were resolved.
+
 ## 2026-05-12
 
 - REQ-PIPE-003 AC 18 added: a corpus-wide same-story search during a same-story-index outage no longer silently advances past the affected articles. The sweep now pauses and resumes once the index is reachable, so cross-tick duplicates that landed during the outage still collapse on the next attempt instead of staying split forever.

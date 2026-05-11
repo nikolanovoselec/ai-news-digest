@@ -3,7 +3,10 @@
 // discovery for tags missing from KV.
 
 import { describe, it, expect, vi } from 'vitest';
-import { GET, POST, PUT, MAX_HASHTAGS } from '~/pages/api/settings';
+import { GET, POST, PUT } from '~/pages/api/settings';
+// CF-020: MAX_HASHTAGS moved to ~/lib/hashtags (the canonical home of
+// the hashtag-shape and hashtag-count contract).
+import { MAX_HASHTAGS } from '~/lib/hashtags';
 import { SESSION_COOKIE_NAME } from '~/middleware/auth';
 import { signSession } from '~/lib/session-jwt';
 

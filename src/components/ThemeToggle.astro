@@ -6,12 +6,34 @@
 // component-level scripts automatically.
 //
 // CF-059: sun/moon SVG icons moved to ThemeIcon.astro.
+// CF-021: this file is the canonical sun/moon toggle for the whole app.
+// HeaderThemeToggle.astro was merged in via a `variant` prop. The
+// `header` variant produces the compact 32px control that sits next
+// to the UserMenu avatar in the authenticated header; the `default`
+// variant produces the same control used on anonymous pages (login,
+// landing, logged-out errors). Both variants share the same click
+// wiring below so the inline duplicate in UserMenu.astro could be
+// removed.
 import ThemeIcon from '~/components/ThemeIcon.astro';
+
+interface Props {
+  /**
+   * Visual variant. `default` is the standalone control used on
+   * anonymous pages; `header` is the compact authenticated-header
+   * variant that pairs with the UserMenu avatar (no focus-ring
+   * outline, no background transition).
+   */
+  variant?: 'default' | 'header';
+}
+
+const { variant = 'default' } = Astro.props;
+const buttonClass =
+  variant === 'header' ? 'theme-toggle theme-toggle--header focus-ring' : 'theme-toggle';
 ---
 
 <button
   type="button"
-  class="theme-toggle"
+  class={buttonClass}
   aria-label="Toggle color theme"
   data-theme-toggle
 >
@@ -20,15 +42,15 @@ import ThemeIcon from '~/components/ThemeIcon.astro';
 </button>
 
 <style>
-  /* Match HeaderThemeToggle (the authenticated-header variant) so
-     anonymous pages — login, landing, logged-out error pages — show
-     the theme switch in the same transparent circle with a hover-
-     only border. No filled-surface background any more.
+  /* Match the UserMenu avatar trigger geometry (44px tap target, 32px
+     visual circle, transparent border that becomes visible on hover)
+     so the two controls read as a paired set on the authenticated
+     header. The same geometry applies to anonymous pages so the
+     control reads consistently across the app.
      `outline: none` on every focus state kills the persistent
      circular ring some mobile engines paint when :focus-visible
-     fires on tap (the class also dropped `focus-ring` so the global
-     outline utility can't match). The icon itself is the affordance;
-     the control doesn't need a focus ring on top of it. */
+     fires on tap. The icon itself is the affordance; the control
+     doesn't need a focus ring on top of it. */
   .theme-toggle {
     display: inline-flex;
     align-items: center;
@@ -85,11 +107,19 @@ import ThemeIcon from '~/components/ThemeIcon.astro';
     display: inline-flex;
   }
 
-  /* 150ms cross-fade on color/background-color per REQ-DES-002. */
+  /* 150ms cross-fade on color/background-color per REQ-DES-002. The
+     `header` variant skips the background-color transition because
+     it never paints a filled surface (the authenticated header sits
+     on a different background than the rest of the page). */
   @media (prefers-reduced-motion: no-preference) {
     .theme-toggle {
       transition:
         background-color var(--duration-fast) var(--ease),
+        color var(--duration-fast) var(--ease),
+        border-color var(--duration-fast) var(--ease);
+    }
+    .theme-toggle--header {
+      transition:
         color var(--duration-fast) var(--ease),
         border-color var(--duration-fast) var(--ease);
     }
@@ -100,11 +130,17 @@ import ThemeIcon from '~/components/ThemeIcon.astro';
   // Implements REQ-DES-002 click handler wiring. Uses a document-
   // level delegated click handler gated by a flag on <html> so there
   // is NO race between when the button enters the DOM and when the
-  // script binds — every tap anywhere on a [data-theme-toggle]
+  // script binds - every tap anywhere on a [data-theme-toggle]
   // element fires `toggleTheme` immediately, even if this script
   // happened to execute before Astro's ViewTransition placed the
   // button. Fixes the "tap sometimes does nothing until I reload"
   // mobile bug the per-button initThemeToggle pattern had.
+  //
+  // CF-021: this is now the SOLE theme-click handler in the app.
+  // The duplicate handler that used to live in UserMenu.astro was
+  // removed when HeaderThemeToggle.astro was merged into this file
+  // as a variant - both variants share this listener so there is no
+  // longer a chance of double-firing.
   import { toggleTheme } from '~/scripts/bundled/theme-toggle';
 
   if (document.documentElement.dataset['themeToggleBound'] !== '1') {

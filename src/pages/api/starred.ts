@@ -1,6 +1,6 @@
 // Implements REQ-STAR-002
 //
-// GET /api/starred — list the session user's starred articles, newest
+// GET /api/starred - list the session user's starred articles, newest
 // star first. Limit 60 (two dashboard pages' worth).
 //
 // Same auth + response shape as /api/digest/today.ts, minus the
@@ -19,6 +19,19 @@ import { requireSession } from '~/middleware/auth';
 import { slugify } from '~/lib/slug';
 import { log } from '~/lib/log';
 import { parseJsonStringArray as parseStringArray } from '~/lib/json-string-array';
+// CF-019 limb 2: `WireArticle` base lives in ~/lib/types. The /starred
+// view adds `slug` (deep link), `read` (read-state glyph), and
+// `starred_at` (the list IS the star timeline) on top of the base.
+import type { WireArticle as WireArticleBase } from '~/lib/types';
+
+/** /starred wire shape - base WireArticle plus per-user reading state
+ *  and the `starred_at` timestamp that drives ordering. Exported under
+ *  the historical name so existing imports keep compiling. */
+export interface WireArticle extends WireArticleBase {
+  slug: string;
+  read: boolean;
+  starred_at: number;
+}
 
 /** Raw row shape returned by the starred-article JOIN. */
 interface StarredRow {
@@ -34,23 +47,10 @@ interface StarredRow {
   read: number | null;
 }
 
-/** Wire shape — what the /starred view consumes per article. */
-export interface WireArticle {
-  id: string;
-  slug: string;
-  title: string;
-  details: string[];
-  primary_source_name: string | null;
-  primary_source_url: string | null;
-  published_at: number | null;
-  tags: string[];
-  alt_source_count: number;
-  starred: boolean;
-  starred_at: number;
-  read: boolean;
-}
-
-export interface StarredResponse {
+// CF-020: not exported - only the return type of loadStarredPayload
+// below. starred.astro imports the loader function and infers the
+// shape from its return type at the call site.
+interface StarredResponse {
   articles: WireArticle[];
 }
 
@@ -84,7 +84,7 @@ export async function loadStarredPayload(
     const result = await db.prepare(sql).bind(userId).all<StarredRow>();
     rows = result.results ?? [];
   } catch (err) {
-    // CF-035 — log before falling through to empty rows so a "no
+    // CF-035 - log before falling through to empty rows so a "no
     // starred articles" UX bug is distinguishable from a real D1
     // failure in the logs.
     log('error', 'starred.query_failed', {

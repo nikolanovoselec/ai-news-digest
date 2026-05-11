@@ -1,4 +1,4 @@
-// Tests for src/queue/scrape-chunk-consumer.ts — REQ-PIPE-002.
+// Tests for src/queue/scrape-chunk-consumer.ts - REQ-PIPE-002.
 //
 // The chunk consumer calls Workers AI once per chunk, parses the JSON
 // response, collapses LLM-provided dedup_groups, validates tags against
@@ -34,7 +34,7 @@ function makeDb(opts: {
 } = {}): { db: D1Database; records: SqlRecord[] } {
   const records = opts.records ?? [];
   // Track inserted (run_id, chunk_index) pairs so INSERT OR IGNORE
-  // honors PK uniqueness — duplicate inserts are no-ops, matching D1.
+  // honors PK uniqueness - duplicate inserts are no-ops, matching D1.
   const completedKeys = new Set<string>();
   let completedChunkCount = opts.initialCompletedChunks ?? 0;
   // Per-run finalize-lock state (CF-002 follow-up). The conditional
@@ -76,7 +76,7 @@ function makeDb(opts: {
           !sql.includes('finalize_enqueued = 1')
         ) {
           if (opts.failNextRollback === true) {
-            // Consume the one-shot — only the first rollback throws,
+            // Consume the one-shot - only the first rollback throws,
             // so a follow-up retry sees a healthy D1.
             opts.failNextRollback = false;
             throw new Error('d1 transient outage during rollback');
@@ -211,7 +211,7 @@ function makeEnv(
   } as unknown as Env;
 }
 
-/** CF-030 — chunk consumer enforces a 120-word floor on `details`
+/** CF-030 - chunk consumer enforces a 120-word floor on `details`
  *  per REQ-PIPE-002 AC3. Test fixtures used to ship single-sentence
  *  bodies which now get dropped by the guard. Use this constant when
  *  the test isn't specifically about the word-count contract. */
@@ -246,7 +246,7 @@ function makeChunk(
   };
 }
 
-describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
+describe('scrape-chunk-consumer - REQ-PIPE-002', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -318,7 +318,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
   });
 
   it('REQ-PIPE-002: collapses intra-chunk dedup_groups; primary is earliest-published, rest become article_sources', async () => {
-    // Two candidates for the same story — LLM hints dedup_groups = [[0,1]].
+    // Two candidates for the same story - LLM hints dedup_groups = [[0,1]].
     // Input order: candidate 0 has published_at=100 (earliest), candidate
     // 1 has published_at=200. After collapse: 1 article + 1 alternative.
     const aiResponse = {
@@ -396,7 +396,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
   it('REQ-PIPE-002: articles INSERT column list matches migration 0003 schema (regression guard for the details_json / tags_json / ingested_at / scrape_run_id columns)', async () => {
     const aiResponse = {
       response: JSON.stringify({
-        articles: [{ title: 'Article A — long enough headline copy', details: [LONG_BODY], tags: ['cloudflare'] }],
+        articles: [{ title: 'Article A - long enough headline copy', details: [LONG_BODY], tags: ['cloudflare'] }],
         dedup_groups: [],
       }),
       usage: { input_tokens: 10, output_tokens: 10 },
@@ -412,7 +412,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     );
     expect(articleInserts.length).toBe(1);
     const sql = articleInserts[0]!.sql;
-    // These columns are NOT NULL in migration 0003 — the INSERT MUST
+    // These columns are NOT NULL in migration 0003 - the INSERT MUST
     // reference each by the name declared in the schema. A prior bug
     // wrote to `details` + `created_at` (non-existent) and omitted
     // details_json + tags_json + scrape_run_id; this guard prevents
@@ -447,8 +447,8 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     const aiResponse = {
       response: JSON.stringify({
         articles: [
-          { title: 'Article A — long enough headline copy', details: LONG_BODY, tags: ['cloudflare', 'generative-ai'] },
-          { title: 'Article B — long enough headline copy', details: LONG_BODY, tags: ['generative-ai'] },
+          { title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare', 'generative-ai'] },
+          { title: 'Article B - long enough headline copy', details: LONG_BODY, tags: ['generative-ai'] },
         ],
         dedup_groups: [],
       }),
@@ -464,7 +464,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
           canonical_url: 'https://example.com/a',
           source_url: 'https://example.com/a',
           source_name: 'A',
-          title: 'Article A — long enough headline copy',
+          title: 'Article A - long enough headline copy',
           published_at: 100,
           alternatives: [
             { source_url: 'https://mirror.example.com/a', source_name: 'Mirror' },
@@ -474,7 +474,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
           canonical_url: 'https://example.com/b',
           source_url: 'https://example.com/b',
           source_name: 'B',
-          title: 'Article B — long enough headline copy',
+          title: 'Article B - long enough headline copy',
           published_at: 200,
         },
       ],
@@ -495,20 +495,19 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     expect(batched.length).toBe(6);
   });
 
-  it('REQ-PIPE-002: completing the final chunk calls finishRun(ready) and zeroes the KV mirror', async () => {
-    // CF-002: the run's "are we done?" gate is now the count of rows
-    // in scrape_chunk_completions, not a KV decrement. The KV counter
-    // is kept as a derived mirror so /api/scrape-status keeps working.
+  it('REQ-PIPE-002: completing the final chunk calls finishRun(ready)', async () => {
+    // CF-002: the run's "are we done?" gate is the count of rows
+    // in scrape_chunk_completions. CF-007 removed the KV mirror;
+    // /api/scrape-status now derives chunks_remaining from D1 COUNT.
     const aiResponse = {
-      response: JSON.stringify({ articles: [{ title: 'Article A — long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }, { title: 'Article B — long enough headline copy', details: LONG_BODY, tags: ['generative-ai'] }], dedup_groups: [] }),
+      response: JSON.stringify({ articles: [{ title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }, { title: 'Article B - long enough headline copy', details: LONG_BODY, tags: ['generative-ai'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db, records } = makeDb();
-    const { kv, state } = makeKv();
+    const { kv } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
     await processOneChunk(env, makeChunk());
     // total_chunks=1 (default) and we just inserted chunk 0 → done=1 → finalize.
-    expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('0');
     const finish = records.find(
       (r) =>
         r.sql.includes('UPDATE scrape_runs') &&
@@ -524,17 +523,16 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     expect(insert!.params[1]).toBe(0);
   });
 
-  it('REQ-PIPE-002: non-last chunk leaves the KV mirror above zero and does NOT call finishRun', async () => {
+  it('REQ-PIPE-002: non-last chunk does NOT call finishRun', async () => {
     const aiResponse = {
-      response: JSON.stringify({ articles: [{ title: 'Article A — long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }, { title: 'Article B — long enough headline copy', details: LONG_BODY, tags: ['generative-ai'] }], dedup_groups: [] }),
+      response: JSON.stringify({ articles: [{ title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }, { title: 'Article B - long enough headline copy', details: LONG_BODY, tags: ['generative-ai'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db, records } = makeDb();
-    const { kv, state } = makeKv();
+    const { kv } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
     // total_chunks=4 simulates a multi-chunk run; this is chunk 0 of 4.
     await processOneChunk(env, makeChunk({ chunk_index: 0, total_chunks: 4 }));
-    expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('3');
     const finish = records.find(
       (r) =>
         r.sql.includes('UPDATE scrape_runs') &&
@@ -545,7 +543,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
 
   it('REQ-PIPE-008: last chunk enqueues exactly one SCRAPE_FINALIZE message after finishRun', async () => {
     const aiResponse = {
-      response: JSON.stringify({ articles: [{ title: 'Article A — long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }], dedup_groups: [] }),
+      response: JSON.stringify({ articles: [{ title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db } = makeDb();
@@ -560,7 +558,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
 
   it('REQ-PIPE-008: non-last chunks do NOT enqueue SCRAPE_FINALIZE', async () => {
     const aiResponse = {
-      response: JSON.stringify({ articles: [{ title: 'Article A — long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }], dedup_groups: [] }),
+      response: JSON.stringify({ articles: [{ title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db } = makeDb();
@@ -580,31 +578,31 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     // AND finalize_enqueued = 0` returns meta.changes = 0 on the
     // second attempt, so the consumer short-circuits before sending.
     const aiResponse = {
-      response: JSON.stringify({ articles: [{ title: 'Article A — long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }], dedup_groups: [] }),
+      response: JSON.stringify({ articles: [{ title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db } = makeDb();
-    const { kv, state } = makeKv();
+    const { kv } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
     await processOneChunk(env, makeChunk());
-    // KV mirror has been zeroed; the finalize lock lives on the D1 row.
-    expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('0');
+    // The finalize lock lives on the D1 row; redelivery is gated by
+    // the atomic UPDATE on finalize_enqueued returning meta.changes=0.
     await processOneChunk(env, makeChunk());
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;
     expect(sendMock).toHaveBeenCalledTimes(1);
   });
 
-  it('REQ-PIPE-006 AC 7: addChunkStats is gated by completion INSERT — no double-count under redelivery', async () => {
+  it('REQ-PIPE-006 AC 7: addChunkStats is gated by completion INSERT - no double-count under redelivery', async () => {
     // CF-002 hardening: addChunkStats issues an additive UPDATE
     // (`tokens_in = tokens_in + ?, ...`) so an unguarded second
     // invocation would double the per-chunk tokens, cost, and article
     // counters in scrape_runs. The fix is to gate the UPDATE on the
-    // completion INSERT's meta.changes — only the first delivery for
+    // completion INSERT's meta.changes - only the first delivery for
     // a given (run_id, chunk_index) pair runs addChunkStats, the
     // redelivery sees changes === 0 and short-circuits.
     const aiResponse = {
-      response: JSON.stringify({ articles: [{ title: 'Article A — long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }], dedup_groups: [] }),
+      response: JSON.stringify({ articles: [{ title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db, records } = makeDb();
@@ -620,15 +618,15 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     expect(statsCalls).toHaveLength(1);
   });
 
-  it('REQ-PIPE-008: send-failure rollback — clears finalize_enqueued so the queue retry can re-attempt', async () => {
+  it('REQ-PIPE-008: send-failure rollback - clears finalize_enqueued so the queue retry can re-attempt', async () => {
     // CF-002 follow-up: the atomic UPDATE-then-send sequence has a
-    // failure mode that the original KV gate didn't have — if send()
+    // failure mode that the original KV gate didn't have - if send()
     // throws after the lock has been written, future redeliveries
     // would see finalize_enqueued = 1 and silently skip the send,
     // permanently dropping the finalize. The consumer must roll back
     // the lock on send failure so a retry can re-acquire it.
     const aiResponse = {
-      response: JSON.stringify({ articles: [{ title: 'Article A — long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }], dedup_groups: [] }),
+      response: JSON.stringify({ articles: [{ title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db, records } = makeDb();
@@ -641,7 +639,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     await expect(processOneChunk(env, makeChunk())).rejects.toThrow(
       'queue temporarily unavailable',
     );
-    // Rollback was issued — the lock-clearing UPDATE is in the SQL log.
+    // Rollback was issued - the lock-clearing UPDATE is in the SQL log.
     const rollback = records.find(
       (r) =>
         r.sql.includes('UPDATE scrape_runs') &&
@@ -649,13 +647,13 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
         !r.sql.includes('finalize_enqueued = 1'),
     );
     expect(rollback).toBeDefined();
-    // Second call (queue redelivery) succeeds — lock was cleared so the
+    // Second call (queue redelivery) succeeds - lock was cleared so the
     // race-acquire UPDATE bumps it back to 1, and send is re-attempted.
     await processOneChunk(env, makeChunk());
     expect(sendMock).toHaveBeenCalledTimes(2);
   });
 
-  it('REQ-PIPE-008: rollback-failure path — emits finalize_lock_rollback_failed and surfaces sendErr', async () => {
+  it('REQ-PIPE-008: rollback-failure path - emits finalize_lock_rollback_failed and surfaces sendErr', async () => {
     // CF-002 follow-up: when the rollback UPDATE itself throws (a
     // second transient D1 outage during the catch handler), the
     // consumer must still surface the original sendErr to the queue
@@ -665,7 +663,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     try {
       const aiResponse = {
-        response: JSON.stringify({ articles: [{ title: 'Article A — long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }], dedup_groups: [] }),
+        response: JSON.stringify({ articles: [{ title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }], dedup_groups: [] }),
         usage: { input_tokens: 10, output_tokens: 10 },
       };
       const { db } = makeDb({ failNextRollback: true });
@@ -675,7 +673,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
       const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;
       sendMock.mockRejectedValueOnce(new Error('queue temporarily unavailable'));
 
-      // The original sendErr — not the rollback error — must surface.
+      // The original sendErr - not the rollback error - must surface.
       await expect(processOneChunk(env, makeChunk())).rejects.toThrow(
         'queue temporarily unavailable',
       );
@@ -701,8 +699,8 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     const aiResponse = {
       response: JSON.stringify({
         articles: [
-          { title: 'Article A — long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] },
-          { title: 'Article B — long enough headline copy', details: LONG_BODY, tags: ['generative-ai'] },
+          { title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] },
+          { title: 'Article B - long enough headline copy', details: LONG_BODY, tags: ['generative-ai'] },
         ],
         dedup_groups: [],
       }),
@@ -748,7 +746,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     const env = makeEnv(db, kv, aiResponse);
     await processOneChunk(env, makeChunk());
 
-    // Two `INSERT OR IGNORE INTO articles` statements in the batch —
+    // Two `INSERT OR IGNORE INTO articles` statements in the batch -
     // each binds (id, canonical_url, title, details_json, tags_json?,
     // primary_source_*). We assert canonical_url ↔ title pairing.
     const articleInserts = records.filter(
@@ -758,7 +756,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     );
     expect(articleInserts.length).toBe(2);
 
-    // Find the row whose canonical_url is candidate[0] — its title
+    // Find the row whose canonical_url is candidate[0] - its title
     // MUST be 'Summary of A', not 'Summary of B', because the LLM
     // echoed index=0 for the A summary.
     const rowA = articleInserts.find((r) =>
@@ -837,7 +835,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     // survives (coding/benchmarks overlap), candidate[1] is dropped
     // (postgres vs lambda share zero meaningful tokens).
     expect(articleInserts.length).toBe(2);
-    // And the Lambda canonical_url must NOT appear in any insert — the
+    // And the Lambda canonical_url must NOT appear in any insert - the
     // whole point is no more wrong-URL-right-summary pairings.
     const anyLambdaRow = articleInserts.find((r) =>
       r.params.includes('https://aws.amazon.com/lambda'),
@@ -852,7 +850,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     const aiResponse = {
       response: JSON.stringify({
         articles: [
-          { index: 0, title: 'Article A — long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] },
+          { index: 0, title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] },
           { index: 99, title: 'Hallucinated', details: LONG_BODY, tags: ['generative-ai'] },
         ],
         dedup_groups: [],
@@ -873,29 +871,29 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     // candidate[1] has no LLM article (index=1 never appeared) and is
     // dropped; the hallucinated index=99 is also dropped.
     expect(articleInserts.length).toBe(1);
-    expect(articleInserts[0]!.params).toContain('Article A — long enough headline copy');
+    expect(articleInserts[0]!.params).toContain('Article A - long enough headline copy');
     expect(articleInserts[0]!.params).not.toContain('Hallucinated');
   });
 
   it('REQ-PIPE-002 / CF-056: KV.list failure on loadAllowedTags emits degraded log and falls back to DEFAULT_HASHTAGS', async () => {
     // The chunk consumer reads the tag allowlist from KV (`sources:*`)
     // unioned with DEFAULT_HASHTAGS. If KV.list throws (binding outage,
-    // transient 500), the consumer must NOT block the chunk — it falls
+    // transient 500), the consumer must NOT block the chunk - it falls
     // back to the bundled defaults and emits a structured warn log so
     // operators can spot the silent degradation.
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     try {
       const aiResponse = {
         response: JSON.stringify({
-          // Tag is in DEFAULT_HASHTAGS — survives even with empty KV result.
-          articles: [{ title: 'Article A — long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }],
+          // Tag is in DEFAULT_HASHTAGS - survives even with empty KV result.
+          articles: [{ title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }],
           dedup_groups: [],
         }),
         usage: { input_tokens: 10, output_tokens: 10 },
       };
       const { db, records } = makeDb();
       const { kv } = makeKv();
-      // Override list to throw — simulates a KV outage during the
+      // Override list to throw - simulates a KV outage during the
       // allowed-tags scan. The consumer's catch block should swallow it.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (kv.list as any) = vi.fn().mockRejectedValue(new Error('kv list 500'));
@@ -916,7 +914,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
       expect(payload).toContain('"level":"warn"');
       expect(payload).toContain('kv list 500');
 
-      // The chunk still wrote the article — DEFAULT_HASHTAGS fallback
+      // The chunk still wrote the article - DEFAULT_HASHTAGS fallback
       // accepted `cloudflare` so the row landed in articles.
       const articleInserts = records.filter(
         (r) =>
@@ -944,8 +942,8 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     const aiResponse = {
       response: JSON.stringify({
         articles: [
-          { index: 0, title: 'Title A — long enough headline copy', details: longBody, tags: ['cloudflare'] },
-          { index: 1, title: 'Title B — also long enough headline', details: tooShort, tags: ['generative-ai'] },
+          { index: 0, title: 'Title A - long enough headline copy', details: longBody, tags: ['cloudflare'] },
+          { index: 1, title: 'Title B - also long enough headline', details: tooShort, tags: ['generative-ai'] },
         ],
         dedup_groups: [],
       }),
@@ -961,14 +959,14 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
         r.sql.startsWith('INSERT OR IGNORE INTO articles'),
     );
     expect(articleInserts.length).toBe(1);
-    expect(articleInserts[0]!.params).toContain('Title A — long enough headline copy');
-    expect(articleInserts[0]!.params).not.toContain('Title B — also long enough headline');
+    expect(articleInserts[0]!.params).toContain('Title A - long enough headline copy');
+    expect(articleInserts[0]!.params).not.toContain('Title B - also long enough headline');
   });
 
   it('REQ-PIPE-002 AC3: keeps articles in the 80-150 natural-distribution range that the prompt asks for but the model often undershoots', async () => {
     // The Workers AI gpt-oss-120b often produces 100-130-word summaries
     // when source snippets are thin. The 80-word floor is a backstop,
-    // not a contract — bodies above 80 must pass. Pinning the boundary
+    // not a contract - bodies above 80 must pass. Pinning the boundary
     // here so a future tightening (back to 120) is caught by CI rather
     // than discovered via a 75% drop in daily ingestion.
     const exactly100Words = Array.from({ length: 100 }, (_, i) => `word${i}`).join(' ');
@@ -1013,7 +1011,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     const aiResponse = {
       response: JSON.stringify({
         articles: [
-          { index: 0, title: 'Headline OK — within sanity bounds', details: longBody, tags: ['cloudflare'] },
+          { index: 0, title: 'Headline OK - within sanity bounds', details: longBody, tags: ['cloudflare'] },
           { index: 1, title: 'Hi.', details: longBody, tags: ['generative-ai'] },
         ],
         dedup_groups: [],
@@ -1030,7 +1028,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
         r.sql.startsWith('INSERT OR IGNORE INTO articles'),
     );
     expect(articleInserts.length).toBe(1);
-    expect(articleInserts[0]!.params).toContain('Headline OK — within sanity bounds');
+    expect(articleInserts[0]!.params).toContain('Headline OK - within sanity bounds');
     expect(articleInserts[0]!.params).not.toContain('Hi.');
   });
 
@@ -1061,11 +1059,11 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     expect(articleInserts).toHaveLength(0);
   });
 
-  // CF-042 — REQ-PIPE-008 AC9b: two concurrent recordChunkCompletion
-  // calls for the same (scrape_run_id, chunk_index) — exactly one returns
+  // CF-042 - REQ-PIPE-008 AC9b: two concurrent recordChunkCompletion
+  // calls for the same (scrape_run_id, chunk_index) - exactly one returns
   // true, one returns false.
   it('REQ-PIPE-008 AC9b (CF-042): concurrent recordChunkCompletion: one wins, one loses', async () => {
-    // Import the repository helper directly — this test targets the
+    // Import the repository helper directly - this test targets the
     // atomicity contract of INSERT OR IGNORE at the helper level, not
     // the chunk consumer's higher-level logic.
     const { recordChunkCompletion } = await import('~/lib/articles-repo');
@@ -1102,7 +1100,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     expect(losers).toBe(1);
   });
 
-  // CF-047 — REQ-PIPE-002 AC7 boundary tests.
+  // CF-047 - REQ-PIPE-002 AC7 boundary tests.
   it('REQ-PIPE-002 AC7 (CF-047): article with out-of-bounds index is dropped', async () => {
     const aiResponse = {
       response: JSON.stringify({
@@ -1121,7 +1119,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     const articleInserts = records.filter(
       (r) => r.via === 'batch' && r.sql.startsWith('INSERT OR IGNORE INTO articles'),
     );
-    // Out-of-bounds index must be dropped — no article insert.
+    // Out-of-bounds index must be dropped - no article insert.
     expect(articleInserts).toHaveLength(0);
   });
 
@@ -1155,7 +1153,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
   it('REQ-PIPE-002 / REQ-PIPE-008 partial-success rescue: terminal failure with completed > 0 marks run ready and enqueues finalize', async () => {
     const { db, records } = makeDb({ initialCompletedChunks: 2 });
     const { kv } = makeKv();
-    // AI throws on every attempt — the rescue path is the contract here,
+    // AI throws on every attempt - the rescue path is the contract here,
     // not the LLM call.
     const env = makeEnv(db, kv, {});
     (env.AI.run as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
@@ -1172,7 +1170,7 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     const batch = { messages: [message] } as unknown as MessageBatch<ChunkJobMessage>;
     await handleChunkBatch(batch, env);
 
-    // finishRun(scrape_run_id, 'ready') — UPDATE scrape_runs … SET status = 'ready' …
+    // finishRun(scrape_run_id, 'ready') - UPDATE scrape_runs … SET status = 'ready' …
     const finishReady = records.find(
       (r) =>
         r.sql.includes('UPDATE scrape_runs') &&
@@ -1238,13 +1236,144 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     );
     expect(lock).toBeUndefined();
   });
+  // CF-023 - REQ-PIPE-002 AC 5: when the LLM returns non-JSON gibberish
+  // the consumer throws a retryable Error so the queue retries the chunk.
+  // This is intentional: "a transient model hiccup" - NonRetryableError
+  // is NOT thrown here (that would silence the retry).
+  it('REQ-PIPE-002 (CF-023): LLM non-JSON response throws retryable Error and emits chunk_invalid_json log', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      // Return pure gibberish that parseLLMPayload cannot parse as
+      // a valid JSON articles payload - narrow() returns null, so
+      // runJson() returns { ok: false } and runChunkLLM throws.
+      const { db } = makeDb();
+      const { kv } = makeKv();
+      const env = makeEnv(db, kv, { response: 'this is not json at all !!!', usage: {} });
+
+      await expect(processOneChunk(env, makeChunk())).rejects.toThrow('chunk_invalid_json');
+
+      // The chunk_invalid_json structured log must have fired before the throw.
+      const warnLog = consoleSpy.mock.calls.find((args: unknown[]) => {
+        const payload = args[0];
+        return typeof payload === 'string' && payload.includes('chunk_invalid_json');
+      });
+      expect(warnLog).toBeDefined();
+      const payload = warnLog![0] as string;
+      // Must carry scrape_run_id so operators can correlate to the run.
+      expect(payload).toContain('"scrape_run_id":"test-run"');
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  // CF-023 - REQ-PIPE-002: terminal handleChunkBatch with non-JSON LLM
+  // response: onTerminalFailure fires exactly once and marks the run
+  // failed (no sibling completions). The bug-class: if onTerminalFailure
+  // did NOT fire, the scrape_runs row stays 'running' forever, invisible
+  // to the history page and to the pipeline-consumer's scrape_wait gate.
+  it('REQ-PIPE-002 (CF-023): terminal chunk failure from invalid JSON calls onTerminalFailure once, marks run failed', async () => {
+    const { db, records } = makeDb({ initialCompletedChunks: 0 });
+    const { kv } = makeKv();
+    const env = makeEnv(db, kv, { response: 'not-json-gibberish', usage: {} });
+
+    const message = {
+      body: {
+        scrape_run_id: 'json-fail-run',
+        chunk_index: 0,
+        total_chunks: 1,
+        candidates: [],
+      } as ChunkJobMessage,
+      // attempts >= max (3) makes it a terminal delivery.
+      attempts: 3,
+      ack: vi.fn(),
+      retry: vi.fn(),
+    };
+    const batch = { messages: [message] } as unknown as MessageBatch<ChunkJobMessage>;
+    await handleChunkBatch(batch, env);
+
+    // onTerminalFailure fires and writes finishRun(run_id, 'failed')
+    // because zero sibling chunks completed.
+    const finishFailed = records.find(
+      (r) =>
+        r.sql.includes('UPDATE scrape_runs') &&
+        r.sql.includes("status = 'running'") &&
+        r.sql.includes('SET status = ?2') &&
+        r.params[1] === 'failed' &&
+        r.params[0] === 'json-fail-run',
+    );
+    expect(finishFailed).toBeDefined();
+
+    // Non-JSON errors are retryable (not NonRetryableError) so the
+    // queue stats show the failure - retry() must be called, not ack().
+    expect(message.retry).toHaveBeenCalledTimes(1);
+    expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  // CF-023 - REQ-PIPE-002: double-fault in onTerminalFailure. Simulates
+  // the case where the SCRAPE_FINALIZE.send inside onTerminalFailure
+  // throws (partial-success branch) AND the rollback D1 UPDATE also
+  // throws. The bug-class: if the outer catch suppressed the send error,
+  // the run would be silently abandoned with finalize_enqueued=1 and no
+  // finalize consumer ever firing.
+  it('REQ-PIPE-002 (CF-023): onTerminalFailure double-fault - send AND rollback throw - surfaces rollback failure log and retries', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      // initialCompletedChunks=2 forces onTerminalFailure into the
+      // partial-success 'ready' branch which tries to acquire the
+      // finalize lock and then enqueue SCRAPE_FINALIZE.
+      const { db } = makeDb({ initialCompletedChunks: 2 });
+      const { kv } = makeKv();
+      const env = makeEnv(db, kv, { response: 'not-json-gibberish', usage: {} });
+
+      // Make SCRAPE_FINALIZE.send throw on the onTerminalFailure path.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;
+      sendMock.mockRejectedValueOnce(new Error('queue saturated'));
+
+      const message = {
+        body: {
+          scrape_run_id: 'double-fault-run',
+          chunk_index: 1,
+          total_chunks: 3,
+          candidates: [],
+        } as ChunkJobMessage,
+        attempts: 3,
+        ack: vi.fn(),
+        retry: vi.fn(),
+      };
+      const batch = { messages: [message] } as unknown as MessageBatch<ChunkJobMessage>;
+      await handleChunkBatch(batch, env);
+
+      // The structured failure log for the rollback/enqueue fault must
+      // have fired - the specific status is 'partial_finalize_enqueue_rollback_failed'
+      // or 'partial_finalize_enqueue_failed'.
+      const faultLog = consoleSpy.mock.calls.find((args: unknown[]) => {
+        const payload = args[0];
+        return (
+          typeof payload === 'string' &&
+          (payload.includes('partial_finalize_enqueue_failed') ||
+            payload.includes('partial_finalize_enqueue_rollback_failed'))
+        );
+      });
+      expect(faultLog).toBeDefined();
+
+      // The message is still retried (not acked) because the original
+      // chunk error was retryable - the double-fault inside
+      // onTerminalFailure must NOT suppress the retry.
+      expect(message.retry).toHaveBeenCalledTimes(1);
+      expect(message.ack).not.toHaveBeenCalled();
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
   it('REQ-PIPE-003: Vectorize.upsert failure rolls back this attempt\'s rows to embedding_status=\'failed\'', async () => {
     // Regression test: the rollback UPDATE must actually fire on the
     // FIRST attempt when Vectorize.upsert throws. The previous gate
     // (`AND embedding_status != 'embedded'`) was self-defeating because
     // the rows were just INSERT'd with status='embedded', so the gate
     // excluded every row it was supposed to fix and the articles
-    // remained marked 'embedded' in D1 with no vector in Vectorize —
+    // remained marked 'embedded' in D1 with no vector in Vectorize -
     // invisible to both the finalize pass and the admin backfill route.
     const aiResponse = {
       response: JSON.stringify({

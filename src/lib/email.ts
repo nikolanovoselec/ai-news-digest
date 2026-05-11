@@ -42,7 +42,7 @@
 // triage, not enough to leak content.
 
 import { log } from '~/lib/log';
-import type { Headline, TagTally } from '~/lib/email-data';
+import type { EmailHeadline, TagTally } from '~/lib/email-data';
 import { escapeHtml, headlineRow } from '~/lib/email-html';
 
 /** External Gray Matter site that the email footer links to.
@@ -106,7 +106,7 @@ function pad2(n: number): string {
 export interface DigestReadyEmailParams {
   appUrl: string;
   userDisplayName: string;
-  headlines: Headline[];
+  headlines: EmailHeadline[];
   tagTally: TagTally[];
   totalSinceMidnight: number;
   sentLocal: { hour: number; minute: number; tz: string };
