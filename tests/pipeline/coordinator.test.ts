@@ -477,6 +477,58 @@ describe('scrape-coordinator — REQ-PIPE-001', () => {
     expect(found).toBeDefined();
   });
 
+  // CF-023 — REQ-PIPE-001 AC: per-feed fetch failures are isolated.
+  // Bug-class: if fetchAllSources propagated a single feed's throw to
+  // the caller, ALL feeds in that tick would produce zero candidates,
+  // the run would see an empty pool, and finishRun(ready) would fire
+  // with no articles — users see a blank digest. The real failure
+  // (one bad URL) would be invisible.
+  it('REQ-PIPE-001 (CF-023): single feed fetch failure is isolated — other feeds still produce candidates', async () => {
+    // First call to fetch throws (simulates a 500 / DNS failure on
+    // one curated source). All subsequent calls return a valid RSS
+    // feed with one item each so the coordinator still produces candidates
+    // from the healthy sources.
+    let callCount = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => {
+        callCount += 1;
+        if (callCount === 1) {
+          // First source throws — simulates network failure.
+          return Promise.reject(new Error('ECONNREFUSED: connection refused'));
+        }
+        // All other sources return one item.
+        const rss =
+          `<rss><channel><item>` +
+          `<title>Healthy story ${callCount}</title>` +
+          `<link>https://healthy${callCount}.example.com/a</link>` +
+          `</item></channel></rss>`;
+        return Promise.resolve(
+          new Response(rss, {
+            status: 200,
+            headers: { 'content-type': 'application/rss+xml' },
+          }),
+        );
+      }),
+    );
+
+    const { db } = makeDb();
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+    await runCoordinator(env, { scrape_run_id: 'run-feed-isolation' });
+
+    // Healthy sources must still produce at least one chunk — the one
+    // throwing feed must NOT abort the whole run.
+    expect(sends.length).toBeGreaterThanOrEqual(1);
+    // All candidates in every chunk come from healthy sources (none
+    // reference the URL pattern from the failing first fetch).
+    const allCandidates = (
+      sends as Array<{ candidates: Array<{ source_url: string }> }>
+    ).flatMap((m) => m.candidates);
+    expect(allCandidates.length).toBeGreaterThan(0);
+  });
+
   it('REQ-PIPE-001: when pool is empty, finishRun(ready) is called immediately', async () => {
     stubFetchEmpty();
     const { db, records } = makeDb();

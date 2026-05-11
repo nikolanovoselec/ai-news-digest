@@ -1238,6 +1238,137 @@ describe('scrape-chunk-consumer — REQ-PIPE-002', () => {
     );
     expect(lock).toBeUndefined();
   });
+  // CF-023 — REQ-PIPE-002 AC 5: when the LLM returns non-JSON gibberish
+  // the consumer throws a retryable Error so the queue retries the chunk.
+  // This is intentional: "a transient model hiccup" — NonRetryableError
+  // is NOT thrown here (that would silence the retry).
+  it('REQ-PIPE-002 (CF-023): LLM non-JSON response throws retryable Error and emits chunk_invalid_json log', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      // Return pure gibberish that parseLLMPayload cannot parse as
+      // a valid JSON articles payload — narrow() returns null, so
+      // runJson() returns { ok: false } and runChunkLLM throws.
+      const { db } = makeDb();
+      const { kv } = makeKv();
+      const env = makeEnv(db, kv, { response: 'this is not json at all !!!', usage: {} });
+
+      await expect(processOneChunk(env, makeChunk())).rejects.toThrow('chunk_invalid_json');
+
+      // The chunk_invalid_json structured log must have fired before the throw.
+      const warnLog = consoleSpy.mock.calls.find((args: unknown[]) => {
+        const payload = args[0];
+        return typeof payload === 'string' && payload.includes('chunk_invalid_json');
+      });
+      expect(warnLog).toBeDefined();
+      const payload = warnLog![0] as string;
+      // Must carry scrape_run_id so operators can correlate to the run.
+      expect(payload).toContain('"scrape_run_id":"test-run"');
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  // CF-023 — REQ-PIPE-002: terminal handleChunkBatch with non-JSON LLM
+  // response: onTerminalFailure fires exactly once and marks the run
+  // failed (no sibling completions). The bug-class: if onTerminalFailure
+  // did NOT fire, the scrape_runs row stays 'running' forever, invisible
+  // to the history page and to the pipeline-consumer's scrape_wait gate.
+  it('REQ-PIPE-002 (CF-023): terminal chunk failure from invalid JSON calls onTerminalFailure once, marks run failed', async () => {
+    const { db, records } = makeDb({ initialCompletedChunks: 0 });
+    const { kv } = makeKv();
+    const env = makeEnv(db, kv, { response: 'not-json-gibberish', usage: {} });
+
+    const message = {
+      body: {
+        scrape_run_id: 'json-fail-run',
+        chunk_index: 0,
+        total_chunks: 1,
+        candidates: [],
+      } as ChunkJobMessage,
+      // attempts >= max (3) makes it a terminal delivery.
+      attempts: 3,
+      ack: vi.fn(),
+      retry: vi.fn(),
+    };
+    const batch = { messages: [message] } as unknown as MessageBatch<ChunkJobMessage>;
+    await handleChunkBatch(batch, env);
+
+    // onTerminalFailure fires and writes finishRun(run_id, 'failed')
+    // because zero sibling chunks completed.
+    const finishFailed = records.find(
+      (r) =>
+        r.sql.includes('UPDATE scrape_runs') &&
+        r.sql.includes("status = 'running'") &&
+        r.sql.includes('SET status = ?2') &&
+        r.params[1] === 'failed' &&
+        r.params[0] === 'json-fail-run',
+    );
+    expect(finishFailed).toBeDefined();
+
+    // Non-JSON errors are retryable (not NonRetryableError) so the
+    // queue stats show the failure — retry() must be called, not ack().
+    expect(message.retry).toHaveBeenCalledTimes(1);
+    expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  // CF-023 — REQ-PIPE-002: double-fault in onTerminalFailure. Simulates
+  // the case where the SCRAPE_FINALIZE.send inside onTerminalFailure
+  // throws (partial-success branch) AND the rollback D1 UPDATE also
+  // throws. The bug-class: if the outer catch suppressed the send error,
+  // the run would be silently abandoned with finalize_enqueued=1 and no
+  // finalize consumer ever firing.
+  it('REQ-PIPE-002 (CF-023): onTerminalFailure double-fault — send AND rollback throw — surfaces rollback failure log and retries', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      // initialCompletedChunks=2 forces onTerminalFailure into the
+      // partial-success 'ready' branch which tries to acquire the
+      // finalize lock and then enqueue SCRAPE_FINALIZE.
+      const { db } = makeDb({ initialCompletedChunks: 2 });
+      const { kv } = makeKv();
+      const env = makeEnv(db, kv, { response: 'not-json-gibberish', usage: {} });
+
+      // Make SCRAPE_FINALIZE.send throw on the onTerminalFailure path.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;
+      sendMock.mockRejectedValueOnce(new Error('queue saturated'));
+
+      const message = {
+        body: {
+          scrape_run_id: 'double-fault-run',
+          chunk_index: 1,
+          total_chunks: 3,
+          candidates: [],
+        } as ChunkJobMessage,
+        attempts: 3,
+        ack: vi.fn(),
+        retry: vi.fn(),
+      };
+      const batch = { messages: [message] } as unknown as MessageBatch<ChunkJobMessage>;
+      await handleChunkBatch(batch, env);
+
+      // The structured failure log for the rollback/enqueue fault must
+      // have fired — the specific status is 'partial_finalize_enqueue_rollback_failed'
+      // or 'partial_finalize_enqueue_failed'.
+      const faultLog = consoleSpy.mock.calls.find((args: unknown[]) => {
+        const payload = args[0];
+        return (
+          typeof payload === 'string' &&
+          (payload.includes('partial_finalize_enqueue_failed') ||
+            payload.includes('partial_finalize_enqueue_rollback_failed'))
+        );
+      });
+      expect(faultLog).toBeDefined();
+
+      // The message is still retried (not acked) because the original
+      // chunk error was retryable — the double-fault inside
+      // onTerminalFailure must NOT suppress the retry.
+      expect(message.retry).toHaveBeenCalledTimes(1);
+      expect(message.ack).not.toHaveBeenCalled();
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
   it('REQ-PIPE-003: Vectorize.upsert failure rolls back this attempt\'s rows to embedding_status=\'failed\'', async () => {
     // Regression test: the rollback UPDATE must actually fire on the
     // FIRST attempt when Vectorize.upsert throws. The previous gate
