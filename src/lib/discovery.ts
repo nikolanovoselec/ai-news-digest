@@ -1,4 +1,5 @@
 // Implements REQ-DISC-001, REQ-DISC-003, REQ-DISC-005
+// CF-028: priority-aware drain ordering — see processPendingDiscoveries.
 //
 // LLM-assisted source discovery for per-tag RSS/Atom/JSON feeds.
 //
@@ -370,11 +371,16 @@ export async function processPendingDiscoveries(
   const processed: string[] = [];
   const failed: string[] = [];
 
-  // Pick the next `limit` tags by earliest added_at for each tag.
+  // Pick the next `limit` tags by priority DESC then earliest added_at.
   // GROUP BY tag collapses per-user duplicates so we don't discover the
-  // same tag more than once per cron invocation.
+  // same tag more than once per cron invocation. CF-028: priority=10
+  // rows (first-tag enqueues from a brand-new user) jump the queue so
+  // the dedicated discovery cron processes them on the next tick.
   const rows = await env.DB.prepare(
-    'SELECT tag FROM pending_discoveries GROUP BY tag ORDER BY MIN(added_at) LIMIT ?1',
+    'SELECT tag FROM pending_discoveries ' +
+      'GROUP BY tag ' +
+      'ORDER BY MAX(priority) DESC, MIN(added_at) ASC ' +
+      'LIMIT ?1',
   )
     .bind(limit)
     .all<{ tag: string }>();

@@ -34,3 +34,10 @@ export function normalizeHashtag(raw: string): string {
 
 /** Tag-shape contract: 2..32 chars, lowercase letters/digits/dashes. */
 export const HASHTAG_REGEX = /^[a-z0-9-]{2,32}$/;
+
+/** Maximum hashtags per user (REQ-SET-002 AC 6).
+ *  Sized to give new accounts headroom above the default seed; the
+ *  spec AC tracks the actual gap. CF-020 moved this constant from
+ *  src/pages/api/settings.ts so the shape and the cap live next to
+ *  each other on the canonical hashtag module. */
+export const MAX_HASHTAGS = 25;

@@ -55,9 +55,9 @@ const avatarUrl = `https://www.gravatar.com/avatar/${emailHash}?s=80&d=mp`;
     />
   </summary>
   <div class="user-menu__panel" role="menu">
-    {/* REQ-DES-002 — Theme toggle moved to the HeaderThemeToggle
-        component (sits to the LEFT of the avatar). Dark mode is no
-        longer buried in this dropdown. */}
+    {/* REQ-DES-002 — Theme toggle moved to ThemeToggle (variant="header"),
+        which sits to the LEFT of the avatar. Dark mode is no longer
+        buried in this dropdown. */}
     <a
       class="user-menu__item user-menu__row"
       role="menuitem"
@@ -275,47 +275,22 @@ const avatarUrl = `https://www.gravatar.com/avatar/${emailHash}?s=80&d=mp`;
 </style>
 
 <script>
-  // Theme toggling via delegated click handler on document. Works no
-  // matter when [data-theme-toggle] enters the DOM (e.g., after Astro
-  // view transitions re-render UserMenu), and doesn't depend on the
-  // ThemeToggle.astro component's inline script shipping on pages
-  // where that component isn't rendered.
-  import { toggleTheme } from '~/scripts/bundled/theme-toggle';
-
-  function handleThemeClick(e: MouseEvent): void {
-    const target = e.target;
-    if (!(target instanceof Element)) return;
-    const button = target.closest<HTMLButtonElement>('[data-theme-toggle]');
-    if (button === null) return;
-    // Bail when UserMenu is NOT rendered on the current page.
-    // Astro's ClientRouter preserves the document across
-    // navigations, so this document-level listener (bound on an
-    // authenticated page) survives onto subsequent anonymous
-    // pages — where ThemeToggle.astro has ALSO bound its own
-    // document-level listener. Without this guard, both fire on
-    // a single tap and the theme flips twice (net zero — user
-    // sees "tap does nothing until I reload"). Any page that
-    // actually has UserMenu in DOM also has `[data-user-menu]`,
-    // so this cheap query is the fingerprint.
-    if (document.querySelector('[data-user-menu]') === null) return;
-    e.preventDefault();
-    toggleTheme(document, localStorage, (q) => window.matchMedia(q));
-  }
-
-  // Close the <details> menu when clicking outside or pressing Escape.
-  // Icon swapping on HeaderThemeToggle is pure CSS keyed off the
-  // [data-theme] attribute on <html>, so no JS sync is needed.
-
+  // CF-021: the theme-toggle click handler was removed from this file
+  // because ThemeToggle.astro (in its `header` variant) now sits next
+  // to the avatar and ships its own document-level delegated listener.
+  // The duplicate guard that lived here was only necessary back when
+  // the standalone ThemeToggle AND the bare HeaderThemeToggle could
+  // appear on different pages in the same SPA session.
+  //
+  // This script now only owns the menu open/close behaviour: close on
+  // outside click, close on Escape. Theme icon swapping is pure CSS
+  // keyed off the [data-theme] attribute on <html>, so no JS sync is
+  // needed for that either.
   function init(): void {
-    // Bind the outside-click / Escape / theme-toggle handlers exactly
-    // ONCE per page, regardless of how many UserMenu components mount.
+    // Bind the outside-click / Escape handlers exactly ONCE per page,
+    // regardless of how many UserMenu components mount.
     if (!document.documentElement.dataset['userMenuGlobalBound']) {
       document.documentElement.dataset['userMenuGlobalBound'] = '1';
-      // Theme toggle first (capture-phase so it runs before the
-      // outside-click menu-close handler). Catches the
-      // [data-theme-toggle] button the HeaderThemeToggle component
-      // renders next to the avatar.
-      document.addEventListener('click', handleThemeClick, true);
       document.addEventListener('click', (e) => {
         document
           .querySelectorAll<HTMLDetailsElement>('[data-user-menu][open]')

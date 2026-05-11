@@ -50,7 +50,15 @@ const FIRST_RUN_QUERY = '?first_run=1';
  * user on locals return `null` without redirecting — authentication is
  * a separate concern that the page's own frontmatter handles.
  */
-export function requireSettingsComplete(context: APIContext): Response | null {
+// CF-031: helper accepts a narrowed slice of APIContext so SSR
+// frontmatter callers (settings.astro, starred.astro, digest.astro,
+// digest/[id]/[slug].astro) can pass `{ request, locals }` directly
+// — no `as unknown as APIContext` cast needed. Real API-route
+// callers can still pass their full APIContext (structural
+// subtyping).
+export function requireSettingsComplete(
+  context: Pick<APIContext, 'request' | 'locals'>,
+): Response | null {
   const user = context.locals.user;
   if (user === undefined) {
     // No authenticated user on locals — this helper is a no-op in that

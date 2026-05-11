@@ -20,8 +20,12 @@
 // src/pages/api/digest/today.ts (?2..?N for tag bindings) so D1 can
 // type the prepared statement without string interpolation.
 
-/** A single headline row destined for the email body. */
-export interface Headline {
+/** A single headline row destined for the email body. Distinct from the
+ * pipeline-level `Headline` in `~/lib/types` (which carries the raw
+ * feed-entry shape) — this is the rendered, slugified row that the
+ * email template iterates over. CF-019: renamed `Headline` →
+ * `EmailHeadline` so the two types stop colliding by name. */
+export interface EmailHeadline {
   id: string;
   title: string;
   source_name: string | null;
@@ -72,7 +76,7 @@ export async function selectUnreadHeadlinesForUser(
   userId: string,
   userTags: string[],
   limit: number,
-): Promise<Headline[]> {
+): Promise<EmailHeadline[]> {
   if (userTags.length === 0) return [];
   const tagPlaceholders = userTags.map((_, i) => `?${i + 2}`).join(', ');
   const limitPlaceholder = `?${userTags.length + 2}`;

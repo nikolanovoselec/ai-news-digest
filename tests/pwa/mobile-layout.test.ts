@@ -11,7 +11,10 @@
 import { describe, it, expect } from 'vitest';
 import baseSource from '../../src/layouts/Base.astro?raw';
 import userMenuSource from '../../src/components/UserMenu.astro?raw';
-import headerThemeToggleSource from '../../src/components/HeaderThemeToggle.astro?raw';
+// CF-021: HeaderThemeToggle.astro was merged into ThemeToggle.astro
+// (variant="header"). The same source file now backs both anonymous
+// and authenticated header controls.
+import themeToggleSource from '../../src/components/ThemeToggle.astro?raw';
 import effectsSource from '../../src/scripts/page-effects.ts?raw';
 // The cloudflare vitest pool can't raw-import .css, so the project
 // generates tests/fixtures/global-css.ts via `npm run fixtures` at
@@ -70,9 +73,9 @@ describe('navigation consolidation — REQ-PWA-003 AC 3', () => {
   it('REQ-PWA-003: UserMenu dropdown contains History, Starred, Settings, Log out', () => {
     // AC 3 lists the entries that remain inside the dropdown. The
     // theme toggle moved OUT of the dropdown and into the header as a
-    // standalone sun/moon icon (HeaderThemeToggle) — that assertion
-    // lives in the next test so a regression would point at the right
-    // component.
+    // standalone sun/moon icon (ThemeToggle variant="header") — that
+    // assertion lives in the next test so a regression would point at
+    // the right component.
     expect(userMenuSource).toMatch(/href="\/history"/);
     expect(userMenuSource).toMatch(/href="\/starred"/);
     expect(userMenuSource).toMatch(/href="\/settings"/);
@@ -82,20 +85,22 @@ describe('navigation consolidation — REQ-PWA-003 AC 3', () => {
     expect(userMenuSource).not.toMatch(/user-menu__theme\b/);
   });
 
-  it('REQ-DES-002 / REQ-PWA-003: HeaderThemeToggle renders a [data-theme-toggle] button with sun + moon glyphs', () => {
+  it('REQ-DES-002 / REQ-PWA-003: ThemeToggle renders a [data-theme-toggle] button with sun + moon glyphs', () => {
     // Dark mode is a single-tap header control, not a dropdown item.
-    // The HeaderThemeToggle component must ship both SVGs so the CSS
-    // [data-theme] swap has something to show in each mode.
-    expect(headerThemeToggleSource).toMatch(/data-theme-toggle/);
-    expect(headerThemeToggleSource).toMatch(/header-theme-toggle__icon--sun/);
-    expect(headerThemeToggleSource).toMatch(/header-theme-toggle__icon--moon/);
-    expect(headerThemeToggleSource).toMatch(/aria-label="Toggle color theme"/);
+    // The merged ThemeToggle component must ship both SVG glyphs so
+    // the CSS [data-theme] swap has something to show in each mode.
+    expect(themeToggleSource).toMatch(/data-theme-toggle/);
+    expect(themeToggleSource).toMatch(/theme-toggle__icon--sun/);
+    expect(themeToggleSource).toMatch(/theme-toggle__icon--moon/);
+    expect(themeToggleSource).toMatch(/aria-label="Toggle color theme"/);
   });
 
-  it('REQ-DES-002 / REQ-PWA-003: Base.astro renders HeaderThemeToggle BEFORE UserMenu for authenticated users (avatar on the right, toggle to its left)', () => {
+  it('REQ-DES-002 / REQ-PWA-003: Base.astro renders ThemeToggle (header variant) BEFORE UserMenu for authenticated users (avatar on the right, toggle to its left)', () => {
     // Left-of-avatar positioning is the entire point of the move — if
-    // a future edit swaps the order, this test catches it.
-    const htt = baseSource.indexOf('HeaderThemeToggle');
+    // a future edit swaps the order, this test catches it. CF-021
+    // merged HeaderThemeToggle into ThemeToggle so the authenticated
+    // header now mounts `<ThemeToggle variant="header" />`.
+    const htt = baseSource.indexOf('variant="header"');
     const um = baseSource.indexOf('<UserMenu');
     expect(htt).toBeGreaterThan(-1);
     expect(um).toBeGreaterThan(-1);
@@ -230,12 +235,12 @@ describe('header tap-target minimums — REQ-PWA-003 AC 6', () => {
   // mobile thumbs. The assertions scan the component sources directly
   // so a refactor that drops the rule is visible in CI.
 
-  it('REQ-PWA-003: HeaderThemeToggle trigger has min-width: 44px and min-height: 44px', () => {
-    // `<button class="header-theme-toggle">` on every authenticated
-    // page. The rule block below declares both — stripping either
-    // would shrink the tap target.
-    expect(headerThemeToggleSource).toMatch(/min-width:\s*44px/);
-    expect(headerThemeToggleSource).toMatch(/min-height:\s*44px/);
+  it('REQ-PWA-003: ThemeToggle (header variant) trigger has min-width: 44px and min-height: 44px', () => {
+    // `<button class="theme-toggle theme-toggle--header">` on every
+    // authenticated page (CF-021 merge). The rule block below
+    // declares both — stripping either would shrink the tap target.
+    expect(themeToggleSource).toMatch(/min-width:\s*44px/);
+    expect(themeToggleSource).toMatch(/min-height:\s*44px/);
   });
 
   it('REQ-PWA-003: UserMenu trigger (avatar <summary>) has min-width: 44px and min-height: 44px', () => {
@@ -243,12 +248,12 @@ describe('header tap-target minimums — REQ-PWA-003 AC 6', () => {
     expect(userMenuSource).toMatch(/min-height:\s*44px/);
   });
 
-  it('REQ-PWA-003: anonymous ThemeToggle has min-width: 44px and min-height: 44px', async () => {
-    // Shown on signed-out pages (landing, auth error). Same control,
-    // same tap-target contract so the affordance is identical before
-    // and after sign-in.
-    const themeToggle = await import('../../src/components/ThemeToggle.astro?raw').then((m) => m.default);
-    expect(themeToggle).toMatch(/min-width:\s*44px/);
-    expect(themeToggle).toMatch(/min-height:\s*44px/);
+  it('REQ-PWA-003: anonymous ThemeToggle (default variant) has min-width: 44px and min-height: 44px', () => {
+    // Shown on signed-out pages (landing, auth error). Same source
+    // file as the header variant after CF-021's merge — same tap-
+    // target contract so the affordance is identical before and
+    // after sign-in.
+    expect(themeToggleSource).toMatch(/min-width:\s*44px/);
+    expect(themeToggleSource).toMatch(/min-height:\s*44px/);
   });
 });

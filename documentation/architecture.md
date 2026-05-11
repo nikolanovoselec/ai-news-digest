@@ -166,7 +166,7 @@ Page components (`src/pages/*.astro`) and API handlers (`src/pages/api/**.ts`) �
 | Path | Role | Implements |
 |---|---|---|
 | `src/layouts/Base.astro` | Root HTML shell — manifest, Apple PWA meta, theme init, View Transitions | [REQ-DES-001](../sdd/design.md#req-des-001-swiss-minimal-visual-language), [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash), [REQ-PWA-001](../sdd/pwa.md#req-pwa-001-installable-pwa-manifest), [REQ-PWA-003](../sdd/pwa.md#req-pwa-003-mobile-first-responsive-layout) |
-| `src/components/HeaderThemeToggle.astro` | Header theme toggle | [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash) |
+| `src/components/ThemeToggle.astro` | Sun/moon toggle — `variant="default"` for anonymous pages, `variant="header"` for the authenticated header. CF-021 merged HeaderThemeToggle in. | [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash) |
 | `src/components/UserMenu.astro` | Avatar dropdown — theme, history, settings, starred, log out | [REQ-PWA-003](../sdd/pwa.md#req-pwa-003-mobile-first-responsive-layout), [REQ-STAR-003](../sdd/reading.md#req-star-003-starred-entry-in-the-user-menu) |
 | `src/components/InstallPrompt.astro` | PWA install prompt (Android `beforeinstallprompt`, iOS share-icon note) | [REQ-PWA-001](../sdd/pwa.md#req-pwa-001-installable-pwa-manifest) |
 | `src/components/TagStrip.astro` | Shared tag-railing component | [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest), [REQ-READ-007](../sdd/reading.md#req-read-007-tag-railing-reorder-animation) |

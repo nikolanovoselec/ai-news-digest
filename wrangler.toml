@@ -104,12 +104,18 @@ max_retries = 3
 binding = "AI"
 
 # Cron triggers:
-#   0 */4 * * * — global-feed coordinator every 4 hours (REQ-PIPE-001)
-#   0 3 * * *   — daily retention cleanup (REQ-PIPE-005)
-#   */5 * * * * — email dispatcher + discovery drain (REQ-MAIL-001 +
-#                 REQ-DISC-003)
+#   0 */4 * * *           — global-feed coordinator every 4 hours (REQ-PIPE-001)
+#   0 3 * * *             — daily retention cleanup (REQ-PIPE-005)
+#   */5 * * * *           — email dispatcher (REQ-MAIL-001)
+#   2,12,22,32,42,52 * * * * — discovery drain every 10 minutes, offset
+#                              from the email cron by 2 minutes so the
+#                              two never share a Worker isolate budget.
+#                              Drains one pending_discoveries batch per
+#                              tick so a new user's first tag gets
+#                              discovered within ~2 minutes instead of
+#                              up to ~10 (CF-028, REQ-DISC-001).
 [triggers]
-crons = ["0 */4 * * *", "0 3 * * *", "*/5 * * * *"]
+crons = ["0 */4 * * *", "0 3 * * *", "*/5 * * * *", "2,12,22,32,42,52 * * * *"]
 
 # REQ-PIPE-003 — Cloudflare Vectorize index for semantic article
 # dedup. Populated by the chunk-consumer (each new article → one

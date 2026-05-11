@@ -13,6 +13,18 @@
 import { slugify } from '~/lib/slug';
 import { parseJsonStringArray as parseStringArray } from '~/lib/json-string-array';
 import { log } from '~/lib/log';
+// CF-019 limb 2: `WireArticle` base lives in ~/lib/types. The dashboard
+// view adds `slug` (for deep-link routing) and `read` (for the read-
+// state glyph) on top of the shared base.
+import type { WireArticle as WireArticleBase } from '~/lib/types';
+
+/** Dashboard wire shape — base WireArticle plus per-user reading
+ *  state. Exported under the historical name so existing imports of
+ *  `WireArticle` from this module keep compiling. */
+export interface WireArticle extends WireArticleBase {
+  slug: string;
+  read: boolean;
+}
 
 /** Raw row shape for the global-pool article query. */
 export interface ArticleRow {
@@ -35,21 +47,6 @@ export interface ScrapeRunRow {
   started_at: number;
   finished_at: number | null;
   status: string;
-}
-
-/** Wire shape — what the dashboard consumes per article. */
-export interface WireArticle {
-  id: string;
-  slug: string;
-  title: string;
-  details: string[];
-  primary_source_name: string | null;
-  primary_source_url: string | null;
-  published_at: number | null;
-  tags: string[];
-  alt_source_count: number;
-  starred: boolean;
-  read: boolean;
 }
 
 export interface TodayResponse {

@@ -50,7 +50,9 @@ export const ROTATION_GRACE_SECONDS = 30;
  *  + logout endpoints look the cookie up, everywhere else ignores it.
  *  Cookie is HttpOnly so JS can't read it, and `__Host-` prefix forces
  *  Secure + Path=/ at the browser level. */
-export const REFRESH_TOKEN_COOKIE_PATH = '/';
+// CF-020: not exported — only used inside this file to compose the
+// Set-Cookie strings below. Kept file-local.
+const REFRESH_TOKEN_COOKIE_PATH = '/';
 
 const REFRESH_COOKIE_ATTRS =
   `HttpOnly; Secure; SameSite=Lax; Path=${REFRESH_TOKEN_COOKIE_PATH}; Max-Age=${REFRESH_TOKEN_TTL_SECONDS}`;

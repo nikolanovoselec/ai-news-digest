@@ -20,9 +20,9 @@ import {
   renderDigestReadyEmail,
   type DigestReadyEmailParams,
 } from '~/lib/email';
-import type { Headline, TagTally } from '~/lib/email-data';
+import type { EmailHeadline, TagTally } from '~/lib/email-data';
 
-const FIVE_HEADLINES: Headline[] = [
+const FIVE_HEADLINES: EmailHeadline[] = [
   { id: 'a-1', title: 'Cloudflare ships D1 GA',     source_name: 'Cloudflare Blog', slug: 'cloudflare-ships-d1-ga',     primary_source_url: 'https://blog.cloudflare.com/d1-ga' },
   { id: 'a-2', title: 'MCP servers explode in 2026', source_name: 'Hacker News',     slug: 'mcp-servers-explode-in-2026', primary_source_url: 'https://news.ycombinator.com/item?id=1' },
   { id: 'a-3', title: 'OpenZiti 1.0 released',       source_name: 'OpenZiti Blog',   slug: 'openziti-10-released',         primary_source_url: 'https://openziti.io/blog' },
@@ -78,7 +78,7 @@ describe('renderDigestReadyEmail subject — REQ-MAIL-001 AC 3', () => {
   });
 
   it('REQ-MAIL-001 AC 3: subject pluralisation — "1 new article" (singular) when N=1', () => {
-    const single: Headline = FIVE_HEADLINES[0]!;
+    const single: EmailHeadline = FIVE_HEADLINES[0]!;
     const { subject } = renderDigestReadyEmail(makeParams({
       headlines: [single],
       tagTally: [{ tag: 'mcp', count: 1 }],
@@ -88,7 +88,7 @@ describe('renderDigestReadyEmail subject — REQ-MAIL-001 AC 3', () => {
   });
 
   it('REQ-MAIL-001 AC 3: greeting uses singular grammar when N=1 ("Here is your latest article.")', () => {
-    const single: Headline = FIVE_HEADLINES[0]!;
+    const single: EmailHeadline = FIVE_HEADLINES[0]!;
     const { html, text } = renderDigestReadyEmail(makeParams({
       headlines: [single],
       tagTally: [{ tag: 'mcp', count: 1 }],
@@ -137,7 +137,7 @@ describe('renderDigestReadyEmail preheader — REQ-MAIL-001', () => {
   });
 });
 
-// ---------- Headline block (AC 4) ----------
+// ---------- EmailHeadline block (AC 4) ----------
 
 describe('renderDigestReadyEmail headlines — REQ-MAIL-001 AC 4', () => {
   it('REQ-MAIL-001 AC 4: html lists exactly headlines.length anchor rows', () => {
@@ -164,7 +164,7 @@ describe('renderDigestReadyEmail headlines — REQ-MAIL-001 AC 4', () => {
   });
 
   it('REQ-MAIL-001 AC 4: html escapes article titles', () => {
-    const evilHeadlines: Headline[] = [
+    const evilHeadlines: EmailHeadline[] = [
       { id: 'evil-1', title: 'Evil <script>alert(1)</script> title', source_name: 'A & B "Newsroom"', slug: 'evil', primary_source_url: 'https://x' },
     ];
     const { html } = renderDigestReadyEmail(makeParams({ headlines: evilHeadlines, tagTally: [] }));

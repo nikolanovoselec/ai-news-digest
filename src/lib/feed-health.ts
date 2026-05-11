@@ -36,7 +36,9 @@ const HEALTH_COUNTER_TTL_SECONDS = 7 * 24 * 60 * 60;
  * eviction (the coordinator at the end of the fetch phase) branch on
  * `evicted === true`; callers that don't (individual source fetchers)
  * can ignore the return value. */
-export interface FeedHealthResult {
+// CF-020: not exported — only consumed as the return type of
+// recordFetchResult below. Callers destructure the object inline.
+interface FeedHealthResult {
   /** True iff this call pushed the counter to the eviction threshold.
    * Transitions from false → true exactly once per URL per bad streak;
    * subsequent failed calls keep returning `true` but the caller is

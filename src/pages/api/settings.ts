@@ -40,13 +40,8 @@ import { isValidTz } from '~/lib/tz';
 import { requireSession } from '~/middleware/auth';
 import { checkOrigin, originOf } from '~/middleware/origin-check';
 
-import { HASHTAG_REGEX, normalizeHashtag } from '~/lib/hashtags';
+import { HASHTAG_REGEX, MAX_HASHTAGS, normalizeHashtag } from '~/lib/hashtags';
 import { SettingsPutBodySchema } from '~/lib/schemas/settings';
-
-/** Maximum hashtags per user (REQ-SET-002 AC 6).
- *  Sized to give new accounts headroom above the default seed; the
- *  spec AC tracks the actual gap. */
-export const MAX_HASHTAGS = 25;
 
 /** Shape of the users row subset we read on GET. */
 interface UserSettingsRow {

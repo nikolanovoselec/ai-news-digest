@@ -8,7 +8,6 @@
 import { ClientRouter } from 'astro:transitions';
 import ThemeToggle from '~/components/ThemeToggle.astro';
 import UserMenu from '~/components/UserMenu.astro';
-import HeaderThemeToggle from '~/components/HeaderThemeToggle.astro';
 import { safeJsonLd } from '~/lib/json-ld';
 import '~/styles/global.css';
 
@@ -219,19 +218,18 @@ const initialTheme = cookieTheme ?? 'light';
         </span>
       </a>
       <nav class="site-header__nav" aria-label="Primary">
-        {/* Anonymous pages (landing, logged-out error pages) keep the
-            standalone ThemeToggle because there's no UserMenu on those
-            pages to provide the delegated click handler.
-            Authenticated pages get a compact HeaderThemeToggle to the
-            LEFT of the avatar — the sun/moon icon is a single-tap
-            control surfaced directly in the header. */}
+        {/* Anonymous pages (landing, logged-out error pages) get the
+            default ThemeToggle. Authenticated pages get the same
+            ThemeToggle in `header` variant — the compact 32px control
+            that sits to the LEFT of the UserMenu avatar. CF-021 merged
+            HeaderThemeToggle into ThemeToggle with a `variant` prop. */}
         {!Astro.locals.user && <ThemeToggle />}
         {/* UserMenu is NOT hidden during firstRun — the user still needs
             a way to log out if they change their mind about onboarding,
             and the Settings link inside the menu points at the page
             they're already on (harmless). REQ-SET-006 gates navigation
             to other destinations; user identity controls are exempt. */}
-        {Astro.locals.user && <HeaderThemeToggle />}
+        {Astro.locals.user && <ThemeToggle variant="header" />}
         {Astro.locals.user && (
           <UserMenu email={Astro.locals.user.email} login={Astro.locals.user.gh_login} />
         )}

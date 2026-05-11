@@ -43,7 +43,7 @@ import { renderDigestReadyEmail, sendEmail } from '~/lib/email';
 import {
   selectUnreadHeadlinesForUser,
   tagTallySinceMidnight,
-  type Headline,
+  type EmailHeadline,
   type TagTally,
 } from '~/lib/email-data';
 import { parseHashtags } from '~/lib/hashtags';
@@ -215,7 +215,7 @@ async function processOneUser(
     // Fetch headlines + tally independently (Promise.allSettled, not
     // Promise.all) so a failure in one doesn't collapse the other.
     // A headlines-fetch failure cascades to the skip path below.
-    let headlines: Headline[] = [];
+    let headlines: EmailHeadline[] = [];
     let tally: TagTally[] = [];
     let totalSinceMidnight: number | null = 0;
     const [hSettled, tSettled] = await Promise.allSettled([

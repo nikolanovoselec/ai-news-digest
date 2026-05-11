@@ -2,13 +2,14 @@
 // Implements REQ-PIPE-005
 // Implements REQ-PIPE-008
 // Implements REQ-MAIL-001
+// Implements REQ-DISC-001
 //
 // Module Worker entry point for the global-feed pipeline. Exports
 // `scheduled` (cron dispatcher), `queue` (queue dispatcher branching on
 // batch.queue name), and `fetch` (delegates to the Astro-generated
 // handler in production; minimal fallback in tests).
 //
-// Cron schedule (wrangler.toml: `crons = ["0 */4 * * *", "0 3 * * *", "*/5 * * * *"]`):
+// Cron schedule (wrangler.toml: four crons):
 //   - `0 */4 * * *` — global-feed coordinator enqueue, every 4 hours
 //                     (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC).
 //                     Creates a `scrape_runs` row (ULID, status=running)
@@ -16,10 +17,12 @@
 //                     SCRAPE_COORDINATOR. Work runs in queue isolates.
 //   - `0 3 * * *`   — daily retention cleanup (REQ-PIPE-005). Delegates
 //                     to `src/queue/cleanup.ts#runCleanup`.
-//   - `*/5 * * * *` — two fixed chores: discovery drain
-//                     (`processPendingDiscoveries`, up to N tags/tick)
-//                     and the daily-email dispatcher
-//                     (`dispatchDailyEmails`).
+//   - `*/5 * * * *` — daily-email dispatcher (`dispatchDailyEmails`).
+//   - `2,12,22,32,42,52 * * * *` — discovery drain
+//                     (`processPendingDiscoveries`, up to N tags/tick).
+//                     CF-028: split from the email cron and run every
+//                     10 min on a 2-min offset so a new user's first
+//                     tag is discovered in ~2 minutes (REQ-DISC-001).
 //
 // Queue dispatch (wrangler.toml: four consumers):
 //   - `scrape-coordinator` → handleCoordinatorBatch (REQ-PIPE-001).
@@ -85,16 +88,10 @@ const CRON_HANDLERS: Record<
     await runCleanup(env);
   },
   '*/5 * * * *': async (env) => {
-    // Discovery drain — failures here must not block the email
-    // dispatcher. Mirrored pattern: try/catch around each sub-step.
-    try {
-      await processPendingDiscoveries(env, DISCOVERY_BATCH_LIMIT);
-    } catch (err) {
-      log('error', 'discovery.completed', {
-        status: 'discovery_processor_failed',
-        detail: String(err).slice(0, 500),
-      });
-    }
+    // Email dispatcher only — CF-028 split the discovery drain onto
+    // its own 10-min cron (`2,12,22,32,42,52 * * * *`) so a new user's
+    // first-tag discovery lands within ~2 minutes instead of waiting
+    // up to ~10 behind the 4-hour scrape cycle's other work.
     try {
       await dispatchDailyEmails(env);
     } catch (err) {
@@ -105,6 +102,23 @@ const CRON_HANDLERS: Record<
         error: String(err).slice(0, 500),
       });
     }
+  },
+  '2,12,22,32,42,52 * * * *': async (env, ctx) => {
+    // CF-028: dedicated discovery drain. `ctx.waitUntil` lets the
+    // dispatcher return as soon as the batch is queued — the LLM
+    // calls inside `processPendingDiscoveries` run alongside the next
+    // cron rather than blocking the worker event loop.
+    ctx.waitUntil(
+      processPendingDiscoveries(env, DISCOVERY_BATCH_LIMIT).then(
+        () => undefined,
+        (err: unknown) => {
+          log('error', 'discovery.completed', {
+            status: 'discovery_processor_failed',
+            detail: String(err).slice(0, 500),
+          });
+        },
+      ),
+    );
   },
 };
 

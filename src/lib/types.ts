@@ -58,3 +58,22 @@ export interface SourcesCacheValue {
   feeds: DiscoveredFeed[];
   discovered_at: number;
 }
+
+/** CF-019 limb 2: canonical wire shape for an article rendered on the
+ *  dashboard, history, and starred views. The three views previously
+ *  carried near-identical local definitions that drifted whenever one
+ *  side gained a new field. View-specific variants extend this base
+ *  with the extra fields they actually need (history adds nothing,
+ *  today adds `slug` + `read`, starred adds `slug` + `read` +
+ *  `starred_at`). */
+export interface WireArticle {
+  id: string;
+  title: string;
+  details: string[];
+  primary_source_name: string | null;
+  primary_source_url: string | null;
+  published_at: number | null;
+  tags: string[];
+  alt_source_count: number;
+  starred: boolean;
+}

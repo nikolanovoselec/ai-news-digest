@@ -39,7 +39,15 @@ interface SumRow {
   n: number | null;
 }
 
-export async function GET(context: APIContext): Promise<Response> {
+// CF-031: narrowed context type so SSR frontmatter callers
+// (StatsWidget.astro) can pass `{ request, locals, url }` without an
+// `as unknown as APIContext` cast. Astro's runtime still hands in a
+// full APIContext when the route fires over HTTP — parameter
+// contravariance lets a function accepting fewer fields satisfy the
+// APIRoute contract.
+export async function GET(
+  context: Pick<APIContext, 'request' | 'locals'>,
+): Promise<Response> {
   const env = context.locals.runtime.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
     return errorResponse('app_not_configured');

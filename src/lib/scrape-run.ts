@@ -51,8 +51,11 @@ export interface ScrapeRunSeed {
 }
 
 /** Per-chunk counters accumulated by `addChunkStats`. All fields are
- * additive — each call increments the row's running totals. */
-export interface ChunkStats {
+ * additive — each call increments the row's running totals.
+ * CF-020: not exported — only used as the `stats` parameter type
+ * of `addChunkStats` below. Callers pass a literal object that
+ * structurally conforms; the consumer never references the type name. */
+interface ChunkStats {
   tokens_in: number;
   tokens_out: number;
   estimated_cost_usd: number;

@@ -550,7 +550,9 @@ const GOOGLE_NEWS_CURATED_TAGS: ReadonlySet<string> = new Set(
  * for every other tag because `prefer-direct-source` drops the GN copy
  * when a direct publisher copy lands in the same tick.
  */
-export const BRAND_ONLY_TAGS: ReadonlySet<string> = new Set(['graymatter']);
+// CF-020: not exported — only consulted by googleNewsSourceForTag
+// below. Kept file-local.
+const BRAND_ONLY_TAGS: ReadonlySet<string> = new Set(['graymatter']);
 
 /**
  * True iff a bespoke `google-news-*` curated entry already covers

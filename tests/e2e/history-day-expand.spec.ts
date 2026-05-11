@@ -42,7 +42,11 @@ test.describe('REQ-HIST-001 AC3 history day expand/collapse', () => {
     // Find the first collapsed <details> element on the page.
     const details = page.locator('details').first();
     if (await details.count() === 0) {
-      test.skip(); // no history entries yet — skip, not fail
+      // CF-024: environment-driven — dev-bypass user has no history
+      // entries yet, so /history renders empty-state instead of
+      // <details>. The accordion contract is unobservable without at
+      // least one collapsed day.
+      test.skip(true, '/history has no <details> entries — no ingested articles for this user yet');
     }
 
     // Click the summary to expand.
@@ -58,7 +62,10 @@ test.describe('REQ-HIST-001 AC3 history day expand/collapse', () => {
     await page.goto('/history');
 
     const details = page.locator('details').first();
-    if (await details.count() === 0) test.skip();
+    if (await details.count() === 0) {
+      // CF-024: same empty-history guard as above.
+      test.skip(true, '/history has no <details> entries — nothing to expand');
+    }
 
     // Open it.
     const summary = details.locator('summary').first();
@@ -74,14 +81,23 @@ test.describe('REQ-HIST-001 AC3 history day expand/collapse', () => {
     await page.goto('/history');
 
     const details = page.locator('details').first();
-    if (await details.count() === 0) test.skip();
+    if (await details.count() === 0) {
+      // CF-024: same empty-history guard — no day to expand means no
+      // star button inside to assert against.
+      test.skip(true, '/history has no <details> entries — no star button to assert against');
+    }
 
     await details.locator('summary').first().click();
 
     const starBtn = details
       .locator('[data-star-toggle]')
       .first();
-    if (await starBtn.count() === 0) test.skip();
+    if (await starBtn.count() === 0) {
+      // CF-024: history entry exists but no starrable cards — happens
+      // when the day's articles have all been ingested before the
+      // star feature was deployed (legacy rows without the toggle).
+      test.skip(true, 'expanded <details> has no [data-star-toggle] — legacy entries pre-star feature');
+    }
 
     // The button must carry aria-pressed so the click handler can drive it.
     const pressed = await starBtn.getAttribute('aria-pressed');
