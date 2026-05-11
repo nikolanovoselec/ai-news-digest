@@ -38,7 +38,8 @@ export interface SelfArticle {
 export interface MatchInput {
   id: string;
   score: number;
-  metadata: unknown;
+  /** Matches `VectorizeMatch.metadata` shape — optional record. */
+  metadata?: Record<string, unknown> | undefined;
 }
 
 export type ClassifyOutcome =
@@ -71,11 +72,11 @@ export function classifyMatchPair(
   match: MatchInput,
   params: ClassifierParams,
 ): ClassifyOutcome {
-  const meta = match.metadata as
-    | { published_at?: unknown; primary_source_url?: unknown }
-    | undefined;
+  const meta = match.metadata;
   const matchPublishedAt =
-    typeof meta?.published_at === 'number' ? meta.published_at : null;
+    typeof meta?.['published_at'] === 'number'
+      ? (meta['published_at'] as number)
+      : null;
   if (matchPublishedAt === null) return { kind: 'no_metadata' };
 
   const deltaSeconds = Math.abs(self.published_at - matchPublishedAt);
@@ -85,7 +86,9 @@ export function classifyMatchPair(
 
   const isHighConfidence = match.score >= params.highConfidenceCosine;
   const matchUrl =
-    typeof meta?.primary_source_url === 'string' ? meta.primary_source_url : '';
+    typeof meta?.['primary_source_url'] === 'string'
+      ? (meta['primary_source_url'] as string)
+      : '';
   const sameEtld1 =
     matchUrl !== '' && sameVendor(self.primary_source_url, matchUrl);
   const adjustedScore =
