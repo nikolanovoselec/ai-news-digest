@@ -174,11 +174,12 @@ function makeEnv(
     rerankFloor?: string;
     cosineThreshold?: string;
     highConfidenceCosine?: string;
+    timeWindowSeconds?: string;
     aiBinding?: { run: (model: string, params: Record<string, unknown>) => Promise<unknown> };
     sweepQueue?: Queue;
   } = {},
 ): Env {
-  return {
+  const base: Record<string, unknown> = {
     DB: db,
     VECTORIZE: vectorize,
     DEDUP_SWEEP: opts.sweepQueue ?? makeMockSweepQueue().binding,
@@ -189,7 +190,11 @@ function makeEnv(
     DEDUP_SAME_VENDOR_PENALTY: opts.sameVendorPenalty ?? '0.05',
     DEDUP_RERANK_FLOOR: opts.rerankFloor ?? '0.72',
     DEDUP_HIGH_CONFIDENCE_COSINE: opts.highConfidenceCosine ?? '0.92',
-  } as unknown as Env;
+  };
+  if (opts.timeWindowSeconds !== undefined) {
+    base.DEDUP_TIME_WINDOW_SECONDS = opts.timeWindowSeconds;
+  }
+  return base as unknown as Env;
 }
 
 describe('processOneFinalize — REQ-PIPE-003', () => {
@@ -887,11 +892,11 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
     expect(mockVec.deleteMock).not.toHaveBeenCalled();
   });
 
-  it('REQ-PIPE-003 AC 13: match outside the 72h time window is skipped despite high cosine', async () => {
+  it('REQ-PIPE-003 AC 13: match outside the 7d time window is skipped despite high cosine', async () => {
     const newId = 'new-1';
-    const oldId = 'old-9-days-ago';
+    const oldId = 'old-8-days-ago';
     const NEW_PA = 1_700_000_000;
-    const NINE_DAYS = 9 * 24 * 60 * 60;
+    const EIGHT_DAYS = 8 * 24 * 60 * 60;
     const mockDb = makeMockDb({
       articleRows: [
         {
@@ -903,7 +908,7 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
       ],
       existsIds: new Set([oldId]),
     });
-    // High cosine but match is 9 days older — outside the 72h window
+    // High cosine but match is 8 days older — outside the 7d window
     // so the time-window guard skips before any threshold check.
     const matches = new Map<string, VectorizeMatch[]>();
     matches.set(newId, [
@@ -911,7 +916,7 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
         id: oldId,
         score: 0.95,
         metadata: {
-          published_at: NEW_PA - NINE_DAYS,
+          published_at: NEW_PA - EIGHT_DAYS,
           primary_source_url: 'https://oldsite.example/post/1',
         },
       } as unknown as VectorizeMatch,
@@ -1032,7 +1037,7 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
         id: storedNewerId,
         score: 0.93, // raw above high-confidence band (cross-eTLD anyway)
         metadata: {
-          published_at: 1_050_000, // NEWER than self by 50k seconds (~14h, < 72h window)
+          published_at: 1_050_000, // NEWER than self by 50k seconds (~14h, < 7d window)
           primary_source_url: 'https://latimes.example/post/2',
         },
       } as unknown as VectorizeMatch,
@@ -1088,7 +1093,7 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
           title: 'b',
           source_snippet: 's',
           // ~14h newer than X (50_000s delta) — strictly inside the
-          // default 72h window so the time-window gate cannot mask
+          // default 7d window so the time-window gate cannot mask
           // the skip-branch discriminator. Without `losersDeleted
           // .has(match.id)` at consumer.ts:302, B would proceed to
           // merge X (selfIsOlder=false → match older → self folds
@@ -1183,13 +1188,62 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
     expect(msg.cursor).not.toBeNull();
     expect(msg.cursor?.id).toBe('');
     expect(msg.cursor?.pa).toBeGreaterThan(0); // some recent epoch second
-    // The cursor must seed the sweep at "now - 72h" - i.e., NOT 0
-    // (which would scan the full corpus). 24h is a generous lower
-    // bound; AUTO_SWEEP_LOOKBACK_SECONDS is 72h (AD42 widened from 48h
-    // to match DEDUP_TIME_WINDOW_SECONDS).
+    // The cursor must seed the sweep at "now - 7d" - i.e., NOT 0
+    // (which would scan the full corpus) and NOT some shorter span
+    // that would miss eligible cluster anchors. The auto-sweep
+    // lookback is derived from DEDUP_TIME_WINDOW_SECONDS at runtime
+    // (via autoSweepLookbackSeconds) so REQ-PIPE-003 AC 17 holds
+    // under any env override. Default = 7d, bumped 2026-05-11 from
+    // 72h to cover observed long-running clusters.
     const now = Math.floor(Date.now() / 1000);
-    expect(msg.cursor?.pa).toBeGreaterThan(now - 73 * 3600);
-    expect(msg.cursor?.pa).toBeLessThan(now - 24 * 3600);
+    expect(msg.cursor?.pa).toBeGreaterThan(now - 8 * 24 * 3600);
+    expect(msg.cursor?.pa).toBeLessThan(now - 6 * 24 * 3600);
+  });
+
+  // REQ-PIPE-003 AC 17 — locks the symmetry invariant: the auto-sweep
+  // cursor span MUST equal the per-pair time-window gate, derived from
+  // the same `DEDUP_TIME_WINDOW_SECONDS` env var. Drives finalize with
+  // a non-default value and asserts the cursor follows; guards against
+  // a future refactor that re-introduces the hardcoded constant.
+  it('REQ-PIPE-003 AC 17: auto-sweep cursor span follows DEDUP_TIME_WINDOW_SECONDS env override', async () => {
+    const mockDb = makeMockDb({
+      articleRows: [
+        {
+          id: 'a-1',
+          title: 't',
+          source_snippet: 's',
+          published_at: 2000,
+          ingested_at: 2000,
+          primary_source_url: 'https://a.example/x',
+        },
+      ],
+      flipChanges: 1,
+    });
+    const matches = new Map<string, VectorizeMatch[]>();
+    matches.set('a-1', []);
+    const mockVec = makeMockVectorize(matches);
+    const sweepQueue = makeMockSweepQueue();
+    // Override the env to a 3-hour window. Auto-sweep cursor MUST land
+    // at `now - 10800` regardless of the 7d default.
+    const env = makeEnv(mockDb.db, mockVec.binding, {
+      sweepQueue: sweepQueue.binding,
+      timeWindowSeconds: '10800',
+    });
+    const beforeSec = Math.floor(Date.now() / 1000);
+    await processOneFinalize(env, { scrape_run_id: 'r1' });
+    const afterSec = Math.floor(Date.now() / 1000);
+
+    expect(sweepQueue.sends).toHaveLength(1);
+    const msg = sweepQueue.sends[0] as {
+      run_id: string;
+      cursor: { pa: number; id: string } | null;
+    };
+    expect(msg.cursor).not.toBeNull();
+    // Cursor pa must be in [beforeSec - 10800, afterSec - 10800]. The
+    // tight band proves the auto-sweep used the env value, not the
+    // 7d default (which would land ~14d worth of seconds away).
+    expect(msg.cursor?.pa).toBeGreaterThanOrEqual(beforeSec - 10800);
+    expect(msg.cursor?.pa).toBeLessThanOrEqual(afterSec - 10800);
   });
 
   // AD41 — auto-sweep is best-effort. When the gate flip races and

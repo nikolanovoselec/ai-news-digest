@@ -174,9 +174,12 @@ describe('readCosineThreshold', () => {
 });
 
 describe('readTimeWindowSeconds', () => {
-  it('REQ-PIPE-003 AC 13: returns the default (72h) when env var is unset', () => {
+  it('REQ-PIPE-003 AC 13: returns the default (7d) when env var is unset', () => {
     expect(readTimeWindowSeconds({})).toBe(DEFAULT_TIME_WINDOW_SECONDS);
-    expect(DEFAULT_TIME_WINDOW_SECONDS).toBe(259_200);
+    // 7d = 604_800s, the smallest window covering every observed
+    // long-running cluster (valuation week, long-weekend press
+    // releases). Bumped 2026-05-11 from 72h.
+    expect(DEFAULT_TIME_WINDOW_SECONDS).toBe(604_800);
   });
 
   it('parses a valid positive number from the env', () => {

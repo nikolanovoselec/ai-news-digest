@@ -48,6 +48,7 @@ import {
   sourcesCacheRawEqual,
 } from '~/lib/sources-cache';
 import { preferDirectOverGoogleNews } from '~/lib/prefer-direct-source';
+import { isBlockedPublisher } from '~/lib/blocked-publishers';
 import { SNIPPET_FLOOR } from '~/queue/scrape-chunk-consumer';
 
 /** Adapter for CF-019: prefer-direct-source operates on Headline[], but
@@ -303,6 +304,20 @@ export async function runCoordinator(
   // Steps 2 + 2b - parallel fetch fan-out, then apply evictions.
   const rawHeadlines = await fetchSourcesAndApplyEvictions(env, allSources, scrape_run_id);
 
+  // Step 2b' - publisher blocklist. Financial / stock-pump aggregators
+  // (TradingView, Yahoo Finance, MSN, Seeking Alpha, …) reach the
+  // pipeline whenever a user-configured Google News discovery tag
+  // matches a tech vendor's ticker. The downstream cosine / Jaccard
+  // gates can't distinguish "AI-curated tech news" from "stock-pump
+  // commentary on a tech company", so the only correct place to drop
+  // these is at ingest before clustering or embedding. Checks both the
+  // direct URL host and the RSS `<source>` publisher name, the latter
+  // being the only signal available for Google-News-routed items whose
+  // `headline.url` is still the `news.google.com` redirect.
+  const filteredHeadlines = rawHeadlines.filter(
+    (r) => !isBlockedPublisher(r.headline),
+  );
+
   // Step 2c - drop Google News mirror entries when a direct publisher
   // copy of the same story is present. CF-019 (Cycle 1 review): the
   // coordinator and curated-sources docstrings already documented this
@@ -310,7 +325,7 @@ export async function runCoordinator(
   // canonical-URL dedup at Step 4 sees news.google.com/articles/CCAi…
   // and the direct URL as distinct stories, surfacing the same headline
   // multiple times on /digest.
-  const deduplicatedHeadlines = applyPreferDirectOverGoogleNews(rawHeadlines);
+  const deduplicatedHeadlines = applyPreferDirectOverGoogleNews(filteredHeadlines);
 
   // Step 3 - canonicalize, scheme-gate, and freshness-filter.
   const candidates = buildCandidates(deduplicatedHeadlines, scrape_run_id);

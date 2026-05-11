@@ -49,10 +49,15 @@ const VECTORIZE_DELETE_BATCH_SIZE = 100;
 export const DEFAULT_COSINE_THRESHOLD = 0.88;
 
 /** Default time-window in seconds when DEDUP_TIME_WINDOW_SECONDS is
- *  unset. Same-event clusters publish in one news cycle; pairs whose
- *  published_at differ by more than this are never merged regardless
- *  of cosine. 259200 = 72h. */
-export const DEFAULT_TIME_WINDOW_SECONDS = 259_200;
+ *  unset. 604800 = 7d, the smallest window that covers every observed
+ *  long-running cluster (valuation-week reverberations, long-weekend
+ *  press releases) without going all the way to retention (14d). Sits
+ *  inside the retention window so the dedup gate still considers every
+ *  cluster anchor that's both alive in the corpus AND inside a
+ *  plausible same-news-cycle span. Bumped 2026-05-11 from 72h after
+ *  observing four PANW stock-pump articles spread across 100h where
+ *  the 0.89-cosine pair sat at 75h and was cut off by the old window. */
+export const DEFAULT_TIME_WINDOW_SECONDS = 604_800;
 
 /** Default high-confidence cosine when DEDUP_HIGH_CONFIDENCE_COSINE is
  *  unset. Pairs whose RAW cosine (before same-vendor penalty) clears

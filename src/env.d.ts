@@ -88,8 +88,8 @@ interface Env {
   // Maximum allowed difference in published_at (seconds) between two
   // articles for them to be considered the same event (REQ-PIPE-003).
   // Pairs further apart are never merged regardless of cosine. The
-  // runtime parses to a positive number and falls back to 259200
-  // (72h) when unset.
+  // runtime parses to a positive number and falls back to 604800
+  // (7d) when unset. Bumped 2026-05-11 from 72h.
   DEDUP_TIME_WINDOW_SECONDS?: string;
   // Same-vendor cosine penalty subtracted before the threshold gate
   // when both articles' primary_source_url resolve to the same eTLD+1
