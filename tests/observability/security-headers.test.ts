@@ -6,9 +6,6 @@ import {
   securityHeadersMiddleware,
   CSP_HEADER_VALUE,
   HSTS_HEADER_VALUE,
-  X_CONTENT_TYPE_OPTIONS_VALUE,
-  X_FRAME_OPTIONS_VALUE,
-  REFERRER_POLICY_VALUE,
   PERMISSIONS_POLICY_VALUE,
   SECURITY_HEADERS,
 } from '~/middleware/security-headers';
@@ -31,47 +28,13 @@ async function run(upstream: Response): Promise<Response> {
 }
 
 describe('security-headers middleware', () => {
-  describe('constants', () => {
-    it('REQ-OPS-003: CSP matches the spec byte-for-byte', () => {
-      expect(CSP_HEADER_VALUE).toBe(
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.gravatar.com https://secure.gravatar.com; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
-      );
-    });
-
-    it('REQ-OPS-003: X-Frame-Options is DENY (defense-in-depth on top of frame-ancestors)', () => {
-      expect(X_FRAME_OPTIONS_VALUE).toBe('DENY');
-    });
-
-    it('REQ-OPS-003: HSTS is max-age=63072000; includeSubDomains; preload', () => {
-      expect(HSTS_HEADER_VALUE).toBe('max-age=63072000; includeSubDomains; preload');
-    });
-
-    it('REQ-OPS-003: X-Content-Type-Options is nosniff', () => {
-      expect(X_CONTENT_TYPE_OPTIONS_VALUE).toBe('nosniff');
-    });
-
-    it('REQ-OPS-003: Referrer-Policy is strict-origin-when-cross-origin', () => {
-      expect(REFERRER_POLICY_VALUE).toBe('strict-origin-when-cross-origin');
-    });
-
-    it('REQ-OPS-003: Permissions-Policy denies geolocation, microphone, camera, payment, clipboard-read', () => {
-      expect(PERMISSIONS_POLICY_VALUE).toBe(
-        'geolocation=(), microphone=(), camera=(), payment=(), clipboard-read=()',
-      );
-    });
-
-    it('REQ-OPS-003: SECURITY_HEADERS lists every required header', () => {
-      const names = SECURITY_HEADERS.map(([n]) => n).sort();
-      expect(names).toEqual([
-        'Content-Security-Policy',
-        'Permissions-Policy',
-        'Referrer-Policy',
-        'Strict-Transport-Security',
-        'X-Content-Type-Options',
-        'X-Frame-Options',
-      ]);
-    });
-  });
+  // CF-022 (Cycle 1 review): the former `describe('constants', ...)`
+  // block asserted that exported string constants equaled hardcoded
+  // literals. Those tests passed iff someone typed both sides of the
+  // same string — they did not verify behaviour. Every behavioural
+  // guarantee is covered by the `describe('stamping', ...)` block
+  // below, which sends a request through the middleware and asserts
+  // on response headers.
 
   describe('stamping', () => {
     it('REQ-OPS-003: adds Content-Security-Policy with the exact spec value', async () => {

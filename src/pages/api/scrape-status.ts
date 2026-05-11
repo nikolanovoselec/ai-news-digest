@@ -2,9 +2,12 @@
 //
 // Lightweight status endpoint for the dashboard countdown + the
 // settings Force Refresh progress line. Reads the most recent row
-// from `scrape_runs` (one SELECT on an indexed column) plus the
-// chunks_remaining KV counter for that run (one KV get). That's it —
-// no LLM, no article read, no cost.
+// from `scrape_runs` (one SELECT on an indexed column) and derives
+// chunks_remaining from D1 (one indexed COUNT on
+// `scrape_chunk_completions`). That's it — no LLM, no article read,
+// no cost. CF-007 (Cycle 1 review): the legacy KV counter was a stale
+// dual-write that diverged from D1 (the source of truth per AD7); both
+// writers and the KV reader were removed.
 //
 // Response:
 //   { running: false }                                    — idle
@@ -76,20 +79,26 @@ export async function GET(context: APIContext): Promise<Response> {
     );
   }
 
-  // KV counter decrements per completed chunk. chunk_count on the
-  // scrape_runs row is the total the coordinator fanned out; if the
-  // coordinator didn't (yet) write it, fall back to a sentinel so
-  // the UI can still display a message without a denominator.
+  // chunks_remaining derived from D1 (CF-007): chunk_count is the
+  // total the coordinator fanned out; subtract the completed-chunk row
+  // count for this run. Null on either side falls through to null so
+  // the UI can still display a message without a denominator while a
+  // brand-new run is still being primed.
   let chunksRemaining: number | null = null;
-  try {
-    const raw = await env.KV.get(
-      `scrape_run:${row.id}:chunks_remaining`,
-      'text',
-    );
-    if (raw !== null) chunksRemaining = Number.parseInt(raw, 10);
-    if (Number.isNaN(chunksRemaining)) chunksRemaining = null;
-  } catch {
-    chunksRemaining = null;
+  if (typeof row.chunk_count === 'number' && row.chunk_count > 0) {
+    try {
+      const completed = await env.DB
+        .prepare(
+          `SELECT COUNT(*) AS n FROM scrape_chunk_completions WHERE scrape_run_id = ?1`,
+        )
+        .bind(row.id)
+        .first<{ n: number }>();
+      const completedCount = completed?.n ?? 0;
+      const remaining = row.chunk_count - completedCount;
+      chunksRemaining = remaining < 0 ? 0 : remaining;
+    } catch {
+      chunksRemaining = null;
+    }
   }
 
   return applyRefreshCookie(
@@ -107,7 +116,14 @@ export async function GET(context: APIContext): Promise<Response> {
       }),
       {
         status: 200,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          // CF-027: poll endpoint hit every 5s while a refresh is in
+          // flight. 2s edge cache + 5s SWR collapses the burst from N
+          // users into one origin hit per 7s window without hurting the
+          // visible progress UX.
+          'Cache-Control': 'public, max-age=2, stale-while-revalidate=5',
+        },
       },
     ),
     auth,

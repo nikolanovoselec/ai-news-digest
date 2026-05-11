@@ -12,6 +12,7 @@ This is the implementation documentation. The product specification (what the sy
 |----------|-------------|----------|
 | [Architecture](architecture.md) | System overview, components, data flow | Developers |
 | [API Reference](api-reference.md) | All endpoints — public, internal, request/response formats | Developers |
+| [Admin API Reference](api-reference-admin.md) | Operator endpoints under `/api/admin/*` for queue replay, discovery retries, and health probes | Operators |
 | [Configuration](configuration.md) | Environment variables, secrets, Cloudflare bindings | Developers, Operators |
 | [Deployment](deployment.md) | Dev setup, deployment steps, CI secrets | Developers, Operators |
 | [Security](security.md) | CSP, HSTS, cookie policy, rate limiting | Developers, Operators |

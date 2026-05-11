@@ -64,6 +64,8 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 ### AD1: Custom federated OAuth/OIDC (GitHub, Google) + HMAC-SHA256 JWT
 
+**Status:** Accepted (2026-04-22)
+
 **Decision:** Implement sign-in from scratch (~250 lines of TypeScript) instead of adopting Better Auth, Auth.js, or Lucia.
 
 **Context:** Sessions need to be stateless, revocable, and tied to an OAuth/OIDC authorization-code flow. The project has no password, no 2FA, no passkeys. The implementation supports multiple providers (GitHub, Google) via a shared provider registry — each provider adds one registry entry and a `fetchProfile` adapter, with no per-provider branching in the auth routes.
@@ -80,6 +82,8 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 ---
 
 ### AD2: Cloudflare Queues for digest generation
+
+**Status:** Accepted (2026-04-22)
 
 **Decision:** Use Cloudflare Queues to buffer scheduled and manual digest jobs. Cron dispatches; consumer generates.
 
@@ -128,6 +132,8 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 ### AD4: Plaintext-only LLM output
 
+**Status:** Accepted (2026-04-22)
+
 **Decision:** The LLM prompt requires plaintext output (no markdown, no HTML); summaries are stored as JSON arrays of plaintext strings and rendered via `textContent`.
 
 **Context:** LLMs can be prompt-injected via hostile article titles to produce markdown with `javascript:` links or `<script>` tags. A markdown parser + HTML sanitizer pipeline is a non-trivial surface to keep secure across dependency updates.
@@ -143,6 +149,8 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 ---
 
 ### AD5: KV for caches, D1 for consistent state
+
+**Status:** Accepted (2026-04-23)
 
 **Decision:** KV holds discovered sources, headlines, and source-health counters. D1 holds users, digests, articles, and pending_discoveries.
 
@@ -160,6 +168,8 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 ### AD6: Polling for scrape-run progress, not SSE or WebSockets
 
+**Status:** Accepted (2026-04-23)
+
 **Decision:** While a scrape run is in progress, the client polls `GET /api/scrape-status` every 5 seconds to drive the "Update in progress" indicator and the Force Refresh progress display on `/settings`.
 
 **Context:** Scrape runs take ~60 s end-to-end. Users mostly see finished articles on their next visit; real-time progress is a quality-of-life indicator for operators watching `/settings` after triggering a force-refresh. The per-user live-generation polling pattern (REQ-READ-004, deprecated 2026-04-23) is no longer applicable — the dashboard always renders from the article pool.
@@ -175,6 +185,8 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 ---
 
 ### AD7: D1 for chunk completion tracking, replacing KV read-modify-write
+
+**Status:** Accepted (2026-04-24)
 
 **Decision:** Move the "last chunk done" gate from a KV decrement (`scrape_run:{id}:chunks_remaining`) to a D1 `INSERT OR IGNORE` + `SELECT COUNT(*)` pattern on a dedicated `scrape_chunk_completions` table, with a follow-up conditional `UPDATE scrape_runs SET finalize_enqueued = 1 WHERE finalize_enqueued = 0` to gate the finalize handoff.
 
@@ -280,6 +292,8 @@ KV's eventual consistency made both races effectively undetectable via testing i
 
 ### AD11: Keep `style-src 'unsafe-inline'`; runtime `.style.X` writes are intentional
 
+**Status:** Accepted (2026-04-25)
+
 **Decision:** Retain `'unsafe-inline'` in the CSP `style-src` directive (`src/middleware/security-headers.ts`). Do not migrate FLIP animations or view-transition-name assignments away from runtime `.style.X` mutations.
 
 **Context:** Two architectural patterns in the codebase write to inline style attributes from JavaScript at runtime:
@@ -323,6 +337,8 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 ---
 
 ### AD12: Integration env: separate Cloudflare resources, manual trigger from develop, crons disabled
+
+**Status:** Accepted (2026-04-25)
 
 **Decision:** Stand up an integration deployment target on a distinct hostname (set per-fork via the `APP_URL` GitHub Environment variable on the `integration` environment) backed by fully isolated Cloudflare resources — D1, KV, queues all suffixed `-integration`. Deploys are manual-only via a dedicated GitHub Actions workflow (`.github/workflows/deploy-integration.yml`) that always pulls the current `develop` HEAD. Cron triggers are disabled on integration; the scrape pipeline runs only when the operator hits `/api/admin/force-refresh`. Worker secrets are sourced from repo-level GitHub Actions secrets via the `environment: integration` fallback.
 

@@ -211,6 +211,16 @@ export const RATE_LIMIT_RULES = {
     limit: 30,
     windowSec: 60,
   },
+  // CF-027 (Cycle 1 review) — bound runaway polling on GET /api/settings.
+  // The settings page reads this once per render; legitimate scripted
+  // polling has no business above ~2/sec/user. 120/min/user is
+  // double-headroom over that ceiling while still capping a misbehaving
+  // client from amplifying its load on D1.
+  SETTINGS_READ: {
+    routeClass: 'settings_read',
+    limit: 120,
+    windowSec: 60,
+  },
   // REQ-AUTH-008 — refresh-token rotation. Two-tier rate-limit:
   // AUTH_REFRESH_IP runs BEFORE the DB lookup to bound random-cookie
   // spam without authenticating the caller. 60/min/IP accommodates

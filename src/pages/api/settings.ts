@@ -137,6 +137,15 @@ export async function GET(context: APIContext): Promise<Response> {
   const auth = await requireSession(context.request, env);
   if (!auth.ok) return auth.response;
 
+  // CF-027 (Cycle 1 review): cap runaway polling. SETTINGS_READ is
+  // 120/min/user — double-headroom above legitimate page-render reads.
+  const rl = await enforceRateLimit(
+    env,
+    RATE_LIMIT_RULES.SETTINGS_READ,
+    auth.user.id,
+  );
+  if (!rl.allowed) return rateLimitResponse(rl);
+
   let row: UserSettingsRow | null;
   try {
     row = await env.DB.prepare(

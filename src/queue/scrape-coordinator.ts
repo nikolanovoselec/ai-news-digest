@@ -6,10 +6,9 @@
 // CURATED_SOURCES + discovered-tag feeds; canonical-dedupes the pool;
 // filters out articles already present in `articles.canonical_url`;
 // chunks survivors into slices of ≤100; and enqueues one
-// `scrape-chunks` message per chunk. The per-run KV counter
-// `scrape_run:{id}:chunks_remaining` is set to the chunk count before
-// enqueue so the chunk consumer can atomically decrement and detect the
-// last chunk via counter==0.
+// `scrape-chunks` message per chunk. Per-run progress tracking lives
+// in the D1 `scrape_chunk_completions` table (CF-007); the chunk
+// consumer detects the last chunk via the D1-derived completion count.
 //
 // Per-source fetch reuses the 10-worker semaphore pattern from
 // src/lib/sources.ts (fetchFromSourceWithResult + KV cache + per-fetch
@@ -48,8 +47,23 @@ import {
   writeSourcesCache,
   sourcesCacheRawEqual,
 } from '~/lib/sources-cache';
-import { setChunksRemaining } from '~/lib/kv/chunks-remaining';
+import { preferDirectOverGoogleNews } from '~/lib/prefer-direct-source';
 import { SNIPPET_FLOOR } from '~/queue/scrape-chunk-consumer';
+
+/** Adapter for CF-019: prefer-direct-source operates on Headline[], but
+ *  the coordinator carries the fetch-shape `{ headline: Headline }` so
+ *  per-row provenance survives downstream. Unwrap, dedupe, and re-wrap
+ *  while preserving the wrapper objects' identity for headlines that
+ *  were kept (the wrapper carries no fields besides `headline`). */
+function applyPreferDirectOverGoogleNews(
+  rows: Array<{ headline: Headline }>,
+): Array<{ headline: Headline }> {
+  if (rows.length === 0) return rows;
+  const survivors = preferDirectOverGoogleNews(rows.map((r) => r.headline));
+  // Survivor headlines may have absorbed source_tags from dropped GN
+  // copies, so rewrap rather than filtering by reference.
+  return survivors.map((headline) => ({ headline }));
+}
 
 /** Hard ceiling on candidates per chunk. The greedy packer below
  * usually fills a chunk to its character budget long before this
@@ -289,8 +303,17 @@ export async function runCoordinator(
   // Steps 2 + 2b — parallel fetch fan-out, then apply evictions.
   const rawHeadlines = await fetchSourcesAndApplyEvictions(env, allSources, scrape_run_id);
 
+  // Step 2c — drop Google News mirror entries when a direct publisher
+  // copy of the same story is present. CF-019 (Cycle 1 review): the
+  // coordinator and curated-sources docstrings already documented this
+  // pass as running, but the call site had been dropped. Without it the
+  // canonical-URL dedup at Step 4 sees news.google.com/articles/CCAi…
+  // and the direct URL as distinct stories, surfacing the same headline
+  // multiple times on /digest.
+  const deduplicatedHeadlines = applyPreferDirectOverGoogleNews(rawHeadlines);
+
   // Step 3 — canonicalize, scheme-gate, and freshness-filter.
-  const candidates = buildCandidates(rawHeadlines, scrape_run_id);
+  const candidates = buildCandidates(deduplicatedHeadlines, scrape_run_id);
 
   // Step 4 — dedupe duplicate URLs that appear across multiple feeds.
   const clusters = clusterByCanonical(candidates);
@@ -674,15 +697,15 @@ function flattenToChunkCandidates(
 }
 
 /**
- * Step 8 — Chunk, prime KV counter, persist chunk_count, and enqueue.
+ * Step 8 — Chunk, persist chunk_count, and enqueue.
  *
  * Packs `chunkCandidates` via `packCandidatesIntoChunks` (greedy budget-
  * aware: respects `CHUNK_INPUT_CHARS_BUDGET` and `MAX_CANDIDATES_PER_CHUNK`,
  * whichever fires first), hard-caps the resulting chunk array at
- * `MAX_CHUNKS_PER_TICK`, primes the `chunks_remaining` KV counter to the
- * actual chunk count (so the chunk consumer's completion math starts from
- * the right denominator), persists `chunk_count` on the scrape_runs row
- * for the progress UI, and fan-outs one SCRAPE_CHUNKS message per chunk.
+ * `MAX_CHUNKS_PER_TICK`, persists `chunk_count` on the scrape_runs row
+ * for the progress UI (chunks_remaining is derived from D1 via
+ * `scrape_chunk_completions` per CF-007), and fan-outs one SCRAPE_CHUNKS
+ * message per chunk.
  */
 async function chunkAndEnqueue(
   env: Env,
@@ -708,7 +731,10 @@ async function chunkAndEnqueue(
   const keptChunks = capChunks(chunks, MAX_CHUNKS_PER_TICK, scrape_run_id);
   const totalChunks = keptChunks.length;
 
-  await setChunksRemaining(env.KV, scrape_run_id, totalChunks);
+  // CF-007 (Cycle 1 review): legacy KV `chunks_remaining` counter
+  // removed. The /api/scrape-status endpoint now derives the value
+  // from `scrape_chunk_completions` (D1 is the source of truth per
+  // AD7); no priming write is needed here.
 
   // Persist total chunk count on the scrape_runs row so the
   // /api/scrape-status endpoint can compute 'X of Y chunks done'

@@ -51,15 +51,24 @@ function baseUser(): UserRow {
   };
 }
 
-/** Stub D1 returning the supplied user row for the session SELECT and
- *  the supplied scrape_runs row for the status SELECT. */
-function makeDb(user: UserRow | null, run: RunRow | null): D1Database {
+/** Stub D1 returning the supplied user row for the session SELECT,
+ *  the supplied scrape_runs row for the status SELECT, and an
+ *  optional completed-chunks COUNT for the CF-007 D1-derived
+ *  chunks_remaining math. */
+function makeDb(
+  user: UserRow | null,
+  run: RunRow | null,
+  completedChunks: number | null = null,
+): D1Database {
   const prepare = vi.fn().mockImplementation((sql: string) => {
     const stmt = {
       bind: (..._params: unknown[]) => stmt,
       first: vi.fn().mockImplementation(async () => {
         if (sql.includes('FROM users')) return user;
         if (sql.includes('FROM scrape_runs')) return run;
+        if (sql.includes('FROM scrape_chunk_completions')) {
+          return completedChunks === null ? null : { n: completedChunks };
+        }
         return null;
       }),
       all: vi.fn().mockResolvedValue({ success: true, results: [] }),
@@ -70,11 +79,11 @@ function makeDb(user: UserRow | null, run: RunRow | null): D1Database {
   return { prepare } as unknown as D1Database;
 }
 
-/** Stub KV returning the supplied counter string for the
- *  chunks_remaining lookup. */
-function makeKv(counter: string | null): KVNamespace {
+/** Stub KV — chunks_remaining no longer reads KV after CF-007, but the
+ *  binding still needs to exist for other code paths. */
+function makeKv(): KVNamespace {
   return {
-    get: vi.fn().mockImplementation(async () => counter),
+    get: vi.fn().mockResolvedValue(null),
     put: vi.fn(),
     delete: vi.fn(),
     list: vi.fn().mockResolvedValue({ keys: [], list_complete: true }),
@@ -113,7 +122,7 @@ describe('GET /api/scrape-status — REQ-PIPE-006 AC 5', () => {
   it('REQ-PIPE-006: returns 401 when no session cookie is present', async () => {
     const req = new Request('https://test.example.com/api/scrape-status');
     const res = await GET(
-      makeContext(req, envFrom(makeDb(null, null), makeKv(null))) as never,
+      makeContext(req, envFrom(makeDb(null, null), makeKv())) as never,
     );
     expect(res.status).toBe(401);
   });
@@ -122,7 +131,7 @@ describe('GET /api/scrape-status — REQ-PIPE-006 AC 5', () => {
     const res = await GET(
       makeContext(
         await authedRequest(),
-        envFrom(makeDb(baseUser(), null), makeKv(null)),
+        envFrom(makeDb(baseUser(), null), makeKv()),
       ) as never,
     );
     expect(res.status).toBe(200);
@@ -142,7 +151,7 @@ describe('GET /api/scrape-status — REQ-PIPE-006 AC 5', () => {
     const res = await GET(
       makeContext(
         await authedRequest(),
-        envFrom(makeDb(baseUser(), run), makeKv('0')),
+        envFrom(makeDb(baseUser(), run, 10), makeKv()),
       ) as never,
     );
     expect(res.status).toBe(200);
@@ -162,7 +171,7 @@ describe('GET /api/scrape-status — REQ-PIPE-006 AC 5', () => {
     const res = await GET(
       makeContext(
         await authedRequest(),
-        envFrom(makeDb(baseUser(), run), makeKv('5')),
+        envFrom(makeDb(baseUser(), run, 7), makeKv()),
       ) as never,
     );
     expect(res.status).toBe(200);
@@ -182,7 +191,7 @@ describe('GET /api/scrape-status — REQ-PIPE-006 AC 5', () => {
     expect(body.articles_ingested).toBe(27);
   });
 
-  it('REQ-PIPE-006: falls back to null chunks_remaining when the KV counter is missing', async () => {
+  it('REQ-PIPE-006: falls back to null chunks_remaining when the D1 completion count query fails', async () => {
     const run: RunRow = {
       id: 'r3',
       started_at: 1_222_222,
@@ -194,7 +203,7 @@ describe('GET /api/scrape-status — REQ-PIPE-006 AC 5', () => {
     const res = await GET(
       makeContext(
         await authedRequest(),
-        envFrom(makeDb(baseUser(), run), makeKv(null)),
+        envFrom(makeDb(baseUser(), run), makeKv()),
       ) as never,
     );
     const body = (await res.json()) as { chunks_remaining: number | null };
@@ -213,7 +222,7 @@ describe('GET /api/scrape-status — REQ-PIPE-006 AC 5', () => {
     const res = await GET(
       makeContext(
         await authedRequest(),
-        envFrom(makeDb(baseUser(), run), makeKv(null)),
+        envFrom(makeDb(baseUser(), run), makeKv()),
       ) as never,
     );
     const body = (await res.json()) as { chunks_total: number | null };
