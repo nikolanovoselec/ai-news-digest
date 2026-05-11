@@ -230,9 +230,12 @@ describe('cron dispatch — REQ-PIPE-001 / REQ-PIPE-005', () => {
     expect(digestJobs.sendBatchCalls).toHaveLength(0);
   });
 
-  it('cron "*/5 * * * *" still drains pending_discoveries and dispatches daily emails', async () => {
-    // The discovery drain issues a SELECT on pending_discoveries; seeing
-    // that query execute is the observable signal that the branch fired.
+  it('CF-028: discovery cron "2,12,22,32,42,52 * * * *" drains pending_discoveries', async () => {
+    // CF-028 split discovery out of the */5 email cron so a new user's
+    // first tag is processed every 10 min instead of waiting up to
+    // every-other-tick. The discovery drain issues a SELECT on
+    // pending_discoveries; seeing that query execute is the observable
+    // signal that the branch fired.
     const { db, calls } = makeDb({
       pendingDiscoveriesResults: [],
     });
@@ -242,13 +245,11 @@ describe('cron dispatch — REQ-PIPE-001 / REQ-PIPE-005', () => {
     const digestJobs = makeQueue();
     const env = makeEnv(db, kv, coordinator.queue, chunks.queue, digestJobs.queue);
     const { ctx } = makeCtx();
-    await scheduled(makeController('*/5 * * * *'), env, ctx);
+    await scheduled(makeController('2,12,22,32,42,52 * * * *'), env, ctx);
     const discoveryQuery = calls.find((c) =>
       c.sql.startsWith('SELECT tag FROM pending_discoveries'),
     );
     expect(discoveryQuery).toBeDefined();
-    // dispatchDailyEmails is a stub in Gate B; its body is empty, so
-    // we only assert the cron returned cleanly without throwing.
   });
 
   it('worker.ts default export has scheduled, queue, fetch handlers', () => {

@@ -229,23 +229,22 @@ describe('scrape-coordinator - REQ-PIPE-001', () => {
     }
   });
 
-  it('REQ-PIPE-001: sets KV chunks_remaining counter to the chunk count with 3-hour TTL', async () => {
+  it('REQ-PIPE-001 / CF-007: does NOT write the legacy KV chunks_remaining mirror', async () => {
+    // CF-007 removed the KV dual-write. /api/scrape-status now derives
+    // chunks_remaining from a D1 COUNT on scrape_chunk_completions.
+    // Guard: no KV put with the legacy key — a regression would
+    // re-introduce dashboard drift.
     stubFetchWithItems(1);
     const { db } = makeDb();
-    const { kv, store } = makeKv();
-    const { queue, sends } = makeChunksQueue();
+    const { kv } = makeKv();
+    const { queue } = makeChunksQueue();
     const env = makeEnv(db, kv, queue);
     await runCoordinator(env, { scrape_run_id: 'run-4' });
-    const counter = store.get('scrape_run:run-4:chunks_remaining');
-    expect(counter).toBeDefined();
-    expect(Number(counter)).toBe(sends.length);
     const putMock = kv.put as ReturnType<typeof vi.fn>;
     const putCall = putMock.mock.calls.find(
       (c: unknown[]) => c[0] === 'scrape_run:run-4:chunks_remaining',
     );
-    expect(putCall).toBeDefined();
-    const opts = putCall![2] as { expirationTtl: number };
-    expect(opts.expirationTtl).toBe(3 * 3600);
+    expect(putCall).toBeUndefined();
   });
 
   it('REQ-PIPE-001: candidates inherit published_at from the feed pubDate (not ingestion time)', async () => {

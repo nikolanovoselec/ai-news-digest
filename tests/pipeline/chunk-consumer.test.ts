@@ -495,20 +495,19 @@ describe('scrape-chunk-consumer - REQ-PIPE-002', () => {
     expect(batched.length).toBe(6);
   });
 
-  it('REQ-PIPE-002: completing the final chunk calls finishRun(ready) and zeroes the KV mirror', async () => {
-    // CF-002: the run's "are we done?" gate is now the count of rows
-    // in scrape_chunk_completions, not a KV decrement. The KV counter
-    // is kept as a derived mirror so /api/scrape-status keeps working.
+  it('REQ-PIPE-002: completing the final chunk calls finishRun(ready)', async () => {
+    // CF-002: the run's "are we done?" gate is the count of rows
+    // in scrape_chunk_completions. CF-007 removed the KV mirror;
+    // /api/scrape-status now derives chunks_remaining from D1 COUNT.
     const aiResponse = {
       response: JSON.stringify({ articles: [{ title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }, { title: 'Article B - long enough headline copy', details: LONG_BODY, tags: ['generative-ai'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db, records } = makeDb();
-    const { kv, state } = makeKv();
+    const { kv } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
     await processOneChunk(env, makeChunk());
     // total_chunks=1 (default) and we just inserted chunk 0 → done=1 → finalize.
-    expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('0');
     const finish = records.find(
       (r) =>
         r.sql.includes('UPDATE scrape_runs') &&
@@ -524,17 +523,16 @@ describe('scrape-chunk-consumer - REQ-PIPE-002', () => {
     expect(insert!.params[1]).toBe(0);
   });
 
-  it('REQ-PIPE-002: non-last chunk leaves the KV mirror above zero and does NOT call finishRun', async () => {
+  it('REQ-PIPE-002: non-last chunk does NOT call finishRun', async () => {
     const aiResponse = {
       response: JSON.stringify({ articles: [{ title: 'Article A - long enough headline copy', details: LONG_BODY, tags: ['cloudflare'] }, { title: 'Article B - long enough headline copy', details: LONG_BODY, tags: ['generative-ai'] }], dedup_groups: [] }),
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db, records } = makeDb();
-    const { kv, state } = makeKv();
+    const { kv } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
     // total_chunks=4 simulates a multi-chunk run; this is chunk 0 of 4.
     await processOneChunk(env, makeChunk({ chunk_index: 0, total_chunks: 4 }));
-    expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('3');
     const finish = records.find(
       (r) =>
         r.sql.includes('UPDATE scrape_runs') &&
@@ -584,11 +582,11 @@ describe('scrape-chunk-consumer - REQ-PIPE-002', () => {
       usage: { input_tokens: 10, output_tokens: 10 },
     };
     const { db } = makeDb();
-    const { kv, state } = makeKv();
+    const { kv } = makeKv();
     const env = makeEnv(db, kv, aiResponse);
     await processOneChunk(env, makeChunk());
-    // KV mirror has been zeroed; the finalize lock lives on the D1 row.
-    expect(state.store.get('scrape_run:test-run:chunks_remaining')).toBe('0');
+    // The finalize lock lives on the D1 row; redelivery is gated by
+    // the atomic UPDATE on finalize_enqueued returning meta.changes=0.
     await processOneChunk(env, makeChunk());
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sendMock = (env.SCRAPE_FINALIZE as any).send as ReturnType<typeof vi.fn>;

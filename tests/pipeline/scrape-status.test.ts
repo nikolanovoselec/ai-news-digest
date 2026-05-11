@@ -67,7 +67,8 @@ function makeDb(
         if (sql.includes('FROM users')) return user;
         if (sql.includes('FROM scrape_runs')) return run;
         if (sql.includes('FROM scrape_chunk_completions')) {
-          return completedChunks === null ? null : { n: completedChunks };
+          if (completedChunks === null) throw new Error('d1_simulated_failure');
+          return { n: completedChunks };
         }
         return null;
       }),
