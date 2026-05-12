@@ -16,6 +16,8 @@
 // `fetchProfile` implementation. The login + callback routes are
 // parameterised on `[provider]` and need no per-provider branching.
 
+import { verifyGoogleIdToken } from '~/lib/google-jwks';
+
 export type ProviderName = 'github' | 'google';
 
 /** Uniform identity shape extracted from any provider's token exchange. */
@@ -39,6 +41,10 @@ export type ProfileFetcher = (args: {
   accessToken: string;
   idToken: string | null;
   clientId: string;
+  /** CF-013: KV binding used by the Google provider to cache the JWKS
+   *  for RS256 id_token signature verification. Providers that do not
+   *  need JWKS (currently GitHub) ignore this field. */
+  kv: KVNamespace;
 }) => Promise<ProviderProfile>;
 
 export interface ProviderConfig {
@@ -157,6 +163,7 @@ async function fetchGitHubProfile(args: {
   accessToken: string;
   idToken: string | null;
   clientId: string;
+  kv: KVNamespace;
 }): Promise<ProviderProfile> {
   const headers = {
     Authorization: `Bearer ${args.accessToken}`,
@@ -231,12 +238,24 @@ async function fetchGoogleProfile(args: {
   accessToken: string;
   idToken: string | null;
   clientId: string;
+  kv: KVNamespace;
 }): Promise<ProviderProfile> {
   let claims: GoogleIdTokenClaims | null = null;
   let fromIdToken = false;
   if (args.idToken !== null && args.idToken !== '') {
-    claims = decodeJwtClaims<GoogleIdTokenClaims>(args.idToken);
-    fromIdToken = claims !== null;
+    // CF-013: verify the RS256 signature against Google's published
+    // JWKS before trusting any claim. The prior behaviour decoded
+    // claims directly on the TLS-only argument and fell back to the
+    // userinfo endpoint on any decode failure — that would still
+    // admit a forged id_token from a TLS-stripped or misrouted token
+    // exchange. With this gate, an id_token that fails the signature
+    // check is treated identically to a missing id_token: the
+    // userinfo endpoint becomes the authoritative source instead.
+    const signatureOk = await verifyGoogleIdToken(args.idToken, args.kv);
+    if (signatureOk) {
+      claims = decodeJwtClaims<GoogleIdTokenClaims>(args.idToken);
+      fromIdToken = claims !== null;
+    }
   }
   if (claims === null) {
     // Fallback to userinfo endpoint.

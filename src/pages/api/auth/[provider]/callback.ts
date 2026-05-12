@@ -418,6 +418,10 @@ async function step4ExchangeCodeAndFetchProfile(
           ? tokenData.id_token
           : null,
       clientId: state.creds.clientId,
+      // CF-013: thread KV through so the Google provider can cache
+      // its JWKS for RS256 signature verification. Other providers
+      // ignore this field.
+      kv: state.env.KV,
     });
   } catch (err) {
     return {

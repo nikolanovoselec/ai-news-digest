@@ -224,6 +224,10 @@ describe('POST /api/admin/embed-backfill — REQ-PIPE-003', () => {
     const upsert = vectorize.upsert as unknown as ReturnType<typeof vi.fn>;
     expect(res.status).toBe(200);
     expect(aiRun).toHaveBeenCalledTimes(1);
+    // CF-022: pair the call-count with the model identifier so a
+    // regression that called the wrong model is caught instead of
+    // silently passing on call count alone.
+    expect(aiRun.mock.calls[0]?.[0]).toBe('@cf/baai/bge-base-en-v1.5');
     expect(upsert).toHaveBeenCalledTimes(1);
     const upsertCall = upsert.mock.calls[0]![0] as Array<{
       id: string;
