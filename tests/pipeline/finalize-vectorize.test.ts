@@ -1484,4 +1484,189 @@ describe('processOneFinalize — REQ-PIPE-003', () => {
     );
     expect(gateFlip).toBeUndefined();
   });
+
+  // Labeled coverage for REQ-PIPE-003 foundational ACs (CF-005).
+  // AC 1, 8/9, 13, 15, 16, 17 already have labeled tests above; the
+  // four ACs below were the unlabeled subset the spec-reviewer
+  // surfaced. AC 5 (aggregator-wrapper) is upstream URL canonicalization
+  // tested in tests/pipeline/article-fetch.test.ts; AC 6 (status=ready
+  // before async finalize) is a transition tested via the
+  // finalize_recorded gate and scrape-status tests — both noted here
+  // rather than re-tested in the finalize unit surface.
+
+  it('REQ-PIPE-003 AC 2: same-story pair collapses to a single primary card', async () => {
+    // The merge path drops the new article from Vectorize and folds
+    // its sources/tags/reads into the older article — the observable
+    // "single primary card" outcome.
+    const newId = 'new-card';
+    const oldId = 'old-card';
+    const mockDb = makeMockDb({
+      articleRows: [
+        {
+          id: newId,
+          published_at: 2000,
+          ingested_at: 2000,
+          primary_source_url: 'https://b.example/post',
+        },
+      ],
+      existsIds: new Set([oldId]),
+    });
+    const matches = new Map<string, VectorizeMatch[]>();
+    matches.set(newId, [
+      {
+        id: oldId,
+        score: 0.95,
+        metadata: {
+          published_at: 1000,
+          primary_source_url: 'https://a.example/post',
+        },
+      } as unknown as VectorizeMatch,
+    ]);
+    const mockVec = makeMockVectorize(matches);
+    const env = makeEnv(mockDb.db, mockVec.binding);
+
+    await processOneFinalize(env, { scrape_run_id: 'r1' });
+
+    // The new article's primary card is gone (vector deleted, row
+    // folded into old via DELETE FROM articles WHERE id = ?1).
+    expect(mockVec.deleteMock).toHaveBeenCalledWith([newId]);
+    const deleteRow = mockDb.calls.find(
+      (c) => c.sql.match(/^DELETE FROM articles WHERE id = \?1$/) !== null,
+    );
+    expect(deleteRow).toBeDefined();
+    expect(deleteRow?.params[0]).toBe(newId);
+  });
+
+  it('REQ-PIPE-003 AC 3: later-published article becomes an article_sources row pointing at the earlier', async () => {
+    // First-source-wins: the earlier-published article is the survivor;
+    // the later one is recorded on article_sources with the older's id
+    // as the foreign key.
+    const laterId = 'later';
+    const earlierId = 'earlier';
+    const mockDb = makeMockDb({
+      articleRows: [
+        {
+          id: laterId,
+          published_at: 5000,
+          ingested_at: 5000,
+          primary_source_url: 'https://later.example/post',
+        },
+      ],
+      existsIds: new Set([earlierId]),
+    });
+    const matches = new Map<string, VectorizeMatch[]>();
+    matches.set(laterId, [
+      {
+        id: earlierId,
+        score: 0.93,
+        metadata: {
+          published_at: 1000,
+          primary_source_url: 'https://earlier.example/post',
+        },
+      } as unknown as VectorizeMatch,
+    ]);
+    const mockVec = makeMockVectorize(matches);
+    const env = makeEnv(mockDb.db, mockVec.binding);
+
+    await processOneFinalize(env, { scrape_run_id: 'r1' });
+
+    // INSERT INTO article_sources SELECT ... FROM articles WHERE id = ?2
+    // — ?1 is the survivor (earlier), ?2 is the folded-in (later).
+    const insertSourceStmt = mockDb.calls.find((c) =>
+      c.sql.includes('FROM articles WHERE id = ?2'),
+    );
+    expect(insertSourceStmt?.params[0]).toBe(earlierId);
+    expect(insertSourceStmt?.params[1]).toBe(laterId);
+  });
+
+  it('REQ-PIPE-003 AC 4: single-source article persists with zero alt-source rows when no Vectorize matches exist', async () => {
+    // The negative case: an article whose Vectorize.queryById returns
+    // zero matches must not trigger any article_sources INSERT, any
+    // DELETE FROM articles, or any Vectorize.delete. The article stays
+    // a standalone primary card.
+    const onlyId = 'only-1';
+    const mockDb = makeMockDb({
+      articleRows: [
+        {
+          id: onlyId,
+          published_at: 2000,
+          ingested_at: 2000,
+          primary_source_url: 'https://only.example/post',
+        },
+      ],
+    });
+    const mockVec = makeMockVectorize(new Map());
+    const env = makeEnv(mockDb.db, mockVec.binding);
+
+    await processOneFinalize(env, { scrape_run_id: 'r1' });
+
+    const altSourceInsert = mockDb.calls.find((c) =>
+      c.sql.includes('INSERT INTO article_sources'),
+    );
+    expect(altSourceInsert).toBeUndefined();
+    const articleDelete = mockDb.calls.find(
+      (c) => c.sql.match(/^DELETE FROM articles WHERE id = \?1$/) !== null,
+    );
+    expect(articleDelete).toBeUndefined();
+    expect(mockVec.deleteMock).not.toHaveBeenCalled();
+  });
+
+  it('REQ-PIPE-003 AC 7: two same-topic articles with distinct methodology stay distinct (LLM rerank rejects)', async () => {
+    // Two studies on the same subject (e.g., AI benchmark numbers from
+    // different labs) land in the borderline band. The LLM rerank is
+    // the gate that keeps them separate when their methodologies differ.
+    // Conservative behaviour: rerank "different" → no merge, even at
+    // borderline cosine.
+    const studyA = 'study-a';
+    const studyB = 'study-b';
+    const mockDb = makeMockDb({
+      articleRows: [
+        {
+          id: studyB,
+          title: 'Anthropic benchmarks Opus 4.7 at 92% MMLU',
+          source_snippet: 'Internal evaluation with held-out test set.',
+          published_at: 2000,
+          ingested_at: 2000,
+          primary_source_url: 'https://anthropic.example/eval',
+        },
+      ],
+      existsIds: new Set([studyA]),
+      existingArticleData: new Map([
+        [
+          studyA,
+          {
+            title: 'OpenAI reports GPT-7 at 89% MMLU',
+            source_snippet: 'Public benchmark using HELM harness.',
+          },
+        ],
+      ]),
+    });
+    const matches = new Map<string, VectorizeMatch[]>();
+    matches.set(studyB, [
+      {
+        id: studyA,
+        score: 0.78,
+        metadata: {
+          published_at: 1000,
+          primary_source_url: 'https://openai.example/eval',
+        },
+      } as unknown as VectorizeMatch,
+    ]);
+    const mockVec = makeMockVectorize(matches);
+    const aiRun = vi
+      .fn()
+      .mockResolvedValue({ response: '{"same_event":false}' });
+    const env = makeEnv(mockDb.db, mockVec.binding, {
+      aiBinding: { run: aiRun },
+    });
+
+    await processOneFinalize(env, { scrape_run_id: 'r1' });
+
+    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(mockVec.deleteMock).not.toHaveBeenCalled();
+    const altSourceInsert = mockDb.calls.find((c) =>
+      c.sql.includes('INSERT INTO article_sources'),
+    );
+    expect(altSourceInsert).toBeUndefined();
+  });
 });

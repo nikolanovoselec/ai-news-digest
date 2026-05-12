@@ -84,9 +84,11 @@ The gate is fail-closed in production: if KV is unbound or the JWKS endpoint is 
 
 ---
 
-## Admin POST endpoints: Origin check with Bearer bypass (REQ-AUTH-001)
+## Admin endpoint cross-site guards (REQ-AUTH-001)
 
-Admin POST endpoints (`embed-backfill`, `force-refresh`, `historical-dedup`) enforce an Origin check on browser-driven calls. Requests presenting an `Authorization: Bearer ...` header bypass the Origin check — scripted curl flows and dev-bypass sessions carry no session cookie and are not a CSRF surface. A browser-driven POST without a Bearer header must present an `Origin` matching `APP_URL` or receive `403 forbidden_origin`. See [`api-reference-admin.md`](api-reference-admin.md) for per-endpoint auth notes.
+Admin POST endpoints (`embed-backfill`, `force-refresh`, `historical-dedup`) enforce an Origin check on browser-driven calls. Requests presenting an `Authorization: Bearer ...` header bypass the Origin check — scripted curl flows and dev-bypass sessions carry no session cookie and are not a CSRF surface. A browser-driven POST without a Bearer header must present an `Origin` matching `APP_URL` or receive `403 forbidden_origin`.
+
+The GET `/api/admin/force-refresh` endpoint additionally enforces a `Sec-Fetch-Site` guard (defense-in-depth): `same-origin` and `none` are allowed; any other value (cross-site or cross-origin initiator) receives `403 "Cross-site request denied"`. This preserves the AD38 top-level-navigation pattern (post-SSO redirects from `cloudflareaccess.com` carry `Sec-Fetch-Site: none`) while closing the same-browser CSRF gap on the GET path. See [`api-reference-admin.md`](api-reference-admin.md) for per-endpoint auth notes.
 
 ---
 

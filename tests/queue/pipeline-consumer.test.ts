@@ -27,13 +27,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('~/lib/kick-coordinator', () => ({
   kickCoordinator: vi.fn(),
 }));
-vi.mock('~/pages/api/admin/embed-backfill', () => ({
+vi.mock('~/lib/embed-backfill', () => ({
   runOneBackfillBatch: vi.fn(),
 }));
 
 import { processOnePipelineMessage } from '~/queue/pipeline-consumer';
 import { kickCoordinator } from '~/lib/kick-coordinator';
-import { runOneBackfillBatch } from '~/pages/api/admin/embed-backfill';
+import { runOneBackfillBatch } from '~/lib/embed-backfill';
 
 interface DbCalls {
   updates: Array<{ sql: string; params: unknown[] }>;

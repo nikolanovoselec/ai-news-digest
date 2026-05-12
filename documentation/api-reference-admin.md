@@ -12,7 +12,7 @@ Extracted from [api-reference.md](api-reference.md) so the main reference stays 
 
 Kicks the global-feed coordinator on demand — identical to the every-4-hours cron. Inserts a `scrape_runs` row, sends `SCRAPE_COORDINATOR`. A 120-second reuse window absorbs double-clicks: a new request that finds a `running` row younger than 120 s reuses it.
 
-POST enforces Origin for browser-driven calls; GET is exempt (so operators can bookmark or `curl`). Scripted callers that present `Authorization: Bearer <DEV_BYPASS_TOKEN>` bypass the Origin check on POST — Bearer requests carry no session cookie and are not a CSRF surface.
+POST enforces Origin for browser-driven calls. GET enforces a `Sec-Fetch-Site` guard: `same-origin` and `none` (top-level navigation, including the post-SSO AD38 redirect chain) are allowed; `cross-site` and `cross-origin` receive `403 "Cross-site request denied"`. `curl` and scripted callers send no `Sec-Fetch-Site` header and are unaffected. Scripted callers that present `Authorization: Bearer <DEV_BYPASS_TOKEN>` bypass the Origin check on POST — Bearer requests carry no session cookie and are not a CSRF surface.
 
 | Method | Caller | Success response |
 |---|---|---|
@@ -22,7 +22,7 @@ POST enforces Origin for browser-driven calls; GET is exempt (so operators can b
 
 **Rate limit:** Per-operator hourly bucket (`admin_force_refresh`). Exhausted → `429` surfaced to the settings surface with `Retry-After` (REQ-AUTH-001 AC 9g).
 
-**Error responses:** `401 unauthorized` | `403 forbidden` | `429 rate_limit_exceeded` | `500 "Failed to dispatch coordinator"`.
+**Error responses:** `401 unauthorized` | `403 forbidden` | `403 "Cross-site request denied"` (GET cross-site initiator) | `429 rate_limit_exceeded` | `500 "Failed to dispatch coordinator"`.
 
 **Implements:** [REQ-OPS-005](../sdd/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-from-the-settings-surface) (phase 1), [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
 

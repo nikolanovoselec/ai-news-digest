@@ -46,7 +46,7 @@ import { log } from '~/lib/log';
 import { handleBatch } from '~/lib/queue-handler';
 import { generateUlid } from '~/lib/ulid';
 import { kickCoordinator } from '~/lib/kick-coordinator';
-import { runOneBackfillBatch } from '~/pages/api/admin/embed-backfill';
+import { runOneBackfillBatch } from '~/lib/embed-backfill';
 import { DEFAULT_BATCH as DEDUP_DEFAULT_BATCH } from '~/lib/historical-dedup';
 
 /** Phase tags written to `pipeline_runs.current_phase` and carried in
