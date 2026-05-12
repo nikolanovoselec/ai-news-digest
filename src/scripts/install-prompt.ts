@@ -7,15 +7,15 @@
 // Implements REQ-PWA-001 AC 4, AC 5.
 // This runs in the browser; keep it framework-free.
 
+import { isIos as isIosPure } from '~/lib/ios-detection';
+
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
 
-// iOS-specific property not in lib.dom
 type IosNavigator = Navigator & { standalone?: boolean };
 
-const IOS_UA_PATTERN = /iPad|iPhone|iPod/;
 const IOS_PROMPT_SEEN_KEY = 'pwa.iosInstallNoteSeen';
 
 function isStandalone(): boolean {
@@ -30,7 +30,11 @@ function isStandalone(): boolean {
 function isIos(): boolean {
   if (typeof navigator === 'undefined') return false;
   const nav = navigator as IosNavigator;
-  return IOS_UA_PATTERN.test(nav.userAgent) && !nav.standalone;
+  return isIosPure({
+    userAgent: nav.userAgent,
+    standalone: nav.standalone,
+    maxTouchPoints: nav.maxTouchPoints,
+  });
 }
 
 function initInstallPrompt(): void {
