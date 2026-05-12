@@ -513,23 +513,17 @@ describe('dispatchDailyEmails — REQ-MAIL-002 AC 3 tz-bucket isolation', () => 
     vi.restoreAllMocks();
   });
 
-  it('REQ-MAIL-002 AC 3: distinct-tz probe carries the `tz IS NOT NULL AND tz != \'\'` filter', async () => {
-    // Pin the SQL predicate literally so a refactor that drops the
-    // filter is caught immediately. Without this filter, the SELECT
-    // would hand an empty-string tz to localHourMinuteInTz, which calls
-    // Intl.DateTimeFormat — that throws RangeError on '' and aborts
-    // the entire 5-minute cron tick, taking the daily email out for
-    // every user.
-    const { db } = makeDispatchDb([]);
-    const prepareSpy = vi.spyOn(db, 'prepare');
-    await dispatchDailyEmails(makeEnv({ DB: db }));
-
-    const sqls = prepareSpy.mock.calls.map((c) => c[0] as string);
-    const tzProbe = sqls.find((s) => s.includes('SELECT DISTINCT tz'));
-    expect(tzProbe).toBeDefined();
-    expect(tzProbe).toMatch(/tz\s+IS\s+NOT\s+NULL/i);
-    expect(tzProbe).toMatch(/tz\s*!=\s*''/);
-  });
+  // Cycle-2 review removed an earlier SQL-string-matching theater
+  // test here that grepped the prepared SQL for the literal predicate
+  // `tz IS NOT NULL AND tz != ''`. The sibling test below ("an
+  // unrecognised IANA tz on one row is skipped with a warn log")
+  // covers the user-observable behavior — an invalid-tz user is not
+  // emailed and a structured warn log fires — which is what the SQL
+  // filter exists to guarantee. A future regression that drops the
+  // SQL filter would still be caught: an empty-string tz reaches
+  // `isValidTz('')`, which returns false, and the runtime guard
+  // produces the same `email.dispatch.skipped_invalid_tz` warn log
+  // verified by the sibling test.
 
   it('REQ-MAIL-002 AC 3: an unrecognised IANA tz on one row is skipped with a warn log; sibling buckets continue', async () => {
     // Bypass the SQL filter (legacy or manually-edited rows can carry

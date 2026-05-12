@@ -92,7 +92,7 @@ describe('headlineRow', () => {
     expect(out).toContain(
       'A title with &quot;quotes&quot; &amp; &lt;tag&gt;',
     );
-    expect(out).not.toMatch(/<tag>/);
+    expect(out).not.toMatch(/<tag>/i);
   });
 
   it('escapes a title containing the script open tag', () => {
@@ -102,7 +102,7 @@ describe('headlineRow', () => {
       slug: 'b',
       title: '<script>alert(1)</script>',
     });
-    expect(out).not.toMatch(/<script>/);
+    expect(out).not.toMatch(/<script\b/i);
     expect(out).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
   });
 
