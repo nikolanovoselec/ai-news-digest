@@ -125,7 +125,7 @@ async function discoveryStatusRequest(
   });
 }
 
-describe('GET /api/discovery/status', () => {
+describe('GET /api/discovery/status - REQ-SET-006 / REQ-DISC-002 (discovery progress visibility)', () => {
   it('REQ-SET-006: returns 401 when no session is present', async () => {
     const { db } = makeDb(null, []);
     const req = await discoveryStatusRequest(null);

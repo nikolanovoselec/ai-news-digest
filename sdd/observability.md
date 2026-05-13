@@ -128,8 +128,8 @@ Structured JSON logging as the single operational surface — no external observ
 **Priority:** P2
 **Dependencies:** REQ-OPS-005
 **Verification:** Manual check
-**Status:** Partial
-**Notes:** No automated test references this REQ ID; verification is the manual checklist run when promoting changes through develop → integration → main. The deployment topology (separate hostname, suffixed resources, manual dispatch, develop-only HEAD, no crons, fresh D1) is exercised by the actual `deploy-integration` workflow but the REQ ID is not literally cited from a test file, so spec-reviewer cannot auto-confirm coverage.
+**Status:** Implemented
+**Notes:** Verification is the manual promotion checklist (develop -> integration smoke -> main). The deployment topology is exercised by [`.github/workflows/deploy-integration.yml`](../.github/workflows/deploy-integration.yml); the workflow's header comment carries the REQ-OPS-006 backlink for traceability.
 
 ---
 
