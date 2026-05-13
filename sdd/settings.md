@@ -61,7 +61,8 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 **Priority:** P0
 **Dependencies:** REQ-SET-001
 **Verification:** Integration test
-**Status:** Implemented
+**Status:** Partial
+**Notes:** No test file literally names this REQ ID; coverage exists in `src/pages/api/tags/restore.ts` and `src/pages/api/tags/delete-initial.ts` source (REQ ID present in source but not in tests).
 
 ---
 
