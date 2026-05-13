@@ -212,7 +212,7 @@ describe('GET /api/settings', () => {
     expect(res.status).toBe(401);
   });
 
-  it('REQ-SET-001: returns the settings shape for an authenticated user', async () => {
+  it('REQ-SET-001 / REQ-SET-005 AC 2: returns the settings shape for an authenticated user (email_enabled round-trips via users column)', async () => {
     const { db } = makeDb(baseRow());
     const { kv } = makeKv();
     const req = await authedRequest('GET');

@@ -35,7 +35,7 @@ describe('digest.astro — REQ-READ-001 grid', () => {
     );
   });
 
-  it('REQ-READ-001: header contains "Last updated at" and "Next update in"', () => {
+  it('REQ-READ-001 / REQ-READ-005 AC 3: header contains "Last updated at" and "Next update in" (countdown stays above empty state)', () => {
     expect(digestPageSource).toContain('Last updated at');
     expect(digestPageSource).toContain('Next update in');
   });
