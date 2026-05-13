@@ -4,7 +4,7 @@
 
 Security controls implemented at the application layer. Each section follows the per-item shape from `documentation-discipline.md` Pass 5: a short prose description of the control, then bolded `**Threat:** / **Mitigation:** / **Verification:** / **Implements:**` fields naming the attacker capability, the application-layer response, the test that exercises it, and the REQ(s) that own the contract.
 
-For threat-model overview see [REQ-OPS-003](../sdd/observability.md#req-ops-003-security-headers-on-every-response) and [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider).
+For threat-model overview see [REQ-OPS-003](../sdd/observability.md#req-ops-003-content-security-policy-on-every-response) and [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider).
 
 ## Contents
 
@@ -48,7 +48,7 @@ Notable choices (see [AD11](decisions/README.md#ad11-keep-style-src-unsafe-inlin
 **Threat:** Reflected or stored XSS that injects an inline `<script>` or loads a malicious third-party script tag.
 **Mitigation:** Browser refuses to execute scripts outside the listed sources, refuses inline scripts entirely, and refuses to load images / fonts / form posts outside the named origins.
 **Verification:** `tests/observability/security-headers.test.ts` + `tests/e2e/csp-policy.spec.ts` + `tests/e2e/csp-violation.spec.ts` (Playwright listener catches violations in production-shape pages).
-**Implements:** [REQ-OPS-003 AC 1](../sdd/observability.md#req-ops-003-security-headers-on-every-response)
+**Implements:** [REQ-OPS-003 AC 1](../sdd/observability.md#req-ops-003-content-security-policy-on-every-response)
 
 ---
 
@@ -63,7 +63,7 @@ Two-year max-age with subdomain coverage and HSTS preload list eligibility.
 **Threat:** Active network attacker performs SSL stripping or a downgrade to plaintext HTTP on the first request from a new client.
 **Mitigation:** Browser refuses non-HTTPS connections to the canonical host and every subdomain for two years; preload list entry covers the first-visit gap.
 **Verification:** `tests/observability/security-headers.test.ts`.
-**Implements:** [REQ-OPS-003 AC 2](../sdd/observability.md#req-ops-003-security-headers-on-every-response)
+**Implements:** [REQ-OPS-011 AC 1](../sdd/observability.md#req-ops-011-transport-and-feature-policy-headers-on-every-response)
 
 ---
 

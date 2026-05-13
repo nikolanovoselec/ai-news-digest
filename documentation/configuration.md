@@ -127,10 +127,10 @@ Three triggers are declared in `wrangler.toml`:
 | Schedule | Purpose | REQ |
 |---|---|---|
 | `0 */4 * * *` | Global-feed coordinator (00/04/08/12/16/20 UTC) | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
-| `0 3 * * *` | Daily retention + refresh-token purge | [REQ-PIPE-005](../sdd/generation.md#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection) |
+| `0 3 * * *` | Daily retention + refresh-token purge | [REQ-PIPE-005](../sdd/generation.md#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-AUTH-012](../sdd/authentication.md#req-auth-012-refresh-token-retention-floor-for-reuse-detection) |
 | `*/5 * * * *` | Email dispatcher + pending-discovery drain | [REQ-MAIL-003](../sdd/email.md#req-mail-003-digest-ready-email-send-policy) |
 
-**Daily 03:00 UTC tick:** removes articles older than 14 days (starred articles are exempt). Also purges expired and old-revoked rows from the `refresh_tokens` table; the 7-day grace on revoked rows preserves reuse-detection history per REQ-AUTH-008 AC 5.
+**Daily 03:00 UTC tick:** removes articles older than 14 days (starred articles are exempt). Also purges expired and old-revoked rows from the `refresh_tokens` table; the 7-day grace on revoked rows preserves reuse-detection history per [REQ-AUTH-012 AC 1](../sdd/authentication.md#req-auth-012-refresh-token-retention-floor-for-reuse-detection).
 
 **Every-5-minute tick:** one trigger, two unrelated chores:
 1. Per-user email dispatcher fan-out — sends digests to users in their local-day window.
@@ -181,7 +181,7 @@ The fail-mode split exists because sign-in must remain reachable during a KV out
 
 ## Security Headers
 
-Security headers (CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`) are applied by `src/middleware/security-headers.ts` on every response. No configuration is required — the policy is hardcoded and tested byte-for-byte. See [REQ-OPS-003](../sdd/observability.md#req-ops-003-security-headers-on-every-response) for the exact header values.
+Security headers (CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`) are applied by `src/middleware/security-headers.ts` on every response. No configuration is required — the policy is hardcoded and tested byte-for-byte. See [REQ-OPS-003](../sdd/observability.md#req-ops-003-content-security-policy-on-every-response) for the exact header values.
 
 ## Configuration Files
 

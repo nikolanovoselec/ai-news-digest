@@ -211,11 +211,11 @@ POST /api/auth/refresh
 
 **Rate limit:** Two tiers (both fail-closed). Per-IP `auth_refresh_ip` 60/60s (pre-validation); per-user `auth_refresh_user` 30/60s (post-validation). Buckets shared with the inline middleware refresh path.
 
-**Implements:** [REQ-AUTH-002 AC 5](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection)
+**Implements:** [REQ-AUTH-002 AC 5](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout), [REQ-AUTH-011](../sdd/authentication.md#req-auth-011-refresh-token-reuse-detection-and-device-fingerprint-policy)
 
 **Notes**
 
-The 30-second concurrent-rotation grace window covers the case where two parallel requests from the same client both raced to refresh. The loser presenting the now-revoked cookie within the grace window receives a fresh access JWT off the surviving rotated row without re-rotating ([REQ-AUTH-008 AC 4](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection)).
+The 30-second concurrent-rotation grace window covers the case where two parallel requests from the same client both raced to refresh. The loser presenting the now-revoked cookie within the grace window receives a fresh access JWT off the surviving rotated row without re-rotating ([REQ-AUTH-011 AC 1](../sdd/authentication.md#req-auth-011-refresh-token-reuse-detection-and-device-fingerprint-policy)).
 
 ---
 
@@ -241,7 +241,7 @@ POST /api/auth/logout
 
 **Rate limit:** 5/60s per IP (`auth_logout`).
 
-**Implements:** [REQ-AUTH-002 AC 3](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints), [REQ-AUTH-008 AC 3](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection)
+**Implements:** [REQ-AUTH-002 AC 3](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints), [REQ-AUTH-008 AC 2](../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout)
 
 **Notes**
 
@@ -568,7 +568,7 @@ GET /api/scrape-status
 }
 ```
 
-**Implements:** [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-AUTH-002 AC 4](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection)
+**Implements:** [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-AUTH-002 AC 4](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout)
 
 **Notes**
 

@@ -351,7 +351,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - If Astro ever ships native CSP support that handles runtime style mutations (e.g., via per-element nonces resolved at runtime), revisit this decision.
 - `tests/e2e/csp-violation.spec.ts` continues to act as the merge gate for any CSP tightening - it subscribes to `securitypolicyviolation` events on a live `/digest` navigation and fails the build if any fire.
 
-**Related requirements:** [REQ-OPS-003](../../sdd/observability.md#req-ops-003-security-headers-on-every-response), [CON-SEC-001](../../sdd/constraints.md#con-sec-001-strict-content-security-policy)
+**Related requirements:** [REQ-OPS-003](../../sdd/observability.md#req-ops-003-content-security-policy-on-every-response), [CON-SEC-001](../../sdd/constraints.md#con-sec-001-strict-content-security-policy)
 
 ---
 
@@ -447,7 +447,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - The `src/worker.ts` `fetch` branch that exists for the test pool is dead code in production. Mark it with a comment so a future cleanup doesn't delete it on dead-code analysis grounds.
 - Astro upgrades that change the wrapper's middleware composition (Astro 6's session-driver factory is the active example) require a Playwright run before merge to confirm middleware still fires.
 
-**Related requirements:** [REQ-OPS-003](../../sdd/observability.md#req-ops-003-security-headers-on-every-response)
+**Related requirements:** [REQ-OPS-003](../../sdd/observability.md#req-ops-003-content-security-policy-on-every-response)
 
 ---
 
