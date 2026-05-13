@@ -4,8 +4,6 @@ System overview, component map, and request lifecycles for `news-digest`.
 
 **Audience:** Developers, Operators
 
-<!-- doc-allow-large: AD46 architecture-doc diagram-section exemption -->
-
 This document describes **what** the system is and **how requests flow through it**. Implementation rationale ("why this code looks the way it does") lives in source comments. Endpoint contracts live in [`api-reference.md`](api-reference.md). Environment and bindings live in [`configuration.md`](configuration.md). Architectural decisions live in [`decisions/README.md`](decisions/README.md). Product intent lives in [`sdd/`](../sdd/).
 
 ## Contents

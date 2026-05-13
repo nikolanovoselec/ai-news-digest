@@ -22,7 +22,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | AD6 | Polling instead of SSE or WebSockets for scrape-run progress | UI | 2026-04-22 |
 | AD7 | D1 for chunk completion tracking, replacing KV read-modify-write (CF-002) | Storage | 2026-04-27 |
 | AD8 | Cookie attributes are the security contract - kept inline in REQ-AUTH-002/003 | Security | 2026-05-03 |
-| AD9 | Storage-shape names (D1 columns, KV keys) are the persistence contract - kept inline in REQ-DISC/AUTH/SET | Storage | 2026-05-03 |
+| AD9 | Storage-shape names (D1 columns, KV keys) are the persistence contract - kept inline in REQ-DISC/AUTH/SET *(Superseded by AD47)* | Storage | 2026-05-03 |
 | AD10 | Atomic conditional UPDATE as the once-per-run idempotency gate - no `acquireOnceLock` helper | Architecture | 2026-05-03 |
 | AD11 | Keep `style-src 'unsafe-inline'`; runtime `.style.X` writes for FLIP + view-transitions are intentional | Security | 2026-05-04 |
 | AD12 | Integration env: separate Cloudflare resources, manual trigger from develop, crons disabled | Operations | 2026-05-04 |
@@ -59,6 +59,8 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | AD43 | Shared per-match dedup classifier; outer control flow stays per-consumer | Architecture | 2026-05-12 |
 | AD44 | Cloudflare Access JWT `exp` validation; signature still trusted from the perimeter | Security | 2026-05-12 |
 | AD45 | Accepted orchestration-file sizes (coordinator, chunk-consumer, settings.astro) exceed 800-line cap | Architecture | 2026-05-11 |
+| AD46 | Documentation file-size hatches (deployment colocation, architecture diagrams, ADR index) | Documentation | 2026-05-12 |
+| AD47 | Storage-shape allowlist promoted to spec-discipline; AD9 superseded | Storage | 2026-05-13 |
 
 ---
 
@@ -253,7 +255,7 @@ KV's eventual consistency made both races effectively undetectable via testing i
 
 ### AD9: Storage-shape names are the persistence contract
 
-**Status:** Accepted (2026-05-03)
+**Status:** Superseded by AD47 (2026-05-13)
 
 **Overrides:** `mechanism-leakage:REQ-DISC-001`, `mechanism-leakage:REQ-DISC-002`, `mechanism-leakage:REQ-AUTH-002`, `mechanism-leakage:REQ-AUTH-008`, `mechanism-leakage:REQ-SET-001`, `mechanism-leakage:REQ-SET-005`, `forbidden-content-column-name:REQ-MAIL-001`, `forbidden-content-column-name:REQ-MAIL-003`
 
@@ -1347,6 +1349,33 @@ Three reasons the AD41 fix did not collapse this cluster:
 - The ADR ledger's single-file design implicitly limits the ledger's growth ceiling. If the ledger exceeds ~50 ADRs or ~2500 lines, this AD should be revisited in favor of a per-AD layout with an explicit index.
 
 **Related requirements:** none direct — operational/documentation concern.
+
+---
+
+### AD47: Storage-shape allowlist promoted to spec-discipline; AD9 superseded
+
+**Status:** Accepted (2026-05-13)
+
+**Supersedes:** AD9
+
+**Decision:** Retire AD9 as a load-bearing override. `spec-discipline.md`'s forbidden-content allowlist now contains a first-class carveout for "Database column / KV key names when the storage shape IS the persistence contract" — the same rationale AD9 was created to apply on a per-REQ basis. The eight REQs listed in AD9's `Overrides:` line (`REQ-DISC-001`, `REQ-DISC-002`, `REQ-AUTH-002`, `REQ-AUTH-008`, `REQ-SET-001`, `REQ-SET-005`, `REQ-MAIL-001`, `REQ-MAIL-003`) pass the allowlist by default and no longer need an ADR-anchored override.
+
+**Context:** AD9 was added on 2026-05-03 to override the mechanism-leakage rule for storage-shape names that are the contract noun shared between UI controls, persisted rows, and dispatcher predicates. As the same pattern recurred across eight REQs in three domains, the override mechanism was promoted to a first-class allowlist rule on 2026-05-13. `sdd/config.yml`'s `forbidden_content_overrides:` field was already empty (`[]`); AD9's `Overrides:` line was documentation-only and not driving enforcement. With the allowlist in place, the override mechanism is fully redundant.
+
+**Rationale:**
+
+- One global allowlist rule is easier to reason about than an ADR-anchored per-REQ override list. A new storage-shape REQ no longer needs an ADR amendment to pass spec-reviewer.
+- The contract-noun framing from AD9 carries over verbatim to the allowlist rule, so no behavioral change occurs — the same REQs that AD9 covered are the ones the allowlist covers.
+- AD9's body is preserved as historical artifact under `Status: Superseded by AD47`. Readers tracing the lineage of the storage-shape carveout land on AD9 first and follow the supersession pointer to AD47 and the allowlist rule itself.
+
+**Consequences:**
+
+- AD9 is marked `Status: Superseded by AD47 (2026-05-13)`. AD9's decision/consequences sections stay untouched per ADR immutability.
+- The eight REQs listed in AD9's `Overrides:` line continue to render verbatim. No spec edits are needed.
+- Future storage-shape REQs (D1 columns, KV key shapes) pass automatically; no new ADR required for the same pattern.
+- If a future audit ever wants to tighten the carveout — e.g., to only cover column names appearing in user-facing settings UIs — the allowlist is the place to scope, not a new ADR.
+
+**Related requirements:** [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery), [REQ-DISC-002](../../sdd/discovery.md#req-disc-002-discovery-progress-visibility), [REQ-AUTH-002](../../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-replay-detection), [REQ-SET-001](../../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../../sdd/settings.md#req-set-005-email-notification-preference), [REQ-MAIL-001](../../sdd/email.md#req-mail-001-digest-ready-email-content), [REQ-MAIL-003](../../sdd/email.md#req-mail-003-scheduled-send-policy-and-opt-out)
 
 ---
 
