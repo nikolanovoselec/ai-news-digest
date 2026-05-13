@@ -4,24 +4,51 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 ---
 
-### REQ-DISC-001: LLM-assisted per-tag feed discovery
+### REQ-DISC-001: Per-tag feed discovery queueing and pickup
 
-**Intent:** When a user adds a hashtag, the system finds working feeds for that tag without requiring a hand-curated catalog — first-party sources when they exist, and a documented third-party aggregator fallback when they don't, so that consumer/brand tags (where no official feed is available) still produce at least one source.
+**Intent:** When a user adds a hashtag, the system enqueues the tag for feed discovery without polluting the queue with tags that already have working sources, and the discovery cron drains the queue at a bounded rate that lets new accounts see their first discovered feeds quickly.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. On settings save, any submitted tag without a `sources:{tag}` KV entry AND not covered by the curated source registry triggers an `INSERT OR IGNORE` into the `pending_discoveries` D1 table keyed by `(user_id, tag)`. Tags covered by a curated source short-circuit discovery — the registry guarantees a working feed, so the LLM-discovery path (and its mandatory aggregator fallback in AC 3) is unnecessary and would only pollute the cache with namespace-collision matches (e.g., a brand tag matching an unrelated company's name in a Google News query). The discovery cron applies the same short-circuit defensively when draining pending rows so admin-path inserts and pre-existing rows are also skipped.
-2. The 5-minute cron picks up to 3 distinct tags from `pending_discoveries` per invocation. Within that pick, tags enqueued by a brand-new user's first settings save are processed before the steady-state queue so a new account's first digest reflects discovered feeds on the next cron tick instead of waiting behind older pending tags; among tags at the same priority level, the earliest `added_at` wins.
-3. For each tag without a curated source, a Workers AI call asks for up to 5 RSS, Atom, or JSON feed URLs. The prompt prefers first-party blogs, release notes, and changelogs where they exist, and names a Google News query-RSS fallback that the model must include for tags without a first-party feed so a consumer/brand tag never returns zero sources. The model is instructed to omit a suggestion only when neither a first-party feed nor the fallback applies.
-4. Each suggested URL is validated: HTTPS-only, passes the SSRF filter (no private ranges, loopback, link-local, Cloudflare internal), HTTP 200, content-type matches the declared kind, parseable, and returns at least one item with a title and URL.
-5. Valid feeds are persisted to `sources:{tag}` as `{ feeds: [{ name, url, kind }], discovered_at }` with no TTL; rows for this tag are deleted from `pending_discoveries` regardless of success.
+1. On settings save, a submitted tag without a `sources:{tag}` KV entry and not covered by the curated source registry triggers an `INSERT OR IGNORE` into the `pending_discoveries` D1 table keyed by `(user_id, tag)`.
+2. A submitted tag covered by the curated source registry short-circuits discovery at settings-save time so the registry's guaranteed feed is used directly and a namespace-collision match against an unrelated company's name in an aggregator query is never cached for it.
+3. The 5-minute discovery cron applies the same curated-source short-circuit defensively when draining pending rows, so admin-path inserts and rows enqueued before a tag was added to the curated registry are skipped instead of running the LLM path against them.
+4. The discovery cron picks at most 3 distinct tags from `pending_discoveries` per invocation so a backlog drains across multiple ticks instead of spiking LLM cost in one minute.
+5. Within a cron pick, tags enqueued by a brand-new user's first settings save are processed before the steady-state queue so a new account sees discovered feeds on the next cron tick rather than waiting behind older pending tags from other users.
+6. Among tags at the same priority level, the earliest `added_at` wins so the order in which a single user's tags drain is deterministic and oldest-first.
+
+**Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-SET-002](settings.md#req-set-002-hashtag-curation-strip-ux)
+
+**Verification:** Integration test
+
+**Status:** Implemented
+
+---
+
+### REQ-DISC-007: Per-tag feed discovery execution and persistence
+
+**Intent:** For a pending tag the cron picks up, the LLM-discovery path produces working feed URLs without polluting the cache with unreachable or non-feed content, and the row's lifecycle in `pending_discoveries` is closed whether discovery succeeded or not so the queue does not leak rows.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. For each picked tag without a curated source, a Workers AI call asks for up to 5 RSS, Atom, or JSON feed URLs.
+2. The discovery prompt prefers first-party blogs, release notes, and changelogs where they exist, and instructs the model to omit a suggestion when no first-party feed and no aggregator fallback applies, so the model never invents URLs to fill the response.
+3. The discovery prompt names a Google News query-RSS fallback that the model must include for tags without a first-party feed, so a consumer or brand tag never returns zero sources.
+4. Each suggested URL is validated end-to-end before persistence: HTTPS scheme, SSRF filter (no private ranges, loopback, link-local, Cloudflare internal), HTTP 200, content-type matches the declared kind, parseable body, and at least one item with a title and URL. A URL failing any check is dropped from the result.
+5. Valid feeds are persisted to `sources:{tag}` as `{ feeds: [{ name, url, kind }], discovered_at }` with no TTL so the global cache is shared across every user who selected that tag.
+6. Rows for the picked tag are deleted from `pending_discoveries` regardless of discovery success, so a tag that yielded zero valid feeds does not stay enqueued and re-run the same prompt every 5 minutes.
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper), [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
 **Priority:** P0
 
-**Dependencies:** [REQ-SET-002](settings.md#req-set-002-hashtag-curation-strip-ux)
+**Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup)
 
 **Verification:** Integration test
 
