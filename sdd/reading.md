@@ -80,36 +80,6 @@ The heart of the product. Overview grid of the freshest articles read from the s
 **Status:** Implemented
 
 ---
-
-### REQ-READ-004: Live generation state
-
-**Intent:** During a ~60-second generation, users saw meaningful progress instead of a blank screen.
-
-**Applies To:** User
-
-**Acceptance Criteria:**
-1. When the current digest was in progress, `/digest` showed an indeterminate progress bar at the top and 10 card skeletons matching the real card dimensions.
-2. The skeleton shimmer was a linear-gradient sweep, disabled under reduced-motion preferences.
-3. The client polled the digest-by-id endpoint every 5 seconds while generation was active; polling stopped immediately on a status change.
-4. On completion, the real cards faded in with the staggered entrance from REQ-READ-001.
-5. On failure, the failure page for the error code was rendered (see REQ-READ-006).
-
-**Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum)
-
-**Priority:** P0
-
-**Dependencies:** [REQ-READ-001](#req-read-001-overview-grid-of-todays-digest)
-
-**Verification:** Integration test
-
-**Status:** Deprecated
-
-**Replaced By:** REQ-PIPE-001
-
-**Removed In:** 2026-04-23
-
----
-
 ### REQ-READ-005: Empty dashboard state
 
 **Intent:** When the global pool contains no articles matching the user's tags, the dashboard communicates that clearly and nudges the user toward broadening their interests.
