@@ -10,20 +10,22 @@ Environment variables, secrets, and platform bindings required to run the system
 
 Stored via `wrangler secret put <name>`. Never committed to git.
 
-| Secret | Description |
-|---|---|
-| `GH_OAUTH_CLIENT_ID` | GitHub OAuth App client ID. Optional per-provider — at least one provider pair (GitHub or Google) must be configured. The `GH_` prefix is required because GitHub Actions reserves the `GITHUB_*` secret namespace for its built-in tokens. |
-| `GH_OAUTH_CLIENT_SECRET` | GitHub OAuth App client secret. Required when `GH_OAUTH_CLIENT_ID` is set. |
-| `GOOGLE_OAUTH_CLIENT_ID` | Google OAuth 2.0 client ID (web application type). Optional per-provider. |
-| `GOOGLE_OAUTH_CLIENT_SECRET` | Google OAuth 2.0 client secret. Required when `GOOGLE_OAUTH_CLIENT_ID` is set. |
-| `OAUTH_JWT_SECRET` | 32+ character random string used to HMAC-sign session JWTs (provider-agnostic — required regardless of which providers are enabled) |
-| `RESEND_API_KEY` | Resend API key for digest-ready emails (starts with `re_`); optional — when unset the runtime short-circuits silently and no email is sent |
-| `RESEND_FROM` | Sender address for emails (domain must be verified in Resend) — accepts a bare address or a display-name format; see [RESEND_FROM display-name handling](#resend_from-display-name-handling) below. |
-| `APP_URL` | Canonical origin, e.g., `https://digest.example.com`; used in email CTA links, OAuth redirect URI construction, and as the reference value for the Origin CSRF check ([REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)) |
-| `ADMIN_EMAIL` | Operator email that gates `/api/admin/*` ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8). Required in production; when unset, every admin endpoint returns HTTP 403. Match is case-insensitive against `users.email`. |
-| `CF_ACCESS_AUD` | Optional Cloudflare Access audience tag. When set, enables Layer 0 perimeter check on `/api/admin/*`: request must carry a Cloudflare Access assertion with a matching `aud` claim. When unset, Layer 0 is skipped; admin is gated by session + `ADMIN_EMAIL` alone (AD29). |
-| `DEV_BYPASS_TOKEN` | Optional Bearer token that gates `/api/dev/login` and `/api/dev/trigger-scrape` for local + e2e flows. When unset, those endpoints return HTTP 404. Set only on dev/staging deployments, never production. |
-| `DEV_BYPASS_USER_ID` | Optional override for the user id minted by `/api/dev/login`. Defaults to the synthetic `__e2e__` row; rarely set manually — see [DEV_BYPASS_USER_ID override](#dev_bypass_user_id-override) below. |
+| Variable | Required | Default | Consumed by | Implements |
+|---|---|---|---|---|
+| `GH_OAUTH_CLIENT_ID` | Conditional (one OAuth pair required) | none | `src/pages/api/auth/[provider]/login.ts`, `callback.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
+| `GH_OAUTH_CLIENT_SECRET` | Conditional (when `GH_OAUTH_CLIENT_ID` set) | none | `src/pages/api/auth/[provider]/callback.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
+| `GOOGLE_OAUTH_CLIENT_ID` | Conditional (one OAuth pair required) | none | `src/pages/api/auth/[provider]/login.ts`, `callback.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | Conditional (when `GOOGLE_OAUTH_CLIENT_ID` set) | none | `src/pages/api/auth/[provider]/callback.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
+| `OAUTH_JWT_SECRET` | Yes | none | `src/pages/api/auth/refresh.ts`, `logout.ts`, `account.ts`, middleware | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-session-lifecycle) |
+| `RESEND_API_KEY` | Conditional (email dispatch) | none — email silently skipped when unset | `src/lib/email.ts` | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email) |
+| `RESEND_FROM` | Conditional (when `RESEND_API_KEY` set) | none | `src/lib/email.ts` | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email) |
+| `APP_URL` | Yes | none | `src/pages/api/auth/account.ts`, `src/pages/api/tags.ts`, all Origin-check routes | [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints) |
+| `ADMIN_EMAIL` | Conditional (admin routes) | none — every `/api/admin/*` returns 403 when unset | `src/middleware/admin-auth.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8 |
+| `CF_ACCESS_AUD` | Optional | none (Layer 0 perimeter skipped when unset) | `src/middleware/admin-auth.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8a |
+| `DEV_BYPASS_TOKEN` | Optional | none — `/api/dev/*` returns 404 when unset | `src/pages/api/dev/login.ts`, `src/pages/api/dev/trigger-scrape.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
+| `DEV_BYPASS_USER_ID` | Optional | `__e2e__` (synthetic row) | `src/pages/api/dev/login.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
+
+Notes: The `GH_` prefix on the GitHub OAuth secrets is required because GitHub Actions reserves the `GITHUB_*` namespace for its built-in tokens. `RESEND_FROM` accepts a bare address (`digest@example.com`) or RFC 5322 display-name form (`Acme News <digest@example.com>`) — see [RESEND_FROM display-name handling](#resend_from-display-name-handling).
 
 ### RESEND_FROM display-name handling
 
@@ -88,15 +90,15 @@ All five queue consumers (`SCRAPE_COORDINATOR`, `SCRAPE_CHUNKS`, `SCRAPE_FINALIZ
 
 Declared in `wrangler.toml` under `[vars]`. Forks may override per-environment via `[env.<name>.vars]`.
 
-| Var | Default | Purpose |
-|---|---|---|
-| `QUEUE_MAX_RETRIES` | `"3"` | Single source of truth for the queue retry cap. Read by the consumer batch handler; must match every queue consumer's `max_retries` literal in the same file. ([REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract)) |
-| `DEDUP_COSINE_THRESHOLD` | `"0.88"` | Cosine-similarity threshold for semantic same-story matching. Matches at or above this score are merged into the older article as alt-sources; tune lower to catch more pairs, higher to reduce false merges. Operators override per fork without a code change. ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history)) |
-| `DEDUP_TIME_WINDOW_SECONDS` | `"604800"` | Hard time-window (seconds) for same-story dedup. Pairs whose `published_at` differ more than this are skipped before the cosine check. Default 7d; also governs the auto-sweep cursor (REQ-PIPE-003 AC 17). ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history) AC 13, [AD39](decisions/README.md#ad39-raise-dedup-auto-merge-threshold-to-088-and-gate-merges-to-a-72h-news-cycle-window)) |
-| `DEDUP_SAME_VENDOR_PENALTY` | `"0.05"` | Cosine penalty applied when both articles share the same eTLD+1 and neither comes from a known aggregator host (e.g., `news.google.com`). Lifts the effective same-publisher bar above the cosine threshold. Set `"0"` to disable. ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history) AC 11, [AD33](decisions/README.md#ad33-embed-source-text-and-apply-a-same-vendor-cosine-penalty)) |
-| `DEDUP_RERANK_FLOOR` | `"0.70"` | Lower bound of the LLM rerank borderline band. Cosines in `[DEDUP_RERANK_FLOOR, DEDUP_COSINE_THRESHOLD)` go to the language model for a binary same-event judgment; below the floor the pair stays distinct without an LLM call. ([REQ-PIPE-009](../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)) |
-| `DEDUP_HIGH_CONFIDENCE_COSINE` | `"0.92"` | Raw cosine bar for unconditional auto-merge. Pairs whose raw cosine clears this skip both the same-vendor penalty and the LLM rerank band, so wire-syndicated near-duplicates land deterministically. Set above the AD39 empirical false-positive floor (0.86) with margin. ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history) AC 14, [AD40](decisions/README.md#ad40-equal-time-ulid-tie-break-high-confidence-cosine-band-topk-bump-and-per-article-diagnostic-logs)) |
-| `IS_PRODUCTION` | `"true"` (prod), `"false"` (integration) | Fail-closed gate for dev endpoints and JWKS verification. `"true"`: `/api/dev/*` routes return `404`; JWKS failure discards `id_token` claims and falls back to userinfo. Missing or unrecognised value treated as `"true"`. Set `"false"` on integration and local deployments. ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10) |
+| Variable | Default | Required | Consumed by | Implements |
+|---|---|---|---|---|
+| `QUEUE_MAX_RETRIES` | `"3"` | Yes | `src/queue/*.ts` consumer batch handlers | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract) |
+| `DEDUP_COSINE_THRESHOLD` | `"0.88"` | Yes | `src/lib/embeddings.ts` (`readCosineThreshold`), `src/queue/scrape-finalize-consumer.ts`, `src/pages/api/admin/dedup-diag.ts` | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history) |
+| `DEDUP_TIME_WINDOW_SECONDS` | `"604800"` (7d) | Yes | `src/lib/embeddings.ts`, `src/queue/dedup-sweep-consumer.ts` | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history) AC 13, AC 17 |
+| `DEDUP_SAME_VENDOR_PENALTY` | `"0.05"` | Yes | `src/lib/embeddings.ts` | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history) AC 11 |
+| `DEDUP_RERANK_FLOOR` | `"0.70"` | Yes | `src/lib/dedup-rerank.ts` | [REQ-PIPE-009](../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) |
+| `DEDUP_HIGH_CONFIDENCE_COSINE` | `"0.92"` | Yes | `src/lib/embeddings.ts` | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history) AC 14 |
+| `IS_PRODUCTION` | `"true"` (prod), `"false"` (integration) | Yes | `src/pages/api/dev/login.ts`, `src/pages/api/dev/trigger-scrape.ts`, `src/pages/api/auth/[provider]/callback.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
 
 The 0.88 default is the post-2026-05-08 calibration ([AD39](decisions/README.md#ad39-raise-dedup-auto-merge-threshold-to-088-and-gate-merges-to-a-72h-news-cycle-window)). The prior 0.78 missed the dense-theme failure mode: independent articles on a broad topic routinely cosine-match in the 0.78-0.86 band on topical overlap alone, producing a 13-source false-merge cluster spanning 9 days. 0.88 pushes auto-merge above that band; the 0.70-0.88 stripe goes to LLM rerank.
 

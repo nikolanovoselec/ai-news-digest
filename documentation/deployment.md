@@ -18,11 +18,15 @@ Local development setup and production deployment steps.
 
 ## Local Development
 
+**When:** Initial setup or after pulling new migrations.
+**Command:**
 ```bash
 npm install
 npx wrangler d1 migrations apply DB --local
 npm run dev
 ```
+**Verifies:** Dev server reachable at `http://localhost:4321`.
+**Rollback:** Stop the dev server (`Ctrl+C`). No production state is affected.
 
 The dev server runs at `http://localhost:4321`.
 
@@ -44,10 +48,21 @@ Import `env` and `applyD1Migrations` from `tests/fixtures/cloudflare-test.ts` (n
 
 ## Production Deployment
 
+**When:** Automatic on merge to `main` (gated on PR Checks success). Manual re-run via Actions → Deploy → Run workflow.
+**Command:**
 ```bash
 npx wrangler d1 migrations apply DB --remote
 npx wrangler deploy
 ```
+**Verifies:** Smoke test `GET /` against `APP_URL` returns `200` or `303` (step 6 of the deploy job).
+**Rollback:** Cloudflare Workers supports instant rollback via the dashboard or CLI. To revert to the previous Worker version:
+```bash
+# List recent deployments and find the previous version ID
+npx wrangler deployments list
+# Roll back to a specific version
+npx wrangler rollback <deployment-id>
+```
+After rollback, verify `GET $APP_URL` returns `200`/`303`. D1 migrations are forward-only — if the bad deploy included a schema migration, coordinate the rollback with a matching reverse migration or restore from a D1 backup before reverting the Worker.
 
 CI/CD: `.github/workflows/deploy.yml` triggers on a `workflow_run` event — fires only when "PR Checks" on `main` completes with `success`. `workflow_dispatch` is retained for manual re-runs.
 
@@ -91,6 +106,11 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 | Production | `main` | `secrets.APP_URL` (repo-level) | Auto on merge to main, gated on PR Checks success | ON |
 
 ## Integration deployment
+
+**When:** Manually triggered via Actions → "Deploy Integration" → Run workflow. Triggered from `develop` branch only.
+**Command:** Actions tab → `Deploy Integration` → Run workflow. No CLI command needed.
+**Verifies:** Open `APP_URL` (integration hostname) in a browser. CI smoke step is absent (GHA runner IPs return `403` from Cloudflare bot management); `wrangler deploy` exit code is the success signal.
+**Rollback:** Re-trigger the workflow from the previous `develop` commit. Integration has no production traffic; redeploying is safe.
 
 **Purpose:** Smoke-test risky changes (major dependency bumps, schema migrations, CSP tightening, animation rewrites) on the live Cloudflare edge before they reach production. Implements [REQ-OPS-006](../sdd/observability.md#req-ops-006-integration-deployment-target). Architectural decision: [AD12](decisions/README.md#ad12-integration-env-separate-cloudflare-resources-manual-trigger-from-develop-crons-disabled).
 
