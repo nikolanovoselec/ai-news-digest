@@ -25,9 +25,9 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 ---
 
-### REQ-SET-002: Hashtag curation
+### REQ-SET-002: Hashtag curation strip UX
 
-**Intent:** Users choose the interests that drive every subsequent source fetch and LLM ranking decision, editing them inline wherever they read their digest rather than in a separate settings form.
+**Intent:** Users curate their interest tags directly on the reading surface using a hashtag strip that supports add, toggle, remove, and live article filtering, rather than juggling a separate settings form.
 
 **Applies To:** User
 
@@ -35,11 +35,27 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 1. A hashtag strip renders at the top of the reading surface and is the sole place where users add, remove, or view their tags; the settings form contains no hashtag controls.
 2. Each tag in the strip starts in an unselected state and can be toggled into a selected state by clicking it. In the selected state the tag inverts its colour scheme (the opposite of the current theme, matching the primary-button contrast) and expands to reveal a red remove affordance attached to the right edge of the chip. Clicking the body of a selected tag returns it to the unselected state; clicking the red affordance deletes that tag from the user's selection. Any number of tags may be selected simultaneously.
 3. An add affordance at the end of the strip expands inline into a single text input; submitting the input appends a new tag to the selection.
-4. Every add or remove persists immediately via the dedicated tags write endpoint with no form submit required; the user's tag list updates visibly on success. Toggling selection never writes to the server — it only affects the client-side filter state.
-5. Each hashtag must be 2–32 characters long, is normalised to lowercase with any leading `#` stripped, and may contain only characters in `[a-z0-9-]`; other characters are stripped server-side before storage.
-6. At least one hashtag is required for a digest to generate, a maximum of 25 total hashtags is enforced server-side, and duplicates are collapsed before storage. The cap sits 4 slots above the 21-tag default seed so a new account can immediately add custom interests without having to delete a default first.
-7. While one or more tags are selected, the reading surface filters its visible articles to those whose stored tag list intersects the selection. When every article is filtered out, the reading surface shows a short message naming the selected tags and inviting the user to deselect.
-8. Brand-new accounts are seeded with a curated default hashtag list so the first digest has meaningful input before the user touches the strip. The settings page exposes two paired actions side-by-side: "Restore initial tags" replaces the current list with the full default seed, and "Delete all tags" clears the user's tag list entirely so they can build a completely custom set without removing default chips one-by-one. Each action is only visible when it would do something useful — Restore when at least one default is missing from the user's list, Delete whenever the user has at least one tag — so an empty list hides Delete and a list identical to the initials hides Restore.
+4. While one or more tags are selected, the reading surface filters its visible articles to those whose stored tag list intersects the selection. When every article is filtered out, the reading surface shows a short message naming the selected tags and inviting the user to deselect.
+
+**Constraints:** None
+**Priority:** P0
+**Dependencies:** REQ-SET-001, REQ-SET-008
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+### REQ-SET-008: Hashtag persistence, validation, and defaults
+
+**Intent:** Tag changes persist immediately, hashtag values follow a normalised format, the list is bounded by an enforced cap, and new accounts start with a curated seed so the first digest is meaningful before the user has touched the strip.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. Every add or remove persists immediately via the dedicated tags write endpoint with no form submit required; the user's tag list updates visibly on success. Toggling selection never writes to the server; it only affects the client-side filter state.
+2. Each hashtag must be 2 to 32 characters long, is normalised to lowercase with any leading `#` stripped, and may contain only characters in `[a-z0-9-]`; other characters are stripped server-side before storage.
+3. At least one hashtag is required for a digest to generate, a maximum of 25 total hashtags is enforced server-side, and duplicates are collapsed before storage. The cap sits 4 slots above the 21-tag default seed so a new account can immediately add custom interests without having to delete a default first.
+4. Brand-new accounts are seeded with a curated default hashtag list so the first digest has meaningful input before the user touches the strip. The settings page exposes two paired actions side-by-side: "Restore initial tags" replaces the current list with the full default seed, and "Delete all tags" clears the user's tag list entirely so they can build a completely custom set without removing default chips one-by-one. Each action is only visible when it would do something useful: Restore when at least one default is missing from the user's list, Delete whenever the user has at least one tag, so an empty list hides Delete and a list identical to the initials hides Restore.
 
 **Constraints:** None
 **Priority:** P0

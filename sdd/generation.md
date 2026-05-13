@@ -6,7 +6,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ### REQ-PIPE-001: Global scrape-and-summarise pipeline on a fixed cadence
 
-**Intent:** One shared scrape per cadence feeds every user's dashboard, so adding users does not multiply LLM spend — the system runs the LLM the same number of times whether 10 people are signed up or 10,000.
+**Intent:** One shared scrape per cadence feeds every user's dashboard, so adding users does not multiply LLM spend — the system runs the LLM the same number of times whether 10 people are signed up or 10,000. The pipeline is independent of individual user accounts: it runs once per tick regardless of how many users are signed up.
 
 **Applies To:** Admin
 
@@ -15,42 +15,29 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 2. The coordinator partitions candidates across one or more chunk jobs whose size is capped to fit the model's context window so LLM calls stay within budget and partial failures only lose one chunk.
 3. Each run is tracked by a `scrape_runs` row that transitions `running` → `ready` on success (or `failed` on abort), with a chunk counter that drops to zero when the last chunk finishes.
 4. Candidates whose canonical URL is already present in the article pool are skipped on subsequent ticks so the same story is never re-summarised. When a re-discovered URL arrives from a source that wasn't already on the article's source list, the new source is appended (multi-source aggregation); the article's first-ingestion timestamp is preserved across every subsequent re-discovery so the dashboard ordering reflects when each story first entered the pool, not how recently a feed re-emitted it. When a feed entry identifies a per-item publisher distinct from the feed itself (for example a Google News item that names the underlying outlet), the per-item publisher is used as the source name in the article's source list; absent or empty per-item publishers fall back to the feed-level name.
-5. The pipeline is independent of individual user accounts — it runs once per tick regardless of how many users are signed up, and adding users does not multiply LLM spend.
-6. Each candidate's published-at timestamp reflects the source feed's real publish date (parsed from the feed entry) rather than the ingestion tick time, so a story first published three weeks ago is never displayed as "today" on the dashboard. When a feed entry provides no usable publish date, or the parsed value is implausible (pre-2000 or more than one day in the future), the ingestion time is used as a safe fallback.
-7. Candidates whose parsed publish date is older than 48 hours before the current tick are dropped before LLM summarisation so stale backlog items do not consume LLM budget or clutter the dashboard. Candidates with no parsable publish date (which fall back to the ingestion time) are kept — a missing date is not treated the same as a stale date.
-8. When a candidate's feed snippet is too thin to ground a faithful summary, the pipeline fetches the article body directly.
-9. The body fetch is HTTPS-only and passes an SSRF filter.
-10. The body fetch is bounded by a network timeout and a maximum download size.
-11. Readable plaintext is extracted from a successful body fetch and attached to the candidate.
-12. When body-fetch extraction yields too little text, the candidate falls back to whatever the feed itself provided.
-13. A failed body-fetch never blocks a summary.
-14. Every tag in the union of (default-seed hashtags ∪ curated source tags ∪ discovered KV tags) gets a per-tag Google News query-RSS source added to the tick's source list as a long-tail backstop. Tags already served by a bespoke hand-tuned Google News curated entry are skipped (no double-fetch). The aggregator-vs-direct dedup pass already prefers a direct publisher copy over a Google News copy that lands in the same tick, so wide GN fan-out gives every tag baseline coverage without polluting the article pool with aggregator duplicates when direct sources also surface the story.
-15. A run that has been waiting on its scrape phase to complete for longer than the configured budget exits with a failed status rather than looping silently. The dashboard surfaces the failed state on the next history refresh so the operator sees the stall promptly and can re-kick the pipeline, instead of the run staying in `running` indefinitely until queue retries exhaust.
-16. Headlines from publishers that an AI tech news product would never surface — primarily financial / stock-pump aggregators that Google News routes into tech tags when a vendor's ticker matches — are dropped at the coordinator before clustering, embedding, or LLM summarisation. The blocklist is matched against both the article URL's host and the per-item publisher name reported by the feed entry, so an aggregator-wrapped item (whose URL points at a redirect envelope rather than the publisher's site) is still recognised by the publisher name the feed exposes. The blocklist applies uniformly across every tag and every user — a user with a tag that matches a tech vendor's ticker never sees those stock-pump articles in their digest. The blocklist is operator-maintained at the source level rather than configurable per user, so the contract is a single project-wide list, not a personal mute list.
+5. Body-fetch behaviour for candidates with thin feed snippets is governed by REQ-PIPE-010.
+6. Every tag in the union of (default-seed hashtags ∪ curated source tags ∪ discovered KV tags) gets a per-tag Google News query-RSS source added to the tick's source list as a long-tail backstop. Tags already served by a bespoke hand-tuned Google News curated entry are skipped (no double-fetch). The aggregator-vs-direct dedup pass already prefers a direct publisher copy over a Google News copy that lands in the same tick, so wide GN fan-out gives every tag baseline coverage without polluting the article pool with aggregator duplicates when direct sources also surface the story.
+7. A run that has been waiting on its scrape phase to complete for longer than the configured budget exits with a failed status rather than looping silently. The dashboard surfaces the failed state on the next history refresh so the operator sees the stall promptly and can re-kick the pipeline, instead of the run staying in `running` indefinitely until queue retries exhaust.
 
 **Constraints:** CON-LLM-001, CON-PERF-001, CON-SEC-002
 **Priority:** P0
-**Dependencies:** REQ-PIPE-004
+**Dependencies:** REQ-PIPE-004, REQ-PIPE-010, REQ-PIPE-011
 **Verification:** Integration test
 **Status:** Implemented
 
 ---
 
-### REQ-PIPE-002: Chunked LLM processing with JSON output contract
+### REQ-PIPE-002: Chunked LLM output content contract
 
-**Intent:** Candidate articles are summarised in batches sized to fit the model's context window so prompt size stays within budget and partial failures only lose one chunk, not the whole tick.
+**Intent:** Candidate articles are summarised in batches whose JSON output adheres to a fixed shape (title, body, tags drawn from an allowlist) so the reading surface receives consistent, properly-tagged article content. The chunk pass is summarisation-only; same-story collapse is delegated to the dedup pass in REQ-PIPE-003.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Each chunk yields a JSON payload shaped `{articles: [{title, details[], tags[]}]}` and no other top-level keys. Cross-source dedup is performed in the separate same-story dedup pass (REQ-PIPE-003) over the surviving article pool rather than at the chunk level, so the chunk pass is summarisation-only (every input candidate gets its own entry).
-2. Titles are NYT-style headlines, 45–80 characters, active voice, rewritten rather than copied from the source feed. The 45–80 range is the prompt-side target; the consumer additionally enforces a hard sanity range of 5–500 characters server-side, dropping titles outside that range so genuinely broken cases (single-character labels, paragraph-as-title) never reach the reading surface.
-3. `details` is a plaintext body of 100–150 words split into 2 or 3 paragraphs (WHAT happened, HOW it works, and optionally IMPACT for the reader), each 2–4 sentences, with no lists, HTML, or Markdown. The 100–150 range is the prompt-side contract; the consumer additionally enforces an 80-word backstop server-side, dropping responses below that threshold so a model that ships a single-sentence stub cannot reach the reading surface. The backstop is a true sanity floor (genuinely truncated outputs), not the model's normal operating range.
-4. `tags` values come exclusively from the system-approved allowlist — the union of the default-seed hashtag list shared with new accounts plus every tag for which a discovered-source cache currently exists. Any tag the LLM invents outside that union is discarded server-side before persistence, and an article that ends up with zero valid tags is dropped.
-5. Same-story collapse runs in the same-story dedup pass (REQ-PIPE-003), not in the per-chunk call. The chunk pass emits one entry per input candidate; the same-story dedup pass over the surviving article pool is the single point where same-story groups are formed and the earliest-published source becomes the primary article with the others recorded as alternative sources.
-6. A chunk failure marks only that chunk's portion of the run as failed; other chunks in the same tick still persist their articles.
-7. Every article returned by the LLM echoes its input candidate's index; the consumer aligns output back to the input by that echoed value, dropping any article whose index is missing, invalid, or does not match an input candidate so a summary can never be stapled to the wrong canonical URL.
-8. Before a summary is persisted, the consumer verifies the LLM-generated title shares at least one substantive non-stopword token with the source candidate's headline; summaries with zero topical overlap are dropped so a mis-wired LLM response can never appear as a real article.
+1. Each chunk yields a JSON payload shaped `{articles: [{title, details[], tags[]}]}` and no other top-level keys. Every input candidate gets its own entry.
+2. Titles are NYT-style headlines, 45 to 80 characters, active voice, rewritten rather than copied from the source feed. The 45 to 80 range is the prompt-side target; the consumer additionally enforces a hard sanity range of 5 to 500 characters server-side, dropping titles outside that range so genuinely broken cases (single-character labels, paragraph-as-title) never reach the reading surface.
+3. `details` is a plaintext body of 100 to 150 words split into 2 or 3 paragraphs (WHAT happened, HOW it works, and optionally IMPACT for the reader), each 2 to 4 sentences, with no lists, HTML, or Markdown. The 100 to 150 range is the prompt-side contract; the consumer additionally enforces an 80-word backstop server-side, dropping responses below that threshold so a model that ships a single-sentence stub cannot reach the reading surface. The backstop is a true sanity floor (genuinely truncated outputs), not the model's normal operating range.
+4. `tags` values come exclusively from the system-approved allowlist: the union of the default-seed hashtag list shared with new accounts plus every tag for which a discovered-source cache currently exists. Any tag the LLM invents outside that union is discarded server-side before persistence, and an article that ends up with zero valid tags is dropped.
 
 **Constraints:** CON-LLM-001, CON-SEC-003
 **Priority:** P0
@@ -60,7 +47,26 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ---
 
-### REQ-PIPE-003: Same-story dedupe across the entire article history
+### REQ-PIPE-015: Chunk processing robustness
+
+**Intent:** A single chunk failure, a mis-aligned LLM response, or a topically-unrelated summary never corrupts the tick. Failed chunks isolate to themselves, summaries align to the correct source URL, and topically-broken responses are dropped before they reach the reading surface.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. A chunk failure marks only that chunk's portion of the run as failed; other chunks in the same tick still persist their articles.
+2. Every article returned by the LLM echoes its input candidate's index; the consumer aligns output back to the input by that echoed value, dropping any article whose index is missing, invalid, or does not match an input candidate so a summary can never be stapled to the wrong canonical URL.
+3. Before a summary is persisted, the consumer verifies the LLM-generated title shares at least one substantive non-stopword token with the source candidate's headline; summaries with zero topical overlap are dropped so a mis-wired LLM response can never appear as a real article.
+
+**Constraints:** CON-LLM-001, CON-SEC-003
+**Priority:** P0
+**Dependencies:** REQ-PIPE-002
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-003: Same-story dedupe — core matching contract
 
 **Intent:** The same story published by five outlets appears as one primary card with four alternative-source links rather than five duplicate cards. Two outlets that paraphrase the same event under different headlines collapse to a single card even when they share almost no surface vocabulary, and the collapse holds across scrape ticks so a story discovered today never produces a second card when a different outlet covers the same event tomorrow.
 
@@ -72,23 +78,12 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 3. When two articles are recognised as the same story, the article with the earlier publication time survives as the primary card and the later one is recorded as an alternative source on it. Two same-story articles that share an identical publication time still collapse to a single card (a deterministic tie-break picks the survivor) rather than being silently kept apart. Source links, tag union, stars, and read marks from the later article are preserved on the surviving primary card so a user never loses a star or a read by virtue of dedup.
 4. A single-source article (no same-story matches) is persisted with zero alternative-source rows.
 5. When the same story appears under both a direct publisher / community link and an aggregator-wrapper link whose canonical form differs from the publisher's (e.g., a Google News URL), the aggregator-wrapper copy is dropped in favour of the direct copy and any tag-of-discovery state from the dropped copy is merged onto the surviving direct article. When no direct copy is present, the aggregator-wrapper copy is kept so coverage of stories no direct source surfaced is preserved.
-6. Articles become visible to users as soon as the scrape run reaches `ready`. Cross-tick same-story matching runs asynchronously after that, so a user may briefly see two cards for the same story; the window is bounded by the queue's processing latency and the second card is replaced by an alternative-source row on the surviving card on the next pass of the asynchronous matcher.
-7. Two studies, audits, or benchmarks on the same topic that cite different numbers, methodologies, or authors are treated as distinct stories and never merged - even when they discuss identical subject matter - so conflicting findings on the same topic remain visible as separate cards on the dashboard.
-8. The retention sweep (REQ-PIPE-005) that drops articles older than 14 days also removes the corresponding entries from the same-story index, so a deleted article can never be cited as a "match" for a future article and starred articles preserved past the retention window keep their same-story matching capability.
-9. An operator can re-run same-story matching across the entire historical article pool on demand (admin-gated). The sweep runs to completion in the background after the operator triggers it; closing or navigating away from the operator surface does not interrupt the sweep, and progress (articles scanned, duplicates merged, articles remaining) is observable while the sweep is in flight and on the next visit to the operator surface. The articles-scanned, duplicates-merged, and remaining counters advance exactly once per batch regardless of how many times the queue redelivers that batch's message, so a redelivered batch that has already been folded into the run leaves these counters at their existing values and the operator never sees inflated scanned or merged totals attributable to retry traffic rather than real matching work.
-10. An operator can inspect the cosine similarity between any two articles' stored embeddings on demand (admin-gated) alongside the currently-effective same-story threshold and a flag for whether the two articles come from the same publisher, so a threshold change can be evaluated against known true-positive and false-positive pairs before it is committed. The diagnostic reports an explicit not-found when either article or either embedding is missing rather than silently returning a misleading similarity.
-11. Two articles published by the same publisher must clear a stricter same-story bar than two articles from different publishers, so a publisher's recurring writing style does not push unrelated stories from the same outlet over the same-story threshold. "Same publisher" means both articles' direct URLs identify the same real publisher; pairs whose URLs route through an aggregator-wrapper host (which carries no publisher identity of its own) are treated as cross-publisher for this purpose so two aggregator-wrapped copies of the same story are not blocked from folding by the same-publisher penalty. The diagnostic surface from AC 10 reports both the raw cosine and the stricter score actually used by the merge decision so an operator can see why a same-publisher pair was kept apart.
-12. An operator can re-run embedding generation across the entire historical article pool on demand (admin-gated), so the corpus can be rebuilt against an improved embedding input without waiting for natural churn or re-scraping.
-13. Articles describing the same event are merged across sources only when their publishing dates fall within roughly the same news cycle; pairs whose publication times are far apart on calendar terms are kept as distinct cards even when their topics overlap. Dense theme clusters (e.g., a topic where many independent stories appear over a multi-day stretch) therefore stay separated by event rather than collapsing on topical similarity alone.
-14. Wire-syndicated stories that share a publication time to the second across sources still collapse to a single card; the system applies a deterministic tie-break (matching the rule in AC 3) so same-event pairs with identical publication times are never silently kept apart by timestamp granularity. Near-duplicate articles whose textual similarity is overwhelming likewise collapse deterministically across sources, so wire copies of one press release land as a single primary card with the others as alternative sources regardless of publisher identity.
-15. When a newly-arrived article and an already-stored article describe the same news event, the merge happens regardless of which side was ingested first, which side carries the earlier publication time, or how many calendar days separate them within the same-news-cycle bound. A duplicate that lands several days after its already-stored match — within the same-news-cycle window of AC 13 — still collapses to a single card without waiting for an operator-triggered sweep; the survivor is always the article with the earlier publication time (per AC 3).
-16. Cross-tick same-story matching keeps running automatically after every scrape tick. The window between an article becoming visible and its absorption as an alternative source onto an existing duplicate is bounded by the cadence of the automatic post-tick matching, not by the operator-triggered sweep on the operator surface. The operator surface still exists for sweeping the entire historical pool when matching across older stories is needed; routine cross-tick collapse no longer requires the operator to take any action.
-17. The reach of the automatic post-tick matching covers the same span as the same-news-cycle window from AC 13, so any pair the dedup logic would accept as same-event by publication-time proximity is reachable by the automatic path. Cross-day clusters that span up to the full same-news-cycle window collapse via the automatic matching alone, without an operator-triggered full-corpus sweep, regardless of the order in which the cluster's siblings arrived.
-18. When the similarity index is fully unreachable for a batch of the operator-triggered historical sweep (every per-article lookup against it fails), the sweep pauses on that batch with its cursor preserved and the batch is redelivered until the index is reachable again. Cross-tick duplicates that landed during an outage therefore still collapse on a later attempt instead of being silently skipped past forever. A partial-outage batch where at least one lookup succeeded still advances the cursor; only the all-failed case halts.
+6. Wire-syndicated stories that share a publication time to the second across sources still collapse to a single card; the system applies a deterministic tie-break (matching the rule in AC 3) so same-event pairs with identical publication times are never silently kept apart by timestamp granularity. Near-duplicate articles whose textual similarity is overwhelming likewise collapse deterministically across sources, so wire copies of one press release land as a single primary card with the others as alternative sources regardless of publisher identity.
+7. When a newly-arrived article and an already-stored article describe the same news event, the merge happens regardless of which side was ingested first, which side carries the earlier publication time, or how many calendar days separate them within the same-news-cycle bound (REQ-PIPE-012 AC 3). A duplicate that lands several days after its already-stored match still collapses to a single card without waiting for an operator-triggered sweep; the survivor is always the article with the earlier publication time (per AC 3).
 
 **Constraints:** CON-SEC-002
 **Priority:** P0
-**Dependencies:** REQ-PIPE-001
+**Dependencies:** REQ-PIPE-001, REQ-PIPE-012, REQ-PIPE-013, REQ-PIPE-014
 **Verification:** Automated test
 **Status:** Implemented
 
@@ -145,15 +140,31 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 1. Each run records its start time, finish time, articles ingested, articles deduplicated, input and output token counts, estimated cost in USD, model identifier, chunk count, and final status.
 2. The stats widget reads global token and cost totals as sums over the scrape-run aggregation.
 3. The history page reads its per-day aggregates and per-tick expansions from the same aggregation, not from article rows.
-4. Status transitions running → ready on success, or running → failed when the run aborts. Once a run leaves running its status is terminal: a late-arriving failed chunk whose retries exhausted after the run already reached ready does not flap the dashboard back to failed, and a late success message after a run was already marked failed does not flip it back to ready.
-5. A lightweight status endpoint reports whether a scrape is currently running; while running it returns the run identifier, start time, chunks completed, total chunks, and articles ingested so far. The reading surface uses this endpoint to replace its "Next update in Xm" countdown with an "Update in progress — X/Y chunks" indicator, and the settings surface shows the same progress alongside its manual-refresh control. Both indicators hide themselves automatically when the run finishes.
-6. The recorded finish time reflects when the run actually completed, not when the queue happened to redeliver the closing message. A redelivered last-chunk message that re-enters the closing path leaves the existing finish time intact, so the per-tick duration shown on the history page does not drift forward across retries.
-7. The per-tick token, cost, articles-ingested, and articles-deduplicated counters advance exactly once per chunk regardless of how many times the queue redelivers that chunk's message. A redelivered chunk that has already been recorded as completed for the run leaves these counters at their existing values, so the stats widget and history page never show inflated tokens, cost, or article counts attributable to retry traffic rather than real LLM work.
-8. The daily cleanup pass also retires runs whose state machine never reached a terminal status. Any run still tagged as in-progress well after the longest plausible tick duration is force-failed so its row no longer blocks the operator from kicking a fresh pipeline, and the history page surfaces the row as failed rather than indefinitely as running.
+4. Status transitions running to ready on success, or running to failed when the run aborts. Once a run leaves running its status is terminal: a late-arriving failed chunk whose retries exhausted after the run already reached ready does not flap the dashboard back to failed, and a late success message after a run was already marked failed does not flip it back to ready.
+5. A lightweight status endpoint reports whether a scrape is currently running; while running it returns the run identifier, start time, chunks completed, total chunks, and articles ingested so far. The reading surface uses this endpoint to replace its "Next update in Xm" countdown with an "Update in progress, X/Y chunks" indicator, and the settings surface shows the same progress alongside its manual-refresh control. Both indicators hide themselves automatically when the run finishes.
 
 **Constraints:** CON-DATA-001
 **Priority:** P1
 **Dependencies:** REQ-PIPE-001
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-016: scrape_runs idempotency and stuck-run cleanup
+
+**Intent:** Counter accuracy and operator unblock-paths around the scrape-run aggregation: queue redeliveries never inflate per-tick token, cost, or article counts; and a run whose state machine got stuck never blocks the operator from kicking a fresh pipeline.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. The recorded finish time reflects when the run actually completed, not when the queue happened to redeliver the closing message. A redelivered last-chunk message that re-enters the closing path leaves the existing finish time intact, so the per-tick duration shown on the history page does not drift forward across retries.
+2. The per-tick token, cost, articles-ingested, and articles-deduplicated counters advance exactly once per chunk regardless of how many times the queue redelivers that chunk's message. A redelivered chunk that has already been recorded as completed for the run leaves these counters at their existing values, so the stats widget and history page never show inflated tokens, cost, or article counts attributable to retry traffic rather than real LLM work.
+3. The daily cleanup pass also retires runs whose state machine never reached a terminal status. Any run still tagged as in-progress well after the longest plausible tick duration is force-failed so its row no longer blocks the operator from kicking a fresh pipeline, and the history page surfaces the row as failed rather than indefinitely as running.
+
+**Constraints:** CON-DATA-001
+**Priority:** P1
+**Dependencies:** REQ-PIPE-006
 **Verification:** Integration test
 **Status:** Implemented
 
@@ -234,6 +245,106 @@ Superseded by REQ-PIPE-003's same-story dedupe across the entire article history
 **Status:** Deprecated
 **Replaced By:** REQ-PIPE-003
 **Removed In:** 2026-05-06
+
+---
+
+### REQ-PIPE-010: Body-fetch for thin feed snippets
+
+**Intent:** When a feed entry's summary is too short to ground a faithful LLM summary, the pipeline fetches the article body directly so summarisation has real content to work with. Body-fetch is a sub-feature of the coordinator pipeline (REQ-PIPE-001) carved out per the AC count cap.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. When a candidate's feed snippet is too thin to ground a faithful summary, the pipeline fetches the article body directly.
+2. The body fetch is HTTPS-only and passes an SSRF filter.
+3. The body fetch is bounded by a network timeout and a maximum download size.
+4. Readable plaintext is extracted from a successful body fetch and attached to the candidate.
+5. When body-fetch extraction yields too little text, the candidate falls back to whatever the feed itself provided.
+6. A failed body-fetch never blocks a summary.
+
+**Constraints:** CON-SEC-002
+**Priority:** P0
+**Dependencies:** REQ-PIPE-001
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-011: Candidate filtering rules
+
+**Intent:** Coordinator-level filters keep stale, undated, or blocklisted candidates out of the LLM pipeline so summarisation budget and dashboard surface area stay clean. Filtering is a sub-feature of the coordinator pipeline (REQ-PIPE-001) carved out per the AC count cap.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. Each candidate's published-at timestamp reflects the source feed's real publish date (parsed from the feed entry) rather than the ingestion tick time, so a story first published three weeks ago is never displayed as "today" on the dashboard. When a feed entry provides no usable publish date, or the parsed value is implausible (pre-2000 or more than one day in the future), the ingestion time is used as a safe fallback.
+2. Candidates whose parsed publish date is older than 48 hours before the current tick are dropped before LLM summarisation so stale backlog items do not consume LLM budget or clutter the dashboard. Candidates with no parsable publish date (which fall back to the ingestion time) are kept — a missing date is not treated the same as a stale date.
+3. Headlines from publishers that an AI tech news product would never surface — primarily financial / stock-pump aggregators that Google News routes into tech tags when a vendor's ticker matches — are dropped at the coordinator before clustering, embedding, or LLM summarisation. The blocklist is matched against both the article URL's host and the per-item publisher name reported by the feed entry, so an aggregator-wrapped item (whose URL points at a redirect envelope rather than the publisher's site) is still recognised by the publisher name the feed exposes. The blocklist applies uniformly across every tag and every user — a user with a tag that matches a tech vendor's ticker never sees those stock-pump articles in their digest. The blocklist is operator-maintained at the source level rather than configurable per user, so the contract is a single project-wide list, not a personal mute list.
+
+**Constraints:** CON-PERF-001
+**Priority:** P0
+**Dependencies:** REQ-PIPE-001
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-012: Same-story matching policy variants
+
+**Intent:** Same-story collapse is constrained by three policy bounds that prevent over-merging: research outputs with conflicting numerics stay distinct, same-publisher pairs face a stricter threshold to resist house-style false-positives, and merges respect a same-news-cycle calendar window so topical clusters do not collapse into one card.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. Two studies, audits, or benchmarks on the same topic that cite different numbers, methodologies, or authors are treated as distinct stories and never merged — even when they discuss identical subject matter — so conflicting findings on the same topic remain visible as separate cards on the dashboard.
+2. Two articles published by the same publisher must clear a stricter same-story bar than two articles from different publishers, so a publisher's recurring writing style does not push unrelated stories from the same outlet over the same-story threshold. "Same publisher" means both articles' direct URLs identify the same real publisher; pairs whose URLs route through an aggregator-wrapper host (which carries no publisher identity of its own) are treated as cross-publisher for this purpose so two aggregator-wrapped copies of the same story are not blocked from folding by the same-publisher penalty. The diagnostic surface from [REQ-PIPE-014](#req-pipe-014-same-story-operator-surfaces) AC 2 reports both the raw cosine and the stricter score actually used by the merge decision so an operator can see why a same-publisher pair was kept apart.
+3. Articles describing the same event are merged across sources only when their publishing dates fall within roughly the same news cycle; pairs whose publication times are far apart on calendar terms are kept as distinct cards even when their topics overlap. Dense theme clusters (e.g., a topic where many independent stories appear over a multi-day stretch) therefore stay separated by event rather than collapsing on topical similarity alone.
+
+**Constraints:** CON-LLM-001
+**Priority:** P0
+**Dependencies:** REQ-PIPE-003
+**Verification:** Automated test
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-013: Same-story cross-tick automation and retention coupling
+
+**Intent:** Same-story matching does not block ingestion: articles become visible the moment a scrape run reaches `ready`, with cross-tick matching folding duplicates onto existing primary cards asynchronously. The matching surface stays consistent with retention so deleted articles cannot resurface as phantom matches.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. Articles become visible to users as soon as the scrape run reaches `ready`. Cross-tick same-story matching runs asynchronously after that, so a user may briefly see two cards for the same story; the window is bounded by the queue's processing latency and the second card is replaced by an alternative-source row on the surviving card on the next pass of the asynchronous matcher.
+2. The retention sweep (REQ-PIPE-005) that drops articles older than 14 days also removes the corresponding entries from the same-story index, so a deleted article can never be cited as a "match" for a future article and starred articles preserved past the retention window keep their same-story matching capability.
+3. Cross-tick same-story matching keeps running automatically after every scrape tick. The window between an article becoming visible and its absorption as an alternative source onto an existing duplicate is bounded by the cadence of the automatic post-tick matching, not by the operator-triggered sweep on the operator surface. The operator surface still exists for sweeping the entire historical pool when matching across older stories is needed; routine cross-tick collapse no longer requires the operator to take any action.
+4. The reach of the automatic post-tick matching covers the same span as the same-news-cycle window from REQ-PIPE-012 AC 3, so any pair the dedup logic would accept as same-event by publication-time proximity is reachable by the automatic path. Cross-day clusters that span up to the full same-news-cycle window collapse via the automatic matching alone, without an operator-triggered full-corpus sweep, regardless of the order in which the cluster's siblings arrived.
+
+**Constraints:** CON-PERF-001
+**Priority:** P0
+**Dependencies:** REQ-PIPE-003, REQ-PIPE-005, REQ-PIPE-012
+**Verification:** Automated test
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-014: Same-story operator surfaces
+
+**Intent:** Operators need to validate, re-run, and recover same-story matching against the full historical pool: on-demand sweeps to fold matches the automatic path missed, a pair-similarity diagnostic to evaluate threshold changes, embedding regeneration for corpus rebuilds, and a partial-outage protocol that pauses rather than skips when the index is unreachable.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. An operator can re-run same-story matching across the entire historical article pool on demand (admin-gated). The sweep runs to completion in the background after the operator triggers it; closing or navigating away from the operator surface does not interrupt the sweep, and progress (articles scanned, duplicates merged, articles remaining) is observable while the sweep is in flight and on the next visit to the operator surface. The articles-scanned, duplicates-merged, and remaining counters advance exactly once per batch regardless of how many times the queue redelivers that batch's message, so a redelivered batch that has already been folded into the run leaves these counters at their existing values and the operator never sees inflated scanned or merged totals attributable to retry traffic rather than real matching work.
+2. An operator can inspect the cosine similarity between any two articles' stored embeddings on demand (admin-gated) alongside the currently-effective same-story threshold and a flag for whether the two articles come from the same publisher, so a threshold change can be evaluated against known true-positive and false-positive pairs before it is committed. The diagnostic reports an explicit not-found when either article or either embedding is missing rather than silently returning a misleading similarity.
+3. An operator can re-run embedding generation across the entire historical article pool on demand (admin-gated), so the corpus can be rebuilt against an improved embedding input without waiting for natural churn or re-scraping.
+4. When the similarity index is fully unreachable for a batch of the operator-triggered historical sweep (every per-article lookup against it fails), the sweep pauses on that batch with its cursor preserved and the batch is redelivered until the index is reachable again. Cross-tick duplicates that landed during an outage therefore still collapse on a later attempt instead of being silently skipped past forever. A partial-outage batch where at least one lookup succeeded still advances the cursor; only the all-failed case halts.
+
+**Constraints:** CON-SEC-002
+**Priority:** P0
+**Dependencies:** REQ-PIPE-003
+**Verification:** Automated test
+**Status:** Implemented
 
 ---
 

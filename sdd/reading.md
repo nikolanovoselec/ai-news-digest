@@ -134,7 +134,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 ### REQ-READ-007: Tag railing reorder animation
 
-**Intent:** When the user taps a chip in the shared tag railing on the dashboard or Search & History, the chip animates into the leftmost slot and the chips that previously sat between it and the front cascade right to fill the slot it left. The visual confirms what the user just did, no chip ever vanishes mid-motion, and the railing as a whole never resets to an arbitrary scroll position.
+**Intent:** When the user taps a chip in the shared tag railing on the dashboard or Search & History, the chip animates into its new sort position and the chips between its old and new positions cascade to fill the slot it left. The visual confirms what the user just did and no chip ever vanishes mid-motion.
 
 **Applies To:** User
 
@@ -142,16 +142,32 @@ The heart of the product. Overview grid of the freshest articles read from the s
 1. Tapping a chip plays an immediate scale-bounce pop on that chip so the user has unmistakable visual confirmation of the input before any other motion begins.
 2. After the pop, the railing holds for roughly one second with the tapped chip visually elevated above its neighbours, so the user's eye lands on the chip about to move before the cascade starts.
 3. The tapped chip then slides along a smooth path to its new sort position. On SELECT the destination is the leftmost slot so active filters cluster at the front. On UN-SELECT the destination is the chip's natural sort position among non-selected chips (sorted by article count descending, then alphabetically), and the chip slides rightward back into the count hierarchy. The slide duration is shaped so the on-screen portion of the chip's journey takes roughly the same time whether the chip travels a short visible hop or a long mostly-off-screen one, giving far chips a comfortably trackable visible window instead of a blur. Chips between the old and new positions slide the opposite direction on a faster fixed-duration curve so the gap closes promptly even while the tapped chip's full journey is still in flight.
-4. No chip is hidden, removed, or repainted mid-flight — every chip remains visible and identifiable throughout the pop, hold, and cascade.
+4. No chip is hidden, removed, or repainted mid-flight; every chip remains visible and identifiable throughout the pop, hold, and cascade.
 5. While the pop, hold, or cascade is in flight, additional taps on any chip are ignored until the motion settles, so a rapid double-tap never desynchronises the data order from the visual order.
-6. The railing horizontal scroll position is preserved across the cascade and the system does not auto-scroll on tap. On a viewport that scrolls the railing horizontally, the tapped chip slides toward its destination and may exit off either edge of the visible area, and the user navigates the railing manually to see chips that have moved off-screen. The railing never jumps to a different scroll position as a side effect of the tap. As a convenience, after a SELECT cascade that lands at slot 0, the next time the user starts to scroll the surrounding page downward the railing smoothly scrolls back to its leftmost position so the just-selected chip is revealed at the start. This convenience scroll fires once per tap and is cancelled if the user manually swipes the railing during it. Unselect cascades do not arm it because the chip lands mid-railing.
-7. On a viewport that wraps the railing into multiple rows, the railing does not scroll at all; the user sees the entire cascade play out across whatever rows the chips occupy.
-8. When the runtime does not support the animation primitives, the reorder still happens (the tapped chip ends up at its correct sort position — slot 0 on select, natural sort position on unselect — and the data order is correct) — only the pop, hold, and cascade motion are skipped.
-9. When the tapped chip is already at its destination slot (e.g., the leftmost chip is tapped to select), only the pop plays — there is no hold, no cascade, and no trailing motion. The railing settles immediately after the pop completes so the chip never appears to "pulse twice".
+6. When the tapped chip is already at its destination slot (e.g., the leftmost chip is tapped to select), only the pop plays; there is no hold, no cascade, and no trailing motion. The railing settles immediately after the pop completes so the chip never appears to "pulse twice".
 
 **Constraints:** CON-SEC-001
 **Priority:** P2
 **Dependencies:** REQ-READ-001, REQ-HIST-001
+**Verification:** Integration test
+**Status:** Implemented
+
+---
+
+### REQ-READ-008: Tag railing scroll, wrap, and fallback
+
+**Intent:** The tag railing's scroll position, multi-row wrap behaviour, and no-animation fallback keep the reorder coherent across viewports and runtimes, so taps never produce a disorienting scroll jump or leave the data and visual orders out of sync.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. The railing horizontal scroll position is preserved across the cascade and the system does not auto-scroll on tap. On a viewport that scrolls the railing horizontally, the tapped chip slides toward its destination and may exit off either edge of the visible area, and the user navigates the railing manually to see chips that have moved off-screen. The railing never jumps to a different scroll position as a side effect of the tap. As a convenience, after a SELECT cascade that lands at slot 0, the next time the user starts to scroll the surrounding page downward the railing smoothly scrolls back to its leftmost position so the just-selected chip is revealed at the start. This convenience scroll fires once per tap and is cancelled if the user manually swipes the railing during it. Unselect cascades do not arm it because the chip lands mid-railing.
+2. On a viewport that wraps the railing into multiple rows, the railing does not scroll at all; the user sees the entire cascade play out across whatever rows the chips occupy.
+3. When the runtime does not support the animation primitives, the reorder still happens (the tapped chip ends up at its correct sort position, slot 0 on select or natural sort position on unselect, and the data order is correct); only the pop, hold, and cascade motion are skipped.
+
+**Constraints:** CON-SEC-001
+**Priority:** P2
+**Dependencies:** REQ-READ-007
 **Verification:** Integration test
 **Status:** Implemented
 
