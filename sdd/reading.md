@@ -6,16 +6,16 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 ### REQ-READ-001: Overview grid of today's digest
 
-**Intent:** Today's digest is a scannable grid of article cards read from the shared article pool filtered by the user's active tags, with a lightweight header that shows when the pool was last refreshed and when the next refresh is due.
+**Intent:** Today's digest is a scannable grid of article cards read from the shared article pool filtered by the user's active tags. The grid composition (which articles, in what order, capped at how many) is the contract of this REQ; the page header showing freshness state lives in [REQ-READ-011](#req-read-011-digest-header-freshness-state).
 
 **Applies To:** User
 
 **Acceptance Criteria:**
 1. `/digest` reads articles from the global article pool filtered by the user's active tags; articles whose tag list does not intersect the user's tag list are excluded.
-2. The top of the page shows "Last updated at HH:MM" with the most-recent scrape time, and a live "Next update in Xm" countdown (formatted "Xh Ym" when more than an hour remains, "Xm" otherwise) that counts down toward the next scheduled scrape tick and is visibly updated as time passes. When a scrape run is currently in flight at first paint, the countdown is replaced by an "Update in progress…" indicator until the run completes, so the operator and any reader who lands on the dashboard mid-run sees the live state immediately rather than a misleading countdown to the next tick.
-3. No manual Refresh button is rendered and no live-state skeleton cards are shown — the pool is always populated so the grid renders directly.
-4. When the user has no tag filters selected, the grid shows every article whose tags intersect the user's full tag list; when one or more filter tags are selected, the grid narrows to articles matching those filters.
-5. The grid shows the 29 articles with the most recent first ingestion matching the user's active tags, ordered by first-ingestion descending with published-at as a tiebreaker. "First ingestion" is the timestamp at which a story first entered the pool — re-discoveries on later ticks append the new source to the article's source list but never re-stamp the ingestion time. The dashboard order therefore reflects when each story was new to the pool, not how recently any feed re-emitted it; older stories that keep being re-broadcast by feeds do not displace genuinely fresher arrivals. Articles roll off the 29-card window as newer arrivals push them out.
+2. When the user has no tag filters selected, the grid shows every article whose tags intersect the user's full tag list; when one or more filter tags are selected, the grid narrows to articles matching those filters.
+3. The grid shows the 29 articles with the most recent first ingestion matching the user's active tags, ordered by first-ingestion descending with published-at as a tiebreaker.
+4. "First ingestion" is the timestamp at which a story first entered the pool; re-discoveries on later ticks append the new source to the article's source list but never re-stamp the ingestion time, so older stories that keep being re-broadcast by feeds do not displace genuinely fresher arrivals.
+5. Articles roll off the 29-card window as newer arrivals push them out.
 6. The grid's final slot (slot 30) is a "see all of today's articles in Search & History" tile containing a centred list-style icon; activating it navigates the user to the Search & History page scoped to today's local date. Per-tag filtering that reaches beyond the newest-29 window lives on Search & History, not on the dashboard.
 7. When the same story has been reported by more than one source, the source label at the bottom of the card shows the primary publisher name with a `+N` suffix (e.g. `MASHABLE +1`, `TECHCRUNCH +3`) where N is the count of additional sources beyond the primary; single-source articles show the publisher name with no suffix. The same `+N` treatment applies to cards rendered on Search & History and the starred-articles surface so attribution reads identically across all card grids.
 
@@ -23,7 +23,30 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-001](generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-SET-002](settings.md#req-set-002-hashtag-curation-strip-ux)
+**Dependencies:** [REQ-PIPE-001](generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-SET-002](settings.md#req-set-002-hashtag-curation-strip-ux), [REQ-READ-011](#req-read-011-digest-header-freshness-state)
+
+**Verification:** Integration test
+
+**Status:** Implemented
+
+---
+
+### REQ-READ-011: Digest header freshness state
+
+**Intent:** The top of `/digest` shows when the article pool was last refreshed and when the next refresh is due. When a scrape run is mid-flight at first paint, the countdown gives way to an in-progress indicator so the user sees the live state instead of a misleading static countdown.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. The top of `/digest` shows "Last updated at HH:MM" with the most-recent scrape time, alongside a live "Next update in Xm" countdown (formatted "Xh Ym" when more than an hour remains, "Xm" otherwise) that counts down toward the next scheduled scrape tick and is visibly updated as time passes.
+2. When a scrape run is currently in flight at first paint, the countdown is replaced by an "Update in progress…" indicator until the run completes, so a reader landing mid-run sees the live state immediately rather than a misleading countdown to the next tick.
+3. No manual Refresh button is rendered and no live-state skeleton cards are shown; the pool is always populated so the grid renders directly under the header.
+
+**Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-READ-001](#req-read-001-overview-grid-of-todays-digest), [REQ-PIPE-001](generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
 **Verification:** Integration test
 
@@ -161,16 +184,40 @@ The heart of the product. Overview grid of the freshest articles read from the s
 **Acceptance Criteria:**
 1. Tapping a chip plays an immediate scale-bounce pop on that chip so the user has unmistakable visual confirmation of the input before any other motion begins.
 2. After the pop, the railing holds for roughly one second with the tapped chip visually elevated above its neighbours, so the user's eye lands on the chip about to move before the cascade starts.
-3. The tapped chip then slides along a smooth path to its new sort position. On SELECT the destination is the leftmost slot so active filters cluster at the front. On UN-SELECT the destination is the chip's natural sort position among non-selected chips (sorted by article count descending, then alphabetically), and the chip slides rightward back into the count hierarchy. The slide duration is shaped so the on-screen portion of the chip's journey takes roughly the same time whether the chip travels a short visible hop or a long mostly-off-screen one, giving far chips a comfortably trackable visible window instead of a blur. Chips between the old and new positions slide the opposite direction on a faster fixed-duration curve so the gap closes promptly even while the tapped chip's full journey is still in flight.
-4. No chip is hidden, removed, or repainted mid-flight; every chip remains visible and identifiable throughout the pop, hold, and cascade.
-5. While the pop, hold, or cascade is in flight, additional taps on any chip are ignored until the motion settles, so a rapid double-tap never desynchronises the data order from the visual order.
-6. When the tapped chip is already at its destination slot (e.g., the leftmost chip is tapped to select), only the pop plays; there is no hold, no cascade, and no trailing motion. The railing settles immediately after the pop completes so the chip never appears to "pulse twice".
+3. After the hold completes, the tapped chip slides along a smooth path to its new sort position governed by [REQ-READ-010](#req-read-010-tag-railing-slide-destination-and-duration-policy).
+4. Chips between the tapped chip's old and new positions slide in the opposite direction on a faster fixed-duration curve so the gap closes promptly even while the tapped chip's full journey is still in flight.
+5. No chip is hidden, removed, or repainted mid-flight; every chip remains visible and identifiable throughout the pop, hold, and cascade.
+6. While the pop, hold, or cascade is in flight, additional taps on any chip are ignored until the motion settles, so a rapid double-tap never desynchronises the data order from the visual order.
+7. When the tapped chip is already at its destination slot (e.g., the leftmost chip is tapped to select), only the pop plays; there is no hold, no cascade, and no trailing motion, so the chip never appears to "pulse twice".
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P2
 
-**Dependencies:** [REQ-READ-001](#req-read-001-overview-grid-of-todays-digest), [REQ-HIST-001](history.md#req-hist-001-day-grouped-article-history)
+**Dependencies:** [REQ-READ-001](#req-read-001-overview-grid-of-todays-digest), [REQ-HIST-001](history.md#req-hist-001-day-grouped-article-history), [REQ-READ-010](#req-read-010-tag-railing-slide-destination-and-duration-policy)
+
+**Verification:** Integration test
+
+**Status:** Implemented
+
+---
+
+### REQ-READ-010: Tag railing slide destination and duration policy
+
+**Intent:** The slide phase of the tag railing reorder animation (REQ-READ-007 AC 3) has a deterministic destination per direction and a duration profile that keeps far-travelling chips comfortably trackable rather than a blur.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. On SELECT, the slide destination is the leftmost slot so active filters cluster at the front of the railing.
+2. On UN-SELECT, the slide destination is the chip's natural sort position among non-selected chips (sorted by article count descending, with alphabetical tie-break), so the chip rejoins the count hierarchy.
+3. The slide duration is shaped so the on-screen portion of the chip's journey takes roughly the same wall time whether the chip travels a short visible hop or a long mostly-off-screen one, giving far chips a comfortably trackable visible window instead of a blur.
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-READ-007](#req-read-007-tag-railing-reorder-animation)
 
 **Verification:** Integration test
 

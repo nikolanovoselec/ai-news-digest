@@ -14,12 +14,13 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Acceptance Criteria:**
 
-1. The landing page shows one button per configured provider, labelled "Sign in with {provider}", in alphabetical order. Unconfigured providers are omitted entirely. When zero providers are configured, the page shows a clear "Sign-in is not configured for this deployment" message instead of dead buttons.
-2. Each button starts a standard OAuth 2.0 / OIDC authorization-code flow with cryptographic CSRF state defense. The chosen provider is preserved across the round-trip so the callback completes the correct exchange.
-3. The callback exchanges the authorization code for a verified identity and creates or looks up a user keyed by provider plus provider-user-id. The GitHub provider preserves its legacy bare-numeric key format so existing accounts are unchanged.
-4. If the provider returns no verified email, sign-in fails with error code `no_verified_email` and the user is redirected to the landing page with a clear message naming the affected provider.
-5. A brand-new account is seeded with a curated default hashtag list (covering cloud platforms, AI/LLM, security, identity, and infrastructure) where every default tag has at least one curated source, so the first digest has meaningful input before the user touches the strip.
-6. A brand-new account is also seeded with a default scheduled-digest time of 08:00, a default UTC timezone (overwritten by the browser's IANA zone on first load), and email-notification enabled. Successful first sign-in lands the user directly on the reading surface with real articles visible — no forced onboarding detour.
+1. The landing page shows one button per configured provider in alphabetical order, labelled "Sign in with {provider}"; unconfigured providers are omitted.
+2. When zero providers are configured, the landing page shows a clear "Sign-in is not configured for this deployment" message instead of dead buttons.
+3. Each provider button starts a standard OAuth 2.0 / OIDC authorization-code flow with cryptographic CSRF state defense, and the chosen provider is preserved across the round-trip so the callback completes the correct exchange.
+4. The callback exchanges the authorization code for a verified identity and creates or looks up a user keyed by provider plus provider-user-id; the GitHub provider preserves its legacy bare-numeric key format so existing accounts are unchanged.
+5. If the provider returns no verified email, sign-in fails with error code `no_verified_email` and the user is redirected to the landing page with a clear message naming the affected provider.
+6. A brand-new account is seeded with a curated default hashtag list (covering cloud platforms, AI/LLM, security, identity, and infrastructure) where every default tag has at least one curated source, so the first digest has meaningful input before the user touches the strip.
+7. A brand-new account is also seeded with a default scheduled-digest time of 08:00, a default UTC timezone (overwritten by the browser's IANA zone on first load), and email-notification enabled, so successful first sign-in lands the user directly on the reading surface with real articles visible and no forced onboarding detour.
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
 
@@ -70,8 +71,11 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 **Acceptance Criteria:**
 
 1. Every state-changing endpoint (`POST`, `PUT`, `PATCH`, `DELETE`) that acts on an authenticated session rejects requests whose `Origin` header is missing or does not match the app's canonical origin. Rejection returns `HTTP 403` with error code `forbidden_origin`.
-2. Non-admin `GET` endpoints are exempt from the Origin check because the browser will not attach the session cookie to a cross-site GET. Admin `GET` endpoints narrow this exemption per [REQ-AUTH-006](#req-auth-006-admin-surface-gating). Cookie attribute mechanism that delivers this guarantee is documented in [`documentation/security.md`](../documentation/security.md#auth-cookie-policy-req-auth-002-req-auth-008).
-3. OAuth-flow entry points that only initiate a redirect to the identity provider are exempt — their only effect is setting a short-lived state cookie and redirecting, and actual authentication requires consent at the provider.
+2. Non-admin `GET` endpoints are exempt from the Origin check because the browser will not attach the session cookie to a cross-site GET.
+3. Admin `GET` endpoints narrow the GET exemption per [REQ-AUTH-006](#req-auth-006-admin-surface-gating), so the residual same-browser-CSRF gap for idempotent admin actions stays closed.
+4. OAuth-flow entry points that only initiate a redirect to the identity provider are exempt because their only effect is setting a short-lived state cookie and redirecting, and actual authentication requires consent at the provider.
+
+**Notes:** Cookie attribute mechanism that delivers the cross-site-GET guarantee is documented at [`documentation/security.md`](../documentation/security.md#auth-cookie-policy-req-auth-002-req-auth-008).
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -145,8 +149,9 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 **Acceptance Criteria:**
 
 1. A request to any admin endpoint with no live session, or with a session belonging to a non-operator user, is rejected before any side effect. Deployments configured with an external perimeter layer additionally require that perimeter's assertion before the application gate runs.
-2. The destructive pipeline mode that wipes and re-embeds the entire corpus is reachable only via an explicit `POST`. The same parameter via `GET` is rejected, so cross-origin GET vectors (image tags, bookmarks, link previews) can never trigger a corpus-wide re-embed. Idempotent modes remain reachable via either method.
-3. Admin `GET` endpoints reject requests originating from a cross-site context while continuing to accept top-level navigation (operator bookmarks, post-SSO callback redirects). This closes the residual same-browser-CSRF gap that [REQ-AUTH-003](#req-auth-003-csrf-defense-for-state-changing-endpoints) AC 2's blanket GET exemption leaves open for idempotent admin actions.
+2. The destructive pipeline mode that wipes and re-embeds the entire corpus is reachable only via an explicit `POST`; the same parameter via `GET` is rejected so cross-origin GET vectors (image tags, bookmarks, link previews) can never trigger a corpus-wide re-embed.
+3. Idempotent admin pipeline modes remain reachable via either `GET` or `POST`.
+4. Admin `GET` endpoints reject requests originating from a cross-site context while continuing to accept top-level navigation (operator bookmarks, post-SSO callback redirects), so the residual same-browser-CSRF gap left open by [REQ-AUTH-003](#req-auth-003-csrf-defense-for-state-changing-endpoints) AC 2's blanket GET exemption stays closed for idempotent admin actions.
 
 **Notes:** Layered-defense mechanism is documented in [`documentation/security.md`](../documentation/security.md#admin-gate-and-jwt-exp-validation-req-auth-001-ac-8-ac-8a--ad44).
 
@@ -199,7 +204,9 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 2. Logout revokes only the active refresh-token row, not every row for the user. Logging out on one device does not sign the user out of other devices.
 3. Presenting an already-revoked refresh cookie within a brief concurrent-rotation grace window is treated as a benign race: a fresh access token is served off the surviving rotated row without rotating again, and the client's stale cookie remains valid for the rest of the window.
 4. Presenting an already-revoked refresh cookie outside the grace window is treated as theft: every refresh-token row for the user is revoked and the per-user session-version is incremented, forcing the user through OAuth on every device.
-5. Each refresh-token row records the User-Agent and country at issuance as forensic metadata. The steady-state refresh path logs but does not block on a fingerprint change. A fingerprint mismatch within the grace window IS enforced, because the only legitimate cause of a grace-window replay is the same client racing itself.
+5. Each refresh-token row records the User-Agent and country at issuance as forensic metadata.
+6. The steady-state refresh path logs but does not block on a fingerprint change between issuance and refresh, because legitimate UA strings drift on browser auto-updates.
+7. A fingerprint mismatch within the concurrent-rotation grace window IS enforced as theft, because the only legitimate cause of a grace-window replay is the same client racing itself.
 6. Expired and old-revoked rows are pruned by the daily retention sweep, with a retention floor long enough for the reuse-detection branch to still see `revoked_at` on a stolen-then-rotated cookie.
 
 **Notes:** Grace-window length, retention floor, and the parent-link pointer are documented in [`documentation/security.md`](../documentation/security.md#auth-cookie-policy-req-auth-002--req-auth-008).

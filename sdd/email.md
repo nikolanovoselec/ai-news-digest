@@ -66,7 +66,8 @@ Resend-backed notification sent after every successful digest — whether genera
 1. At most one email per user is sent per day, gated so the same user never receives a second notification on the same local date.
 2. The email fires at the user's configured local digest time, independent of the global scrape cadence.
 3. Users who turn off `email_enabled` in settings receive no email.
-4. When the recipient has zero unread articles for the local day, no email is sent. The per-user "last emailed date" marker is not stamped; the user is naturally retried at their next configured digest time the following local day. An empty email is treated as noise; silence is the contract.
+4. When the recipient has zero unread articles for the local day, no email is sent so an empty inbox produces silence rather than a noisy zero-article notification.
+5. The per-user "last emailed date" marker is not stamped on a zero-article day, so the user is naturally retried at their next configured digest time the following local day.
 
 **Constraints:** None
 
