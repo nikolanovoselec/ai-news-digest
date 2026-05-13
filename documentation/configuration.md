@@ -31,8 +31,8 @@ Stored via `wrangler secret put <name>`. Never committed to git.
 | `GOOGLE_OAUTH_CLIENT_ID` | Conditional (one OAuth pair required) | none | `src/pages/api/auth/[provider]/login.ts`, `callback.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Conditional (when `GOOGLE_OAUTH_CLIENT_ID` set) | none | `src/pages/api/auth/[provider]/callback.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `OAUTH_JWT_SECRET` | Yes | none | `src/pages/api/auth/refresh.ts`, `logout.ts`, `account.ts`, middleware | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-session-lifecycle) |
-| `RESEND_API_KEY` | Conditional (email dispatch) | none — email silently skipped when unset | `src/lib/email.ts` | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email) |
-| `RESEND_FROM` | Conditional (when `RESEND_API_KEY` set) | none | `src/lib/email.ts` | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email) |
+| `RESEND_API_KEY` | Conditional (email dispatch) | none — email silently skipped when unset | `src/lib/email.ts` | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email-content), [REQ-MAIL-003](../sdd/email.md#req-mail-003-digest-ready-email-send-policy) |
+| `RESEND_FROM` | Conditional (when `RESEND_API_KEY` set) | none | `src/lib/email.ts` | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email-content) |
 | `APP_URL` | Yes | none | `src/pages/api/auth/account.ts`, `src/pages/api/tags.ts`, all Origin-check routes | [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints) |
 | `ADMIN_EMAIL` | Conditional (admin routes) | none — every `/api/admin/*` returns 403 when unset | `src/middleware/admin-auth.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8 |
 | `CF_ACCESS_AUD` | Optional | none (Layer 0 perimeter skipped when unset) | `src/middleware/admin-auth.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8a |
@@ -106,7 +106,7 @@ Declared in `wrangler.toml` under `[vars]`. Forks may override per-environment v
 
 | Variable | Default | Required | Consumed by | Implements |
 |---|---|---|---|---|
-| `QUEUE_MAX_RETRIES` | `"3"` | Yes | `src/queue/*.ts` consumer batch handlers | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract) |
+| `QUEUE_MAX_RETRIES` | `"3"` | Yes | `src/queue/*.ts` consumer batch handlers | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) |
 | `DEDUP_COSINE_THRESHOLD` | `"0.88"` | Yes | `src/lib/embeddings.ts` (`readCosineThreshold`), `src/queue/scrape-finalize-consumer.ts`, `src/pages/api/admin/dedup-diag.ts` | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history) |
 | `DEDUP_TIME_WINDOW_SECONDS` | `"604800"` (7d) | Yes | `src/lib/embeddings.ts`, `src/queue/dedup-sweep-consumer.ts` | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history) AC 13, AC 17 |
 | `DEDUP_SAME_VENDOR_PENALTY` | `"0.05"` | Yes | `src/lib/embeddings.ts` | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-across-the-entire-article-history) AC 11 |
@@ -128,7 +128,7 @@ Three triggers are declared in `wrangler.toml`:
 |---|---|---|
 | `0 */4 * * *` | Global-feed coordinator (00/04/08/12/16/20 UTC) | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
 | `0 3 * * *` | Daily retention + refresh-token purge | [REQ-PIPE-005](../sdd/generation.md#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-device-binding-reuse-detection) |
-| `*/5 * * * *` | Email dispatcher + pending-discovery drain | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email) |
+| `*/5 * * * *` | Email dispatcher + pending-discovery drain | [REQ-MAIL-003](../sdd/email.md#req-mail-003-digest-ready-email-send-policy) |
 
 **Daily 03:00 UTC tick:** removes articles older than 14 days (starred articles are exempt). Also purges expired and old-revoked rows from the `refresh_tokens` table; the 7-day grace on revoked rows preserves reuse-detection history per REQ-AUTH-008 AC 5.
 

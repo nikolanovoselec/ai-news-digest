@@ -154,7 +154,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 **Consequences:** LLM prompts must explicitly forbid markdown and HTML in output. Any future feature that needs rich article rendering (bold headings, links) requires revisiting this decision and introducing a sanitizer. Template authors must use `set:text` (or `textContent`) - never `set:html` or `innerHTML` - when rendering article titles or summaries.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract), [REQ-READ-002](../../sdd/reading.md#req-read-002-article-detail-view) (original decision applied to REQ-GEN-005, Deprecated 2026-04-23, Replaced By REQ-PIPE-002)
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-READ-002](../../sdd/reading.md#req-read-002-article-detail-view) (original decision applied to REQ-GEN-005, Deprecated 2026-04-23, Replaced By REQ-PIPE-002)
 
 ---
 
@@ -215,11 +215,11 @@ KV's eventual consistency made both races effectively undetectable via testing i
 - Durable Object for serialized counter updates - correct, but adds a DO dependency to a pipeline that runs without one today.
 - KV with Compare-And-Swap (`getWithMetadata` + `put` with `expirationTtl` as a CAS surrogate) - fragile; KV has no native CAS and the surrogate is not atomic.
 
-**Rationale:** AD5's own principle applies directly: completion counting needs transactional semantics. `INSERT OR IGNORE` into a table keyed by `(scrape_run_id, chunk_index)` is idempotent under redelivery and gives an exact count via `SELECT COUNT(*)` - no race. The finalize-enqueue gate is collapsed into a single atomic `UPDATE … WHERE finalize_enqueued = 0`; D1 returns `meta.changes` for exactly one consumer. The KV counter (`scrape_run:{id}:chunks_remaining`) is retained as a derived mirror for the `/api/scrape-status` progress display but is no longer authoritative. Implements [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract) and [REQ-PIPE-008](../../sdd/generation.md#req-pipe-008-cross-chunk-semantic-dedup-pass) AC 1 and AC 9.
+**Rationale:** AD5's own principle applies directly: completion counting needs transactional semantics. `INSERT OR IGNORE` into a table keyed by `(scrape_run_id, chunk_index)` is idempotent under redelivery and gives an exact count via `SELECT COUNT(*)` - no race. The finalize-enqueue gate is collapsed into a single atomic `UPDATE … WHERE finalize_enqueued = 0`; D1 returns `meta.changes` for exactly one consumer. The KV counter (`scrape_run:{id}:chunks_remaining`) is retained as a derived mirror for the `/api/scrape-status` progress display but is no longer authoritative. Implements [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) and [REQ-PIPE-008](../../sdd/generation.md#req-pipe-008-cross-chunk-semantic-dedup-pass) AC 1 and AC 9.
 
 **Consequences:** The `scrape_chunk_completions` table grows one row per chunk per run; the retention cron (03:00 UTC) must cover this table or it will grow unbounded. The KV mirror is best-effort and may lag behind D1 by up to one propagation window - consumers must not rely on it for correctness, only for display.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract), [REQ-PIPE-008](../../sdd/generation.md#req-pipe-008-cross-chunk-semantic-dedup-pass)
+**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-008](../../sdd/generation.md#req-pipe-008-cross-chunk-semantic-dedup-pass)
 
 ---
 
@@ -255,11 +255,11 @@ KV's eventual consistency made both races effectively undetectable via testing i
 
 **Status:** Accepted (2026-05-03)
 
-**Overrides:** `mechanism-leakage:REQ-DISC-001`, `mechanism-leakage:REQ-DISC-002`, `mechanism-leakage:REQ-AUTH-002`, `mechanism-leakage:REQ-SET-001`, `mechanism-leakage:REQ-SET-005`, `forbidden-content-column-name:REQ-MAIL-001`
+**Overrides:** `mechanism-leakage:REQ-DISC-001`, `mechanism-leakage:REQ-DISC-002`, `mechanism-leakage:REQ-AUTH-002`, `mechanism-leakage:REQ-AUTH-008`, `mechanism-leakage:REQ-SET-001`, `mechanism-leakage:REQ-SET-005`, `forbidden-content-column-name:REQ-MAIL-001`, `forbidden-content-column-name:REQ-MAIL-003`
 
-**Decision:** Keep D1 column names (`session_version`, `hashtags_json`, `digest_hour`, `email_enabled`, `pending_discoveries`) and KV key shapes (`sources:{tag}`) inline in their respective REQs' acceptance criteria. Treat them as part of the persistence contract surface, not implementation detail. The same reasoning applies to `email_enabled` in REQ-MAIL-001 AC 9 and the domain header on `sdd/email.md` line 3 - the column name IS the contract noun shared between the settings UI toggle, the `users` column, and the dispatcher's SQL predicate, equivalent to the env-var-as-contract pattern allowed by `spec-discipline.md`.
+**Decision:** Keep D1 column names (`session_version`, `hashtags_json`, `digest_hour`, `email_enabled`, `pending_discoveries`) and KV key shapes (`sources:{tag}`) inline in their respective REQs' acceptance criteria. Treat them as part of the persistence contract surface, not implementation detail. The same reasoning applies to `email_enabled` in REQ-MAIL-003 AC 3 and the domain header on `sdd/email.md` line 3 - the column name IS the contract noun shared between the settings UI toggle, the `users` column, and the dispatcher's SQL predicate, equivalent to the env-var-as-contract pattern allowed by `spec-discipline.md`.
 
-**Context:** `spec-discipline.md`'s mechanism-leakage rule lists "database column names" and "internal storage shapes" as belonging in `documentation/architecture.md` schema sections. A `/sdd clean` run on 2026-05-03 escalated this as a MEDIUM JUDGMENT against five REQs across the Discovery, Authentication, and Settings domains.
+**Context:** `spec-discipline.md`'s mechanism-leakage rule lists "database column names" and "internal storage shapes" as belonging in `documentation/architecture.md` schema sections. A `/sdd clean` run on 2026-05-03 escalated this as a MEDIUM JUDGMENT against five REQs across the Discovery, Authentication, and Settings domains. The cycle-4 spec-reviewer pass on 2026-05-13 surfaced REQ-AUTH-008 (the symmetric refresh-token REQ) as a sixth case fitting the same pattern (`parent_id`, `revoked_at`, `session_version`, `users.session_version` column references); it was added to the Overrides list under the same rationale. The same 2026-05-13 cycle split REQ-MAIL-001 by sub-feature into a content REQ and a send-policy REQ (REQ-MAIL-003); the `email_enabled` column reference moved with the send-policy split, so `forbidden-content-column-name:REQ-MAIL-003` was added alongside the existing MAIL-001 override.
 
 **Alternatives considered:**
 - Rewrite each AC to describe the user-visible behavior abstractly, with a doc-backlink to a schema section in `documentation/architecture.md`.
@@ -272,7 +272,7 @@ KV's eventual consistency made both races effectively undetectable via testing i
 - The mechanism-leakage rule targets ORM-abstracted projects. This project uses raw SQL and hand-built KV keys; storage names are the developer-facing contract, not hidden implementation detail. Same principle as the env-var-as-contract allowlist.
 
 **Consequences:**
-- spec-reviewer skips these five REQs via the `Overrides:` header above.
+- spec-reviewer skips these six REQs via the `Overrides:` header above.
 - Schema changes update both the affected REQ AC and this ADR (and the corresponding migration files) in lockstep.
 - `documentation/architecture.md` references the storage shapes in §4.2 (libraries) and §4.5 (Worker, queue, and migrations); `documentation/configuration.md` documents the KV bindings and naming conventions. This ADR explains why those high-level references coexist with the inline persistence names in the REQs.
 
@@ -496,7 +496,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - The chunk consumer's `normaliseDedupGroups` stays as-is, slightly looser than the finalize variant. This is documented in the chunk consumer's source comment.
 - If future canonical-URL dedup is loosened (e.g., a feature lets two canonical URLs survive within one cluster), revisit this decision and land the extraction.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-processing-with-json-output-contract), [REQ-PIPE-008](../../sdd/generation.md#req-pipe-008-cross-chunk-semantic-dedup-pass)
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-008](../../sdd/generation.md#req-pipe-008-cross-chunk-semantic-dedup-pass)
 
 ---
 
@@ -545,7 +545,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - `src/lib/tag-railing-flip.ts` stays as-is; the `?raw`-source-grep tests it spawned are deleted in Phase F (CF-011) and replaced by the Playwright spec.
 - This ADR documents WHY a `tag-railing-flip-core.ts` module does not exist.
 
-**Related requirements:** [REQ-READ-007](../../sdd/reading.md#req-read-007-tag-railing-cascade-on-toggle-and-add)
+**Related requirements:** [REQ-READ-007](../../sdd/reading.md#req-read-007-tag-railing-reorder-animation), [REQ-READ-008](../../sdd/reading.md#req-read-008-tag-railing-scroll-wrap-and-fallback)
 
 ---
 

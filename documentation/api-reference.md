@@ -392,7 +392,7 @@ PUT /api/settings
 
 **Error codes:** `invalid_hashtags`, `invalid_time`, `invalid_model_id`, `invalid_email_enabled`.
 
-**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation), [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection), [REQ-SET-005](../sdd/settings.md#req-set-005-email-notification-preference)
+**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation-strip-ux), [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection), [REQ-SET-005](../sdd/settings.md#req-set-005-email-notification-preference)
 
 **Notes**
 
@@ -431,7 +431,7 @@ POST /api/settings
 
 **Error codes (redirected):** `invalid_hashtags`, `invalid_time`, `invalid_email_enabled`.
 
-**Implements:** [REQ-SET-001](../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation), [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-SET-005](../sdd/settings.md#req-set-005-email-notification-preference)
+**Implements:** [REQ-SET-001](../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation-strip-ux), [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-SET-005](../sdd/settings.md#req-set-005-email-notification-preference)
 
 ---
 
@@ -762,7 +762,7 @@ PUT /api/tags
 
 **Rate limit:** 30/60s per user (`tags_mutation`), fail-open. Shared bucket with `POST /api/tags/restore`.
 
-**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation)
+**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation-strip-ux)
 
 ---
 
@@ -787,7 +787,7 @@ POST /api/tags/restore
 
 **Rate limit:** 30/60s per user (`tags_mutation`), fail-open. Shared bucket with `PUT /api/tags`.
 
-**Implements:** [REQ-SET-002 AC 8](../sdd/settings.md#req-set-002-hashtag-curation)
+**Implements:** [REQ-SET-008 AC 4](../sdd/settings.md#req-set-008-hashtag-persistence-validation-and-defaults)
 
 ---
 
@@ -814,7 +814,7 @@ POST /api/tags/delete-initial
 
 **Rate limit:** 30/60s per user (`tags_mutation`), fail-open.
 
-**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation)
+**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation-strip-ux)
 
 ---
 
@@ -1014,7 +1014,7 @@ GET /api/history
 }
 ```
 
-**Implements:** [REQ-HIST-001 AC 4, AC 5](../sdd/history.md#req-hist-001-day-grouped-article-history), [REQ-STAR-001 AC 6](../sdd/reading.md#req-star-001-star-and-unstar-articles), [REQ-READ-001 AC 7](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest)
+**Implements:** [REQ-HIST-003 AC 1, AC 2](../sdd/history.md#req-hist-003-search-tag-filter-and-deep-link-on-history), [REQ-STAR-001 AC 6](../sdd/reading.md#req-star-001-star-and-unstar-articles), [REQ-READ-001 AC 7](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest)
 
 **Notes**
 
