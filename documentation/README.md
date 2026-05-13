@@ -16,6 +16,7 @@ This is the implementation documentation. The product specification (what the sy
 | [Configuration](configuration.md) | Environment variables, secrets, Cloudflare bindings | Developers, Operators |
 | [Deployment](deployment.md) | Dev setup, deployment steps, CI secrets | Developers, Operators |
 | [Security](security.md) | CSP, HSTS, cookie policy, rate limiting | Developers, Operators |
+| [Observability](observability.md) | Structured log event enum, rate-limiter atomicity, fingerprint-drift rationale | Developers, Operators |
 | [Decisions](decisions/README.md) | Architecture Decision Records | Developers |
 
 ---

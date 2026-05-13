@@ -11,6 +11,9 @@ Extracted from [api-reference.md](api-reference.md) so the main reference stays 
 - [Conventions](#conventions)
 - [POST /api/admin/force-refresh](#post-apiadminforce-refresh)
 - [GET /api/admin/force-refresh](#get-apiadminforce-refresh)
+- [POST /api/admin/discovery/retry](#post-apiadmindiscoveryretry)
+- [POST /api/admin/discovery/retry-bulk](#post-apiadmindiscoveryretry-bulk)
+- [GET /api/admin/discovery/retry-bulk](#get-apiadmindiscoveryretry-bulk)
 - [POST /api/admin/embed-backfill](#post-apiadminembed-backfill)
 - [GET /api/admin/embed-backfill](#get-apiadminembed-backfill)
 - [POST /api/admin/historical-dedup](#post-apiadminhistorical-dedup)
@@ -115,6 +118,102 @@ GET /api/admin/force-refresh
 | `500` | Dispatch failed | `{ error: "Failed to dispatch coordinator" }` |
 
 **Implements:** [REQ-OPS-005](../sdd/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 1), [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
+
+---
+
+### POST /api/admin/discovery/retry
+
+Re-queues a single stuck tag for source discovery. Validates the tag against the user's `hashtags_json`, clears `sources:{tag}` and `discovery_failures:{tag}` from KV, and inserts a `pending_discoveries` row picked up by the 5-minute discovery cron. Used for one-off recovery of a tag that exhausted its retry budget.
+
+```
+POST /api/admin/discovery/retry
+```
+
+**Authentication:** session + admin email
+**Origin check:** applies
+
+**Request body** (JSON or form-encoded)
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `tag` | string | yes | Tag to re-queue |
+
+**Response**
+
+| Status | Outcome | Body |
+|---|---|---|
+| `200` | JSON path success | `{ ok: true }` |
+| `303` | Form path success | Redirect to `/settings?rediscover=ok&tag=<tag>` |
+| `400` | Missing tag | `{ error, code: "bad_request" }` |
+| `400` | Tag not in user's `hashtags_json` | `{ error, code: "unknown_tag" }` |
+| `401` | Not signed in | `{ error, code: "unauthorized" }` |
+| `403` | Not admin, or Origin mismatch | `{ error, code: "forbidden" }` or `{ error, code: "forbidden_origin" }` |
+
+**Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)
+
+**Notes**
+
+The form-encoded path exists because native HTML `POST` form submissions work reliably across Samsung Browser and in-app webviews where JS-driven `fetch` requests are flaky. JSON callers preserve a programmatic contract for scripted recovery.
+
+The `unknown_tag` check is not redundant with admin auth: it bounds the LLM blast radius so an admin can only retry tags they themselves saved, not arbitrary strings posted to the endpoint.
+
+---
+
+### POST /api/admin/discovery/retry-bulk
+
+Re-queues every stuck tag for the signed-in admin in one D1 batch. Backs the **Discover missing sources** button on `/settings` when the in-app fetch path is used. A tag is "stuck" when its `sources:{tag}` KV entry parses to an explicitly empty `feeds` array; brand-new tags with no KV entry yet are not stuck (the cron has not run for them).
+
+```
+POST /api/admin/discovery/retry-bulk
+```
+
+**Authentication:** session + admin email
+**Origin check:** applies
+
+**Request:** none.
+
+**Response**
+
+| Status | Outcome | Body |
+|---|---|---|
+| `200` | Scripted caller (`Accept: application/json`) | `{ ok: true, count: N }` |
+| `303` | Browser form submit | Redirect to `/settings?rediscover=ok&count=<N>` |
+| `401` | Not signed in | `{ error, code: "unauthorized" }` |
+| `403` | Not admin, or Origin mismatch | `{ error, code: "forbidden" }` or `{ error, code: "forbidden_origin" }` |
+| `500` | D1 batch failed | `{ error, code: "internal_error" }` |
+
+**Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)
+
+**Notes**
+
+The D1 `INSERT OR IGNORE` for `pending_discoveries` rows commits BEFORE the KV `sources:{tag}` / `discovery_failures:{tag}` cleanup. Order is deliberate: if D1 throws the operator sees a 500 and retries cleanly (no partial KV state); if KV cleanup throws after the D1 commit, the next discovery cron pass overwrites the stale KV entry without operator intervention.
+
+---
+
+### GET /api/admin/discovery/retry-bulk
+
+Browser-callback companion to `POST /api/admin/discovery/retry-bulk`. The settings form posts to the POST handler, but when `CF_ACCESS_AUD` is configured Cloudflare Access intercepts the POST, redirects through SSO, and returns the user as a `GET` to the original URL. This handler returns the same operator-visible outcome the POST path would have produced. Scripts with `Accept: application/json` also reach this handler when they prefer GET semantics.
+
+```
+GET /api/admin/discovery/retry-bulk
+```
+
+**Authentication:** session + admin email
+**Origin check:** n/a (post-SSO browser callback target)
+
+**Response**
+
+| Status | Outcome | Body |
+|---|---|---|
+| `200` | Scripted caller (`Accept: application/json`) | `{ ok: true, count: N }` |
+| `303` | Browser redirect | Redirect to `/settings?rediscover={ok\|denied\|error}` |
+| `500` | D1 batch failed (JSON path) | `{ ok: false, error: <slug> }` |
+
+**Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)
+
+**Notes**
+
+This GET handler shares the [three-layer admin gate](#three-layer-admin-gate) with every other endpoint in this file (CF-001). Unlike `GET /api/admin/force-refresh`, it does not enforce the [Sec-Fetch-Site guard](#sec-fetch-site-guard-on-admin-get-callbacks): the Cloudflare Access perimeter and the admin-email match are the primary defenses, and an authenticated cross-site `GET` would only re-queue tags the signed-in admin already owns (the blast radius is the same as the POST path).
 
 ---
 

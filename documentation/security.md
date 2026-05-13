@@ -160,8 +160,9 @@ Routes under `/api/dev/*` return `404` on any deployment where the `IS_PRODUCTIO
 
 ## Related Documentation
 
-- [`architecture.md`](architecture.md) — Component map and security-headers middleware
-- [`configuration.md`](configuration.md) — KV namespace binding and rate-limit key conventions
-- [`api-reference-admin.md`](api-reference-admin.md) — Per-endpoint auth notes for the admin surface
-- [`decisions/README.md`](decisions/README.md) — AD8 (cookie policy), AD11 (CSP unsafe-inline), AD13 (no non-essential cookies), AD23 (rate-limit fail-closed), AD29 (Access as additive perimeter), AD38 (Sec-Fetch-Site none for SSO callbacks), AD44 (JWT exp validation)
-- [`../sdd/`](../sdd/) — REQ-OPS-003, REQ-AUTH-001, REQ-AUTH-002, REQ-AUTH-003, REQ-AUTH-008
+- [`architecture.md`](architecture.md) - Component map and security-headers middleware
+- [`configuration.md`](configuration.md) - KV namespace binding and rate-limit key conventions
+- [`api-reference-admin.md`](api-reference-admin.md) - Per-endpoint auth notes for the admin surface
+- [`observability.md`](observability.md) - Rate-limiter atomicity, refresh fail-mode log fields, fingerprint-drift rationale
+- [`decisions/README.md`](decisions/README.md) - AD8 (cookie policy), AD11 (CSP unsafe-inline), AD13 (no non-essential cookies), AD23 (rate-limit fail-closed), AD29 (Access as additive perimeter), AD38 (Sec-Fetch-Site none for SSO callbacks), AD44 (JWT exp validation)
+- [`../sdd/`](../sdd/) - REQ-OPS-003, REQ-AUTH-001, REQ-AUTH-002, REQ-AUTH-003, REQ-AUTH-008

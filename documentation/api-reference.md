@@ -13,14 +13,11 @@ All public and authenticated HTTP endpoints. Operator and admin endpoints live i
 - [Authentication](#authentication)
 - [Settings](#settings)
 - [Digests](#digests)
-- [Discovery](#discovery)
 - [Stars](#stars)
 - [Tags](#tags)
 - [Developer Tools](#developer-tools)
-- [Operator Tools](#operator-tools)
 - [SEO and Crawler Policy](#seo-and-crawler-policy)
 - [History and Stats](#history-and-stats)
-- [Structured Log Events](#structured-log-events)
 - [Related Documentation](#related-documentation)
 
 ## Conventions
@@ -580,88 +577,6 @@ Both responses carry a `Set-Cookie` refresh when the session is within 5 minutes
 
 ---
 
-## Discovery
-
-### POST /api/admin/discovery/retry (Re-queue one tag)
-
-Re-queues a single stuck tag for source discovery. Validates the tag is in the user's `hashtags_json`, clears `sources:{tag}` and `discovery_failures:{tag}` KV, inserts a `pending_discoveries` row.
-
-```
-POST /api/admin/discovery/retry
-```
-
-**Authentication:** session + admin email
-**Origin check:** applies
-
-**Request body** (JSON or form-encoded)
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `tag` | string | yes | Tag to re-queue |
-
-**Response**
-
-| Status | Outcome | Body |
-|---|---|---|
-| `200` | JSON path success | `{ ok: true }` |
-| `303` | Form path success | Redirect to `/settings?rediscover=ok&tag=<tag>` |
-| `400` | Missing tag | `{ error, code: "bad_request" }` |
-| `400` | Tag not in user's hashtags | `{ error, code: "unknown_tag" }` |
-| `401` | No session or non-admin | `{ error, code: "unauthorized" }` |
-| `403` | Origin mismatch | `{ error, code: "forbidden_origin" }` |
-
-**Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)
-
----
-
-### POST /api/admin/discovery/retry-bulk (Re-queue all stuck tags - scripted path)
-
-Re-queues every stuck tag for the session user in one D1 batch. Backs the **Discover missing sources** button when invoked from the in-app fetch path. A tag is stuck when its `sources:{tag}` entry has an explicitly empty `feeds` array; brand-new tags are not stuck (still discovering).
-
-```
-POST /api/admin/discovery/retry-bulk
-```
-
-**Authentication:** session + admin email
-**Origin check:** applies
-
-**Response**
-
-| Status | Outcome | Body |
-|---|---|---|
-| `200` | Scripted success (`Accept: application/json`) | `{ ok: true, count: N }` |
-| `303` | Browser form submit fallback | Redirect to `/settings?rediscover=ok&count=<N>` |
-| `401` | No session or non-admin | `{ error, code: "unauthorized" }` |
-| `403` | Origin mismatch | `{ error, code: "forbidden_origin" }` |
-| `500` | D1 error | `{ error, code: "internal_error" }` |
-
-**Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)
-
----
-
-### GET /api/admin/discovery/retry-bulk (Re-queue all stuck tags - browser path)
-
-Browser-navigation companion to the POST handler above. Reached when an operator clicks **Discover missing sources** after Cloudflare Access has redirected them through the SSO callback (Access-gated zone behaviour). Same effect as POST: re-queues every stuck tag for the session user in one D1 batch.
-
-```
-GET /api/admin/discovery/retry-bulk
-```
-
-**Authentication:** Cloudflare Access (post-SSO browser path)
-**Origin check:** exempt (Access is the sole gate)
-
-**Response**
-
-| Status | Outcome | Body |
-|---|---|---|
-| `303` | Success | Redirect to `/settings?rediscover=ok&count=<N>` |
-| `401` | No session or non-admin | `{ error, code: "unauthorized" }` |
-| `500` | D1 error | `{ error, code: "internal_error" }` |
-
-**Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)
-
----
-
 ## Stars
 
 ### POST /api/articles/:id/star (Star article)
@@ -898,12 +813,6 @@ Poll `GET /api/scrape-status` until `status='ready'`.
 
 ---
 
-## Operator Tools
-
-Admin endpoints (force-refresh, embed-backfill, historical-dedup, dedup-status, pipeline-run POST/GET, pipeline-status, dedup-diag) live in [api-reference-admin.md](api-reference-admin.md). Backlinks to REQ-OPS-005/008, REQ-PIPE-001/003/009, and REQ-AUTH-001 AC 8a/8d/9/9g/10 are documented there.
-
----
-
 ## SEO and Crawler Policy
 
 ### GET /sitemap.xml (XML sitemap)
@@ -1074,94 +983,11 @@ The ratio `articles_read / articles_total` always describes "of articles you can
 
 ---
 
-## Structured Log Events
-
-This is not an HTTP endpoint. It documents the JSON log shape emitted to Cloudflare Logs via `console.log`. Every log line is `JSON.stringify`'d so Cloudflare Logs parses it as a structured record.
-
-**Implements:** [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-logging)
-
-### Envelope
-
-Every event carries the following fields:
-
-| Field | Type | Description |
-|---|---|---|
-| `ts` | number | Unix milliseconds (`Date.now()`) |
-| `level` | string (`"info"` \| `"warn"` \| `"error"`) | Severity |
-| `event` | string (closed enum) | Event name; see table below |
-
-### Event enum
-
-The `LogEvent` enum is defined in `src/lib/log.ts`. Each event has fixed semantics and may carry additional event-specific fields (see source).
-
-| Event | When emitted |
-|---|---|
-| `auth.login` | Successful OAuth callback — user created or re-authenticated |
-| `auth.callback.failed` | OAuth callback failed (token exchange, user fetch, or DB) |
-| `auth.callback.invalid_state` | CSRF state mismatch in the OAuth callback (returns 403) |
-| `auth.logout` | Session version bumped; cookies cleared; active refresh row revoked |
-| `auth.logout.refresh_revoke_failed` | D1 revoke call in logout threw; session_version still bumped |
-| `auth.logout.sv_bump_failed` | D1 session_version increment in logout threw |
-| `auth.account.delete` | User row deleted from D1 |
-| `auth.account.delete.failed` | D1 delete threw, or KV cleanup threw |
-| `auth.set_tz.failed` | D1 update in `POST /api/auth/set-tz` threw |
-| `digest.generation` | Digest generation completed (success or failure) |
-| `source.fetch.failed` | An individual source could not be fetched during fan-out |
-| `refresh.rejected` | Manual refresh rejected (rate-limited or already in progress) |
-| `auth.refresh.rotated` | Refresh-token row rotated (middleware or explicit endpoint) |
-| `auth.refresh.rotate_failed` | D1 batch in `rotateRefreshToken` threw |
-| `auth.refresh.expired` | Refresh cookie presented but the row is past its 30-day TTL |
-| `auth.refresh.fingerprint_drift` | UA or country changed; logged but not enforced (see below) |
-| `auth.refresh.grace_fingerprint_mismatch` | Fingerprint mismatch inside 30s grace; treated as theft |
-| `auth.refresh.concurrent_collision` | Revoked cookie inside grace window; served fresh JWT off surviving row |
-| `auth.refresh.concurrent_lost_race` | Same as above; no surviving row found; treated as reuse |
-| `auth.refresh.reuse_detected` | Revoked cookie outside grace window; all refresh rows revoked, session_version bumped |
-| `auth.refresh.purge_completed` | Daily purge of expired/old-revoked refresh-token rows completed |
-| `auth.refresh.purge_failed` | Daily purge threw |
-| `email.send.failed` | Resend API call failed |
-| `email.dispatch.degraded` | Per-user D1 data-fetch failed; user treated as having zero headlines |
-| `email.dispatch.skipped_empty` | Zero unread headlines for the local day; send skipped |
-| `email.dispatch.skipped_invalid_tz` | User row has empty or unrecognised IANA timezone |
-| `discovery.completed` | Per-tag LLM discovery run finished |
-| `discovery.queued` | New per-tag discovery job inserted into `pending_discoveries` |
-| `settings.update.failed` | D1 update in `PUT /api/settings` threw |
-| `auth.refresh.rate_limited` | Refresh rate-limit bucket hit; request rejected with 429 |
-| `rate.limit.kv_error` | KV read/write in the rate-limit helper threw |
-| `article.star.failed` | D1 insert or delete in `POST/DELETE /api/articles/:id/star` threw |
-
-Raw exception messages appear only in the `detail` field of error-level records; they are never stored in D1 and never returned to clients (see [REQ-OPS-002](../sdd/observability.md#req-ops-002-sanitized-error-surfaces)).
-
-### Rate limiter atomicity
-
-The KV-backed rate limiter does a non-atomic `get`-then-`put`. Concurrent requests racing within the same window can each read N, decide `N < limit`, and write `N+1`, allowing up to roughly `concurrency × limit` through under contention (bounded by KV's propagation delay, typically < 60s globally). For most routes this is acceptable defence-in-depth.
-
-For `failClosed: true` rules (`AUTH_REFRESH_IP`, `AUTH_REFRESH_USER`) protecting refresh-token spray attacks distributed across concurrent requests, the in-Worker limiter is best treated as defence-in-depth rather than the primary gate. Cloudflare zone-level Rate Limiting (WAF) is atomic and should be configured in front of `/api/auth/refresh` for production deployments. Without it, a coordinated burst above ~2× the configured limit can succeed during the propagation window (CF-034).
-
-### Refresh rate-limit fail mode
-
-Refresh rate-limit logs (`auth.refresh.rate_limited`, `rate.limit.kv_error`) carry two extra fields:
-
-| Field | Values | Meaning |
-|---|---|---|
-| `bucket` | `"ip"` | Pre-validation `auth_refresh_ip` rule (60/min) |
-| `bucket` | `"user"` | Post-validation `auth_refresh_user` rule (30/min) |
-| `decision` | `"fail_open"` | KV outage on a route that fails open (most routes) |
-| `decision` | `"fail_closed"` | KV outage on a refresh-token route (rejected) |
-| `kv_op` | `"get"` | Error on the counter-read path |
-| `kv_op` | `"put"` | Error on the counter-write path |
-
-### Why fingerprint drift is logged but not enforced
-
-A refresh-token row stores the user-agent and country at issuance. On every refresh, the present UA/country are compared and a drift event is logged as forensic metadata. **The drift does not block the refresh.**
-
-UA strings change on every browser auto-update; country changes when a user moves between Wi-Fi and mobile networks. Hard-gating refresh on either would lock users out routinely. Industry guidance (RFC 9700, OWASP, Auth0, Okta) is consistent: log drift for anomaly detection, do not enforce it on the steady-state path. Reuse-detection (a revoked-then-replayed cookie) remains the enforcement signal.
-
----
-
 ## Related Documentation
 
-- [api-reference-admin.md](api-reference-admin.md) — Admin and operator endpoints
-- [architecture.md](architecture.md) — Component map
-- [configuration.md](configuration.md) — Env vars, secrets, KV namespace bindings
-- [security.md](security.md) — Rate-limit matrix, admin auth layers, threat model
-- [`../sdd/`](../sdd/) — REQ-AUTH-*, REQ-OPS-*, REQ-SET-*, REQ-READ-*, REQ-PIPE-*, REQ-HIST-*, REQ-STAR-*, REQ-DISC-*
+- [api-reference-admin.md](api-reference-admin.md) - Admin and operator endpoints
+- [architecture.md](architecture.md) - Component map
+- [configuration.md](configuration.md) - Env vars, secrets, KV namespace bindings
+- [observability.md](observability.md) - Structured log event shapes, rate-limiter atomicity, fingerprint-drift rationale
+- [security.md](security.md) - Rate-limit matrix, admin auth layers, threat model
+- [`../sdd/`](../sdd/) - REQ-AUTH-*, REQ-OPS-*, REQ-SET-*, REQ-READ-*, REQ-PIPE-*, REQ-HIST-*, REQ-STAR-*, REQ-DISC-*
