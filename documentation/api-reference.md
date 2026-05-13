@@ -606,26 +606,48 @@ POST /api/admin/discovery/retry
 
 ---
 
-### POST /api/admin/discovery/retry-bulk (Re-queue all stuck tags)
+### POST /api/admin/discovery/retry-bulk (Re-queue all stuck tags - scripted path)
 
-Re-queues every stuck tag for the session user in one D1 batch. Backs the **Discover missing sources** button. A tag is stuck when its `sources:{tag}` entry has an explicitly empty `feeds` array; brand-new tags are not stuck (still discovering). Both POST (preferred) and GET (browser navigation via Cloudflare Access post-auth) are accepted; the GET path skips the Origin check because Cloudflare Access is the sole gate.
+Re-queues every stuck tag for the session user in one D1 batch. Backs the **Discover missing sources** button when invoked from the in-app fetch path. A tag is stuck when its `sources:{tag}` entry has an explicitly empty `feeds` array; brand-new tags are not stuck (still discovering).
 
 ```
 POST /api/admin/discovery/retry-bulk
-GET  /api/admin/discovery/retry-bulk
 ```
 
-**Authentication:** session + admin email (POST), Cloudflare Access (GET browser path)
-**Origin check:** applies on POST; exempt on GET (Access is the gate)
+**Authentication:** session + admin email
+**Origin check:** applies
 
 **Response**
 
 | Status | Outcome | Body |
 |---|---|---|
 | `200` | Scripted success (`Accept: application/json`) | `{ ok: true, count: N }` |
-| `303` | Browser success (form submit or Access redirect) | Redirect to `/settings?rediscover=ok&count=<N>` |
+| `303` | Browser form submit fallback | Redirect to `/settings?rediscover=ok&count=<N>` |
 | `401` | No session or non-admin | `{ error, code: "unauthorized" }` |
-| `403` | Origin mismatch (POST) | `{ error, code: "forbidden_origin" }` |
+| `403` | Origin mismatch | `{ error, code: "forbidden_origin" }` |
+| `500` | D1 error | `{ error, code: "internal_error" }` |
+
+**Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)
+
+---
+
+### GET /api/admin/discovery/retry-bulk (Re-queue all stuck tags - browser path)
+
+Browser-navigation companion to the POST handler above. Reached when an operator clicks **Discover missing sources** after Cloudflare Access has redirected them through the SSO callback (Access-gated zone behaviour). Same effect as POST: re-queues every stuck tag for the session user in one D1 batch.
+
+```
+GET /api/admin/discovery/retry-bulk
+```
+
+**Authentication:** Cloudflare Access (post-SSO browser path)
+**Origin check:** exempt (Access is the sole gate)
+
+**Response**
+
+| Status | Outcome | Body |
+|---|---|---|
+| `303` | Success | Redirect to `/settings?rediscover=ok&count=<N>` |
+| `401` | No session or non-admin | `{ error, code: "unauthorized" }` |
 | `500` | D1 error | `{ error, code: "internal_error" }` |
 
 **Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)

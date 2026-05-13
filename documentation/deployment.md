@@ -1,6 +1,7 @@
 # Deployment
 
-<!-- doc-allow-large: AD46 deployment-doc colocation -->
+<!-- doc-allow-large: AD46a deployment-doc colocation -->
+<!-- doc-allow-mixed-shape: AD46d deployment hybrid runbook-and-registry rendering -->
 
 **Audience:** Developers, Operators
 

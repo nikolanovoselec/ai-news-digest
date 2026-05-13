@@ -59,7 +59,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | AD43 | Shared per-match dedup classifier; outer control flow stays per-consumer | Architecture | 2026-05-12 |
 | AD44 | Cloudflare Access JWT `exp` validation; signature still trusted from the perimeter | Security | 2026-05-12 |
 | AD45 | Accepted orchestration-file sizes (coordinator, chunk-consumer, settings.astro) exceed 800-line cap | Architecture | 2026-05-11 |
-| AD46 | Documentation file-size hatches (deployment colocation, architecture diagrams, ADR index) | Documentation | 2026-05-12 |
+| AD46 | Documentation file-size hatches and hybrid renderings (deployment colocation, architecture diagrams, ADR index, deployment hybrid shape) | Documentation | 2026-05-12 |
 | AD47 | Storage-shape allowlist promoted to spec-discipline; AD9 superseded | Storage | 2026-05-13 |
 
 ---
@@ -1321,7 +1321,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 ---
 
-### AD46: Documentation file-size hatches (deployment colocation, architecture diagrams, ADR index)
+### AD46: Documentation file-size hatches and hybrid renderings (deployment colocation, architecture diagrams, ADR index, deployment hybrid shape)
 
 **Status:** Accepted (2026-05-12)
 
@@ -1336,8 +1336,11 @@ Three reasons the AD41 fix did not collapse this cluster:
 - **AD46c — `decisions/README.md` single-file design.** All ADRs colocate here rather than one-file-per-ADR. Per-file ADR storage fragments cross-references: ADR-A frequently cites ADR-B via section anchor; separate files make anchor stability fragile.
 
   The chronological reading path (`AD1 → AD46`) works as a single document. The file IS the index.
+- **AD46d — `deployment.md` hybrid runbook-and-registry rendering.** `deployment.md` legitimately mixes per-item runbook sections (`## Local Development`, `## Production Deployment`, `## Integration deployment` — each with `**When:** / **Command:** / **Verifies:** / **Rollback:**`) with grouped-table registry sections (`### Environment-specific configuration`, `## Cloudflare Resources`, `### PR Checks - CI gates`, `## Admin-only routes` layer table). The two shapes serve two different reader tasks: the runbook shape walks the operator through a sequenced procedure; the registry shape lets the operator look up a resource, env, or gate at a glance.
 
-**Context:** `documentation-discipline.md` Pass 6 (hatch audit) flags bare `doc-allow-large` markers as MEDIUM and prose-justification-without-ADR markers as the same shape the rule was written to prevent. Cycle 3 review (CF-006) flagged four markers across `deployment.md`, `architecture.md` (×2), and `decisions/README.md` that all carried the same root justification but no ADR backlink.
+  `documentation-discipline.md` Pass 6 (file-level shape consistency) treats hybrid files as a soft signal because the first-section-wins tiebreak would force one shape across the entire file. For `deployment.md`, that conversion would either bloat the registry tables into per-item sections (15+ rows × 4 fields each) or strip the runbook scaffolding from the deploy procedures. AD46d formalizes the hybrid rendering: Pass 6 findings against `deployment.md` are accepted under this ADR and not re-flagged on subsequent runs.
+
+**Context:** `documentation-discipline.md` Pass 6 (hatch audit) flags bare `doc-allow-large` markers as MEDIUM and prose-justification-without-ADR markers as the same shape the rule was written to prevent. Cycle 3 review (CF-006) flagged four markers across `deployment.md`, `architecture.md` (×2), and `decisions/README.md` that all carried the same root justification but no ADR backlink. The cycle 5 follow-up surfaced AD46d as a co-occurring concern: Pass 6 shape consistency fires against `deployment.md` in the same way Pass 2 file-size budgets fire against the AD46a-c targets — a structural rule firing on a section the discipline's content-preservation guarantees would refuse to mechanically convert.
 
 **Rationale:** The hatch was designed to surface design tradeoffs as ADRs — a decision the reader can discover, revisit, and supersede. A bare or prose-only marker hides the decision in the marker itself. This AD pulls the decisions into the discoverable ADR ledger; the markers become referential, not load-bearing.
 
@@ -1346,6 +1349,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - The four affected markers now reference `AD46` directly (e.g., `doc-allow-large: AD46 deployment-doc colocation`). The `doc-updater` Pass 6 audit accepts them under the ADR-reference rule.
 - Future doc growth in any of the three files should reopen this AD rather than adding new bare hatches.
 - If `deployment.md` grows to the point where the operator workflow itself becomes hard to follow, the split should be a deliberate workflow redesign (e.g., a master deploy runbook with linked sub-pages), not a lane-discipline split.
+- Pass 6 (file-level shape consistency) findings against `deployment.md` are accepted under AD46d's hybrid-rendering carve-out. If a future review surfaces a shape-mismatch in a section that does NOT serve a runbook-or-registry purpose, AD46d does not cover it and the standard Pass 6 conversion applies.
 - The ADR ledger's single-file design implicitly limits the ledger's growth ceiling. If the ledger exceeds ~50 ADRs or ~2500 lines, this AD should be revisited in favor of a per-AD layout with an explicit index.
 
 **Related requirements:** none direct — operational/documentation concern.
