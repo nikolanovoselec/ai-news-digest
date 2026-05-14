@@ -69,7 +69,7 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
     const env = makeAi({ response: '{"verdicts":[]}' });
     const verdicts = await rerankBorderlinePairsBatch(env, []);
     expect(verdicts).toEqual([]);
-    expect((env.AI as { run: ReturnType<typeof vi.fn> }).run).not
+    expect((env.AI as unknown as { run: ReturnType<typeof vi.fn> }).run).not
       .toHaveBeenCalled();
   });
 
@@ -79,7 +79,7 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
     );
     const verdicts = await rerankBorderlinePairsBatch(env, [pair(0, true)]);
     expect(verdicts).toEqual([true]);
-    expect((env.AI as { run: ReturnType<typeof vi.fn> }).run).toHaveBeenCalledTimes(1);
+    expect((env.AI as unknown as { run: ReturnType<typeof vi.fn> }).run).toHaveBeenCalledTimes(1);
   });
 
   it('returns verdicts for a 5-pair batch in one LLM call', async () => {
@@ -100,7 +100,7 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
       pair(4, true),
     ]);
     expect(verdicts).toEqual([true, false, true, false, true]);
-    expect((env.AI as { run: ReturnType<typeof vi.fn> }).run).toHaveBeenCalledTimes(1);
+    expect((env.AI as unknown as { run: ReturnType<typeof vi.fn> }).run).toHaveBeenCalledTimes(1);
   });
 
   it('handles exactly RERANK_BATCH_SIZE pairs in a single call', async () => {
@@ -114,7 +114,7 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
     const verdicts = await rerankBorderlinePairsBatch(env, pairs);
     expect(verdicts).toHaveLength(RERANK_BATCH_SIZE);
     expect(verdicts.every((v, i) => v === (i % 2 === 0))).toBe(true);
-    expect((env.AI as { run: ReturnType<typeof vi.fn> }).run).toHaveBeenCalledTimes(1);
+    expect((env.AI as unknown as { run: ReturnType<typeof vi.fn> }).run).toHaveBeenCalledTimes(1);
   });
 
   it('splits RERANK_BATCH_SIZE+1 pairs across two LLM calls and preserves order', async () => {
@@ -139,7 +139,7 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
       expect(verdicts[i]).toBe(true);
     }
     expect(verdicts[RERANK_BATCH_SIZE]).toBe(false);
-    expect((env.AI as { run: ReturnType<typeof vi.fn> }).run).toHaveBeenCalledTimes(2);
+    expect((env.AI as unknown as { run: ReturnType<typeof vi.fn> }).run).toHaveBeenCalledTimes(2);
   });
 
   it('returns all-false for a batch when the LLM emits unparseable JSON', async () => {
