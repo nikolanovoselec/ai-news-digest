@@ -6,6 +6,10 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are archived in [`changes-archive-2026-04.md`](changes-archive-2026-04.md).
 
+## 2026-05-14
+
+- REQ-PIPE-009 gains two acceptance criteria for the dedup cost reductions captured in AD48: borderline pairs for one self now ride in a single batched LLM call (parse failure falls back to "different events" per pair), and the recurring background sweep skips the same-event judgment for pairs whose two articles both predate the last successful sweep watermark. An operator-initiated sweep ignores the watermark and re-judges every borderline pair end-to-end.
+
 ## 2026-05-13
 
 - Ten Deprecated REQs deleted from spec per the new deletion rule (Status: Deprecated no longer valid). REQ-READ-004 -> REQ-PIPE-001; REQ-PIPE-008 -> REQ-PIPE-003; REQ-GEN-001/002/003/007 -> REQ-PIPE-001; REQ-GEN-004 -> REQ-PIPE-003; REQ-GEN-005/006 -> REQ-PIPE-002; REQ-GEN-008 -> REQ-HIST-002. Live contracts in the successors have carried the user-observable behaviour since the 2026-04-23 / 2026-05-06 deprecations; tombstones held only mechanism-detail orphan tokens that the discipline excludes from REQs by rule. Git log preserves the full history.

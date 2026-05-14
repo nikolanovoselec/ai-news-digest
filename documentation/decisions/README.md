@@ -62,6 +62,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD46](#ad46-documentation-file-size-hatches-and-hybrid-renderings-deployment-colocation-architecture-diagrams-adr-index-deployment-hybrid-shape) | Documentation file-size hatches and hybrid renderings (deployment colocation, architecture diagrams, ADR index, deployment hybrid shape, api-reference completeness) | Documentation | 2026-05-12 |
 | [AD46e](#ad46e-api-referencemd-completeness-exemption) | `api-reference.md` completeness exemption — ~90 endpoint sections cannot decompose without fragmenting the reader's lookup path | Documentation | 2026-05-13 |
 | [AD47](#ad47-storage-shape-allowlist-promoted-to-spec-discipline-ad9-superseded) | Storage-shape allowlist promoted to spec-discipline; AD9 superseded | Storage | 2026-05-13 |
+| [AD48](#ad48-dedup-cost-reduction-borderline-rerank-watermark-batched-rerank-call-pipeline-wide-gpt-oss-20b) | Dedup cost reduction: borderline-rerank watermark + batched rerank call + pipeline-wide gpt-oss-20b | Architecture | 2026-05-14 |
 
 ---
 
@@ -1408,6 +1409,36 @@ Three reasons the AD41 fix did not collapse this cluster:
 - If a future audit ever wants to tighten the carveout — e.g., to only cover column names appearing in user-facing settings UIs — the allowlist is the place to scope, not a new ADR.
 
 **Related requirements:** [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery), [REQ-DISC-002](../../sdd/discovery.md#req-disc-002-discovery-progress-visibility), [REQ-AUTH-002](../../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-replay-detection), [REQ-SET-001](../../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../../sdd/settings.md#req-set-005-email-notification-preference), [REQ-MAIL-001](../../sdd/email.md#req-mail-001-digest-ready-email-content), [REQ-MAIL-003](../../sdd/email.md#req-mail-003-scheduled-send-policy-and-opt-out)
+
+---
+
+### AD48: Dedup cost reduction: borderline-rerank watermark + batched rerank call + pipeline-wide gpt-oss-20b
+
+**Status:** Accepted (2026-05-14)
+
+**Decision:** Stack three independent cost reductions on the dedup pipeline:
+
+1. **Watermark skip on the recurring sweep.** Persist the timestamp of the last successful auto-sweep in KV (`dedup:auto_sweep_watermark`). At the start of the borderline rerank pass, skip the LLM call for any pair whose two articles were both already in the corpus at that prior watermark; their same-event verdict was recorded by the previous sweep and the model is deterministic at temperature 0.
+2. **Batched rerank call.** Replace the per-pair `rerankBorderlinePair(a, b)` API with `rerankBorderlinePairsBatch(pairs[])` (cap 15 pairs per call). Both rerank callers (in-tick finalize, sweep PASS 2) accumulate borderline candidates and issue one LLM round-trip per self instead of one per pair. Parse failure on a batched response is treated as `same_event: false` for every pair in that batch (matches the pre-AD48 single-pair conservative default).
+3. **Pipeline-wide model swap.** Flip `DEFAULT_MODEL_ID` in `src/lib/models.ts` from `@cf/openai/gpt-oss-120b` to `@cf/openai/gpt-oss-20b`. The constant is the single source of truth for every pipeline LLM call (chunk summarisation, rerank, discovery); changing it routes the whole pipeline through the cheaper sibling. Same OpenAI family, same 128K context, same native JSON mode at $0.20 / $0.30 per Mtok versus $0.35 / $0.75.
+
+**Context:** The auto-sweep walks the last 7 days every 4 hours (REQ-PIPE-003 + AD41). Borderline cosine pairs in `[0.70, 0.78)` were sent to the LLM one-pair-at-a-time. With a 7-day window and 6 sweeps per day, each unresolved pair was reranked up to ~42 times before it aged out, every time paying ~300-token system prompt + ~400-token payload at temperature 0 — deterministic re-asking of a verdict already on record. The 7-day window and 4-hour cadence are non-negotiable (the window is the per-pair time-distance gate validated by PANW-cluster spans of ~100h; cadence catches Vectorize eventual-consistency same-tick misses and late-arriving older articles per AD42 history).
+
+**Alternatives considered:**
+- *Sweep throttle (cadence cut).* Rejected per project direction: cadence is the only protection against eventual-consistency same-tick misses and late-arriving feed items.
+- *7-day window shrink.* Rejected: PANW cluster spans ~100 hours; a 1-day window misses the cluster's far edges (AD39 history).
+- *D1 verdict cache table.* Considered. Rejected as heavier than KV watermark for the dominant case ("the same auto-sweep is re-judging pairs it already judged last sweep"). A per-pair cache adds a migration, a row per borderline pair, and write-path complexity for marginal recall on top of the watermark.
+- *All pairs in one global LLM call.* Rejected: attention dilution and JSON-parse blast radius scale with pair count. 15 per call keeps each round-trip well below 1K output tokens and limits parse-failure loss.
+- *Rerank-only model swap (chunk stays 120b).* Rejected per project direction favouring single-model simplicity over per-call-site model splitting. `DEFAULT_MODEL_ID` stays the one knob.
+
+**Consequences:**
+- Auto-sweep LLM cost drops roughly an order of magnitude on the recurring case (watermark skip eliminates re-judgment of pre-watermark pairs; batched call amortises system prompt + round-trip across pairs from the same self).
+- Chunk summarisation cost drops ~60% from the model swap independently of dedup.
+- Operator-triggered `/api/admin/historical-dedup` and `?reembed=1` invalidate the watermark (the latter via `clearWatermark`, the former via a `bypassWatermark: true` flag propagated through every continuation queue message) so a manual sweep after a threshold or prompt change re-judges everything.
+- Rollback is a single constant flip in `src/lib/models.ts` back to `@cf/openai/gpt-oss-120b` if 20b regresses on chunk-sized prompts (the Gemma 4 26B prompt-timeout failure mode from 2026-05 is the comparison shape to watch on integration).
+- Test fixtures that previously mocked single-pair `{"same_event": ...}` responses now mock the batched `{"verdicts":[{"i":N,"same_event":...}]}` shape; a no-verdicts response degrades to "all false" per pair, preserving the conservative default.
+
+**Related requirements:** [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
 
 ---
 
