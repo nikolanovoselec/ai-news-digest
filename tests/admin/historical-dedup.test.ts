@@ -192,12 +192,16 @@ describe('POST /api/admin/historical-dedup — REQ-PIPE-014 operator sweep kicke
     // First bound param is the run_id
     expect(calls.insertCalls[0]!.params[0]).toBe(body.run_id);
 
-    // Exactly one queue message dispatched, cursor=null
+    // Exactly one queue message dispatched, cursor=null. AD48: operator-
+    // triggered runs carry bypassWatermark=true so the queue chain re-
+    // judges every borderline pair regardless of the auto-sweep
+    // watermark.
     expect(sends.length).toBe(1);
     expect(sends[0]).toEqual({
       run_id: body.run_id,
       cursor: null,
       batch: 25,
+      bypassWatermark: true,
     });
   });
 

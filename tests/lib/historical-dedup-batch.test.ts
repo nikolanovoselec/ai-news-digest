@@ -874,6 +874,7 @@ describe('runHistoricalDedupBatch — REQ-PIPE-003', () => {
       DB: db,
       VECTORIZE: vectorize,
       AI: { run: vi.fn() },
+      KV: makeKv(null),
       DEDUP_TIME_WINDOW_SECONDS: '60',
     } as unknown as Env;
     const result = await runHistoricalDedupBatch(env, null, 100);
@@ -965,6 +966,7 @@ describe('runHistoricalDedupBatch — REQ-PIPE-003', () => {
       DB: db,
       VECTORIZE: vectorize,
       AI: { run: vi.fn().mockResolvedValue({ response: '{"same_event":false}' }) },
+      KV: makeKv(null),
     } as unknown as Env;
     const result = await runHistoricalDedupBatch(env, null, 100);
     // Cursor advanced past both rows (last row is SELF_FAIL).
