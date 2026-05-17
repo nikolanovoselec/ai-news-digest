@@ -194,7 +194,7 @@ Page components (`src/pages/*.astro`) and API handlers (`src/pages/api/**.ts`) -
 | `src/scripts/alt-sources-modal.ts` | Alt-source picker open/close and responsive desktop anchor (positions below trigger on ≥768 px viewports, centred on mobile). Mirrored to `public/scripts/alt-sources-modal.js` (CSP requires external bundles) | [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view-rendering) |
 | `src/scripts/card-interactions.ts` | Document-level star-toggle delegation (covers `/digest`, `/starred`, `/history`, and article-detail header) plus tag-disclosure popover bindings. Mirrored to `public/scripts/card-interactions.js` and loaded layout-wide via `Base.astro` (CSP blocks the inline Astro bundle that would otherwise be emitted per-page) | [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles), [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest) |
 | `src/scripts/install-prompt.ts` | PWA install-prompt bindings | [REQ-PWA-001](../sdd/pwa.md#req-pwa-001-installable-pwa-manifest) |
-| `src/scripts/theme-toggle.ts` | Theme toggle and meta-tag updates | [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash) |
+| `src/scripts/theme-toggle.ts` | Document-level delegated click handler for `[data-theme-toggle]` (flips `data-theme` on `<html>`, persists to `localStorage.theme` + `theme` cookie, updates `meta[name="theme-color"]`). Mirrored to `public/scripts/theme-toggle.js` and loaded layout-wide via `Base.astro` (Astro 5 `directRenderScript` inlines the component-level bundle into HTML; the site CSP `script-src 'self'` then blocks it - same constraint as `page-effects.js` and `card-interactions.js`). Pure helpers consumed by the unit-test suite stay in `src/scripts/bundled/theme-toggle.ts`. | [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash) |
 | `src/styles/global.css` | Design tokens, type scale, focus ring, motion system | [REQ-DES-001](../sdd/design.md#req-des-001-swiss-minimal-visual-language), [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash), [REQ-DES-003](../sdd/design.md#req-des-003-deliberate-motion-system) |
 
 ### 4.5 Worker, Queue, and Migrations
@@ -396,7 +396,7 @@ Astro emits the code as an external `<script type="module" src="/_astro/...js">`
 <script is:inline type="module" src="/scripts/<module>.js"></script>
 ```
 
-The `is:inline` attribute prevents Astro from re-bundling the file. `scripts/build-client-scripts.mjs` rebuilds every Pattern B file on every `npm run build`, so the mirror cannot drift from its source. Scripts currently using this pattern: `page-effects.js`, `card-interactions.js`, `alt-sources-modal.js`, `install-prompt.js`, `offline.js`, `rate-limited.js`, `article-detail.js`. (`tag-railing-flip.ts` is the lib helper imported via Pattern A - see line 138 - not a Pattern B script.)
+The `is:inline` attribute prevents Astro from re-bundling the file. `scripts/build-client-scripts.mjs` rebuilds every Pattern B file on every `npm run build`, so the mirror cannot drift from its source. Scripts currently using this pattern: `page-effects.js`, `card-interactions.js`, `alt-sources-modal.js`, `install-prompt.js`, `offline.js`, `rate-limited.js`, `article-detail.js`, `theme-toggle.js`. (`tag-railing-flip.ts` is the lib helper imported via Pattern A - see line 138 - not a Pattern B script.)
 
 Replaces the prior hand-maintained `SKIP` set in `build-client-scripts.mjs` (CF-023).
 
