@@ -1,9 +1,11 @@
 ---
 // Implements REQ-DES-002: single toggle button with sun/moon icons that
 // swaps `data-theme` on <html> and persists to localStorage.theme.
-// The actual click handler lives in src/scripts/bundled/theme-toggle.ts and is loaded
-// as a client-side module via the <script> tag below; Astro hoists and bundles
-// component-level scripts automatically.
+// This file is markup only. The click handler lives in
+// src/scripts/theme-toggle.ts and ships as /public/scripts/theme-toggle.js
+// loaded by Base.astro; the pure helpers it imports live in
+// src/scripts/bundled/theme-toggle.ts. See the JSX comment block below
+// for the CSP rationale.
 //
 // CF-059: sun/moon SVG icons moved to ThemeIcon.astro.
 // CF-021: this file is the canonical sun/moon toggle for the whole app.
@@ -126,36 +128,10 @@ const buttonClass =
   }
 </style>
 
-<script>
-  // Implements REQ-DES-002 click handler wiring. Uses a document-
-  // level delegated click handler gated by a flag on <html> so there
-  // is NO race between when the button enters the DOM and when the
-  // script binds - every tap anywhere on a [data-theme-toggle]
-  // element fires `toggleTheme` immediately, even if this script
-  // happened to execute before Astro's ViewTransition placed the
-  // button. Fixes the "tap sometimes does nothing until I reload"
-  // mobile bug the per-button initThemeToggle pattern had.
-  //
-  // CF-021: this is now the SOLE theme-click handler in the app.
-  // The duplicate handler that used to live in UserMenu.astro was
-  // removed when HeaderThemeToggle.astro was merged into this file
-  // as a variant - both variants share this listener so there is no
-  // longer a chance of double-firing.
-  import { toggleTheme } from '~/scripts/bundled/theme-toggle';
-
-  if (document.documentElement.dataset['themeToggleBound'] !== '1') {
-    document.documentElement.dataset['themeToggleBound'] = '1';
-    document.addEventListener(
-      'click',
-      (e) => {
-        const t = e.target;
-        if (!(t instanceof Element)) return;
-        const btn = t.closest<HTMLButtonElement>('[data-theme-toggle]');
-        if (btn === null) return;
-        e.preventDefault();
-        toggleTheme(document, localStorage, (q) => window.matchMedia(q));
-      },
-      true,
-    );
-  }
-</script>
+{/* Click-handler wiring lives in /scripts/theme-toggle.js, loaded by
+    Base.astro via <script is:inline type="module" src=...>. A component-
+    level <script> here would get inlined into HTML by Astro 5
+    directRenderScript and blocked by `script-src 'self'` at runtime -
+    same Astro 5 CSP gotcha that forced the /scripts/page-effects.js
+    extraction. CF-021's previous inline <script> in this file was the
+    root cause of the "theme toggle does nothing" production regression. */}

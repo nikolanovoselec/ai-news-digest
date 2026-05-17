@@ -98,13 +98,3 @@ export function toggleTheme(
   return next;
 }
 
-// Browser-only: wire the click handler onto the button with the expected data attribute.
-// Called from ThemeToggle.astro's inline module script; safe to call multiple times
-// because it removes any prior handler via a data-initialized sentinel.
-export function initThemeToggle(button: HTMLButtonElement): void {
-  if (button.dataset.themeToggleInitialized === 'true') return;
-  button.dataset.themeToggleInitialized = 'true';
-  button.addEventListener('click', () => {
-    toggleTheme(document, localStorage, (q) => window.matchMedia(q));
-  });
-}

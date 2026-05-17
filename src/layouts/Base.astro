@@ -273,6 +273,14 @@ const initialTheme = cookieTheme ?? 'light';
         file. */}
     <script is:inline type="module" src="/scripts/page-effects.js"></script>
 
+    {/* REQ-DES-002 theme-toggle click wiring. Lives in /public/scripts/
+        for the same Astro 5 directRenderScript / `script-src 'self'`
+        reason as page-effects above; an inline import inside
+        ThemeToggle.astro silently dies on production. The .ts source
+        under src/scripts/theme-toggle.ts mirrors this file; pure helpers
+        used by the unit tests stay in src/scripts/bundled/theme-toggle.ts. */}
+    <script is:inline type="module" src="/scripts/theme-toggle.js"></script>
+
     {/* Scroll save/restore + view-transition handlers also live in
         ~/scripts/page-effects (imported above). They must stay in the
         same external-loaded module - an inline copy would be dropped
