@@ -63,6 +63,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD46e](#ad46e-api-referencemd-completeness-exemption) | `api-reference.md` completeness exemption — ~90 endpoint sections cannot decompose without fragmenting the reader's lookup path | Documentation | 2026-05-13 |
 | [AD47](#ad47-storage-shape-allowlist-promoted-to-spec-discipline-ad9-superseded) | Storage-shape allowlist promoted to spec-discipline; AD9 superseded | Storage | 2026-05-13 |
 | [AD48](#ad48-dedup-cost-reduction-borderline-rerank-watermark-batched-rerank-call-pipeline-wide-gpt-oss-20b) | Dedup cost reduction: borderline-rerank watermark + batched rerank call + pipeline-wide gpt-oss-20b | Architecture | 2026-05-14 |
+| [AD49](#ad49-workflow_run-deploy-gate-hardened-against-fork-pwn-request-vector) | `workflow_run` deploy gate hardened against fork pwn-request vector | Security | 2026-05-19 |
 
 ---
 
@@ -1440,6 +1441,33 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Test fixtures that previously mocked single-pair `{"same_event": ...}` responses now mock the batched `{"verdicts":[{"i":N,"same_event":...}]}` shape; a no-verdicts response degrades to "all false" per pair, preserving the conservative default.
 
 **Related requirements:** [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
+
+---
+
+### AD49: `workflow_run` deploy gate hardened against fork pwn-request vector
+
+**Status:** Accepted (2026-05-19)
+
+**Decision:** The deploy job's `if:` expression requires two guards beyond `conclusion == 'success'` on every `workflow_run` path:
+
+- `github.event.workflow_run.event == 'push'` — only post-merge runs trigger deploy; pull_request runs do not.
+- `github.event.workflow_run.head_repository.full_name == github.repository` — only runs originating from this repo, never from a fork.
+
+**Context:** The outer `workflow_run` trigger filter `branches: [main]` matches the PR head ref name, not the source repository. A fork contributor who opens a PR with a head branch literally named `main` passes that filter. Without the two extra guards, the deploy job would check out the fork's untrusted SHA with `actions:write` permissions and access to all deploy secrets (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `OAUTH_JWT_SECRET`, OAuth client secrets, Resend API key). This is the standard `workflow_run` pwn-request vector for public repos documented in GitHub's security hardening guide. Mirror of codeflare#385 (commit `1dfc042`).
+
+**Alternatives considered:**
+
+- *Remove `workflow_run` trigger entirely; use `push` to main directly.* Rejected — a direct `push` trigger on the deploy workflow cannot gate on PR Checks passing; it fires on every merge regardless of test outcome.
+- *Pin with `pull_request_target` restrictions only.* Not applicable — the deploy workflow does not use `pull_request_target`; the vector is the upstream `workflow_run` consumer, not the triggering event.
+- *Repository visibility set to private.* Rejected — the repo is intentionally public; access restriction would break that model.
+
+**Consequences:**
+
+- Fork contributors can never trigger a production deploy regardless of their PR's head branch name or CI outcome. This is the intended behaviour.
+- Manual re-deploys via `workflow_dispatch` are unaffected (the `workflow_dispatch` arm of the `if:` expression has no additional constraints).
+- The legitimate post-merge path remains: PR Checks runs on the merge commit (event=push, head_repository=this repo), Deploy fires when it ends green.
+
+**Related:** [AD12](#ad12-integration-env-separate-cloudflare-resources-manual-trigger-from-develop-crons-disabled), [AD28](#ad28-npm-audit-gating-split---high-advisory-critical-blocking)
 
 ---
 

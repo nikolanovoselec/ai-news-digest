@@ -62,7 +62,7 @@ Import `env` and `applyD1Migrations` from `tests/fixtures/cloudflare-test.ts` (n
 
 ## Production Deployment
 
-**When:** Automatic on merge to `main` (gated on PR Checks success). Manual re-run via Actions → Deploy → Run workflow.
+**When:** Automatic on merge to `main` (gated on PR Checks success). Manual re-run via Actions → Deploy → Run workflow. The `workflow_run` trigger additionally requires `event == 'push'` and `head_repository.full_name == github.repository`; fork PRs whose head branch is named `main` do not trigger deploy regardless of PR Checks outcome (see AD49).
 **Command:**
 ```bash
 npx wrangler d1 migrations apply DB --remote
