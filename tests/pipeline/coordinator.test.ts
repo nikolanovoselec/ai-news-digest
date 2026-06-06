@@ -17,9 +17,14 @@ interface SqlRecord {
 
 function makeDb(opts: {
   existingCanonicals?: string[];
+  claimChanges?: number | number[];
+  claimRow?: { status: string; chunk_count: number | null } | null;
 } = {}): { db: D1Database; records: SqlRecord[] } {
   const records: SqlRecord[] = [];
   const existing = opts.existingCanonicals ?? [];
+  const claimChanges = Array.isArray(opts.claimChanges)
+    ? [...opts.claimChanges]
+    : [opts.claimChanges ?? 1];
   // Stable canonical_url → article_id map so the coordinator's
   // multi-source aggregation step can resolve a real id and emit
   // INSERT statements the test can assert on.
@@ -31,6 +36,13 @@ function makeDb(opts: {
         __params: params,
         run: vi.fn().mockImplementation(async () => {
           records.push({ sql, params, via: 'run' });
+          if (sql.includes('UPDATE scrape_runs SET chunk_count = -1')) {
+            const changes =
+              claimChanges.length > 1
+                ? claimChanges.shift()
+                : claimChanges[0];
+            return { success: true, meta: { changes: changes ?? 0 } };
+          }
           return { success: true, meta: { changes: 1 } };
         }),
         all: vi.fn().mockImplementation(async () => {
@@ -58,7 +70,13 @@ function makeDb(opts: {
           }
           return { success: true, results: [] };
         }),
-        first: vi.fn().mockResolvedValue(null),
+        first: vi.fn().mockImplementation(async () => {
+          records.push({ sql, params, via: 'first' });
+          if (sql.includes('SELECT status, chunk_count FROM scrape_runs')) {
+            return opts.claimRow ?? null;
+          }
+          return null;
+        }),
       };
       return bound;
     },
@@ -186,6 +204,45 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
     const env = makeEnv(db, kv, queue);
     await runCoordinator(env, { scrape_run_id: 'run-1' });
     // At least one chunk sent - curated registry is non-empty.
+    expect(sends.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('REQ-PIPE-001: first-attempt duplicate coordinator delivery does not fan out again', async () => {
+    stubFetchWithItems(1);
+    const { db } = makeDb({
+      claimChanges: 0,
+      claimRow: { status: 'running', chunk_count: -1 },
+    });
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(
+      env,
+      { scrape_run_id: 'run-duplicate' },
+      { attempts: 1 },
+    );
+
+    expect(sends.length).toBe(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('REQ-PIPE-001: queue retry reclaims a stuck coordinator sentinel', async () => {
+    stubFetchWithItems(1);
+    const { db } = makeDb({
+      claimChanges: 0,
+      claimRow: { status: 'running', chunk_count: -1 },
+    });
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(
+      env,
+      { scrape_run_id: 'run-retry' },
+      { attempts: 2 },
+    );
+
     expect(sends.length).toBeGreaterThanOrEqual(1);
   });
 

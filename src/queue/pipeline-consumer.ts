@@ -304,22 +304,63 @@ async function runScrapeWait(env: Env, run: PipelineRunRow): Promise<void> {
     row.finalize_recorded === 1;
 
   if (!scrapeReady) {
-    // CF-001 / CF-088: bump wait_iterations; if it exceeds the stage-
-    // appropriate cap, force-fail the underlying scrape_run instead of
-    // re-enqueuing. `chunk_count = -1` means the coordinator won the
-    // dispatch CAS but has not finished fan-out yet; use the shorter
-    // coordinator cap there. Once chunks are known, use the longer GLM-
-    // friendly cap so late chunk LLMs/finalize can finish cleanly.
+    // CF-001 / CF-088 / CF-089: bump wait_iterations; if it exceeds
+    // the stage-appropriate cap, recover or force-fail the underlying
+    // scrape_run instead of re-enqueuing forever. `chunk_count = -1`
+    // means the coordinator won the dispatch CAS but has not finished
+    // fan-out yet; at the shorter coordinator cap, reset that sentinel
+    // once and re-dispatch the coordinator. After that rescue, use the
+    // longer GLM-friendly cap so late chunk LLMs/finalize can finish
+    // cleanly while genuinely stuck retries still surface.
     const iters = (row?.wait_iterations ?? 0) + 1;
     const totalChunks = row?.chunk_count ?? -1;
     const completedChunks =
       run.scrape_run_id !== null && totalChunks > 0
         ? await countChunkCompletions(env.DB, run.scrape_run_id)
         : 0;
-    const waitCap =
-      totalChunks === -1
+    const coordinatorSentinelStalled =
+      totalChunks === -1 && iters > COORDINATOR_WAIT_MAX_ITERATIONS;
+    const shouldRedispatchCoordinator =
+      coordinatorSentinelStalled &&
+      iters === COORDINATOR_WAIT_MAX_ITERATIONS + 1;
+    const waitCap = coordinatorSentinelStalled
+      ? SCRAPE_WAIT_MAX_ITERATIONS
+      : totalChunks === -1
         ? COORDINATOR_WAIT_MAX_ITERATIONS
         : SCRAPE_WAIT_MAX_ITERATIONS;
+
+    if (shouldRedispatchCoordinator && run.scrape_run_id !== null) {
+      const reset = await env.DB
+        .prepare(
+          `UPDATE scrape_runs
+              SET chunk_count = 0,
+                  wait_iterations = ?2
+            WHERE id = ?1
+              AND status = 'running'
+              AND chunk_count = -1`,
+        )
+        .bind(run.scrape_run_id, iters)
+        .run()
+        .catch(() => ({ meta: { changes: 0 } }));
+      if ((reset.meta?.changes ?? 0) === 1) {
+        await env.SCRAPE_COORDINATOR.send({ scrape_run_id: run.scrape_run_id });
+        await env.PIPELINE_JOBS.send(
+          { pipeline_run_id: run.id, phase: 'scrape_wait' },
+          { delaySeconds: WAIT_DELAY_SECONDS },
+        );
+        log('warn', 'digest.generation', {
+          status: 'pipeline_coordinator_redispatched',
+          pipeline_run_id: run.id,
+          scrape_run_id: run.scrape_run_id,
+          wait_iterations: iters,
+          wait_cap: COORDINATOR_WAIT_MAX_ITERATIONS,
+          total_chunks: totalChunks,
+          completed_chunks: completedChunks,
+        });
+        return;
+      }
+    }
+
     if (run.scrape_run_id !== null && iters > waitCap) {
       await env.DB
         .prepare(

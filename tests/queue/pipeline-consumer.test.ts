@@ -337,6 +337,60 @@ describe('processOnePipelineMessage - REQ-OPS-008 / REQ-PIPE-016 (queue-driven p
     expect(failed).toBeUndefined();
   });
 
+  it('scrape_wait redispatches the coordinator once when the dispatch sentinel reaches its cap', async () => {
+    const scrapeRunId = '01SCRAPERUN0000000000000BB';
+    const { db, calls } = makeDb({
+      pipelineRow: {
+        id: RUN_ID,
+        status: 'running',
+        mode: 'full',
+        current_phase: 'scrape_wait',
+        scrape_run_id: scrapeRunId,
+        dedup_run_id: null,
+        embed_processed: 0,
+        embed_remaining: 0,
+      },
+      scrapeRow: {
+        status: 'running',
+        finalize_recorded: 0,
+        wait_iterations: 36,
+        chunk_count: -1,
+      },
+      completedChunks: 0,
+    });
+    const { queue: pq, sends: pipelineSends } = makeQueue();
+    const { queue: coordinatorQueue, sends: coordinatorSends } = makeQueue();
+    const env = {
+      DB: db,
+      PIPELINE_JOBS: pq,
+      SCRAPE_COORDINATOR: coordinatorQueue,
+      DEDUP_SWEEP: makeQueue().queue,
+    } as unknown as Env;
+
+    await processOnePipelineMessage(env, {
+      pipeline_run_id: RUN_ID,
+      phase: 'scrape_wait',
+    });
+
+    expect(coordinatorSends).toEqual([
+      { msg: { scrape_run_id: scrapeRunId }, opts: undefined },
+    ]);
+    expect(pipelineSends[0]!.msg).toEqual({
+      pipeline_run_id: RUN_ID,
+      phase: 'scrape_wait',
+    });
+    const reset = calls.updates.find(
+      (c) =>
+        c.sql.includes('UPDATE scrape_runs') &&
+        c.sql.includes('chunk_count = 0'),
+    );
+    expect(reset).toBeDefined();
+    const failed = calls.updates.find((c) =>
+      c.sql.includes("status = 'failed'"),
+    );
+    expect(failed).toBeUndefined();
+  });
+
   it('scrape_wait advances to embed_drain when scrape is ready and finalize recorded', async () => {
     const { db, calls } = makeDb({
       pipelineRow: {

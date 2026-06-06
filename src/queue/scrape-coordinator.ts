@@ -36,7 +36,7 @@ import {
   loadExistingCanonicalUrls,
   updateChunkCount,
 } from '~/lib/articles-repo';
-import { handleBatch } from '~/lib/queue-handler';
+import { handleBatch, type QueueMessageContext } from '~/lib/queue-handler';
 import { finishRun } from '~/lib/scrape-run';
 import { clearHealth, recordFetchResult } from '~/lib/feed-health';
 import { SYSTEM_USER_ID } from '~/lib/system-user';
@@ -274,7 +274,7 @@ export async function handleCoordinatorBatch(
   env: Env,
 ): Promise<void> {
   await handleBatch(batch, env, {
-    process: runCoordinator,
+    process: (env, body, context) => runCoordinator(env, body, context),
     throwLogStatus: 'coordinator_throw',
     extraLogFields: (body) => ({ scrape_run_id: body.scrape_run_id }),
     onTerminalFailure: async (env, body) => {
@@ -291,11 +291,16 @@ export async function handleCoordinatorBatch(
 export async function runCoordinator(
   env: Env,
   body: CoordinatorMessage,
+  context: Partial<QueueMessageContext> = {},
 ): Promise<void> {
   const { scrape_run_id } = body;
 
   // Step 0 - race guard: only one coordinator wins per scrape_run_id.
-  const claimed = await claimCoordinatorDispatch(env, scrape_run_id);
+  const claimed = await claimCoordinatorDispatch(
+    env,
+    scrape_run_id,
+    context.attempts ?? 1,
+  );
   if (!claimed) return;
 
   // Step 1 - build full source list (curated + KV-discovered).
@@ -338,6 +343,7 @@ export async function runCoordinator(
 
   // Step 6 - empty-pool guard.
   if (survivors.length === 0) {
+    await updateChunkCount(env.DB, scrape_run_id, 0);
     await finishRun(env.DB, scrape_run_id, 'ready');
     // CF-001: with no survivors there is no finalize tick to flip the
     // gate, so stamp it here. Otherwise runScrapeWait would loop forever
@@ -363,16 +369,24 @@ export async function runCoordinator(
  * Step 0 - Atomic CAS race guard.
  *
  * CF-002: flips `chunk_count` to sentinel -1 in a single conditional UPDATE
- * so only one concurrent coordinator delivery wins the dispatch. Returns
+ * so only one first-attempt coordinator delivery wins the dispatch. Returns
  * `true` when this caller claimed the slot; `false` when another delivery
- * already ran (caller should return immediately). On a DB error, falls
+ * is already in flight or has finished fan-out. On a DB error, falls
  * through with `true` - the guard is best-effort.
  *
- * The sentinel is rolled back when the real chunk count is written in Step 8.
- * If dispatch crashes, the `-1` is recoverable on a subsequent retry or via
- * `force-refresh` (which seeds a fresh scrape_run_id).
+ * CF-089: queue retries are different from duplicate first-attempt deliveries.
+ * If the first delivery crashes after writing the `-1` sentinel but before
+ * Step 8 writes the real chunk count, Cloudflare redelivers the same message
+ * with `attempts > 1`. Treating that retry as a duplicate acks the only
+ * recovery path and leaves the parent pipeline stuck at `chunk_count = -1`.
+ * A retry may therefore reclaim a still-running `-1` sentinel; first-attempt
+ * duplicates still no-op.
  */
-async function claimCoordinatorDispatch(env: Env, scrape_run_id: string): Promise<boolean> {
+async function claimCoordinatorDispatch(
+  env: Env,
+  scrape_run_id: string,
+  attempts: number,
+): Promise<boolean> {
   try {
     const cas = await env.DB
       .prepare(
@@ -382,14 +396,29 @@ async function claimCoordinatorDispatch(env: Env, scrape_run_id: string): Promis
       .bind(scrape_run_id)
       .run();
     const claimed = (cas.meta?.changes ?? 0) === 1;
-    if (!claimed) {
-      log('warn', 'digest.generation', {
-        status: 'coordinator_duplicate_dispatch',
-        scrape_run_id,
-      });
-      return false;
+    if (claimed) return true;
+
+    if (attempts > 1) {
+      const row = await env.DB
+        .prepare(`SELECT status, chunk_count FROM scrape_runs WHERE id = ?1`)
+        .bind(scrape_run_id)
+        .first<{ status: string; chunk_count: number | null }>();
+      if (row?.status === 'running' && row.chunk_count === -1) {
+        log('warn', 'digest.generation', {
+          status: 'coordinator_retry_reclaimed_sentinel',
+          scrape_run_id,
+          attempts,
+        });
+        return true;
+      }
     }
-    return true;
+
+    log('warn', 'digest.generation', {
+      status: 'coordinator_duplicate_dispatch',
+      scrape_run_id,
+      attempts,
+    });
+    return false;
   } catch (err) {
     log('warn', 'digest.generation', {
       status: 'coordinator_race_guard_cas_failed',
