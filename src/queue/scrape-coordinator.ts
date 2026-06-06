@@ -75,13 +75,13 @@ function applyPreferDirectOverGoogleNews(
  * while the budget rule keeps long-essay days safe. */
 // Reduced from 100 -> 25 on 2026-05-05 after observing two regressions
 // at the 60-candidate size on integration (the project at the time ran
-// a primary->fallback two-model setup; gpt-oss-120b is now the single
-// model, see DEFAULT_MODEL_ID in src/lib/models.ts):
+// a primary->fallback two-model setup; the active single model is now
+// DEFAULT_MODEL_ID in src/lib/models.ts):
 //   1. The then-primary model timed out (`AiError: 3046: Request
 //      timeout`) on every 60-candidate chunk - Workers AI inference
 //      time grows superlinearly in prompt size and wall-clock, not
 //      context size, is the binding constraint.
-//   2. The then-fallback model (gpt-oss-120b, now the single model)
+//   2. The then-fallback model (gpt-oss-120b, later the single model)
 //      refused 60-candidate chunks with "creating 60 individual
 //      summaries exceeds the practical limits of this interaction"
 //      and returned 0 usable articles, OR returned 1-2 short summaries
@@ -94,8 +94,8 @@ function applyPreferDirectOverGoogleNews(
 const MAX_CANDIDATES_PER_CHUNK = 25;
 
 /** Greedy chunk-packer character budget. The chunk consumer runs the
- * single default model (gpt-oss-120b, 128K context); the context
- * window is the binding constraint here. Of the 128K,
+ * single default model (see DEFAULT_MODEL_ID); the context window is
+ * the binding constraint here. For 128K-capable defaults,
  * `CHUNK_LLM_PARAMS.max_tokens` reserves 32K for output, leaving
  * ~96K tokens for the input prompt. Reserving ~5K for the system
  * prompt + per-candidate framing leaves ~91K tokens for snippet

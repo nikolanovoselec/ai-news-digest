@@ -6,6 +6,10 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are archived in [`changes-archive-2026-04.md`](changes-archive-2026-04.md).
 
+## 2026-06-06
+
+- The system default Workers AI model changes on develop/integration from `@cf/openai/gpt-oss-120b` to `@cf/google/gemma-4-26b-a4b-it` for a lower-cost canary. Production promotion remains gated on an integration scrape that proves chunk reliability, JSON validity, summary quality, and same-story dedup quality.
+
 ## 2026-05-14
 
 - REQ-PIPE-009 gains two acceptance criteria for the dedup cost reductions captured in AD48: borderline pairs for one self now ride in a single batched LLM call (parse failure falls back to "different events" per pair), and the recurring background sweep skips the same-event judgment for pairs whose two articles both predate the last successful sweep watermark. An operator-initiated sweep ignores the watermark and re-judges every borderline pair end-to-end.

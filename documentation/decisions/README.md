@@ -64,6 +64,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD47](#ad47-storage-shape-allowlist-promoted-to-spec-discipline-ad9-superseded) | Storage-shape allowlist promoted to spec-discipline; AD9 superseded | Storage | 2026-05-13 |
 | [AD48](#ad48-dedup-cost-reduction-borderline-rerank-watermark-batched-rerank-call-pipeline-wide-gpt-oss-20b) | Dedup cost reduction: borderline-rerank watermark + batched rerank call + pipeline-wide gpt-oss-20b | Architecture | 2026-05-14 |
 | [AD49](#ad49-workflow_run-deploy-gate-hardened-against-fork-pwn-request-vector) | `workflow_run` deploy gate hardened against fork pwn-request vector | Security | 2026-05-19 |
+| [AD50](#ad50-gemma-4-26b-integration-canary-for-pipeline-default) | Gemma 4 26B integration canary for pipeline default | Architecture | 2026-06-06 |
 
 ---
 
@@ -1468,6 +1469,30 @@ Three reasons the AD41 fix did not collapse this cluster:
 - The legitimate post-merge path remains: PR Checks runs on the merge commit (event=push, head_repository=this repo), Deploy fires when it ends green.
 
 **Related:** [AD12](#ad12-integration-env-separate-cloudflare-resources-manual-trigger-from-develop-crons-disabled), [AD28](#ad28-npm-audit-gating-split---high-advisory-critical-blocking)
+
+---
+
+### AD50: Gemma 4 26B integration canary for pipeline default
+
+**Status:** Accepted for develop/integration canary (2026-06-06)
+
+**Decision:** Flip `DEFAULT_MODEL_ID` on develop from `@cf/openai/gpt-oss-120b` to `@cf/google/gemma-4-26b-a4b-it` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
+
+**Context:** Cloudflare reports Workers AI usage as aggregate neurons, but application-side token accounting shows chunk summarisation dominates recorded model cost. Gemma 4 26B is materially cheaper ($0.10 input / $0.30 output per million tokens versus 120B's $0.35 / $0.75) and has a 256K context window. A previous 2026-05 attempt was abandoned after chunk-sized prompts hit Workers AI wall-clock cancellations, so this is explicitly a live integration retest, not a production promotion.
+
+**Alternatives considered:**
+
+- *Keep 120B and only pursue pre-LLM pruning / prompt compaction.* Safest for quality, but it does not answer whether the cheapest operational lever is viable again on current Workers AI infrastructure.
+- *Shadow/canary per-call model routing while production remains 120B.* Safer for production, but it violates the project's current single-model simplicity and requires a larger code change before the cheapest experiment can start.
+- *Switch directly in production.* Rejected — prior Gemma evidence included chunk cancellations, and the project requires unchanged summary/dedup quality before promotion.
+
+**Consequences:**
+
+- Integration scrape runs must be checked for chunk cancellations, `chunk_invalid_json`, title-alignment drops, word-count drops, accepted article count, and same-story duplicate quality before considering any production promotion.
+- If Gemma fails again, rollback is a one-line `DEFAULT_MODEL_ID` revert to `@cf/openai/gpt-oss-120b` plus the matching test/doc updates.
+- Cost projections should compare `scrape_runs.tokens_in`, `scrape_runs.tokens_out`, and `estimated_cost_usd` between the integration canary and the 120B production baseline.
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
 
 ---
 

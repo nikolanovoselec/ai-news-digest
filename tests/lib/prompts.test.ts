@@ -13,7 +13,7 @@ import {
 } from '~/lib/prompts';
 
 describe('LLM param sets — REQ-PIPE-002 / REQ-DISC-001 (CF-023)', () => {
-  it('CHUNK_LLM_PARAMS reserves 32K output, leaving room for ~96K input on the 128K-context default model', () => {
+  it('CHUNK_LLM_PARAMS reserves 32K output while staying compatible with 128K+ context models', () => {
     expect(CHUNK_LLM_PARAMS.temperature).toBe(0.6);
     expect(CHUNK_LLM_PARAMS.max_tokens).toBe(32_000);
     expect(CHUNK_LLM_PARAMS.response_format.type).toBe('json_object');

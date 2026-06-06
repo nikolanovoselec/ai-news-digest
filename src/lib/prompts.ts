@@ -36,8 +36,9 @@ const LLM_BASE_PARAMS = {
  * Chunk-prompt OUTPUT budget. The chunk consumer runs `DEFAULT_MODEL_ID`
  * once per chunk (single-model architecture; no fallback). The Workers
  * AI runtime enforces `prompt_tokens + max_tokens ≤ contextTokens`, and
- * the smallest reasonable context in `MODELS` (128K for gpt-oss-120b)
- * is the binding constraint. Observed chunk output is ~14K tokens at
+ * the smallest reasonable context in `MODELS` (128K for the prior
+ * gpt-oss defaults; Gemma 4 26B has 256K) is the binding constraint.
+ * Observed chunk output is ~14K tokens at
  * typical chunk sizes (50-100 candidates × ~120-word summaries + JSON
  * overhead, per the budget-aware packer in `scrape-coordinator.ts`);
  * 32K reserves ~2x output headroom and leaves ~96K for input

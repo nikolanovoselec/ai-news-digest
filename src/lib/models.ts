@@ -34,20 +34,18 @@ export interface ModelOption {
   category: 'featured' | 'budget';
 }
 
-// Default model: @cf/openai/gpt-oss-120b. 128K context, native JSON
-// mode, $0.35/$0.75 per Mtok. AD48 swapped this to gpt-oss-20b on
-// 2026-05-14 to cut chunk-summarisation cost ~60%, but the first
-// production run after the swap (pipeline_run 01KRJYV8R0D0EX7HBPR2VS2YCT)
-// failed with scrape_wait_stalled — every scrape-chunks queue
-// invocation produced outcome=canceled mid-LLM-call, the same wall-
-// clock failure mode that took Gemma 4 26B out of contention on
-// 2026-05. Reverted to gpt-oss-120b for chunk reliability; the
-// AD48 watermark + batched rerank changes stay in place and carry
-// most of the cost reduction on their own. See AD48 rollback note.
-// This constant is the single source-of-truth for the pipeline's
-// model id (chunk summarisation, rerank, discovery all flow through
+// Default model: @cf/google/gemma-4-26b-a4b-it. 256K context,
+// JSON-capable instruction model, $0.10/$0.30 per Mtok. Re-enabled on
+// 2026-06-06 as an integration canary to retest the cheaper path after
+// earlier chunk-sized prompts hit Workers AI wall-clock cancellations in
+// 2026-05. Do not promote this develop-branch default to production
+// without a fresh integration scrape proving chunk reliability, JSON
+// validity, summary quality, and same-story dedup quality.
+//
+// This constant is the single source-of-truth for the pipeline's model
+// id (chunk summarisation, rerank, discovery all flow through
 // DEFAULT_MODEL_ID).
-export const DEFAULT_MODEL_ID = '@cf/openai/gpt-oss-120b';
+export const DEFAULT_MODEL_ID = '@cf/google/gemma-4-26b-a4b-it';
 
 export const MODELS: ModelOption[] = [
   // Featured — the four headline choices users see at the top of the dropdown.
@@ -55,7 +53,7 @@ export const MODELS: ModelOption[] = [
     id: '@cf/openai/gpt-oss-120b',
     name: 'GPT OSS 120B',
     description:
-      'Default. OpenAI 120B MoE with native JSON mode, 128K context. Reliable wall-clock for chunk-sized prompts.',
+      'OpenAI 120B MoE with native JSON mode, 128K context. Prior production baseline with reliable wall-clock for chunk-sized prompts.',
     inputPricePerMtok: 0.35,
     outputPricePerMtok: 0.75,
     contextTokens: 128_000,
@@ -65,7 +63,7 @@ export const MODELS: ModelOption[] = [
     id: '@cf/google/gemma-4-26b-a4b-it',
     name: 'Gemma 4 26B',
     description:
-      'Google instruction-tuned, 256K context. Cheaper than 120B but timed out on chunk-sized prompts in 2026-05 production runs.',
+      'Default integration canary. Google instruction-tuned, 256K context. Cheaper than 120B; retesting after 2026-05 chunk-timeout failures.',
     inputPricePerMtok: 0.10,
     outputPricePerMtok: 0.30,
     contextTokens: 256_000,
