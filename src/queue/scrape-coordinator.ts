@@ -70,9 +70,10 @@ function applyPreferDirectOverGoogleNews(
  * usually fills a chunk to its character budget long before this
  * hits, but the count cap protects against a flood of thin-snippet
  * candidates (e.g. all-Google-News, ~400 chars each) producing a
- * single 800-candidate chunk that times out the consumer. Was 50
- * fixed-size; 25 as a ceiling lets short-snippet days pack efficiently
- * while the budget rule keeps long-essay days safe. */
+ * single huge chunk that times out the consumer or causes the model
+ * to omit candidate indexes. Was 50 fixed-size, then 25. Gemma tuning
+ * drops the default ceiling to 16: slightly more queue traffic, but a
+ * simpler "one JSON record per input index" task per model call. */
 // Reduced from 100 -> 25 on 2026-05-05 after observing two regressions
 // at the 60-candidate size on integration (the project at the time ran
 // a primary->fallback two-model setup; the active single model is now
@@ -88,26 +89,25 @@ function applyPreferDirectOverGoogleNews(
 //      that title-overlap-dropped against 60 input candidates.
 // A residual 5-candidate chunk in the same run produced 3 articles
 // with `alignment_mode: echoed_index` (60% yield), confirming the
-// model handles small batches correctly. 25 stays conservative under
-// the single-model regime: 188-candidate days now pack into ~8 chunks
-// (vs 4 at 60) - more queue traffic but every chunk completes.
-const MAX_CANDIDATES_PER_CHUNK = 25;
+// model handles small batches correctly. 2026-06 Gemma retest uses 16
+// because GLM/Gemma canaries showed missing-index and timeout failures
+// even when the pipeline wait cap was fixed.
+const MAX_CANDIDATES_PER_CHUNK = 16;
 
 /** Greedy chunk-packer character budget. The chunk consumer runs the
  * single default model (see DEFAULT_MODEL_ID); the context window is
- * the binding constraint here. For 128K-capable defaults,
- * `CHUNK_LLM_PARAMS.max_tokens` reserves 24K for output, leaving
- * ~104K tokens for the input prompt. Reserving ~5K for the system
- * prompt + per-candidate framing leaves ~99K tokens for snippet
- * content. At ~3.5 chars/token for English prose that is ~346K
- * chars; we round down to 280K for safety margin against estimator
- * drift on non-English snippets and JSON-escape inflation. See
- * `CHUNK_LLM_PARAMS` in `src/lib/prompts.ts` for the same arithmetic
- * from the output-budget side. The chunk consumer's per-field
- * BODY_SNIPPET_MAX_CHARS (16K) is the per-candidate ceiling - long-
- * essay chunks hit this budget cap on ~17 max-sized candidates well
- * before the count cap, which is the intended pack shape on
- * essay-heavy days. */
+ * the binding constraint here. The current Gemma canary has 256K
+ * context; 128K gpt-oss entries remain the rollback lower bound.
+ * `CHUNK_LLM_PARAMS.max_tokens` reserves 14K for output, leaving
+ * ~114K tokens for input on 128K rollback models. At ~3.5 chars/token
+ * for English prose that is ~399K chars; we round down to 280K for
+ * safety margin against estimator drift on non-English snippets and
+ * JSON-escape inflation. See `CHUNK_LLM_PARAMS` in `src/lib/prompts.ts`
+ * for the same arithmetic from the output-budget side. The chunk
+ * consumer's per-field BODY_SNIPPET_MAX_CHARS (16K) is the per-candidate
+ * ceiling - long-essay chunks hit this budget cap on ~17 max-sized
+ * candidates before or near the 16-count cap, which is the intended
+ * pack shape on essay-heavy days. */
 const CHUNK_INPUT_CHARS_BUDGET = 280_000;
 
 /** Per-candidate framing overhead in the user prompt - the

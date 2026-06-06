@@ -310,7 +310,7 @@ async function runScrapeWait(env: Env, run: PipelineRunRow): Promise<void> {
     // means the coordinator won the dispatch CAS but has not finished
     // fan-out yet; at the shorter coordinator cap, reset that sentinel
     // once and re-dispatch the coordinator. After that rescue, use the
-    // longer GLM-friendly cap so late chunk LLMs/finalize can finish
+    // longer slow-model cap so late chunk LLMs/finalize can finish
     // cleanly while genuinely stuck retries still surface.
     const iters = (row?.wait_iterations ?? 0) + 1;
     const totalChunks = row?.chunk_count ?? -1;

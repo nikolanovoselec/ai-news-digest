@@ -930,7 +930,7 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
   });
 
   it('REQ-PIPE-002 AC3: drops articles whose details word count falls under the 80-word backstop floor', async () => {
-    // The prompt's contract is 100-150 words; the server enforces an
+    // The prompt's contract is 90-130 words; the server enforces an
     // 80-word backstop so genuinely truncated outputs (single-paragraph
     // 30-word stubs) get dropped without rejecting the model's natural
     // 90-120 lower-end distribution. A passing sibling article in the
@@ -965,12 +965,12 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
     expect(articleInserts[0]!.params).not.toContain('Title B - also long enough headline');
   });
 
-  it('REQ-PIPE-002 AC3: keeps articles in the 80-150 natural-distribution range that the prompt asks for but the model often undershoots', async () => {
-    // The Workers AI gpt-oss-120b often produces 100-130-word summaries
-    // when source snippets are thin. The 80-word floor is a backstop,
-    // not a contract - bodies above 80 must pass. Pinning the boundary
-    // here so a future tightening (back to 120) is caught by CI rather
-    // than discovered via a 75% drop in daily ingestion.
+  it('REQ-PIPE-002 AC3: keeps articles in the 80-130 natural-distribution range that the prompt asks for but the model often undershoots', async () => {
+    // Workers AI models often produce 90-130-word summaries when source
+    // snippets are thin. The 80-word floor is a backstop, not a contract
+    // - bodies above 80 must pass. Pinning the boundary here so a future
+    // tightening (back to 120) is caught by CI rather than discovered via
+    // a 75% drop in daily ingestion.
     const exactly100Words = Array.from({ length: 100 }, (_, i) => `word${i}`).join(' ');
     const aiResponse = {
       response: JSON.stringify({
