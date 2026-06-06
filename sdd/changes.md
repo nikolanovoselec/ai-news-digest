@@ -8,7 +8,7 @@ Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are a
 
 ## 2026-06-06
 
-- The system default Workers AI model changes on develop/integration from `@cf/openai/gpt-oss-120b` to `@cf/google/gemma-4-26b-a4b-it`, then `@cf/ibm-granite/granite-4.0-h-micro`, then `@cf/zai-org/glm-4.7-flash`, for lower-cost canaries. Gemma reproduced chunk cancellations and Granite missed most candidate alignments; GLM promotion remains gated on an integration scrape that proves chunk reliability, JSON validity, summary quality, and same-story dedup quality.
+- The system default Workers AI model changes on develop/integration from `@cf/openai/gpt-oss-120b` to `@cf/google/gemma-4-26b-a4b-it`, then `@cf/ibm-granite/granite-4.0-h-micro`, then `@cf/zai-org/glm-4.7-flash`, then `@cf/openai/gpt-oss-20b`, for lower-cost canaries. Gemma and GLM reproduced chunk cancellations, and Granite missed most candidate alignments; 20B promotion remains gated on an integration scrape that proves chunk reliability, JSON validity, summary quality, and same-story dedup quality.
 
 ## 2026-05-14
 

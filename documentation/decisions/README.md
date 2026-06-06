@@ -67,6 +67,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD50](#ad50-gemma-4-26b-integration-canary-for-pipeline-default) | Gemma 4 26B integration canary for pipeline default | Architecture | 2026-06-06 |
 | [AD51](#ad51-granite-40-h-micro-integration-canary-for-pipeline-default) | Granite 4.0 H Micro integration canary for pipeline default | Architecture | 2026-06-06 |
 | [AD52](#ad52-glm-47-flash-integration-canary-for-pipeline-default) | GLM 4.7 Flash integration canary for pipeline default | Architecture | 2026-06-06 |
+| [AD53](#ad53-gpt-oss-20b-integration-retest-for-pipeline-default) | GPT OSS 20B integration retest for pipeline default | Architecture | 2026-06-06 |
 
 ---
 
@@ -1524,7 +1525,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 ### AD52: GLM 4.7 Flash integration canary for pipeline default
 
-**Status:** Accepted for develop/integration canary (2026-06-06)
+**Status:** Superseded by AD53 after failed operational canary (2026-06-06)
 
 **Decision:** Flip `DEFAULT_MODEL_ID` on develop from the failed Granite canary to `@cf/zai-org/glm-4.7-flash` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
 
@@ -1538,9 +1539,33 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Consequences:**
 
+- The 2026-06-06 GLM run reproduced the chunk-cancellation failure: 0 of 4 chunks completed, the first `scrape-chunks` execution was canceled after `chunk_article_bodies_fetched`, and the pipeline ended `scrape_wait_stalled`.
+- No articles were ingested and no chunk token cost was recorded because no chunk LLM call completed.
+- GLM is not a viable drop-in default under current chunking.
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
+
+---
+
+### AD53: GPT OSS 20B integration retest for pipeline default
+
+**Status:** Accepted for develop/integration retest (2026-06-06)
+
+**Decision:** Flip `DEFAULT_MODEL_ID` on develop from the failed GLM canary to `@cf/openai/gpt-oss-20b` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
+
+**Context:** GPT OSS 20B is the lower-cost sibling of the 120B production baseline, keeps native JSON-mode support, and keeps the same 128K context class as the reliable 120B default. Published pricing is $0.20 input / $0.30 output per million tokens, roughly 48% below the 120B baseline on recent token volume. AD48 previously rolled it back after mid-call cancellations on chunk-sized prompts, but a focused integration retest is useful after Gemma and GLM reproduced cancellations and Granite failed quality.
+
+**Alternatives considered:**
+
+- *Return directly to 120B.* Safest operationally, but it leaves the closest 120B sibling untested in the current integration setup.
+- *Try Qwen3 30B A3B FP8 next.* Rejected for this immediate retest because its 32K context would require chunk-size/output-budget changes before testing.
+- *Stop model swaps and implement 120B waste reduction.* Still the safer long-term path if 20B fails reliability or quality gates.
+
+**Consequences:**
+
 - Integration scrape runs must be checked for chunk cancellations, `chunk_invalid_json`, title-alignment drops, word-count drops, accepted article count, and same-story duplicate quality before considering any production promotion.
-- If GLM fails reliability or quality gates, rollback is a one-line `DEFAULT_MODEL_ID` revert to `@cf/openai/gpt-oss-120b` plus matching test/doc updates.
-- If GLM passes reliability but shows quality issues, the next safer path is keeping 120B and reducing waste around it rather than trying smaller-context models as drop-ins.
+- Even a successful 20B run does not meet the 70% reduction target by itself; it would need pipeline waste reductions to reach the target while preserving quality.
+- If 20B fails reliability or quality gates again, rollback is a one-line `DEFAULT_MODEL_ID` revert to `@cf/openai/gpt-oss-120b` plus matching test/doc updates.
 
 **Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
 
