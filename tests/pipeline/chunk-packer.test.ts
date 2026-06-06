@@ -78,12 +78,12 @@ describe('packCandidatesIntoChunks (REQ-PIPE-001)', () => {
     expect(chunks.map((c) => c.length)).toEqual([100, 100]);
   });
 
-  it('uses the Gemma canary default count cap of 16 candidates', () => {
+  it('uses the GLM canary default count cap of 8 candidates', () => {
     const candidates = Array.from({ length: 40 }, (_, i) =>
       makeCandidate({ canonical_url: `https://example.com/${i}` }),
     );
     const chunks = packCandidatesIntoChunks(candidates, 10_000_000);
-    expect(chunks.map((c) => c.length)).toEqual([16, 16, 8]);
+    expect(chunks.map((c) => c.length)).toEqual([8, 8, 8, 8, 8]);
   });
 
   it('packs thin candidates up to the budget cap (280K) when budget binds first', () => {

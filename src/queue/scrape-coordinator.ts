@@ -71,9 +71,10 @@ function applyPreferDirectOverGoogleNews(
  * hits, but the count cap protects against a flood of thin-snippet
  * candidates (e.g. all-Google-News, ~400 chars each) producing a
  * single huge chunk that times out the consumer or causes the model
- * to omit candidate indexes. Was 50 fixed-size, then 25. Gemma tuning
- * drops the default ceiling to 16: slightly more queue traffic, but a
- * simpler "one JSON record per input index" task per model call. */
+ * to omit candidate indexes. Was 50 fixed-size, then 25, then 16.
+ * GLM retest drops the default ceiling to 8: more queue traffic and
+ * prompt overhead, but a simpler "one JSON record per input index"
+ * task per model call. */
 // Reduced from 100 -> 25 on 2026-05-05 after observing two regressions
 // at the 60-candidate size on integration (the project at the time ran
 // a primary->fallback two-model setup; the active single model is now
@@ -89,14 +90,14 @@ function applyPreferDirectOverGoogleNews(
 //      that title-overlap-dropped against 60 input candidates.
 // A residual 5-candidate chunk in the same run produced 3 articles
 // with `alignment_mode: echoed_index` (60% yield), confirming the
-// model handles small batches correctly. 2026-06 Gemma retest uses 16
-// because GLM/Gemma canaries showed missing-index and timeout failures
-// even when the pipeline wait cap was fixed.
-const MAX_CANDIDATES_PER_CHUNK = 16;
+// model handles small batches correctly. 2026-06 GLM retest uses 8
+// because GLM/Gemma canaries showed missing-index, timeout, and JSON
+// reliability failures even when the pipeline wait cap was fixed.
+const MAX_CANDIDATES_PER_CHUNK = 8;
 
 /** Greedy chunk-packer character budget. The chunk consumer runs the
  * single default model (see DEFAULT_MODEL_ID); the context window is
- * the binding constraint here. The current Gemma canary has 256K
+ * the binding constraint here. The current GLM canary has 131K
  * context; 128K gpt-oss entries remain the rollback lower bound.
  * `CHUNK_LLM_PARAMS.max_tokens` reserves 14K for output, leaving
  * ~114K tokens for input on 128K rollback models. At ~3.5 chars/token

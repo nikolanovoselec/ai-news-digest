@@ -132,6 +132,6 @@ export async function runJson<T>(
 /** Truncate a raw LLM response for log emission so a 50KB JSON dump
  *  doesn't blow past Cloudflare's structured-log size budget. */
 export function previewRawResponse(raw: unknown, max = 400): string {
-  const s = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  const s = typeof raw === 'string' ? raw : JSON.stringify(raw) ?? String(raw);
   return s.slice(0, max);
 }

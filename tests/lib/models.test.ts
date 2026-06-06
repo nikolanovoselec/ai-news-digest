@@ -45,12 +45,12 @@ describe('MODELS catalog', () => {
 });
 
 describe('DEFAULT_MODEL_ID', () => {
-  it('REQ-SET-004: DEFAULT_MODEL_ID is @cf/google/gemma-4-26b-a4b-it — 256K context, integration canary, single-model arch', () => {
+  it('REQ-SET-004: DEFAULT_MODEL_ID is @cf/zai-org/glm-4.7-flash — 131K context, integration canary, single-model arch', () => {
     // 2026-06-06: retest lower-cost Workers AI options on
-    // develop/integration. Gemma produced useful articles under the
-    // old pipeline but needs the fixed wait/recovery loop and smaller
-    // chunk contract before any production promotion.
-    expect(DEFAULT_MODEL_ID).toBe('@cf/google/gemma-4-26b-a4b-it');
+    // develop/integration. Gemma failed JSON reliability on a larger
+    // refresh; GLM is retested with a smaller chunk contract before
+    // any production promotion.
+    expect(DEFAULT_MODEL_ID).toBe('@cf/zai-org/glm-4.7-flash');
   });
 
   it('REQ-SET-004: DEFAULT_MODEL_ID is present in MODELS', () => {
@@ -77,18 +77,18 @@ describe('modelById', () => {
 
 describe('estimateCost', () => {
   it('REQ-SET-004: estimateCost computes USD from per-million-token prices', () => {
-    // Gemma 4 26B: input $0.10 / output $0.30 per Mtok.
-    // 1,000,000 in -> $0.10; 1,000,000 out -> $0.30; total $0.40.
+    // GLM 4.7 Flash: input $0.0605 / output $0.40 per Mtok.
+    // 1,000,000 in -> $0.0605; 1,000,000 out -> $0.40; total $0.4605.
     const cost = estimateCost(DEFAULT_MODEL_ID, 1_000_000, 1_000_000);
-    expect(cost).toBeCloseTo(0.40, 6);
+    expect(cost).toBeCloseTo(0.4605, 6);
   });
 
   it('REQ-SET-004: estimateCost scales linearly with token counts', () => {
-    // 2,000 input tokens * $0.10/Mtok = $0.000200
-    // 1,000 output tokens * $0.30/Mtok = $0.000300
-    // total ~= $0.000500
+    // 2,000 input tokens * $0.0605/Mtok = $0.000121
+    // 1,000 output tokens * $0.40/Mtok = $0.000400
+    // total ~= $0.000521
     const cost = estimateCost(DEFAULT_MODEL_ID, 2_000, 1_000);
-    expect(cost).toBeCloseTo(0.0005, 9);
+    expect(cost).toBeCloseTo(0.000521, 9);
   });
 
   it('REQ-SET-004: estimateCost is non-zero for Kimi K2.5 (published pricing)', () => {

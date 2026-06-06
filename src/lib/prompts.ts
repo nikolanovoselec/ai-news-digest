@@ -24,7 +24,7 @@
  * - `temperature: 0.6` — warm enough for the model to pick complete
  *   summaries over minimum-entropy short replies, cool enough for
  *   stable JSON output. 0.7 was working but 0.6 trims variance on
- *   the shorter 90-130 word target.
+ *   the 100-150 word target.
  * - `response_format` — force JSON output on models that support it.
  */
 const LLM_BASE_PARAMS = {
@@ -36,9 +36,9 @@ const LLM_BASE_PARAMS = {
  * Chunk-prompt OUTPUT budget. The chunk consumer runs `DEFAULT_MODEL_ID`
  * once per chunk (single-model architecture; no fallback). The Workers
  * AI runtime enforces `prompt_tokens + max_tokens ≤ contextTokens`.
- * The current Gemma canary has 256K context; the 128K gpt-oss entries
+ * The current GLM canary has 131K context; the 128K gpt-oss entries
  * remain a useful lower-bound sanity check for rollback. 14K reserves
- * enough headroom for 16 × 90-130 word summaries plus JSON overhead,
+ * enough headroom for 8 × 100-150 word summaries plus JSON overhead,
  * while reducing the chance that Workers AI keeps a slow model alive
  * writing long, expensive rejected-candidate prose. That leaves ~114K
  * tokens for input on 128K rollback models (~399K chars at ~3.5
@@ -65,7 +65,7 @@ export const DISCOVERY_LLM_PARAMS = {
 // Implements REQ-PIPE-002
 //
 // Chunk prompt for the global-feed pipeline. The coordinator splits the
-// scraped candidate pool into small chunks (default cap: 16 candidates)
+// scraped candidate pool into small chunks (default cap: 8 candidates)
 // and the chunk consumer calls the LLM once per chunk with this system
 // prompt + a per-chunk user message built by `processChunkUserPrompt()`.
 // The LLM output is strict JSON: `{articles: [{index, title, details,
@@ -97,20 +97,19 @@ Shape:
 
 # DETAILS RULES — THIS IS THE CORE TASK
 
-LENGTH — 90 to 130 WORDS (NON-NEGOTIABLE CONTRACT):
+LENGTH — 100 to 150 WORDS (NON-NEGOTIABLE CONTRACT):
 
-  - The summary MUST be 90-130 words. This is the contract; do not
-    ship under 90. The server deletes summaries below 80 words, so a
-    50-70 word stub is wasted work. If the snippet feels thin, extend
-    the WHAT and HOW paragraphs with concrete grounded facts — never
-    pad with filler, never repeat, but never cut short either.
-  - Maximum 130 words. Do not exceed.
+  - The summary MUST be 100-150 words. This is the contract; do not
+    ship under 100. If the snippet feels thin, extend the WHAT and
+    HOW paragraphs with concrete grounded facts — never pad with
+    filler, never repeat, but never cut short either.
+  - Maximum 150 words. Do not exceed.
   - Truncated outputs are rejected server-side as malformed. Your
-    target is 90-130; aim for the middle of that range.
+    target is 100-150; aim for the middle of that range.
 
-STRUCTURE — 2 PARAGRAPHS BY DEFAULT:
+STRUCTURE — 2 to 3 PARAGRAPHS:
 
-  - 2 short paragraphs for most stories; use 3 only when there is real technical substance to unpack.
+  - 2 short paragraphs for a simple story; 3 paragraphs when there is real technical substance to unpack.
   - Paragraph breaks use the JSON escape sequence \\n (one backslash + n).
   - Each paragraph 2-4 full sentences.
   - No bullet lists, no Markdown, no HTML — plaintext only.
@@ -230,7 +229,7 @@ Return JSON:
     {
       "index": 0,
       "title": "punchy NYT-style headline, 45-80 characters, about candidate [0] specifically",
-      "details": "2 paragraphs of 2-4 sentences each, 90-130 words total, separated by \\n (WHAT happened / HOW it works / optional IMPACT for the reader) — grounded in candidate [0]'s snippet only, every claim traceable to a single passage, distinctive mechanism named; for dropped candidates use an empty string",
+      "details": "2 paragraphs of 2-4 sentences each, 100-150 words total, separated by \\n (WHAT happened / HOW it works / optional IMPACT for the reader) — grounded in candidate [0]'s snippet only, every claim traceable to a single passage, distinctive mechanism named; for dropped candidates use an empty string",
       "tags": ["only tags from the allowlist above"]
     }
   ]

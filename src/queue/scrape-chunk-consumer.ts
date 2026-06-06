@@ -678,13 +678,13 @@ function validateAndSanitizeArticle(
   if (title === '' || details.length === 0) return null;
 
   // REQ-PIPE-002 AC3: enforce 80-word backstop floor server-side. The
-  // prompt's contract is 90-130 words; the floor catches genuinely
+  // prompt's contract is 100-150 words; the floor catches genuinely
   // truncated outputs (single-paragraph 30-word stubs) without
   // rejecting the model's natural lower-end distribution. CF-030
   // originally set this to 120 but Workers AI models regularly
   // produce 90-120-word summaries when the source snippet is thin,
-  // so a strict 90 cut would drop legitimate output. 80 is a true
-  // sanity floor; the 90-word target stays in the prompt as the
+  // so a strict 100 cut would drop legitimate output. 80 is a true
+  // sanity floor; the 100-word target stays in the prompt as the
   // contract.
   const wordCount = details.join(' ').trim().split(/\s+/).filter((w) => w !== '').length;
   if (wordCount < 80) {

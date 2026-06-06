@@ -110,4 +110,8 @@ describe('previewRawResponse', () => {
     const obj = { a: 1, b: 'hello' };
     expect(previewRawResponse(obj)).toBe(JSON.stringify(obj));
   });
+
+  it('handles undefined responses without throwing', () => {
+    expect(previewRawResponse(undefined)).toBe('undefined');
+  });
 });

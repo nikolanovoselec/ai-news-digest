@@ -34,19 +34,19 @@ export interface ModelOption {
   category: 'featured' | 'budget';
 }
 
-// Default model: @cf/google/gemma-4-26b-a4b-it. 256K context,
-// instruction-tuned Google model, $0.10/$0.30 per Mtok. Re-enabled on
-// 2026-06-06 after the coordinator/pipeline wait fixes landed; the
-// earlier Gemma canary produced useful article output but was falsely
-// marked failed by the old short wait cap. Do not promote this develop-
-// branch default to production without a fresh integration scrape proving
-// chunk reliability, JSON validity, summary quality, and same-story dedup
-// quality.
+// Default model: @cf/zai-org/glm-4.7-flash. 131K context,
+// low-cost Z.ai instruction model, $0.0605/$0.40 per Mtok. Re-enabled
+// on 2026-06-06 after Gemma failed a full-current-corpus integration
+// refresh with invalid/truncated JSON. This canary keeps the strict
+// one-record-per-input contract and uses smaller chunks to reduce GLM
+// timeout/alignment risk. Do not promote this develop-branch default to
+// production without a fresh integration scrape proving chunk reliability,
+// JSON validity, summary quality, and same-story dedup quality.
 //
 // This constant is the single source-of-truth for the pipeline's model
 // id (chunk summarisation, rerank, discovery all flow through
 // DEFAULT_MODEL_ID).
-export const DEFAULT_MODEL_ID = '@cf/google/gemma-4-26b-a4b-it';
+export const DEFAULT_MODEL_ID = '@cf/zai-org/glm-4.7-flash';
 
 export const MODELS: ModelOption[] = [
   // Featured — headline choices users see at the top of the dropdown.
@@ -64,7 +64,7 @@ export const MODELS: ModelOption[] = [
     id: '@cf/zai-org/glm-4.7-flash',
     name: 'GLM 4.7 Flash',
     description:
-      'Z.ai GLM Flash instruction model, 131K context. Low cost, but 2026-06 canaries showed missing-alignment, short-summary, and timeout problems.',
+      'Default integration canary. Z.ai GLM Flash instruction model, 131K context. Low cost; retesting with smaller chunks after Gemma failed JSON reliability.',
     inputPricePerMtok: 0.0605,
     outputPricePerMtok: 0.40,
     contextTokens: 131_072,
@@ -84,7 +84,7 @@ export const MODELS: ModelOption[] = [
     id: '@cf/google/gemma-4-26b-a4b-it',
     name: 'Gemma 4 26B',
     description:
-      'Default integration canary. Google instruction-tuned, 256K context. Cheaper than 120B; retesting after coordinator recovery and smaller chunk tuning.',
+      'Google instruction-tuned, 256K context. Rejected as primary after full-current-corpus integration refresh hit invalid/truncated JSON.',
     inputPricePerMtok: 0.10,
     outputPricePerMtok: 0.30,
     contextTokens: 256_000,
