@@ -65,6 +65,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD48](#ad48-dedup-cost-reduction-borderline-rerank-watermark-batched-rerank-call-pipeline-wide-gpt-oss-20b) | Dedup cost reduction: borderline-rerank watermark + batched rerank call + pipeline-wide gpt-oss-20b | Architecture | 2026-05-14 |
 | [AD49](#ad49-workflow_run-deploy-gate-hardened-against-fork-pwn-request-vector) | `workflow_run` deploy gate hardened against fork pwn-request vector | Security | 2026-05-19 |
 | [AD50](#ad50-gemma-4-26b-integration-canary-for-pipeline-default) | Gemma 4 26B integration canary for pipeline default | Architecture | 2026-06-06 |
+| [AD51](#ad51-granite-40-h-micro-integration-canary-for-pipeline-default) | Granite 4.0 H Micro integration canary for pipeline default | Architecture | 2026-06-06 |
 
 ---
 
@@ -1474,7 +1475,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 ### AD50: Gemma 4 26B integration canary for pipeline default
 
-**Status:** Accepted for develop/integration canary (2026-06-06)
+**Status:** Superseded by AD51 after failed integration canary (2026-06-06)
 
 **Decision:** Flip `DEFAULT_MODEL_ID` on develop from `@cf/openai/gpt-oss-120b` to `@cf/google/gemma-4-26b-a4b-it` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
 
@@ -1488,9 +1489,33 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Consequences:**
 
+- The 2026-06-06 integration run reproduced the prior failure class: most `scrape-chunks` queue executions were canceled after body fetch and before chunk completion; only 1 of 7 chunks completed, finalize did not run, and the pipeline ended `scrape_wait_stalled`.
+- Gemma is not a viable drop-in default under current chunking.
+- Cost projections should compare `scrape_runs.tokens_in`, `scrape_runs.tokens_out`, and `estimated_cost_usd` between each integration canary and the 120B production baseline.
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
+
+---
+
+### AD51: Granite 4.0 H Micro integration canary for pipeline default
+
+**Status:** Accepted for develop/integration canary (2026-06-06)
+
+**Decision:** Flip `DEFAULT_MODEL_ID` on develop from the failed Gemma canary to `@cf/ibm-granite/granite-4.0-h-micro` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
+
+**Context:** Wrangler's live Workers AI catalog exposes Granite 4.0 H Micro as a text-generation model with a 131K context window and very low published pricing ($0.017 input / $0.112 output per million tokens). Against recent production chunk-token volume, that prices at roughly 92% below the 120B baseline if reliability and quality hold. Gemma's same-day canary failed before enough chunks completed to evaluate quality, so Granite is the next low-cost candidate.
+
+**Alternatives considered:**
+
+- *Try GLM 4.7 Flash first.* Plausible and near the 70% target, but Granite offers a larger projected cost reduction and a 131K context window, so it is useful as the aggressive lower-bound canary.
+- *Try Qwen3 30B A3B FP8 first.* Rejected for this immediate canary because its 32K context would require chunk-size/output-budget changes before testing.
+- *Return directly to 120B.* Safest operationally, but it stops the integration-only search for a lower-cost drop-in.
+
+**Consequences:**
+
 - Integration scrape runs must be checked for chunk cancellations, `chunk_invalid_json`, title-alignment drops, word-count drops, accepted article count, and same-story duplicate quality before considering any production promotion.
-- If Gemma fails again, rollback is a one-line `DEFAULT_MODEL_ID` revert to `@cf/openai/gpt-oss-120b` plus the matching test/doc updates.
-- Cost projections should compare `scrape_runs.tokens_in`, `scrape_runs.tokens_out`, and `estimated_cost_usd` between the integration canary and the 120B production baseline.
+- If Granite fails reliability or quality gates, rollback is a one-line `DEFAULT_MODEL_ID` revert to `@cf/openai/gpt-oss-120b` plus matching test/doc updates.
+- Granite's very low price makes quality validation especially important: a cheap run that summarizes poorly or harms grouping is not an acceptable production replacement.
 
 **Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
 

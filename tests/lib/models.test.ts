@@ -45,12 +45,12 @@ describe('MODELS catalog', () => {
 });
 
 describe('DEFAULT_MODEL_ID', () => {
-  it('REQ-SET-004: DEFAULT_MODEL_ID is @cf/google/gemma-4-26b-a4b-it — 256K context, integration canary, single-model arch', () => {
-    // 2026-06-06: retest Gemma 4 26B on develop/integration as a
-    // lower-cost default after the prior 2026-05 attempt hit Workers AI
-    // wall-clock cancellations on chunk-sized prompts. Production
-    // promotion remains gated on a fresh integration scrape.
-    expect(DEFAULT_MODEL_ID).toBe('@cf/google/gemma-4-26b-a4b-it');
+  it('REQ-SET-004: DEFAULT_MODEL_ID is @cf/ibm-granite/granite-4.0-h-micro — 131K context, integration canary, single-model arch', () => {
+    // 2026-06-06: retest lower-cost Workers AI options on
+    // develop/integration. Gemma 4 26B reproduced chunk cancellations;
+    // Granite is the next canary and needs a fresh integration scrape
+    // before any production promotion.
+    expect(DEFAULT_MODEL_ID).toBe('@cf/ibm-granite/granite-4.0-h-micro');
   });
 
   it('REQ-SET-004: DEFAULT_MODEL_ID is present in MODELS', () => {
@@ -77,18 +77,18 @@ describe('modelById', () => {
 
 describe('estimateCost', () => {
   it('REQ-SET-004: estimateCost computes USD from per-million-token prices', () => {
-    // Gemma 4 26B: input $0.10 / output $0.30 per Mtok.
-    // 1,000,000 in -> $0.10; 1,000,000 out -> $0.30; total $0.40.
+    // Granite 4.0 H Micro: input $0.017 / output $0.112 per Mtok.
+    // 1,000,000 in -> $0.017; 1,000,000 out -> $0.112; total $0.129.
     const cost = estimateCost(DEFAULT_MODEL_ID, 1_000_000, 1_000_000);
-    expect(cost).toBeCloseTo(0.40, 6);
+    expect(cost).toBeCloseTo(0.129, 6);
   });
 
   it('REQ-SET-004: estimateCost scales linearly with token counts', () => {
-    // 2,000 input tokens * $0.10/Mtok = $0.00020
-    // 1,000 output tokens * $0.30/Mtok = $0.00030
-    // total ~= $0.00050
+    // 2,000 input tokens * $0.017/Mtok = $0.000034
+    // 1,000 output tokens * $0.112/Mtok = $0.000112
+    // total ~= $0.000146
     const cost = estimateCost(DEFAULT_MODEL_ID, 2_000, 1_000);
-    expect(cost).toBeCloseTo(0.00050, 9);
+    expect(cost).toBeCloseTo(0.000146, 9);
   });
 
   it('REQ-SET-004: estimateCost is non-zero for Kimi K2.5 (published pricing)', () => {

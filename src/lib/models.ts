@@ -34,21 +34,21 @@ export interface ModelOption {
   category: 'featured' | 'budget';
 }
 
-// Default model: @cf/google/gemma-4-26b-a4b-it. 256K context,
-// JSON-capable instruction model, $0.10/$0.30 per Mtok. Re-enabled on
-// 2026-06-06 as an integration canary to retest the cheaper path after
-// earlier chunk-sized prompts hit Workers AI wall-clock cancellations in
-// 2026-05. Do not promote this develop-branch default to production
-// without a fresh integration scrape proving chunk reliability, JSON
-// validity, summary quality, and same-story dedup quality.
+// Default model: @cf/ibm-granite/granite-4.0-h-micro. 131K context,
+// low-cost instruction model, $0.017/$0.112 per Mtok. Enabled on
+// 2026-06-06 as the next integration canary after Gemma 4 26B reproduced
+// its chunk-cancellation failure mode. Do not promote this develop-branch
+// default to production without a fresh integration scrape proving chunk
+// reliability, JSON validity, summary quality, and same-story dedup
+// quality.
 //
 // This constant is the single source-of-truth for the pipeline's model
 // id (chunk summarisation, rerank, discovery all flow through
 // DEFAULT_MODEL_ID).
-export const DEFAULT_MODEL_ID = '@cf/google/gemma-4-26b-a4b-it';
+export const DEFAULT_MODEL_ID = '@cf/ibm-granite/granite-4.0-h-micro';
 
 export const MODELS: ModelOption[] = [
-  // Featured — the four headline choices users see at the top of the dropdown.
+  // Featured — headline choices users see at the top of the dropdown.
   {
     id: '@cf/openai/gpt-oss-120b',
     name: 'GPT OSS 120B',
@@ -60,10 +60,20 @@ export const MODELS: ModelOption[] = [
     category: 'featured',
   },
   {
+    id: '@cf/ibm-granite/granite-4.0-h-micro',
+    name: 'Granite 4.0 H Micro',
+    description:
+      'Default integration canary. IBM Granite instruction model, 131K context. Very low cost; quality and chunk reliability under evaluation.',
+    inputPricePerMtok: 0.017,
+    outputPricePerMtok: 0.112,
+    contextTokens: 131_000,
+    category: 'featured',
+  },
+  {
     id: '@cf/google/gemma-4-26b-a4b-it',
     name: 'Gemma 4 26B',
     description:
-      'Default integration canary. Google instruction-tuned, 256K context. Cheaper than 120B; retesting after 2026-05 chunk-timeout failures.',
+      'Google instruction-tuned, 256K context. Cheaper than 120B but reproduced chunk-cancellation failures in the 2026-06 integration canary.',
     inputPricePerMtok: 0.10,
     outputPricePerMtok: 0.30,
     contextTokens: 256_000,
