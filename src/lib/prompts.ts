@@ -37,19 +37,20 @@ const LLM_BASE_PARAMS = {
  * once per chunk (single-model architecture; no fallback). The Workers
  * AI runtime enforces `prompt_tokens + max_tokens ≤ contextTokens`, and
  * the smallest reasonable context in `MODELS` (128K for the gpt-oss
- * defaults, including the current 20B retest) is the binding constraint.
- * Observed chunk output is ~14K tokens at
- * typical chunk sizes (50-100 candidates × ~120-word summaries + JSON
- * overhead, per the budget-aware packer in `scrape-coordinator.ts`);
- * 32K reserves ~2x output headroom and leaves ~96K for input
- * (~280K chars at ~3.5 chars/token), which the coordinator's greedy
- * chunk packer (`scrape-coordinator.ts:CHUNK_INPUT_CHARS_BUDGET`)
- * honours. Larger-context models simply leave more headroom.
- * User-selected budget models in `MODELS` are never wired here.
+ * defaults; current GLM canary has 131K) is the binding constraint.
+ * Observed chunk output is ~14K tokens at typical chunk sizes. 24K
+ * reserves enough headroom for 25 × 100-150 word summaries plus JSON
+ * overhead, while reducing the chance that cheaper models keep writing
+ * long, expensive rejected-candidate prose. That leaves ~104K tokens
+ * for input on 128K models (~364K chars at ~3.5 chars/token), which
+ * still comfortably covers the coordinator's greedy chunk packer
+ * (`scrape-coordinator.ts:CHUNK_INPUT_CHARS_BUDGET`). Larger-context
+ * models simply leave more headroom. User-selected budget models in
+ * `MODELS` are never wired here.
  */
 export const CHUNK_LLM_PARAMS = {
   ...LLM_BASE_PARAMS,
-  max_tokens: 32_000,
+  max_tokens: 24_000,
 } as const;
 
 /**
@@ -86,7 +87,7 @@ Shape:
 
 - "articles": one entry per input candidate. Each entry MUST include its "index" field echoing the input candidate's bracketed index (the [N] in the user message). The consumer aligns output to input BY THIS INDEX, not by position — an entry without a correct "index" is dropped, so every summary you write is lost.
 - Never change an entry's index. "index": 47 means "this entry summarises the candidate that appeared as [47] in the input list". Title, details, and tags in that entry MUST be about THAT specific candidate's URL and snippet — never mix facts across candidates.
-- For an unusable candidate, still emit its entry with the correct index and empty tags so the consumer knows you saw it.
+- For an unusable, off-topic, duplicate-looking, or content-free candidate, emit the smallest possible drop record: {"index":N,"title":"","details":"","tags":[]}. Do not spend tokens summarising candidates that will be dropped.
 - DO NOT cluster, group, or merge candidates. Every input candidate gets its own entry in "articles". Cross-source duplicate detection happens in a later pipeline step that sees the full corpus — your job here is summarisation only.
 - Empty input → {"articles":[]}.
 
@@ -152,7 +153,8 @@ Examples (assume the tag is in the allowlist):
 
 # DROP RULES
 
-- Pure advertising or content-free press releases → emit the entry with empty tags. The chunk consumer drops empty-tag entries.
+- Pure advertising, off-topic posts, duplicate-looking candidates, or content-free press releases → emit {"index":N,"title":"","details":"","tags":[]}.
+- The chunk consumer drops empty-tag entries. Do not write a title or details for a dropped candidate; those tokens are wasted and increase cost.
 
 # GLOBAL FORMATTING
 
@@ -230,7 +232,7 @@ Return JSON:
     {
       "index": 0,
       "title": "punchy NYT-style headline, 45-80 characters, about candidate [0] specifically",
-      "details": "2-3 paragraphs of 2-4 sentences each, 100-150 words total, separated by \\n (WHAT happened / HOW it works / IMPACT for the reader) — grounded in candidate [0]'s snippet only, every claim traceable to a single passage, distinctive mechanism named",
+      "details": "2-3 paragraphs of 2-4 sentences each, 100-150 words total, separated by \\n (WHAT happened / HOW it works / IMPACT for the reader) — grounded in candidate [0]'s snippet only, every claim traceable to a single passage, distinctive mechanism named; for dropped candidates use an empty string",
       "tags": ["only tags from the allowlist above"]
     }
   ]

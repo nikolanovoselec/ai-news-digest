@@ -499,6 +499,19 @@ async function runChunkLLM(
   });
 
   if (!llmRun.ok) {
+    // Count invalid-JSON attempts as real model spend. The chunk will
+    // retry, but Workers AI already consumed tokens for this attempt;
+    // recording them keeps canary cost comparisons honest without
+    // changing retry behavior or article output.
+    if (llmRun.attempt.tokensIn > 0 || llmRun.attempt.tokensOut > 0) {
+      await addChunkStats(env.DB, body.scrape_run_id, {
+        tokens_in: llmRun.attempt.tokensIn,
+        tokens_out: llmRun.attempt.tokensOut,
+        estimated_cost_usd: llmRun.attempt.costUsd,
+        articles_ingested: 0,
+        articles_deduped: 0,
+      });
+    }
     log('warn', 'digest.generation', {
       status: 'chunk_invalid_json',
       scrape_run_id: body.scrape_run_id,
@@ -506,6 +519,7 @@ async function runChunkLLM(
       model_used: llmRun.attempt.modelUsed,
       tokens_in: llmRun.attempt.tokensIn,
       tokens_out: llmRun.attempt.tokensOut,
+      estimated_cost_usd: llmRun.attempt.costUsd,
       response_preview: previewRawResponse(llmRun.attempt.rawResponse),
     });
     throw new Error('chunk_invalid_json');

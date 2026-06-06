@@ -53,7 +53,13 @@ function makeDb(opts: {
     embed_processed: number;
     embed_remaining: number;
   } | null;
-  scrapeRow?: { status: string; finalize_recorded: number } | null;
+  scrapeRow?: {
+    status: string;
+    finalize_recorded: number;
+    wait_iterations?: number;
+    chunk_count?: number;
+  } | null;
+  completedChunks?: number;
   dedupRow?: { status: string } | null;
 }): { db: D1Database; calls: DbCalls } {
   const calls: DbCalls = { updates: [], inserts: [] };
@@ -66,6 +72,9 @@ function makeDb(opts: {
         }
         if (sql.includes('FROM scrape_runs')) {
           return opts.scrapeRow ?? null;
+        }
+        if (sql.includes('FROM scrape_chunk_completions')) {
+          return { done: opts.completedChunks ?? 0 };
         }
         if (sql.includes('FROM dedup_runs')) {
           return opts.dedupRow ?? null;
@@ -285,6 +294,49 @@ describe('processOnePipelineMessage - REQ-OPS-008 / REQ-PIPE-016 (queue-driven p
     expect(opts?.delaySeconds).toBeGreaterThan(0);
   });
 
+  it('scrape_wait keeps waiting past the old 12-iteration cap while chunks are still incomplete', async () => {
+    const { db, calls } = makeDb({
+      pipelineRow: {
+        id: RUN_ID,
+        status: 'running',
+        mode: 'full',
+        current_phase: 'scrape_wait',
+        scrape_run_id: '01SCRAPERUN0000000000000BB',
+        dedup_run_id: null,
+        embed_processed: 0,
+        embed_remaining: 0,
+      },
+      scrapeRow: {
+        status: 'running',
+        finalize_recorded: 0,
+        wait_iterations: 12,
+        chunk_count: 4,
+      },
+      completedChunks: 2,
+    });
+    const { queue: pq, sends } = makeQueue();
+    const env = {
+      DB: db,
+      PIPELINE_JOBS: pq,
+      SCRAPE_COORDINATOR: makeQueue().queue,
+      DEDUP_SWEEP: makeQueue().queue,
+    } as unknown as Env;
+    await processOnePipelineMessage(env, {
+      pipeline_run_id: RUN_ID,
+      phase: 'scrape_wait',
+    });
+
+    expect(sends.length).toBe(1);
+    expect(sends[0]!.msg).toEqual({
+      pipeline_run_id: RUN_ID,
+      phase: 'scrape_wait',
+    });
+    const failed = calls.updates.find((c) =>
+      c.sql.includes("status = 'failed'"),
+    );
+    expect(failed).toBeUndefined();
+  });
+
   it('scrape_wait advances to embed_drain when scrape is ready and finalize recorded', async () => {
     const { db, calls } = makeDb({
       pipelineRow: {
@@ -433,17 +485,17 @@ describe('processOnePipelineMessage - REQ-OPS-008 / REQ-PIPE-016 (queue-driven p
     });
   });
 
-  // CF-023 - REQ-PIPE-001 AC 10: a stuck scrape_wait loop that has
-  // re-enqueued itself more than SCRAPE_WAIT_MAX_ITERATIONS (12) times
-  // must force-fail the scrape_run and mark the pipeline run failed
-  // instead of looping forever. Bug-class: without the cap a queue
-  // saturation or finalize-consumer crash leaves a pipeline run stuck
-  // at 'running' until an operator manually resets it - operators see
-  // a ghost run on the history page but no failure signal.
+  // CF-023 / CF-088 - REQ-PIPE-001 AC 10: a stuck scrape_wait loop
+  // that has re-enqueued itself more than SCRAPE_WAIT_MAX_ITERATIONS
+  // times must force-fail the scrape_run and mark the pipeline run
+  // failed instead of looping forever. Bug-class: without the cap a
+  // queue saturation or finalize-consumer crash leaves a pipeline run
+  // stuck at 'running' until an operator manually resets it - operators
+  // see a ghost run on the history page but no failure signal.
   it('REQ-PIPE-001 AC 10 (CF-023): scrape_wait exceeding SCRAPE_WAIT_MAX_ITERATIONS marks scrape_run failed and pipeline failed', async () => {
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     try {
-      // wait_iterations = 13 > SCRAPE_WAIT_MAX_ITERATIONS (12) triggers
+      // wait_iterations = 73 > SCRAPE_WAIT_MAX_ITERATIONS (72) triggers
       // the stall exit. The scrape is still 'running' (finalize never
       // finished), so scrapeRow reflects a stuck-in-progress state.
       const { db, calls } = makeDb({
@@ -457,14 +509,13 @@ describe('processOnePipelineMessage - REQ-OPS-008 / REQ-PIPE-016 (queue-driven p
           embed_processed: 0,
           embed_remaining: 0,
         },
-        // Cast to include wait_iterations - the D1 stub returns this
-        // object verbatim from first(), and the production code reads
-        // wait_iterations from it.
         scrapeRow: {
           status: 'running',
           finalize_recorded: 0,
-          wait_iterations: 13,
-        } as { status: string; finalize_recorded: number },
+          wait_iterations: 72,
+          chunk_count: 3,
+        },
+        completedChunks: 2,
       });
       const { queue: pq, sends } = makeQueue();
       const env = {

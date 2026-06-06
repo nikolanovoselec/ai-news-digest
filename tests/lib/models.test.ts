@@ -45,12 +45,11 @@ describe('MODELS catalog', () => {
 });
 
 describe('DEFAULT_MODEL_ID', () => {
-  it('REQ-SET-004: DEFAULT_MODEL_ID is @cf/openai/gpt-oss-20b — 128K context, integration retest, single-model arch', () => {
+  it('REQ-SET-004: DEFAULT_MODEL_ID is @cf/zai-org/glm-4.7-flash — 131K context, integration canary, single-model arch', () => {
     // 2026-06-06: retest lower-cost Workers AI options on
-    // develop/integration. Gemma and GLM reproduced chunk cancellations,
-    // and Granite missed most candidate alignments; 20B is the next
-    // canary before any production promotion.
-    expect(DEFAULT_MODEL_ID).toBe('@cf/openai/gpt-oss-20b');
+    // develop/integration. GLM produced good articles but exposed that
+    // the pipeline wait cap was too short for slower chunk completion.
+    expect(DEFAULT_MODEL_ID).toBe('@cf/zai-org/glm-4.7-flash');
   });
 
   it('REQ-SET-004: DEFAULT_MODEL_ID is present in MODELS', () => {
@@ -77,18 +76,18 @@ describe('modelById', () => {
 
 describe('estimateCost', () => {
   it('REQ-SET-004: estimateCost computes USD from per-million-token prices', () => {
-    // GPT OSS 20B: input $0.20 / output $0.30 per Mtok.
-    // 1,000,000 in -> $0.20; 1,000,000 out -> $0.30; total $0.50.
+    // GLM 4.7 Flash: input $0.0605 / output $0.40 per Mtok.
+    // 1,000,000 in -> $0.0605; 1,000,000 out -> $0.40; total $0.4605.
     const cost = estimateCost(DEFAULT_MODEL_ID, 1_000_000, 1_000_000);
-    expect(cost).toBeCloseTo(0.5, 6);
+    expect(cost).toBeCloseTo(0.4605, 6);
   });
 
   it('REQ-SET-004: estimateCost scales linearly with token counts', () => {
-    // 2,000 input tokens * $0.20/Mtok = $0.000400
-    // 1,000 output tokens * $0.30/Mtok = $0.000300
-    // total ~= $0.000700
+    // 2,000 input tokens * $0.0605/Mtok = $0.000121
+    // 1,000 output tokens * $0.40/Mtok = $0.000400
+    // total ~= $0.000521
     const cost = estimateCost(DEFAULT_MODEL_ID, 2_000, 1_000);
-    expect(cost).toBeCloseTo(0.0007, 9);
+    expect(cost).toBeCloseTo(0.000521, 9);
   });
 
   it('REQ-SET-004: estimateCost is non-zero for Kimi K2.5 (published pricing)', () => {

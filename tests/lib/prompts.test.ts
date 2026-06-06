@@ -13,9 +13,9 @@ import {
 } from '~/lib/prompts';
 
 describe('LLM param sets — REQ-PIPE-002 / REQ-DISC-001 (CF-023)', () => {
-  it('CHUNK_LLM_PARAMS reserves 32K output while staying compatible with 128K+ context models', () => {
+  it('CHUNK_LLM_PARAMS reserves 24K output while staying compatible with 128K+ context models', () => {
     expect(CHUNK_LLM_PARAMS.temperature).toBe(0.6);
-    expect(CHUNK_LLM_PARAMS.max_tokens).toBe(32_000);
+    expect(CHUNK_LLM_PARAMS.max_tokens).toBe(24_000);
     expect(CHUNK_LLM_PARAMS.response_format.type).toBe('json_object');
   });
   it('DISCOVERY_LLM_PARAMS is the small-payload variant (4K tokens) for feed-list output', () => {

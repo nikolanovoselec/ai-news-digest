@@ -48,6 +48,7 @@ import { generateUlid } from '~/lib/ulid';
 import { kickCoordinator } from '~/lib/kick-coordinator';
 import { runOneBackfillBatch } from '~/lib/embed-backfill';
 import { DEFAULT_BATCH as DEDUP_DEFAULT_BATCH } from '~/lib/historical-dedup';
+import { countChunkCompletions } from '~/lib/articles-repo';
 
 /** Phase tags written to `pipeline_runs.current_phase` and carried in
  *  every `pipeline-jobs` message body. */
@@ -83,10 +84,20 @@ interface PipelineRunRow {
  *  without hammering D1. */
 const WAIT_DELAY_SECONDS = 10;
 
-/** CF-001: maximum number of times scrape_wait may re-enqueue itself
- *  before flagging the pipeline run as stalled and forcing a failed
- *  exit. 12 × 10s = ~2 minutes of waiting on a stuck finalize gate. */
-const SCRAPE_WAIT_MAX_ITERATIONS = 12;
+/** CF-001 / CF-088: maximum number of times scrape_wait may re-enqueue
+ *  itself before flagging the pipeline run as stalled. The original cap
+ *  was 12 (~2 minutes) and was too short for cheaper Workers AI models:
+ *  GLM produced good articles, but chunks/finalize finished after the
+ *  parent pipeline had already marked the run failed. 72 × 10s is a
+ *  bounded ~12 minute window for slow chunk LLMs and dedup finalize,
+ *  still finite so genuinely stuck runs surface to operators. */
+const SCRAPE_WAIT_MAX_ITERATIONS = 72;
+
+/** Separate coordinator-dispatch cap for the `chunk_count = -1` sentinel.
+ *  This protects against a genuinely wedged coordinator while allowing
+ *  normal source fan-out to finish before the longer chunk/finalize wait
+ *  window takes over. */
+const COORDINATOR_WAIT_MAX_ITERATIONS = 36;
 
 /** Cumulative-articles ceiling for embed-drain self-chain. Guards
  *  against a runaway loop spinning forever on a corrupt corpus.
@@ -266,10 +277,15 @@ async function runScrapeWait(env: Env, run: PipelineRunRow): Promise<void> {
   }
   const row = await env.DB
     .prepare(
-      `SELECT status, finalize_recorded, wait_iterations FROM scrape_runs WHERE id = ?1`,
+      `SELECT status, finalize_recorded, wait_iterations, chunk_count FROM scrape_runs WHERE id = ?1`,
     )
     .bind(run.scrape_run_id)
-    .first<{ status: string; finalize_recorded: number; wait_iterations: number }>();
+    .first<{
+      status: string;
+      finalize_recorded: number;
+      wait_iterations: number;
+      chunk_count: number;
+    }>();
 
   // CF-001: failed status exits the wait loop immediately regardless
   // of finalize_recorded — a failed scrape never records finalize and
@@ -288,12 +304,23 @@ async function runScrapeWait(env: Env, run: PipelineRunRow): Promise<void> {
     row.finalize_recorded === 1;
 
   if (!scrapeReady) {
-    // CF-001: bump wait_iterations; if it exceeds the cap, force-fail
-    // the underlying scrape_run instead of re-enqueuing. The cap fires
-    // when finalize is stuck (queue saturation, DLQ trip, or a bug in
-    // the finalize consumer not flipping the gate).
+    // CF-001 / CF-088: bump wait_iterations; if it exceeds the stage-
+    // appropriate cap, force-fail the underlying scrape_run instead of
+    // re-enqueuing. `chunk_count = -1` means the coordinator won the
+    // dispatch CAS but has not finished fan-out yet; use the shorter
+    // coordinator cap there. Once chunks are known, use the longer GLM-
+    // friendly cap so late chunk LLMs/finalize can finish cleanly.
     const iters = (row?.wait_iterations ?? 0) + 1;
-    if (run.scrape_run_id !== null && iters > SCRAPE_WAIT_MAX_ITERATIONS) {
+    const totalChunks = row?.chunk_count ?? -1;
+    const completedChunks =
+      run.scrape_run_id !== null && totalChunks > 0
+        ? await countChunkCompletions(env.DB, run.scrape_run_id)
+        : 0;
+    const waitCap =
+      totalChunks === -1
+        ? COORDINATOR_WAIT_MAX_ITERATIONS
+        : SCRAPE_WAIT_MAX_ITERATIONS;
+    if (run.scrape_run_id !== null && iters > waitCap) {
       await env.DB
         .prepare(
           `UPDATE scrape_runs
@@ -310,6 +337,9 @@ async function runScrapeWait(env: Env, run: PipelineRunRow): Promise<void> {
         pipeline_run_id: run.id,
         scrape_run_id: run.scrape_run_id,
         wait_iterations: iters,
+        wait_cap: waitCap,
+        total_chunks: totalChunks,
+        completed_chunks: completedChunks,
       });
       await markFailed(env, run.id, 'scrape_wait_stalled');
       return;
@@ -333,6 +363,9 @@ async function runScrapeWait(env: Env, run: PipelineRunRow): Promise<void> {
       scrape_status: row?.status ?? 'missing',
       finalize_recorded: row?.finalize_recorded ?? 0,
       wait_iterations: iters,
+      wait_cap: waitCap,
+      total_chunks: totalChunks,
+      completed_chunks: completedChunks,
     });
     return;
   }

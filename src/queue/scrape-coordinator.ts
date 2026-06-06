@@ -96,10 +96,10 @@ const MAX_CANDIDATES_PER_CHUNK = 25;
 /** Greedy chunk-packer character budget. The chunk consumer runs the
  * single default model (see DEFAULT_MODEL_ID); the context window is
  * the binding constraint here. For 128K-capable defaults,
- * `CHUNK_LLM_PARAMS.max_tokens` reserves 32K for output, leaving
- * ~96K tokens for the input prompt. Reserving ~5K for the system
- * prompt + per-candidate framing leaves ~91K tokens for snippet
- * content. At ~3.5 chars/token for English prose that is ~318K
+ * `CHUNK_LLM_PARAMS.max_tokens` reserves 24K for output, leaving
+ * ~104K tokens for the input prompt. Reserving ~5K for the system
+ * prompt + per-candidate framing leaves ~99K tokens for snippet
+ * content. At ~3.5 chars/token for English prose that is ~346K
  * chars; we round down to 280K for safety margin against estimator
  * drift on non-English snippets and JSON-escape inflation. See
  * `CHUNK_LLM_PARAMS` in `src/lib/prompts.ts` for the same arithmetic
