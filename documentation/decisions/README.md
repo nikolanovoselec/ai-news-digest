@@ -66,6 +66,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD49](#ad49-workflow_run-deploy-gate-hardened-against-fork-pwn-request-vector) | `workflow_run` deploy gate hardened against fork pwn-request vector | Security | 2026-05-19 |
 | [AD50](#ad50-gemma-4-26b-integration-canary-for-pipeline-default) | Gemma 4 26B integration canary for pipeline default | Architecture | 2026-06-06 |
 | [AD51](#ad51-granite-40-h-micro-integration-canary-for-pipeline-default) | Granite 4.0 H Micro integration canary for pipeline default | Architecture | 2026-06-06 |
+| [AD52](#ad52-glm-47-flash-integration-canary-for-pipeline-default) | GLM 4.7 Flash integration canary for pipeline default | Architecture | 2026-06-06 |
 
 ---
 
@@ -1499,7 +1500,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 ### AD51: Granite 4.0 H Micro integration canary for pipeline default
 
-**Status:** Accepted for develop/integration canary (2026-06-06)
+**Status:** Superseded by AD52 after failed content-quality canary (2026-06-06)
 
 **Decision:** Flip `DEFAULT_MODEL_ID` on develop from the failed Gemma canary to `@cf/ibm-granite/granite-4.0-h-micro` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
 
@@ -1513,9 +1514,33 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Consequences:**
 
+- The 2026-06-06 Granite run completed all chunks and finalize, so it did not reproduce Gemma's cancellation failure.
+- Granite still failed the content contract: most candidates were dropped for missing index alignment, several chunks needed invalid-JSON retries, and the scrape ingested only three articles from 89 LLM survivors.
+- Granite's very low price is not enough; a cheap run that misses most stories is not an acceptable production replacement.
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
+
+---
+
+### AD52: GLM 4.7 Flash integration canary for pipeline default
+
+**Status:** Accepted for develop/integration canary (2026-06-06)
+
+**Decision:** Flip `DEFAULT_MODEL_ID` on develop from the failed Granite canary to `@cf/zai-org/glm-4.7-flash` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
+
+**Context:** Wrangler's live Workers AI catalog exposes GLM 4.7 Flash as a text-generation model with a 131K context window and published pricing of $0.0605 input / $0.40 output per million tokens. Against recent production chunk-token volume, that prices near 73% below the 120B baseline while keeping a context window compatible with the current chunk shape. Gemma failed reliability, and Granite failed the output contract, so GLM is the next lower-cost drop-in candidate.
+
+**Alternatives considered:**
+
+- *Try Qwen3 30B A3B FP8 next.* Rejected for this immediate canary because its 32K context would require chunk-size/output-budget changes before testing.
+- *Try Llama 3.2 11B next.* Plausible quality-wise, but its projected reduction is closer to 65%, below the 70% target without additional pipeline savings.
+- *Return directly to 120B.* Safest operationally, but it stops the integration-only search before trying the strongest remaining 128K-plus cost candidate.
+
+**Consequences:**
+
 - Integration scrape runs must be checked for chunk cancellations, `chunk_invalid_json`, title-alignment drops, word-count drops, accepted article count, and same-story duplicate quality before considering any production promotion.
-- If Granite fails reliability or quality gates, rollback is a one-line `DEFAULT_MODEL_ID` revert to `@cf/openai/gpt-oss-120b` plus matching test/doc updates.
-- Granite's very low price makes quality validation especially important: a cheap run that summarizes poorly or harms grouping is not an acceptable production replacement.
+- If GLM fails reliability or quality gates, rollback is a one-line `DEFAULT_MODEL_ID` revert to `@cf/openai/gpt-oss-120b` plus matching test/doc updates.
+- If GLM passes reliability but shows quality issues, the next safer path is keeping 120B and reducing waste around it rather than trying smaller-context models as drop-ins.
 
 **Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
 

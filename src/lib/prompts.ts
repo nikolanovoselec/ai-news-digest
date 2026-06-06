@@ -37,7 +37,7 @@ const LLM_BASE_PARAMS = {
  * once per chunk (single-model architecture; no fallback). The Workers
  * AI runtime enforces `prompt_tokens + max_tokens ≤ contextTokens`, and
  * the smallest reasonable context in `MODELS` (128K for the prior
- * gpt-oss defaults; Granite has 131K) is the binding constraint.
+ * gpt-oss defaults; GLM Flash has 131K) is the binding constraint.
  * Observed chunk output is ~14K tokens at
  * typical chunk sizes (50-100 candidates × ~120-word summaries + JSON
  * overhead, per the budget-aware packer in `scrape-coordinator.ts`);

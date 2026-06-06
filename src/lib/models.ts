@@ -34,18 +34,18 @@ export interface ModelOption {
   category: 'featured' | 'budget';
 }
 
-// Default model: @cf/ibm-granite/granite-4.0-h-micro. 131K context,
-// low-cost instruction model, $0.017/$0.112 per Mtok. Enabled on
-// 2026-06-06 as the next integration canary after Gemma 4 26B reproduced
-// its chunk-cancellation failure mode. Do not promote this develop-branch
-// default to production without a fresh integration scrape proving chunk
-// reliability, JSON validity, summary quality, and same-story dedup
-// quality.
+// Default model: @cf/zai-org/glm-4.7-flash. 131K context, low-cost
+// instruction model, $0.0605/$0.40 per Mtok. Enabled on 2026-06-06 as
+// the next integration canary after Gemma 4 26B reproduced chunk
+// cancellations and Granite 4.0 H Micro failed the chunk output contract.
+// Do not promote this develop-branch default to production without a
+// fresh integration scrape proving chunk reliability, JSON validity,
+// summary quality, and same-story dedup quality.
 //
 // This constant is the single source-of-truth for the pipeline's model
 // id (chunk summarisation, rerank, discovery all flow through
 // DEFAULT_MODEL_ID).
-export const DEFAULT_MODEL_ID = '@cf/ibm-granite/granite-4.0-h-micro';
+export const DEFAULT_MODEL_ID = '@cf/zai-org/glm-4.7-flash';
 
 export const MODELS: ModelOption[] = [
   // Featured — headline choices users see at the top of the dropdown.
@@ -60,10 +60,20 @@ export const MODELS: ModelOption[] = [
     category: 'featured',
   },
   {
+    id: '@cf/zai-org/glm-4.7-flash',
+    name: 'GLM 4.7 Flash',
+    description:
+      'Default integration canary. Z.ai GLM Flash instruction model, 131K context. Low cost; JSON, summary quality, and chunk reliability under evaluation.',
+    inputPricePerMtok: 0.0605,
+    outputPricePerMtok: 0.40,
+    contextTokens: 131_072,
+    category: 'featured',
+  },
+  {
     id: '@cf/ibm-granite/granite-4.0-h-micro',
     name: 'Granite 4.0 H Micro',
     description:
-      'Default integration canary. IBM Granite instruction model, 131K context. Very low cost; quality and chunk reliability under evaluation.',
+      'IBM Granite instruction model, 131K context. Very low cost, but the 2026-06 integration canary missed most candidate alignments.',
     inputPricePerMtok: 0.017,
     outputPricePerMtok: 0.112,
     contextTokens: 131_000,
