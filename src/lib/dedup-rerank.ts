@@ -31,6 +31,7 @@
 // classification accuracy on a smaller model does not degrade from
 // attention dilution.
 
+import { parseLLMJson } from '~/lib/generate';
 import { runJson, asAiBinding } from '~/lib/llm-json';
 import { log } from '~/lib/log';
 
@@ -98,17 +99,9 @@ interface BatchPayload {
 }
 
 function narrowBatchPayload(raw: unknown): BatchPayload | null {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === 'string') {
-    if (raw === '') return null;
-    try {
-      return JSON.parse(raw) as BatchPayload;
-    } catch {
-      return null;
-    }
-  }
-  if (typeof raw === 'object') return raw as BatchPayload;
-  return null;
+  const parsed = parseLLMJson(raw);
+  if (parsed === null) return null;
+  return parsed as BatchPayload;
 }
 
 const RERANK_SYSTEM = [
@@ -166,6 +159,8 @@ async function runOneBatch(
         { role: 'user', content: buildBatchUser(pairs) },
       ],
       temperature: 0,
+      response_format: { type: 'json_object' },
+      max_tokens: 2_000,
     },
     narrow: (raw) => narrowBatchPayload(raw),
   }).catch((err: unknown) => {

@@ -142,6 +142,23 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
     expect((env.AI as unknown as { run: ReturnType<typeof vi.fn> }).run).toHaveBeenCalledTimes(2);
   });
 
+  it('tolerates fenced JSON with prose around the rerank verdicts', async () => {
+    const env = makeAi({
+      response: 'Here is the JSON:\n```json\n{"verdicts":[{"i":0,"same_event":true}]}\n```',
+    });
+    const verdicts = await rerankBorderlinePairsBatch(env, [pair(0, true)]);
+    expect(verdicts).toEqual([true]);
+  });
+
+  it('requests JSON mode and a bounded output budget for rerank calls', async () => {
+    const env = makeAi(verdictResponse([{ i: 0, same_event: true }]));
+    await rerankBorderlinePairsBatch(env, [pair(0, true)]);
+    const run = (env.AI as unknown as { run: ReturnType<typeof vi.fn> }).run;
+    const params = run.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(params.response_format).toEqual({ type: 'json_object' });
+    expect(params.max_tokens).toBe(2_000);
+  });
+
   it('returns all-false for a batch when the LLM emits unparseable JSON', async () => {
     const env = makeAi({ response: 'not-json' });
     const verdicts = await rerankBorderlinePairsBatch(env, [
