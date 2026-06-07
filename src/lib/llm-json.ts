@@ -176,6 +176,11 @@ async function runAiGatewayChatCompletion(options: {
       headers: {
         'Content-Type': 'application/json',
         'cf-aig-authorization': `Bearer ${options.cloudflareApiToken}`,
+        // Dynamic scrape chunks are retry-sensitive: if the model returns
+        // malformed JSON once, serving that same cached body makes every
+        // queue retry fail immediately. Always ask Gateway for a fresh
+        // provider response.
+        'cf-aig-skip-cache': 'true',
         ...(options.metadata !== undefined
           ? { 'cf-aig-metadata': JSON.stringify(options.metadata) }
           : {}),

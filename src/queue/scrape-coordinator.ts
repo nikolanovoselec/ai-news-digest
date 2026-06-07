@@ -93,12 +93,12 @@ function applyPreferDirectOverGoogleNews(
 // model handles small batches correctly. 2026-06 GLM retest used 8
 // because GLM/Gemma canaries showed missing-index, timeout, and JSON
 // reliability failures even when the pipeline wait cap was fixed.
-// Gemini Flash-Lite handled 11 chunk calls in 6.8-9.8s with valid
-// Gateway responses on the 2026-06-07 integration canary, so the next
-// canary raises the count cap to 12 while keeping the char budget
-// unchanged. This reduces repeated prompt overhead and queue surface
-// area without approaching the model context limit.
-const MAX_CANDIDATES_PER_CHUNK = 12;
+// Gemini Flash-Lite handled 8-candidate chunks reliably on the
+// 2026-06-07 integration canary (11/11 completed, 0 invalid JSON).
+// A follow-up 12-candidate canary reduced fan-out to 7 chunks but
+// produced malformed JSON and failed the scrape, so keep the cap at 8
+// until a larger-batch prompt can prove JSON reliability.
+const MAX_CANDIDATES_PER_CHUNK = 8;
 
 /** Greedy chunk-packer character budget. The chunk consumer runs the
  * single default model (see DEFAULT_MODEL_ID); the context window is
