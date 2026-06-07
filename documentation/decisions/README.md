@@ -192,7 +192,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 ### AD6: Polling for scrape-run progress, not SSE or WebSockets
 
-**Status:** Accepted (2026-04-23)
+**Status:** Accepted (2026-04-23); extended by [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired)
 
 **Decision:** While a scrape run is in progress, the client polls `GET /api/scrape-status` every 5 seconds to drive the "Update in progress" indicator and the Force Refresh progress display on `/settings`.
 
@@ -202,7 +202,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 - Server-Sent Events streaming phase updates - no clean transport between the Queue consumer and the SSE HTTP handler without adding Durable Objects.
 - WebSockets via per-user DO - works for codeflare (terminals), overkill here.
 
-**Rationale:** Polling `GET /api/scrape-status` (D1-derived status and chunk-completion counts) is negligible overhead at the operator-only volume this endpoint serves. No DO complexity, no WebSocket protocol, no phase-update machinery. The UX difference is imperceptible for a one-shot status flip.
+**Rationale:** Polling `GET /api/scrape-status` (one D1 SELECT + one KV get) is negligible overhead at the operator-only volume this endpoint serves. No DO complexity, no WebSocket protocol, no phase-update machinery. The UX difference is imperceptible for a one-shot status flip.
 
 **Consequences:** The 5-second poll cadence is the resolution floor for progress visibility. If scrape runs become significantly faster (sub-10 s), the polling interval should be revisited. Clients that close the browser tab during a run will miss intermediate progress but can rehydrate via `/api/scrape-status` on next open.
 
@@ -212,7 +212,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 ### AD7: D1 for chunk completion tracking, replacing KV read-modify-write
 
-**Status:** Accepted (2026-04-24)
+**Status:** Accepted (2026-04-24); extended by [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired)
 
 **Decision:** Move the "last chunk done" gate from a KV decrement (`scrape_run:{id}:chunks_remaining`) to a D1 `INSERT OR IGNORE` + `SELECT COUNT(*)` pattern on a dedicated `scrape_chunk_completions` table, with a follow-up conditional `UPDATE scrape_runs SET finalize_enqueued = 1 WHERE finalize_enqueued = 0` to gate the finalize handoff.
 
@@ -227,9 +227,9 @@ KV's eventual consistency made both races effectively undetectable via testing i
 - Durable Object for serialized counter updates - correct, but adds a DO dependency to a pipeline that runs without one today.
 - KV with Compare-And-Swap (`getWithMetadata` + `put` with `expirationTtl` as a CAS surrogate) - fragile; KV has no native CAS and the surrogate is not atomic.
 
-**Rationale:** AD5's own principle applies directly: completion counting needs transactional semantics. `INSERT OR IGNORE` into a table keyed by `(scrape_run_id, chunk_index)` is idempotent under redelivery and gives an exact count via `SELECT COUNT(*)` - no race. The finalize-enqueue gate is collapsed into a single atomic `UPDATE … WHERE finalize_enqueued = 0`; D1 returns `meta.changes` for exactly one consumer. The legacy KV counter (`scrape_run:{id}:chunks_remaining`) is retired; `/api/scrape-status` derives progress from `scrape_runs.chunk_count` and `scrape_chunk_completions`. Implements [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) and the same-story finalize gate now in [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) (the prior LLM-finalize-dedup REQ that owned this gate was retired in the 2026-05-13 same-story matching consolidation).
+**Rationale:** AD5's own principle applies directly: completion counting needs transactional semantics. `INSERT OR IGNORE` into a table keyed by `(scrape_run_id, chunk_index)` is idempotent under redelivery and gives an exact count via `SELECT COUNT(*)` - no race. The finalize-enqueue gate is collapsed into a single atomic `UPDATE … WHERE finalize_enqueued = 0`; D1 returns `meta.changes` for exactly one consumer. The KV counter (`scrape_run:{id}:chunks_remaining`) is retained as a derived mirror for the `/api/scrape-status` progress display but is no longer authoritative. Implements [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) and the same-story finalize gate now in [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) (the prior LLM-finalize-dedup REQ that owned this gate was retired in the 2026-05-13 same-story matching consolidation).
 
-**Consequences:** The `scrape_chunk_completions` table grows one row per chunk per run; the retention cron (03:00 UTC) must cover this table or it will grow unbounded. Consumers that need scrape progress read D1-derived counts, so no KV propagation window applies.
+**Consequences:** The `scrape_chunk_completions` table grows one row per chunk per run; the retention cron (03:00 UTC) must cover this table or it will grow unbounded. The KV mirror is best-effort and may lag behind D1 by up to one propagation window - consumers must not rely on it for correctness, only for display.
 
 **Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)
 
@@ -765,13 +765,16 @@ PR #185 attempted to compensate with `margin-top: -0.3em`. The user reported thi
 
 ### AD27: All KV writers route through `src/lib/kv/<family>.ts` helpers
 
-**Status:** Accepted (2026-05-05)
+**Status:** Accepted (2026-05-05); extended by [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired)
 
 **Decision:** Every KV writer for a multi-site key family lives in a dedicated helper file under `src/lib/kv/<family>.ts`. Inline `env.KV.put(...)` or `env.KV.delete(...)` calls from queue handlers, page routes, or other lib files are prohibited when the key family has more than one call site.
 
-**Context:** AD16 introduced the single-writer invariant for `sources:{tag}` only (centralised in `src/lib/sources-cache.ts`). Other KV key families had the same problem: inline writers scattered across multiple files with no shared key-format definition. The remaining affected family is `discovery_failures:{tag}`, written from discovery processing, cleanup, and admin retry routes. The former `scrape_run:{id}:chunks_remaining` family is retired; scrape progress now comes from D1.
+**Context:** AD16 introduced the single-writer invariant for `sources:{tag}` only (centralised in `src/lib/sources-cache.ts`). Other KV key families had the same problem: inline writers scattered across multiple files with no shared key-format definition. The affected families at the time of this decision were:
 
-The `source_health:{url}` family was already centralised in `src/lib/feed-health.ts`, `headlines:{source}:{tag}` in `src/lib/headline-cache.ts`, and rate-limit keys in `src/lib/rate-limit.ts`. Single-call-site readers may remain inline - the invariant targets writers and multi-site families only.
+- `scrape_run:{id}:chunks_remaining` - written from both the coordinator and the chunk consumer.
+- `discovery_failures:{tag}` - written (put + delete) from `discovery.ts`, `cleanup.ts`, and two admin retry routes.
+
+The `source_health:{url}` family was already centralised in `src/lib/feed-health.ts`, `headlines:{source}:{tag}` in `src/lib/headline-cache.ts`, and rate-limit keys in `src/lib/rate-limit.ts`. Single-call-site readers (e.g., `/api/scrape-status` reading `chunks_remaining`) remain inline - the invariant targets writers and multi-site families only.
 
 **Alternatives considered:**
 
@@ -781,10 +784,10 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 **Consequences:**
 
 - New KV key families with more than one writer MUST add a `src/lib/kv/<family>.ts` helper before the first writer lands. Code review MUST flag inline `env.KV.put(...)` writes outside `src/lib/kv/` or the pre-existing centralised files; PRs introducing such writes are blocked at review.
-- Single-call-site reads may remain inline - the invariant is about multi-site writers, not all KV access.
+- Single-call-site reads (e.g., `scrape-status.ts` reading `chunks_remaining`) may remain inline - the invariant is about multi-site writers, not all KV access.
 - Existing files `src/lib/feed-health.ts`, `src/lib/headline-cache.ts`, `src/lib/sources-cache.ts`, and `src/lib/rate-limit.ts` are already compliant; they predate this ADR and serve the same pattern.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-DISC-009](../../sdd/discovery.md#req-disc-009-pending-discovery-row-lifecycle)
+**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup)
 
 ---
 
@@ -1622,7 +1625,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 
 **Status:** Accepted (2026-06-08)
 
-**Extends:** [AD7](#ad7-d1-for-chunk-completion-tracking-replacing-kv-read-modify-write), [AD27](#ad27-all-kv-writers-route-through-srclibkvfamilyts-helpers)
+**Extends:** [AD6](#ad6-polling-for-scrape-run-progress-not-sse-or-websockets), [AD7](#ad7-d1-for-chunk-completion-tracking-replacing-kv-read-modify-write), [AD27](#ad27-all-kv-writers-route-through-srclibkvfamilyts-helpers)
 
 **Decision:** `/api/scrape-status` derives in-flight chunk progress from D1 (`scrape_runs.chunk_count` minus `scrape_chunk_completions` rows). The legacy KV progress mirror `scrape_run:{id}:chunks_remaining` is retired and is no longer written by the coordinator or chunk consumer.
 
