@@ -11,7 +11,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. On settings save, a submitted tag without a `sources:{tag}` KV entry and not covered by the curated source registry triggers an `INSERT OR IGNORE` into the `pending_discoveries` D1 table keyed by `(user_id, tag)`. <!-- @impl: src/pages/api/settings.ts::findTagsNeedingDiscovery --> <!-- @impl: src/pages/api/settings.ts::POST = INSERT OR IGNORE INTO pending_discoveries -->
+1. On settings save, a submitted tag without a `sources:{tag}` KV entry and not covered by the curated source registry triggers an `INSERT OR IGNORE` into the `pending_discoveries` D1 table keyed by `(user_id, tag)`. <!-- @impl: src/pages/api/settings.ts::findTagsNeedingDiscovery --> <!-- @impl: src/pages/api/settings.ts::PUT = INSERT OR IGNORE INTO pending_discoveries -->
 2. A submitted tag covered by the curated source registry short-circuits discovery at settings-save time so the registry's guaranteed feed is used directly and a namespace-collision match against an unrelated company's name in an aggregator query is never cached for it. <!-- @impl: src/pages/api/settings.ts::hasCuratedSource(tag) -->
 3. The discovery drain runs on a 10-minute cron offset by 2 minutes from the email dispatcher. <!-- @impl: wrangler.toml::crons = ["0 */4 * * *", "0 3 * * *", "*/5 * * * *", "2,12,22,32,42,52 * * * *"] -->
 4. The discovery cron defensively short-circuits curated-source tags when draining pending rows, so admin-path inserts and rows enqueued before a tag was added to the curated registry are skipped instead of running the LLM path against them. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
