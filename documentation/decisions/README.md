@@ -1482,7 +1482,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Decision:** Flip `DEFAULT_MODEL_ID` on develop from `@cf/openai/gpt-oss-120b` to `@cf/google/gemma-4-26b-a4b-it` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
 
-**Context:** Cloudflare reports Workers AI usage as aggregate neurons, but application-side token accounting shows chunk summarisation dominates recorded model cost. Gemma 4 26B is materially cheaper ($0.10 input / $0.30 output per million tokens versus 120B's $0.35 / $0.75) and has a 256K context window. A previous 2026-05 attempt was abandoned after chunk-sized prompts hit Workers AI wall-clock cancellations, so this is explicitly a live integration retest, not a production promotion.
+**Context:** Application-side token accounting showed chunk summarisation dominated recorded model cost, so the first canary retested a lower-cost long-context Workers AI candidate. A previous 2026-05 attempt was abandoned after chunk-sized prompts hit Workers AI wall-clock cancellations, so this is explicitly a live integration retest, not a production promotion. <!-- @impl: src/queue/scrape-chunk-consumer.ts::runChunkLLM -->
 
 **Alternatives considered:**
 
@@ -1492,7 +1492,8 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Consequences:**
 
-- The 2026-06-06 integration run reproduced the prior failure class: most `scrape-chunks` queue executions were canceled after body fetch and before chunk completion; only 1 of 7 chunks completed, finalize did not run, and the pipeline ended `scrape_wait_stalled` (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)).
+- The 2026-06-06 integration run reproduced the prior failure class: most `scrape-chunks` executions were canceled after body fetch.
+- Only 1 of 7 chunks completed, finalize did not run, and the pipeline ended `scrape_wait_stalled` (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)).
 - Gemma is not a viable drop-in default under current chunking.
 - Cost projections should compare `scrape_runs.tokens_in`, `scrape_runs.tokens_out`, and `estimated_cost_usd` between each integration canary and the 120B production baseline.
 
@@ -1506,7 +1507,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Decision:** Flip `DEFAULT_MODEL_ID` on develop from the failed Gemma canary to `@cf/ibm-granite/granite-4.0-h-micro` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
 
-**Context:** Wrangler's live Workers AI catalog exposes Granite 4.0 H Micro as a text-generation model with a 131K context window and very low published pricing ($0.017 input / $0.112 output per million tokens). Against recent production chunk-token volume, that prices at roughly 92% below the 120B baseline if reliability and quality hold. Gemma's same-day canary failed before enough chunks completed to evaluate quality, so Granite is the next low-cost candidate.
+**Context:** Gemma's same-day canary failed before enough chunks completed to evaluate quality, so the next canary tried Granite as the aggressive lower-cost Workers AI candidate. The decision remained integration-only until reliability and article quality could be checked from scrape-run outputs. <!-- @impl: src/lib/models.ts::MODELS -->
 
 **Alternatives considered:**
 
@@ -1530,7 +1531,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Decision:** Flip `DEFAULT_MODEL_ID` on develop from the failed Granite canary to `@cf/zai-org/glm-4.7-flash` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
 
-**Context:** Wrangler's live Workers AI catalog exposes GLM 4.7 Flash as a text-generation model with a 131K context window and published pricing of $0.0605 input / $0.40 output per million tokens. Against recent production chunk-token volume, that prices near 73% below the 120B baseline while keeping a context window compatible with the current chunk shape. Gemma failed reliability, and Granite failed the output contract, so GLM is the next lower-cost drop-in candidate.
+**Context:** Gemma failed reliability, and Granite failed the output contract, so GLM became the next lower-cost drop-in candidate for the integration environment. The test kept the existing chunk shape and evaluated whether reliability, quality, and savings could all hold together. <!-- @impl: src/lib/models.ts::MODELS -->
 
 **Alternatives considered:**
 
@@ -1554,7 +1555,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Decision:** Flip `DEFAULT_MODEL_ID` on develop from the failed GLM canary to `@cf/openai/gpt-oss-20b` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
 
-**Context:** GPT OSS 20B is the lower-cost sibling of the 120B production baseline, keeps native JSON-mode support, and keeps the same 128K context class as the reliable 120B default. Published pricing is $0.20 input / $0.30 output per million tokens, roughly 48% below the 120B baseline on recent token volume. AD48 previously rolled it back after mid-call cancellations on chunk-sized prompts, but a focused integration retest is useful after Gemma and GLM reproduced cancellations and Granite failed quality.
+**Context:** GPT OSS 20B is the lower-cost sibling of the 120B production baseline and keeps the same native JSON-mode path used by the existing Workers AI calls. AD48 previously rolled it back after mid-call cancellations on chunk-sized prompts, but a focused integration retest was useful after Gemma and GLM reproduced cancellations and Granite failed quality. <!-- @impl: src/lib/models.ts::MODELS -->
 
 **Alternatives considered:**
 
@@ -1580,7 +1581,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Context:** Workers AI canaries did not meet the release target: Gemma and GLM reproduced chunk cancellations, Granite failed alignment/quality, and 20B did not reach the required 70%+ savings. <!-- @impl: src/lib/models.ts::DEFAULT_MODEL_ID -->
 
-The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 rows, kept 38/44 summaries in the 100-150 word target, and reduced total chunk-plus-rerank cost to about $0.0209 versus GLM's about $0.0885. Audit IDs: pipeline `01KTHM7CHAK1S2E7R7PJX6NDJN`, scrape `01KTHM7FW2FT5EFZGBT9K9QGFF`, dedup `01KTHMDRAE935N76DSHZ27295A`.
+The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 rows, kept 38/44 summaries in the 100-150 word target, and reduced total chunk-plus-rerank cost to about $0.0209 versus GLM's about $0.0885 (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)). Audit IDs: pipeline `01KTHM7CHAK1S2E7R7PJX6NDJN`, scrape `01KTHM7FW2FT5EFZGBT9K9QGFF`, dedup `01KTHMDRAE935N76DSHZ27295A`.
 
 **Alternatives considered:**
 

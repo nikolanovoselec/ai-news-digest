@@ -146,7 +146,13 @@ npx wrangler d1 migrations apply DB --local
 npm run dev
 ```
 
-Copy `.dev.vars.example` to `.dev.vars`, add at least one OAuth client ID + secret pair (GitHub, Google, or both) and a random `OAUTH_JWT_SECRET` (≥32 bytes).
+Copy `.dev.vars.example` to `.dev.vars`, then add:
+
+- at least one OAuth client ID + secret pair (GitHub, Google, or both)
+- a random `OAUTH_JWT_SECRET` (≥32 bytes)
+- AI Gateway values: `AI_GATEWAY_API_TOKEN` and `AI_GATEWAY_URL`
+
+See [AI Gateway setup](documentation/configuration.md#ai-gateway-setup).
 
 ## License
 

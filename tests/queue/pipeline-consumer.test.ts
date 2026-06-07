@@ -391,6 +391,57 @@ describe('processOnePipelineMessage - REQ-OPS-008 / REQ-PIPE-016 (queue-driven p
     expect(failed).toBeUndefined();
   });
 
+  it('scrape_wait restores the dispatch sentinel when coordinator redispatch fails', async () => {
+    const scrapeRunId = '01SCRAPERUN0000000000000BB';
+    const { db, calls } = makeDb({
+      pipelineRow: {
+        id: RUN_ID,
+        status: 'running',
+        mode: 'full',
+        current_phase: 'scrape_wait',
+        scrape_run_id: scrapeRunId,
+        dedup_run_id: null,
+        embed_processed: 0,
+        embed_remaining: 0,
+      },
+      scrapeRow: {
+        status: 'running',
+        finalize_recorded: 0,
+        wait_iterations: 36,
+        chunk_count: -1,
+      },
+      completedChunks: 0,
+    });
+    const { queue: pq, sends: pipelineSends } = makeQueue();
+    const sendErr = new Error('coordinator queue unavailable');
+    const coordinatorQueue = {
+      send: vi.fn().mockRejectedValue(sendErr),
+      sendBatch: vi.fn(),
+    } as unknown as Queue;
+    const env = {
+      DB: db,
+      PIPELINE_JOBS: pq,
+      SCRAPE_COORDINATOR: coordinatorQueue,
+      DEDUP_SWEEP: makeQueue().queue,
+    } as unknown as Env;
+
+    await expect(
+      processOnePipelineMessage(env, {
+        pipeline_run_id: RUN_ID,
+        phase: 'scrape_wait',
+      }),
+    ).rejects.toThrow('coordinator queue unavailable');
+
+    const rollback = calls.updates.find(
+      (c) =>
+        c.sql.includes('UPDATE scrape_runs') &&
+        c.sql.includes('chunk_count = -1') &&
+        c.params[0] === scrapeRunId,
+    );
+    expect(rollback).toBeDefined();
+    expect(pipelineSends.length).toBe(0);
+  });
+
   it('scrape_wait advances to embed_drain when scrape is ready and finalize recorded', async () => {
     const { db, calls } = makeDb({
       pipelineRow: {

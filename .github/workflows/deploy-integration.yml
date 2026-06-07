@@ -296,8 +296,28 @@ jobs:
             npx --yes wrangler secret put "$name" --env integration < "$TMP"
             rm "$TMP"
           done
-          printf 'y\n' | npx --yes wrangler secret delete CLOUDFLARE_API_TOKEN --env integration \
-            || echo "CLOUDFLARE_API_TOKEN delete returned non-zero (likely already absent)"
+          LEGACY_SECRET_LIST=$(mktemp)
+          if ! npx --yes wrangler secret list --env integration --json > "$LEGACY_SECRET_LIST"; then
+            echo "::error::Failed to list integration Worker secrets before clearing legacy CLOUDFLARE_API_TOKEN."
+            rm -f "$LEGACY_SECRET_LIST"
+            exit 1
+          fi
+          if ! LEGACY_SECRET_PRESENT=$(node - "$LEGACY_SECRET_LIST" <<'NODE'
+          const fs = require('fs');
+          const secrets = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          console.log(secrets.some((secret) => secret.name === 'CLOUDFLARE_API_TOKEN') ? 'yes' : 'no');
+          NODE
+          ); then
+            echo "::error::Failed to parse integration Worker secret list before clearing legacy CLOUDFLARE_API_TOKEN."
+            rm -f "$LEGACY_SECRET_LIST"
+            exit 1
+          fi
+          if [ "$LEGACY_SECRET_PRESENT" = "yes" ]; then
+            npx --yes wrangler secret delete CLOUDFLARE_API_TOKEN --env integration --force
+          else
+            echo "CLOUDFLARE_API_TOKEN not set on integration Worker — nothing to clear"
+          fi
+          rm -f "$LEGACY_SECRET_LIST"
 
           # Sign-in providers — each pair independently optional. Same
           # logic as deploy.yml: at least one must be configured. Per-

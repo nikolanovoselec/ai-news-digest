@@ -528,7 +528,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
     expect(restamp).toBeUndefined();
   });
 
-  it('REQ-PIPE-001 AC7 (CF-040): item with null pubDate is kept, NOT treated as stale', async () => {
+  it('REQ-PIPE-011 (CF-040): item with null pubDate is kept, NOT treated as stale', async () => {
     // A missing pubDate falls back to ingestion time so it always
     // passes the freshness filter. It must NOT be dropped just because
     // the parsed date field is absent - that would silently blackhole

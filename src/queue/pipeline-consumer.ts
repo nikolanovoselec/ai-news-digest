@@ -343,7 +343,22 @@ async function runScrapeWait(env: Env, run: PipelineRunRow): Promise<void> {
         .run()
         .catch(() => ({ meta: { changes: 0 } }));
       if ((reset.meta?.changes ?? 0) === 1) {
-        await env.SCRAPE_COORDINATOR.send({ scrape_run_id: run.scrape_run_id });
+        try {
+          await env.SCRAPE_COORDINATOR.send({ scrape_run_id: run.scrape_run_id });
+        } catch (sendErr) {
+          await env.DB
+            .prepare(
+              `UPDATE scrape_runs
+                  SET chunk_count = -1
+                WHERE id = ?1
+                  AND status = 'running'
+                  AND chunk_count = 0`,
+            )
+            .bind(run.scrape_run_id)
+            .run()
+            .catch(() => undefined);
+          throw sendErr;
+        }
         await env.PIPELINE_JOBS.send(
           { pipeline_run_id: run.id, phase: 'scrape_wait' },
           { delaySeconds: WAIT_DELAY_SECONDS },

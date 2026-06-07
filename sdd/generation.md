@@ -1,6 +1,6 @@
 # Digest Generation
 
-A global scrape-and-summarise pipeline that runs every 4 hours: one cron-triggered coordinator run per tick assembles candidates from the curated source registry, canonical-URL-dedupes them, and fans chunks out to the LLM consumer. The consumer writes summaries + tags + cluster groupings into a shared article pool. The per-user dashboard then reads from that pool filtered by each user's active tags, so cost scales with the world (one LLM pass per tick) rather than with users × refreshes. Starred articles survive the 14-day retention cutoff.
+A global scrape-and-summarise pipeline that runs every 4 hours: one cron-triggered coordinator run per tick assembles candidates from the curated source registry, canonical-URL-dedupes them, and fans chunks out to the LLM consumer. The consumer writes summaries and validated tags into a shared article pool; same-story grouping runs in the later dedup pass. The per-user dashboard then reads from that pool filtered by each user's active tags, so cost scales with the world (one LLM pass per tick) rather than with users × refreshes. Starred articles survive the 14-day retention cutoff.
 
 ---
 
@@ -117,8 +117,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 4. Summaries whose generated title has zero topical overlap with the source headline are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
 5. Non-drop titles outside the server-side sanity range are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 6. Details below the server-side minimum word count are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
-7. Tags outside the allowlist are discarded before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
-8. Articles with zero valid tags after allowlist filtering are dropped. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
+7. Tags outside the allowlist are discarded, and articles with zero valid tags after filtering are dropped. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
 

@@ -43,8 +43,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 4. Each suggested URL passes HTTPS, SSRF, HTTP 200, declared content-type, parseable body, and item-with-title-and-URL validation before persistence. <!-- @impl: src/lib/discovery.ts::validateFeedUrl -->
 5. A URL failing any validation gate is dropped from the discovery result. <!-- @impl: src/lib/discovery.ts::discoverTag -->
 6. Valid feeds are persisted to `sources:{tag}` as `{ feeds: [{ name, url, kind }], discovered_at }` with no TTL. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
-7. Rows for the picked tag are deleted after successful discovery or terminal no-feed failure. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
-8. Retryable no-feed attempts stay queued with a bounded failure counter. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
+7. Rows for the picked tag are deleted after successful discovery or terminal no-feed failure; retryable no-feed attempts stay queued with a bounded failure counter. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper), [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
