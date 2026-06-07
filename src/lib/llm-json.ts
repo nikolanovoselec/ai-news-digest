@@ -85,9 +85,9 @@ export interface RunJsonOptions<T> {
   /** Optional override; defaults to DEFAULT_MODEL_ID. */
   model?: string;
   /** Existing Cloudflare API token, reused for AI Gateway auth when set. */
-  cloudflareApiToken?: string;
+  cloudflareApiToken?: string | undefined;
   /** Test seam for the AI Gateway HTTP path. */
-  fetchImpl?: typeof fetch;
+  fetchImpl?: typeof fetch | undefined;
 }
 
 export async function runJson<T>(
