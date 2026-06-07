@@ -49,6 +49,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Validate APP_URL
+        id: app-url
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          HOST=$(bash .github/scripts/validate-app-url.sh "$APP_URL" "APP_URL")
+          echo "host=$HOST" >> "$GITHUB_OUTPUT"
+          echo "Validated APP_URL host: $HOST"
+
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -468,34 +477,14 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          APP_URL: ${{ secrets.APP_URL }}
+          APP_HOST: ${{ steps.app-url.outputs.host }}
         run: |
           set -e
-          if [ -z "$APP_URL" ]; then
-            echo "::error::APP_URL is required for custom-domain binding"
-            exit 1
-          fi
-          # Extract hostname from APP_URL (strip scheme + path + port).
-          # Case-insensitive scheme match so HTTPS:// / MIXED-case works too.
-          HOST=$(printf '%s' "$APP_URL" | sed -E 's|^[A-Za-z]+://||; s|/.*$||; s|:.*$||')
+          HOST="${APP_HOST:-}"
           if [ -z "$HOST" ]; then
-            echo "Could not extract hostname from APP_URL"
+            echo "::error::Validated APP_URL host missing"
             exit 1
           fi
-          # Require a fully-qualified domain (at least one dot). A single-label
-          # APP_URL like `localhost` has no Cloudflare zone and isn't a valid
-          # custom-domain target.
-          case "$HOST" in
-            *.workers.dev)
-              echo "APP_URL must be a custom domain; workers_dev is disabled in wrangler.toml"
-              exit 1
-              ;;
-            *.*) : ;;
-            *)
-              echo "APP_URL hostname '$HOST' is not fully-qualified (needs at least one dot)"
-              exit 1
-              ;;
-          esac
           echo "Binding Worker to custom domain: $HOST"
 
           # Derive the Worker service name from wrangler.toml so a fork that

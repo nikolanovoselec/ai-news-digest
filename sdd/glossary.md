@@ -12,7 +12,7 @@ Canonical definitions for terms used across the spec, code, and documentation. U
 | **Source health** | A per-feed-URL counter of consecutive fetch failures, kept in the eventually-consistent edge cache; a feed is evicted from its tag's cached list after 30 consecutive failures (about five days at the six-times-daily scrape cadence). |
 | **Scrape coordinator** | The cron-triggered job that runs every 4 hours (00/04/08/12/16/20 UTC), assembles candidates from the curated source registry plus discovered tag feeds, canonical-URL-dedupes them, and fans chunks of up to 8 candidates out to the LLM consumer. |
 | **Chunk consumer** | The Worker handler that processes one up-to-8-candidate scrape chunk, runs the LLM call, and writes the resulting summaries + tags into the shared article pool. |
-| **Discovery drain** | The 5-minute cron that picks up to 3 pending tags from the discovery queue and resolves their feed URLs via the LLM + SSRF-validated check. |
+| **Discovery drain** | The 10-minute cron that picks up to 3 pending tags from the discovery queue and resolves their feed URLs via the LLM + SSRF-validated check. |
 | **Email dispatcher** | The 5-minute cron that, for every user whose configured local digest time has elapsed today and whose `last_emailed_local_date` is not today, sends one "your digest is ready" notification through the email provider. |
 | **First-run mode** | The `/settings?first_run=1` rendering that shows a "Welcome" hero and a "Generate my first digest" CTA; applies until both hashtags and digest time are set. |
 | **Settings-incomplete gate** | The middleware redirect that keeps users without a configured digest time on the settings page. Hashtags are NOT part of the gate — they are edited on the reading surface. |

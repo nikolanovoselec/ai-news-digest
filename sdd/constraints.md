@@ -57,7 +57,7 @@ WCAG 2.1 AA is the floor. Full keyboard navigation, visible focus rings, semanti
 
 ### CON-PERF-001: 100-user thundering-herd target
 
-The architecture is sized to handle up to 100 users who may all schedule their digest at the same local HH:MM. Generation is queue-buffered; the cron dispatcher runs in <1 second regardless of user count. Discovery processes up to 3 tags per 5-minute invocation.
+The architecture is sized to handle up to 100 users who may all schedule their digest at the same local HH:MM. Generation is queue-buffered; the cron dispatcher runs in <1 second regardless of user count. Discovery processes up to 3 tags per 10-minute invocation.
 
 **Applies To:** Digest generation, source discovery
 

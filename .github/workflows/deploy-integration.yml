@@ -37,8 +37,8 @@ jobs:
     # If integration ever needs a different value (e.g. a separate
     # JWT secret for cross-env identity isolation), add it under
     # Settings → Environments → integration; the workflow picks it
-    # up automatically with no code change. APP_URL stays in
-    # wrangler.toml [env.integration.vars] (public hostname).
+    # up automatically with no code change. APP_URL stays in the
+    # integration GitHub Environment variables (public hostname).
     environment: integration
     steps:
       # Always deploy develop's current HEAD regardless of which branch
@@ -47,6 +47,15 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: develop
+
+      - name: Validate APP_URL
+        id: app-url
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          HOST=$(bash .github/scripts/validate-app-url.sh "$APP_URL" "vars.APP_URL")
+          echo "host=$HOST" >> "$GITHUB_OUTPUT"
+          echo "Validated APP_URL host: $HOST"
 
       - uses: actions/setup-node@v6
         with:
@@ -428,32 +437,14 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          APP_URL: ${{ vars.APP_URL }}
+          APP_HOST: ${{ steps.app-url.outputs.host }}
         run: |
           set -e
-          # APP_URL comes from the integration GitHub Environment variable
-          # (vars.APP_URL). It is required earlier in this workflow because
-          # integration also deploys only through a custom domain.
-          if [ -z "$APP_URL" ]; then
-            echo "::error::vars.APP_URL is required for custom-domain binding"
-            exit 1
-          fi
-          HOST=$(printf '%s' "$APP_URL" | sed -E 's|^[A-Za-z]+://||; s|/.*$||; s|:.*$||')
+          HOST="${APP_HOST:-}"
           if [ -z "$HOST" ]; then
-            echo "Could not extract hostname from APP_URL"
+            echo "::error::Validated APP_URL host missing"
             exit 1
           fi
-          case "$HOST" in
-            *.workers.dev)
-              echo "APP_URL must be a custom domain; workers_dev is disabled in wrangler.toml"
-              exit 1
-              ;;
-            *.*) : ;;
-            *)
-              echo "APP_URL hostname '$HOST' is not fully-qualified"
-              exit 1
-              ;;
-          esac
           echo "Binding integration Worker to custom domain: $HOST"
 
           # Worker service name from the env-scoped block.

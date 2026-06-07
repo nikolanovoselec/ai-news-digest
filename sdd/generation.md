@@ -292,13 +292,34 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 4. If a run stalls before any chunks are queued, the pipeline makes one bounded coordinator recovery attempt. <!-- @impl: src/queue/pipeline-consumer.ts::runScrapeWait -->
 5. Duplicate initial coordinator deliveries cannot queue the same run's chunks more than once. <!-- @impl: src/queue/scrape-coordinator.ts::claimCoordinatorDispatch -->
 6. A coordinator retry after an interrupted fan-out can continue the same run instead of abandoning it as a duplicate. <!-- @impl: src/queue/scrape-coordinator.ts::claimCoordinatorDispatch -->
-7. Empty candidate runs close in a terminal state that later coordinator deliveries cannot reclaim. <!-- @impl: src/queue/scrape-coordinator.ts::closeEmptyRun -->
 
 **Constraints:** [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
 
 **Priority:** P1
 
 **Dependencies:** [REQ-PIPE-006](#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
+
+**Verification:** Integration test
+
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-021: Coordinator terminal-row safety
+
+**Intent:** Coordinator idempotency never reopens a scrape run that has already reached a terminal state, including the zero-survivor path where no chunk or finalize consumer will run.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. Empty candidate runs close atomically with terminal status, zero chunk count, and finalize recorded. <!-- @impl: src/queue/scrape-coordinator.ts::closeEmptyRun -->
+2. Coordinator dispatch claims only running scrape-run rows, so terminal rows with zero chunk count cannot be reclaimed by duplicate delivery. <!-- @impl: src/queue/scrape-coordinator.ts::claimCoordinatorDispatch -->
+
+**Constraints:** [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-PIPE-016](#req-pipe-016-scrape_runs-idempotency-and-stuck-run-cleanup)
 
 **Verification:** Integration test
 

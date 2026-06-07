@@ -3,6 +3,7 @@
 // Implements REQ-PIPE-011
 // Implements REQ-PIPE-016
 // Implements REQ-PIPE-019
+// Implements REQ-PIPE-021
 // Implements REQ-DISC-003
 //
 // Coordinator for the global-feed scrape (every-4-hours cron `0 */4 * * *`).

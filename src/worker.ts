@@ -24,7 +24,7 @@
 //                     10 min on a 2-min offset so a new user's first
 //                     tag is discovered in ~2 minutes (REQ-DISC-001).
 //
-// Queue dispatch (wrangler.toml: four consumers):
+// Queue dispatch (wrangler.toml: five consumers):
 //   - `scrape-coordinator` → handleCoordinatorBatch (REQ-PIPE-001).
 //   - `scrape-chunks`      → handleChunkBatch (REQ-PIPE-002).
 //   - `scrape-finalize`    → handleFinalizeBatch (REQ-PIPE-003).
@@ -66,7 +66,7 @@ import { runCleanup } from '~/queue/cleanup';
 import { dispatchDailyEmails } from '~/lib/email-dispatch';
 
 /** Upper bound on the pending-discoveries batch drained per cron run.
- * Chosen so the 5-minute window comfortably accommodates the fan-out
+ * Chosen so the 10-minute window comfortably accommodates the fan-out
  * and downstream LLM call per tag. */
 const DISCOVERY_BATCH_LIMIT = 3;
 

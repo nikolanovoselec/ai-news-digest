@@ -13,10 +13,11 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Acceptance Criteria:**
 1. On settings save, a submitted tag without a `sources:{tag}` KV entry and not covered by the curated source registry triggers an `INSERT OR IGNORE` into the `pending_discoveries` D1 table keyed by `(user_id, tag)`.
 2. A submitted tag covered by the curated source registry short-circuits discovery at settings-save time so the registry's guaranteed feed is used directly and a namespace-collision match against an unrelated company's name in an aggregator query is never cached for it.
-3. The 10-minute discovery cron defensively short-circuits curated-source tags when draining pending rows, so admin-path inserts and rows enqueued before a tag was added to the curated registry are skipped instead of running the LLM path against them.
-4. The discovery cron picks at most 3 distinct tags from `pending_discoveries` per invocation so a backlog drains across multiple ticks instead of spiking LLM cost in one minute.
-5. Within a cron pick, tags enqueued by a brand-new user's first settings save are processed before the steady-state queue so a new account sees discovered feeds on the next cron tick rather than waiting behind older pending tags from other users.
-6. Among tags at the same priority level, the earliest `added_at` wins so the order in which a single user's tags drain is deterministic and oldest-first.
+3. The discovery drain runs on a 10-minute cron offset by 2 minutes from the email dispatcher. <!-- @impl: wrangler.toml::triggers.crons -->
+4. The discovery cron defensively short-circuits curated-source tags when draining pending rows, so admin-path inserts and rows enqueued before a tag was added to the curated registry are skipped instead of running the LLM path against them. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
+5. The discovery cron picks at most 3 distinct tags from `pending_discoveries` per invocation so a backlog drains across multiple ticks instead of spiking LLM cost in one minute. <!-- @impl: src/worker.ts::DISCOVERY_BATCH_LIMIT -->
+6. Within a cron pick, tags enqueued by a brand-new user's first settings save are processed before the steady-state queue so a new account sees discovered feeds on the next cron tick rather than waiting behind older pending tags from other users. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
+7. Among tags at the same priority level, the earliest `added_at` wins so the order in which a single user's tags drain is deterministic and oldest-first. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
@@ -66,7 +67,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 1. Rows for a picked tag are deleted after successful discovery or terminal no-feed failure. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
 2. Retryable no-feed attempts stay queued with a bounded failure counter. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P0
 

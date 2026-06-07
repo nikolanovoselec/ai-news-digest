@@ -8,7 +8,7 @@ Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are a
 
 ## 2026-06-08
 
-- REQ-PIPE-001 and REQ-PIPE-016 changed: scrape progress is documented as D1-derived chunk completion, while coordinator dispatch claims only `running` scrape runs and closes empty runs atomically so duplicate deliveries cannot reopen a terminal empty scrape.
+- REQ-PIPE-001 and REQ-PIPE-016 changed, and REQ-PIPE-021 added: scrape progress is documented as D1-derived chunk completion, coordinator dispatch recovery remains in REQ-PIPE-016, and terminal-row safety for empty scrape runs is split into its own sibling contract.
 - REQ-DISC-001 changed: the discovery drain cadence is documented as the existing 10-minute schedule with a 2-minute offset from the email cron.
 - REQ-DISC-009, REQ-PIPE-020, and REQ-PIPE-002 changed: retryable feed-discovery misses remain queued until the bounded failure limit, invalid LLM tags cannot create unroutable articles, and legacy same-response duplicate hints are limited to the current chunk.
 

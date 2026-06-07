@@ -193,7 +193,7 @@ function stubFetchEmpty(): void {
   );
 }
 
-describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-PIPE-016', () => {
+describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-PIPE-016 / REQ-PIPE-021', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -251,7 +251,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-
     expect(sends.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('REQ-PIPE-016 AC7: coordinator claim ignores terminal scrape_runs rows', async () => {
+  it('REQ-PIPE-021 AC2: coordinator claim ignores terminal scrape_runs rows', async () => {
     stubFetchWithItems(1);
     const { db, records } = makeDb({
       claimChanges: 0,
@@ -271,7 +271,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-
     expect(claim?.sql).toContain("status = 'running'");
   });
 
-  it('REQ-PIPE-016 AC7: empty candidate runs close atomically as terminal', async () => {
+  it('REQ-PIPE-021 AC1: empty candidate runs close atomically as terminal', async () => {
     stubFetchEmpty();
     const { db, records } = makeDb();
     const { kv } = makeKv();
