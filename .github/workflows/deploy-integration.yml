@@ -265,6 +265,31 @@ jobs:
             *[!A-Za-z0-9._-]*|'') echo "::error::AI_GATEWAY_NAME may contain only letters, numbers, dot, underscore, and dash."; exit 1 ;;
           esac
           AI_GATEWAY_URL="https://gateway.ai.cloudflare.com/v1/${CLOUDFLARE_ACCOUNT_ID}/${AI_GATEWAY_NAME}/compat/chat/completions"
+          # Fail deploy before Worker publish when Gateway, provider, model,
+          # or the least-privilege Gateway token is unusable. The runtime
+          # default model is Gateway-only, so a deploy that cannot complete
+          # this one-token chat request would fail every summary/discovery/
+          # rerank call after release.
+          AI_GATEWAY_PREFLIGHT_BODY=$(mktemp)
+          AI_GATEWAY_PREFLIGHT_STATUS=$(curl -sS --max-time 20 \
+            -o "$AI_GATEWAY_PREFLIGHT_BODY" \
+            -w '%{http_code}' \
+            "$AI_GATEWAY_URL" \
+            -H 'Content-Type: application/json' \
+            -H "cf-aig-authorization: Bearer ${AI_GATEWAY_API_TOKEN}" \
+            --data '{"model":"google-ai-studio/gemini-2.5-flash-lite","messages":[{"role":"user","content":"ping"}],"max_tokens":1,"reasoning_effort":"none"}') || {
+            echo "::error::AI Gateway preflight request failed. Verify AI_GATEWAY_NAME, provider key, and AI_GATEWAY_API_TOKEN."
+            rm -f "$AI_GATEWAY_PREFLIGHT_BODY"
+            exit 1
+          }
+          if [ "$AI_GATEWAY_PREFLIGHT_STATUS" -lt 200 ] || [ "$AI_GATEWAY_PREFLIGHT_STATUS" -ge 300 ]; then
+            echo "::error::AI Gateway preflight failed with HTTP ${AI_GATEWAY_PREFLIGHT_STATUS}. Verify the Gateway exists, has the Google AI Studio provider key, and allows google-ai-studio/gemini-2.5-flash-lite."
+            head -c 500 "$AI_GATEWAY_PREFLIGHT_BODY" || true
+            echo
+            rm -f "$AI_GATEWAY_PREFLIGHT_BODY"
+            exit 1
+          fi
+          rm -f "$AI_GATEWAY_PREFLIGHT_BODY"
           for name in AI_GATEWAY_API_TOKEN AI_GATEWAY_URL; do
             TMP=$(mktemp)
             printf '%s' "${!name}" > "$TMP"

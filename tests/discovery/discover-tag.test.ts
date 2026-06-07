@@ -1,4 +1,4 @@
-// Tests for src/lib/discovery.ts#discoverTag — REQ-DISC-001, REQ-DISC-005.
+// Tests for src/lib/discovery.ts#discoverTag — REQ-DISC-001, REQ-DISC-005, REQ-DISC-007.
 //
 // Exercise:
 //   - LLM call is routed through AI Gateway (with DEFAULT_MODEL_ID)
@@ -102,7 +102,7 @@ describe('discoverTag', () => {
     vi.unstubAllGlobals();
   });
 
-  it('REQ-DISC-001: accepts valid RSS URL returned by LLM', async () => {
+  it('REQ-DISC-007 AC4: accepts valid RSS URL returned by LLM', async () => {
     mockFetch([
       { urlMatch: 'blog.example.com/feed', contentType: 'application/rss+xml', body: rssBody() },
     ]);
@@ -120,7 +120,7 @@ describe('discoverTag', () => {
     });
   });
 
-  it('REQ-DISC-001: accepts valid Atom URL returned by LLM', async () => {
+  it('REQ-DISC-007 AC4: accepts valid Atom URL returned by LLM', async () => {
     mockFetch([
       { urlMatch: 'blog.example.com/atom', contentType: 'application/atom+xml', body: atomBody() },
     ]);
@@ -134,7 +134,7 @@ describe('discoverTag', () => {
     expect(feeds[0]!.kind).toBe('atom');
   });
 
-  it('REQ-DISC-001: accepts valid JSON Feed URL returned by LLM', async () => {
+  it('REQ-DISC-007 AC4: accepts valid JSON Feed URL returned by LLM', async () => {
     mockFetch([
       { urlMatch: 'ex.com/feed.json', contentType: 'application/json', body: jsonFeedBody() },
     ]);
@@ -148,7 +148,7 @@ describe('discoverTag', () => {
     expect(feeds[0]!.kind).toBe('json');
   });
 
-  it('REQ-DISC-005: drops SSRF-unsafe URLs (private IP) from LLM suggestions', async () => {
+  it('REQ-DISC-007 AC4 / REQ-DISC-005: drops SSRF-unsafe URLs (private IP) from LLM suggestions', async () => {
     // No fetch mock — if the code tries to fetch 127.0.0.1 the call
     // will throw and the test fails loudly. The SSRF filter MUST
     // short-circuit before any network call.
@@ -171,7 +171,7 @@ describe('discoverTag', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('REQ-DISC-001: drops URLs with content-type mismatch', async () => {
+  it('REQ-DISC-007 AC4: drops URLs with content-type mismatch', async () => {
     mockFetch([
       {
         urlMatch: 'example.com/feed',
@@ -225,7 +225,7 @@ describe('discoverTag', () => {
     expect(feeds).toEqual([]);
   });
 
-  it('REQ-DISC-001: returns [] when LLM call throws', async () => {
+  it('REQ-DISC-007 AC1: returns [] when LLM call throws', async () => {
     const { env } = makeEnv(new Error('LLM backend down'));
     const feeds = await discoverTag('ai', env);
     expect(feeds).toEqual([]);

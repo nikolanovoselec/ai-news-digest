@@ -57,19 +57,21 @@ The result: 60+ written requirements across 10 product domains (authentication, 
 
 ## Deploy your own
 
-Three steps. The Deploy workflow handles D1, KV, queues, migrations, and secret push. No `wrangler deploy` from your laptop.
+Four steps. The Deploy workflow handles D1, KV, queues, migrations, Gateway preflight, and secret push. No `wrangler deploy` from your laptop.
 
 1. **Fork the repo.** You know how.
 
-2. **Set repo secrets.** In your fork: `Settings` > `Secrets and variables` > `Actions` > `New repository secret`. Five required, plus at least one OAuth provider pair (GitHub or Google or both; the landing page renders one button per configured provider, alphabetical).
+2. **Create the AI Gateway path.** In Cloudflare, create or choose an AI Gateway named `ai-news-digest` (or set the repo variable `AI_GATEWAY_NAME` to your chosen name), add the Google AI Studio provider key to that Gateway, and create a least-privilege AI Gateway runtime token that can call `google-ai-studio/gemini-2.5-flash-lite`. The deploy workflow performs a one-token Gateway chat-completions preflight and fails before deploy on 401/404/provider-missing responses.
+
+3. **Set repo secrets.** In your fork: `Settings` > `Secrets and variables` > `Actions` > `New repository secret`. Five required, plus at least one OAuth provider pair (GitHub or Google or both; the landing page renders one button per configured provider, alphabetical).
 
    - `CLOUDFLARE_API_TOKEN`: see [token scopes](#api-token-scopes) below
    - `CLOUDFLARE_ACCOUNT_ID`: find it on any zone overview in the Cloudflare dashboard
-   - `AI_GATEWAY_API_TOKEN`: least-privilege runtime token for AI Gateway inference
+   - `AI_GATEWAY_API_TOKEN`: least-privilege runtime token for AI Gateway inference through the Gateway from step 2
    - `OAUTH_JWT_SECRET`: HMAC key for the 5-minute access token JWT. Generate: `openssl rand -base64 32`. If you use the word "password" here, you get what you deserve. (The 30-day refresh token is opaque and stored in D1, not signed — this secret only signs the short-lived access half.)
    - `APP_URL`: canonical origin (your `*.workers.dev` URL or custom domain)
 
-3. **Run the Deploy workflow.** `Actions` > `Deploy` > `Run workflow` > Branch: `main` > **Run workflow**. Takes ~2 minutes. Future pushes to `main` deploy automatically. When you break it, see `wrangler rollback` above.
+4. **Run the Deploy workflow.** `Actions` > `Deploy` > `Run workflow` > Branch: `main` > **Run workflow**. Takes ~2 minutes. Future pushes to `main` deploy automatically. When you break it, see `wrangler rollback` above.
 
 <details>
 <summary><strong>Full secret reference (OAuth providers, optional integrations)</strong></summary>
@@ -85,7 +87,7 @@ Three steps. The Deploy workflow handles D1, KV, queues, migrations, and secret 
 | `RESEND_FROM` | optional | Sender address (e.g. `News Digest <hello@yourdomain.com>`). Required when `RESEND_API_KEY` is set. |
 | `DEV_BYPASS_TOKEN` | optional | Enables `/api/dev/login` for `scripts/e2e-test.sh`. When unset, the endpoint returns 404. |
 
-A pair with only one field set is rejected by the deploy workflow so a half-configured provider never reaches runtime. The workflow builds `AI_GATEWAY_URL` from `CLOUDFLARE_ACCOUNT_ID` and the optional repository variable `AI_GATEWAY_NAME` (default `ai-news-digest`).
+A pair with only one field set is rejected by the deploy workflow so a half-configured provider never reaches runtime. The workflow builds `AI_GATEWAY_URL` from `CLOUDFLARE_ACCOUNT_ID` and the optional repository variable `AI_GATEWAY_NAME` (default `ai-news-digest`), then preflights `google-ai-studio/gemini-2.5-flash-lite` against that Gateway before publishing the Worker.
 
 </details>
 
@@ -115,10 +117,11 @@ The Zone scopes are skipped automatically when `APP_URL` is a `*.workers.dev` UR
 1. Idempotently looks up (or creates) the D1 database, KV namespace, queues (`scrape-coordinator`, `scrape-chunks`, `scrape-finalize`, `dedup-sweep`, `pipeline-jobs`), and the `ai-news-embeddings` Vectorize index. All resolved IDs are patched into a CI-only copy of `wrangler.toml` so the deploy binds the right resources without committing back to the repo.
 2. (D1 + KV are looked up by name; the workflow creates them on first deploy if they don't exist yet.)
 3. Applies D1 migrations
-4. Pushes Worker secrets, including AI Gateway runtime config (Resend pair skipped when unset)
-5. `wrangler deploy`
-6. Binds `APP_URL` to the Worker (skipped on `*.workers.dev`)
-7. Smoke-tests `GET /` returns 200
+4. Preflights AI Gateway with a one-token `google-ai-studio/gemini-2.5-flash-lite` chat-completions request
+5. Pushes Worker secrets, including AI Gateway runtime config (Resend pair skipped when unset)
+6. `wrangler deploy`
+7. Binds `APP_URL` to the Worker (skipped on `*.workers.dev`)
+8. Smoke-tests `GET /` returns 200
 
 </details>
 

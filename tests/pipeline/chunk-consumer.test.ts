@@ -225,7 +225,7 @@ function makeEnv(
 }
 
 /** CF-030 - chunk consumer enforces a 120-word floor on `details`
- *  per REQ-PIPE-002 AC3. Test fixtures used to ship single-sentence
+ *  per REQ-PIPE-015 AC6. Test fixtures used to ship single-sentence
  *  bodies which now get dropped by the guard. Use this constant when
  *  the test isn't specifically about the word-count contract. */
 const LONG_BODY =
@@ -940,7 +940,7 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
     }
   });
 
-  it('REQ-PIPE-002 AC3: drops articles whose details word count falls under the 80-word backstop floor', async () => {
+  it('REQ-PIPE-015 AC6: drops articles whose details word count falls under the 80-word backstop floor', async () => {
     // The prompt's contract is 100-150 words; the server enforces an
     // 80-word backstop so genuinely truncated outputs (single-paragraph
     // 30-word stubs) get dropped without rejecting the model's natural
@@ -976,7 +976,7 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
     expect(articleInserts[0]!.params).not.toContain('Title B - also long enough headline');
   });
 
-  it('REQ-PIPE-002 AC3: keeps articles in the 80-130 natural-distribution range that the prompt asks for but the model often undershoots', async () => {
+  it('REQ-PIPE-015 AC6: keeps articles in the 80-130 natural-distribution range that the prompt asks for but the model often undershoots', async () => {
     // Workers AI models often produce 90-130-word summaries when source
     // snippets are thin. The 80-word floor is a backstop, not a contract
     // - bodies above 80 must pass. Pinning the boundary here so a future
@@ -1010,7 +1010,7 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
     expect(articleInserts[0]!.params).toContain('A natural-distribution-length headline that fits in range');
   });
 
-  it('REQ-PIPE-002 AC2 / CF-030: drops articles whose title length is outside the [5, 500] sanity range', async () => {
+  it('REQ-PIPE-015 AC5 / CF-030: drops articles whose title length is outside the [5, 500] sanity range', async () => {
     // 45-80 chars is the spec target; 5 / 500 are wide sanity bounds
     // for genuinely broken cases (single-character labels,
     // paragraph-as-title) that no UI rendering would survive.
@@ -1045,12 +1045,12 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
     expect(articleInserts[0]!.params).not.toContain('Hi.');
   });
 
-  // CF-041 - REQ-PIPE-002 AC4: an article that ends up with zero valid
+  // CF-041 - REQ-PIPE-015 AC7: an article that ends up with zero valid
   // tags is DROPPED. The chunk consumer's validateAndSanitizeArticle
   // returns null when the post-allowlist tag set is empty, which keeps
   // article_tags rows useful for downstream filtering and stops the
   // pool getting polluted with un-routable rows.
-  it('REQ-PIPE-002 AC4 (CF-041): LLM article with tags:[] is dropped', async () => {
+  it('REQ-PIPE-015 AC7 (CF-041): LLM article with tags:[] is dropped', async () => {
     const aiResponse = {
       response: JSON.stringify({
         articles: [
@@ -1072,10 +1072,10 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
     expect(articleInserts).toHaveLength(0);
   });
 
-  // CF-042 - REQ-PIPE-003 AC9b: two concurrent recordChunkCompletion
+  // CF-042 - REQ-PIPE-016 AC2: two concurrent recordChunkCompletion
   // calls for the same (scrape_run_id, chunk_index) - exactly one returns
   // true, one returns false.
-  it('REQ-PIPE-003 AC9b (CF-042): concurrent recordChunkCompletion: one wins, one loses', async () => {
+  it('REQ-PIPE-016 AC2 (CF-042): concurrent recordChunkCompletion: one wins, one loses', async () => {
     // Import the repository helper directly - this test targets the
     // atomicity contract of INSERT OR IGNORE at the helper level, not
     // the chunk consumer's higher-level logic.
@@ -1113,8 +1113,8 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
     expect(losers).toBe(1);
   });
 
-  // CF-047 - REQ-PIPE-002 AC7 boundary tests.
-  it('REQ-PIPE-002 AC7 (CF-047): article with out-of-bounds index is dropped', async () => {
+  // CF-047 - REQ-PIPE-015 AC3 boundary tests.
+  it('REQ-PIPE-015 AC3 (CF-047): article with out-of-bounds index is dropped', async () => {
     const aiResponse = {
       response: JSON.stringify({
         articles: [
@@ -1136,7 +1136,7 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
     expect(articleInserts).toHaveLength(0);
   });
 
-  it('REQ-PIPE-002 AC7 (CF-047): article with null index is dropped', async () => {
+  it('REQ-PIPE-015 AC3 (CF-047): article with null index is dropped', async () => {
     const aiResponse = {
       response: JSON.stringify({
         articles: [
@@ -1249,7 +1249,7 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
     );
     expect(lock).toBeUndefined();
   });
-  // CF-023 - REQ-PIPE-002 AC 5: when the LLM returns non-JSON gibberish
+  // CF-023 - REQ-PIPE-015 AC1: when the LLM returns non-JSON gibberish
   // the consumer throws a retryable Error so the queue retries the chunk.
   // This is intentional: "a transient model hiccup" - NonRetryableError
   // is NOT thrown here (that would silence the retry).

@@ -11,12 +11,12 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. A Cron Trigger fires every 4 hours on the hour (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC) and kicks off a single coordinator run for all users.
-2. The coordinator partitions candidates across one or more chunk jobs whose size is capped to fit the model's context window so LLM calls stay within budget and partial failures only lose one chunk.
-3. Each run is tracked by a `scrape_runs` row that transitions `running` → `ready` on success (or `failed` on abort), with a chunk counter that drops to zero when the last chunk finishes.
-4. Article-pool ingestion (URL deduplication, source-list aggregation, first-ingestion timestamp preservation, and per-item publisher resolution) is governed by [REQ-PIPE-017](#req-pipe-017-article-pool-ingestion-contract).
-5. Body-fetch behaviour for candidates with thin feed snippets is governed by [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-feed-snippets).
-6. Google News query-RSS long-tail backstop coverage is governed by [REQ-PIPE-019](#req-pipe-019-google-news-query-rss-long-tail-backstop).
+1. A Cron Trigger fires every 4 hours on the hour (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC) and kicks off a single coordinator run for all users. <!-- @impl: src/worker.ts::handleScrapeTick -->
+2. The coordinator partitions candidates across one or more chunk jobs whose size is capped to fit the model's context window so LLM calls stay within budget and partial failures only lose one chunk. <!-- @impl: src/queue/scrape-coordinator.ts::packCandidatesIntoChunks -->
+3. Each run is tracked by a `scrape_runs` row that transitions `running` → `ready` on success (or `failed` on abort), with a chunk counter that drops to zero when the last chunk finishes. <!-- @impl: src/queue/scrape-chunk-consumer.ts::recordChunkCompletionAndCheckFinalize -->
+4. Article-pool ingestion (URL deduplication, source-list aggregation, first-ingestion timestamp preservation, and per-item publisher resolution) is governed by [REQ-PIPE-017](#req-pipe-017-article-pool-ingestion-contract). <!-- @impl: src/queue/scrape-chunk-consumer.ts::buildArticleBatchStatements -->
+5. Body-fetch behaviour for candidates with thin feed snippets is governed by [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-feed-snippets). <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+6. Google News query-RSS long-tail backstop coverage is governed by [REQ-PIPE-019](#req-pipe-019-google-news-query-rss-long-tail-backstop). <!-- @impl: src/queue/scrape-coordinator.ts::assembleAllSources -->
 7. A run waiting too long for scrape completion exits failed rather than looping silently. <!-- @impl: src/queue/pipeline-consumer.ts::runScrapeWait -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-PERF-001](constraints.md#con-perf-001-100-user-thundering-herd-target), [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
@@ -90,6 +90,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 4. Titles are NYT-style headlines, 45 to 80 characters, active voice, and rewritten rather than copied from the source feed. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
 5. `details` is plaintext body of 100 to 150 words split into 2 or 3 paragraphs, with no lists, HTML, or Markdown. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
 6. `tags` values come exclusively from the system-approved allowlist supplied to the chunk prompt. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
+7. Chunk-response parsing accepts common model JSON deviations, including fenced or prose-wrapped objects, trailing commas, and raw newline characters inside string values. <!-- @impl: src/lib/generate.ts::parseJsonWithRepairs -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
 
@@ -137,12 +138,13 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. URLs are canonicalised by stripping `utm_*` and `fbclid` tracking parameters, trimming trailing slashes, and removing default ports before any comparison. A canonical URL already present in the article pool is skipped on subsequent ticks so re-ingestion never produces a duplicate primary card.
-2. Articles describing the same news event are collapsed to a single primary card regardless of whether their headlines share vocabulary.
-3. Same-event detection runs across the entire surviving article pool, not only the current scrape tick, so a story already in the pool absorbs a newly-arrived duplicate as an alternative source even when the duplicate landed in a later scrape run.
-4. Near-duplicate articles whose textual similarity is overwhelming collapse deterministically across sources, so wire copies of one press release land as a single primary card with the others as alternative sources regardless of publisher identity.
-5. When a newly-arrived article and an already-stored article describe the same news event, the merge happens regardless of which side was ingested first or how many calendar days separate them within the same-news-cycle bound ([REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants) AC 3); the survivor is the article with the earlier publication time (per [REQ-PIPE-018](#req-pipe-018-same-story-collapse-mechanics-survivor-selection-and-data-merge) AC 1).
-6. A duplicate that lands several days after its already-stored match still collapses to a single card on the next scrape tick without waiting for an operator-triggered sweep.
+1. URLs are canonicalised by stripping `utm_*` and `fbclid` tracking parameters, trimming trailing slashes, and removing default ports before any comparison. A canonical URL already present in the article pool is skipped on subsequent ticks so re-ingestion never produces a duplicate primary card. <!-- @impl: src/lib/canonical-url.ts::canonicalize -->
+2. Articles describing the same news event are collapsed to a single primary card regardless of whether their headlines share vocabulary. <!-- @impl: src/lib/bidirectional-dedup.ts::classifyMatchPair -->
+3. Same-event detection runs across the entire surviving article pool, not only the current scrape tick, so a story already in the pool absorbs a newly-arrived duplicate as an alternative source even when the duplicate landed in a later scrape run. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+4. Near-duplicate articles whose textual similarity is overwhelming collapse deterministically across sources, so wire copies of one press release land as a single primary card with the others as alternative sources regardless of publisher identity. <!-- @impl: src/lib/embeddings.ts::readHighConfidenceCosine -->
+5. When a newly-arrived article and an already-stored article describe the same news event, the merge happens regardless of which side was ingested first or how many calendar days separate them within the same-news-cycle bound ([REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants) AC 3); the survivor is the article with the earlier publication time (per [REQ-PIPE-018](#req-pipe-018-same-story-collapse-mechanics-survivor-selection-and-data-merge) AC 1). <!-- @impl: src/lib/finalize-merge.ts::mergeAsAltSource -->
+6. A duplicate that lands several days after its already-stored match still collapses to a single card on the next scrape tick without waiting for an operator-triggered sweep. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+7. Same-story LLM JSON parsing accepts common model deviations, including fenced or prose-wrapped objects, trailing commas, and raw newline characters inside string values before the caller validates dedupe fields. <!-- @impl: src/lib/generate.ts::parseJsonWithRepairs -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 

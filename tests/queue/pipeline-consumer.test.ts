@@ -539,14 +539,14 @@ describe('processOnePipelineMessage - REQ-OPS-008 / REQ-PIPE-016 (queue-driven p
     });
   });
 
-  // CF-023 / CF-088 - REQ-PIPE-001 AC 10: a stuck scrape_wait loop
+  // CF-023 / CF-088 - REQ-PIPE-001 AC7: a stuck scrape_wait loop
   // that has re-enqueued itself more than SCRAPE_WAIT_MAX_ITERATIONS
   // times must force-fail the scrape_run and mark the pipeline run
   // failed instead of looping forever. Bug-class: without the cap a
   // queue saturation or finalize-consumer crash leaves a pipeline run
   // stuck at 'running' until an operator manually resets it - operators
   // see a ghost run on the history page but no failure signal.
-  it('REQ-PIPE-001 AC 10 (CF-023): scrape_wait exceeding SCRAPE_WAIT_MAX_ITERATIONS marks scrape_run failed and pipeline failed', async () => {
+  it('REQ-PIPE-001 AC7 (CF-023): scrape_wait exceeding SCRAPE_WAIT_MAX_ITERATIONS marks scrape_run failed and pipeline failed', async () => {
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     try {
       // wait_iterations = 73 > SCRAPE_WAIT_MAX_ITERATIONS (72) triggers

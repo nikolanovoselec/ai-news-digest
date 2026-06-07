@@ -26,6 +26,7 @@ Local development setup and production deployment steps.
 
 - Node.js 22+ (local dev only; production runs on Cloudflare Workers)
 - Cloudflare account with Workers Paid plan enabled
+- Cloudflare AI Gateway with a Google AI Studio provider key for `google-ai-studio/gemini-2.5-flash-lite`
 - At least one OAuth provider configured: GitHub (Settings → Developer Settings → OAuth Apps) and/or Google (console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client IDs)
 - Resend account with a verified sending domain
 - `wrangler` CLI installed (`npm i -g wrangler` or use `npx wrangler`)
@@ -68,7 +69,7 @@ Import `env` and `applyD1Migrations` from `tests/fixtures/cloudflare-test.ts` (n
 npx wrangler d1 migrations apply DB --remote
 npx wrangler deploy
 ```
-**Verifies:** Smoke test `GET /` against `APP_URL` returns `200` or `303` (step 6 of the deploy job).
+**Verifies:** AI Gateway preflight succeeds, then smoke test `GET /` against `APP_URL` returns `200` or `303` (step 7 of the deploy job).
 **Rollback:** Cloudflare Workers supports instant rollback via the dashboard or CLI. To revert to the previous Worker version:
 ```bash
 # List recent deployments and find the previous version ID
@@ -83,10 +84,11 @@ CI/CD: `.github/workflows/deploy.yml` triggers on a `workflow_run` event — fir
 The deploy job:
 1. Applies D1 migrations (drift-tolerant). "Duplicate column" / "already exists" errors are handled by stamping the migration into `d1_migrations` and retrying up to 5 attempts. Real SQL errors surface immediately. Drift tolerance covers the case where an operator ran `wrangler d1 migrations apply --remote` out-of-band (e.g. during incident response); without it, the next CI deploy would block on a migration the remote already applied.
 2. Runs the same two-step security audit as PR Checks (advisory HIGH+, blocking CRITICAL) as a defence-in-depth gate — catches CVEs introduced between the merge and the deploy (transient transitive bumps, Dependabot lockfile regenerations, etc.).
-3. Pushes Worker secrets via `wrangler secret put` (file-redirect form). Conditional secrets (`ADMIN_EMAIL`, `CF_ACCESS_AUD`, `DEV_BYPASS_USER_ID`) are pushed only when the corresponding GitHub Actions secret is non-empty.
-4. Deploys the Worker.
-5. Binds the custom domain extracted from `APP_URL` via the Workers Custom Domains API. Idempotent.
-6. Smoke-tests `GET /` against `APP_URL`, falling back to `*.workers.dev`. Accepts `200` or `303`.
+3. Preflights Cloudflare AI Gateway by sending a one-token chat-completions request through the configured `AI_GATEWAY_URL`; 401, 404, provider-missing, or model-missing responses stop the deploy before Worker publish.
+4. Pushes Worker secrets via `wrangler secret put` (file-redirect form). Conditional secrets (`ADMIN_EMAIL`, `CF_ACCESS_AUD`, `DEV_BYPASS_USER_ID`) are pushed only when the corresponding GitHub Actions secret is non-empty.
+5. Deploys the Worker.
+6. Binds the custom domain extracted from `APP_URL` via the Workers Custom Domains API. Idempotent.
+7. Smoke-tests `GET /` against `APP_URL`, falling back to `*.workers.dev`. Accepts `200` or `303`.
 
 `scripts/e2e-test.sh` is manual only (`bash scripts/e2e-test.sh --force-prod`) and not part of CI deploy — running it triggers a full LLM-cost scrape and mutates the owner's account.
 
@@ -139,16 +141,17 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 | KV | `ai-news-digest-integration-kv` (auto-derived) |
 | Queues | `scrape-coordinator-integration`, `scrape-chunks-integration`, `scrape-finalize-integration`, `dedup-sweep-integration`, `pipeline-jobs-integration` |
 | DLQ | `ai-news-dlq-integration` (unbound; receives terminal retry exhaustion from finalize + pipeline-jobs consumers) |
-| AI Gateway | `AI_GATEWAY_NAME` repo variable, default `ai-news-digest` (shared); set an integration-specific Gateway name to isolate |
+| AI Gateway | `AI_GATEWAY_NAME` repo/environment variable, default `ai-news-digest` (shared); set an integration-specific Gateway name to isolate and ensure it has the Google AI Studio provider key |
 | Workers AI | shared `AI` binding for embeddings (no per-env isolation needed) |
 | Vectorize | `ai-news-embeddings-integration` |
 
 **One-time per-fork setup:**
 
-1. **Create the GitHub Environment.** Repo → Settings → Environments → New environment → name it `integration`. The empty environment is what activates the secret-fallback semantics in the workflow.
-2. **Set `APP_URL` as an environment variable** (Variables tab, not Secrets — it's a public hostname). Use the custom domain URL, or leave unset to deploy to the auto-assigned `*.workers.dev` URL.
-3. **Confirm the OAuth callback URL is registered** with whichever providers you use — `${APP_URL}/api/auth/google/callback` and/or `${APP_URL}/api/auth/github/callback`.
-4. **(Optional) Override secrets per-env.** Secrets added under Environments → integration → Secrets take precedence over repo-level secrets. Use this to isolate `OAUTH_JWT_SECRET` so a leaked integration JWT cannot be replayed against prod.
+1. **Create the AI Gateway path.** Create or choose a Cloudflare AI Gateway named `ai-news-digest`, or set the repo/environment variable `AI_GATEWAY_NAME` to a different Gateway name. Add the Google AI Studio provider key to that Gateway, enable `google-ai-studio/gemini-2.5-flash-lite`, and store a least-privilege Gateway inference token as `AI_GATEWAY_API_TOKEN`.
+2. **Create the GitHub Environment.** Repo → Settings → Environments → New environment → name it `integration`. The empty environment is what activates the secret-fallback semantics in the workflow.
+3. **Set `APP_URL` as an environment variable** (Variables tab, not Secrets — it's a public hostname). Use the custom domain URL, or leave unset to deploy to the auto-assigned `*.workers.dev` URL.
+4. **Confirm the OAuth callback URL is registered** with whichever providers you use — `${APP_URL}/api/auth/google/callback` and/or `${APP_URL}/api/auth/github/callback`.
+5. **(Optional) Override secrets per-env.** Secrets added under Environments → integration → Secrets take precedence over repo-level secrets. Use this to isolate `OAUTH_JWT_SECRET`, `AI_GATEWAY_API_TOKEN`, or `AI_GATEWAY_NAME` so integration can use a separate Gateway from production.
 
 **How to deploy:**
 
@@ -183,7 +186,7 @@ curl -i ${APP_URL}/api/admin/force-refresh
 | `DEDUP_SWEEP` | Queue | `dedup-sweep` | Self-chaining historical-dedup sweep; the kicker enqueues the first message and the consumer re-enqueues a continuation per batch until the corpus tail is reached ([REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1) |
 | `PIPELINE_JOBS` | Queue | `pipeline-jobs` (`pipeline-jobs-integration` on integration) | Backend-driven full pipeline orchestrator; one consumer walks the seven phases by self-chaining messages ([REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)) |
 | — | Queue (DLQ) | `ai-news-dlq` (`ai-news-dlq-integration` on integration) | Dead-letter queue for the finalize and pipeline-jobs consumers. Terminal queue retry exhaustion lands messages here so they are inspectable rather than silently dropped (CF-001). Provisioned by the deploy workflow inline `wrangler queues create` block; no binding needed in `wrangler.toml`. |
-| AI Gateway | Cloudflare AI Gateway | configured by `AI_GATEWAY_URL` | Gateway-backed Gemini LLM calls for summaries, discovery, and rerank |
+| AI Gateway | Cloudflare AI Gateway | configured by `AI_GATEWAY_URL` | Gateway-backed Gemini LLM calls for summaries, discovery, and rerank; deploy preflight verifies the Gateway, Google AI Studio provider key, runtime token, and default model before publish |
 | `AI` | Workers AI | (account-level) | bge-base-en-v1.5 embedding generation; non-Gateway model fallback |
 | `VECTORIZE` | Vectorize index | `ai-news-embeddings` | 768-dim cosine index for same-story dedup; provisioned by the deploy workflow via `wrangler vectorize create` ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
 

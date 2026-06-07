@@ -147,6 +147,8 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 4. If a model picker is exposed, it lists accepted options with descriptions and cost categories, pre-selecting the active or default choice. <!-- @impl: src/lib/models.ts::MODELS -->
 5. If model selection is hidden, the settings form preserves the active or default choice without requiring user input. <!-- @impl: src/pages/settings.astro::currentModelId = DEFAULT_MODEL_ID -->
 
+**Notes:** The model-selection UI is hidden from the settings form, but the settings API still accepts and persists a `model_id` field. True removal requires retiring `model_id` from the persistence contract first.
+
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
 **Priority:** P1
@@ -156,8 +158,6 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 **Verification:** Integration test
 
 **Status:** Partial
-
-**Notes:** The model-selection UI is hidden from the settings form, but the settings API still accepts and persists a `model_id` field. True removal requires retiring `model_id` from the persistence contract first.
 
 ---
 

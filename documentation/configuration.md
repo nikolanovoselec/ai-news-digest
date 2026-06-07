@@ -74,7 +74,16 @@ The deploy job reads these secrets from GitHub Actions. `CLOUDFLARE_API_TOKEN` a
 | `ADMIN_EMAIL` | Conditional | Operator email that gates `/api/admin/*`; when unset every admin endpoint returns HTTP 403 ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8) |
 | `CF_ACCESS_AUD` | Optional | Cloudflare Access audience tag; when set, enables Layer 0 perimeter check (assertion presence + `aud`-claim match) on `/api/admin/*`; when unset, Layer 0 is skipped and admin is gated by session + `ADMIN_EMAIL` alone ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8, AD29). See [Setting `CF_ACCESS_AUD`](#setting-cf_access_aud-production-when-binding-cloudflare-access) for setup. |
 
-Optional repository variable: `AI_GATEWAY_NAME` overrides the default Gateway name (`ai-news-digest`) used to build `AI_GATEWAY_URL`. Set it under Settings → Secrets and variables → Actions → Variables when your Cloudflare Gateway uses a different name.
+Optional repository variable: `AI_GATEWAY_NAME` overrides the default Gateway name (`ai-news-digest`) used to build `AI_GATEWAY_URL`. Set it under Settings → Secrets and variables → Actions → Variables when your Cloudflare Gateway uses a different name. The deploy workflows preflight `google-ai-studio/gemini-2.5-flash-lite` through this URL before Worker publish.
+
+### AI Gateway setup
+
+Gateway-backed Gemini calls require one Cloudflare setup path before deploying:
+
+1. Create or select a Cloudflare AI Gateway. Use `ai-news-digest` to match the default, or set the repository variable `AI_GATEWAY_NAME` to the Gateway name you chose.
+2. Add a Google AI Studio provider key to that Gateway and enable `google-ai-studio/gemini-2.5-flash-lite`.
+3. Create a least-privilege AI Gateway API token for runtime inference and store it as the GitHub Actions secret `AI_GATEWAY_API_TOKEN`. Do not reuse `CLOUDFLARE_API_TOKEN`; that deploy/provisioning token is intentionally deleted from Worker secrets.
+4. Confirm `CLOUDFLARE_ACCOUNT_ID` is the account that owns the Gateway. The workflow builds `AI_GATEWAY_URL` as `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions` and sends a one-token chat-completions request before deploy. HTTP 401, 404, or provider/model errors fail the workflow before a broken runtime reaches users.
 
 ### Setting `CF_ACCESS_AUD` (production, when binding Cloudflare Access)
 

@@ -63,7 +63,7 @@ describe('parseLLMPayload — REQ-PIPE-002', () => {
     expect((articles![0] as { title: string }).title).toContain('}');
   });
 
-  it('REQ-PIPE-002: repairs raw newlines inside model string values', () => {
+  it('REQ-PIPE-002 AC7: repairs raw newlines inside model string values', () => {
     const raw = '{"articles":[{"title":"t","details":"Paragraph one.\nParagraph two.","tags":["ai"]}]}';
     const out = parseLLMPayload(raw);
     expect(out?.articles).toHaveLength(1);
@@ -71,7 +71,7 @@ describe('parseLLMPayload — REQ-PIPE-002', () => {
     expect(article?.details).toBe('Paragraph one.\nParagraph two.');
   });
 
-  it('REQ-PIPE-002: repairs trailing commas in otherwise valid JSON', () => {
+  it('REQ-PIPE-002 AC7: repairs trailing commas in otherwise valid JSON', () => {
     const raw = '{"articles":[{"title":"t","tags":["ai",],},],}';
     const out = parseLLMPayload(raw);
     expect(out?.articles).toHaveLength(1);
@@ -105,10 +105,16 @@ describe('parseLLMJson — REQ-PIPE-003', () => {
     expect(out?.['dedup_groups']).toEqual([[1, 4]]);
   });
 
-  it('REQ-PIPE-003: applies the same raw-newline repair as chunk parsing', () => {
+  it('REQ-PIPE-003 AC7: applies the same raw-newline repair as chunk parsing', () => {
     const raw = '{"note":"line one\nline two","dedup_groups":[[1,4]]}';
     const out = parseLLMJson(raw);
     expect(out?.['note']).toBe('line one\nline two');
+  });
+
+  it('REQ-PIPE-003 AC7: repairs trailing commas in otherwise valid finalize JSON', () => {
+    const raw = '{"dedup_groups":[[1,4],],}';
+    const out = parseLLMJson(raw);
+    expect(out?.['dedup_groups']).toEqual([[1, 4]]);
   });
 
   it('REQ-PIPE-003: rejects strings that contain no balanced object', () => {

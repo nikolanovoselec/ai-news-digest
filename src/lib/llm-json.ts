@@ -48,6 +48,11 @@ export function asAiBinding(ai: unknown): AiBinding {
 
 const AI_GATEWAY_MODEL_PREFIXES = ['google-ai-studio/'] as const;
 
+// Keep each Gateway call well below the queue/Worker wall-clock budget so
+// a stalled upstream provider surfaces through runJson's ok:false path
+// instead of letting the platform cancel the isolate.
+const AI_GATEWAY_TIMEOUT_MS = 120_000;
+
 function modelUsesAiGateway(model: string): boolean {
   return AI_GATEWAY_MODEL_PREFIXES.some((prefix) => model.startsWith(prefix));
 }
@@ -192,6 +197,7 @@ async function runAiGatewayChatCompletion(options: {
     options.aiGatewayUrl,
     {
       method: 'POST',
+      signal: AbortSignal.timeout(AI_GATEWAY_TIMEOUT_MS),
       headers: {
         'Content-Type': 'application/json',
         'cf-aig-authorization': `Bearer ${options.aiGatewayApiToken}`,

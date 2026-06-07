@@ -114,6 +114,7 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
     expect(fetchImpl.mock.contexts[0]).toBe(globalThis);
     const [url, init] = fetchImpl.mock.calls[0] ?? [];
     expect(String(url)).toContain('/compat/chat/completions');
+    expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
     expect((init as RequestInit).headers).toMatchObject({
       'cf-aig-authorization': 'Bearer gateway-test-token',
       'cf-aig-skip-cache': 'true',

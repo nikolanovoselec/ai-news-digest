@@ -695,7 +695,7 @@ function validateAndSanitizeArticle(
     .filter((p) => p !== '');
   if (title === '' || details.length === 0) return null;
 
-  // REQ-PIPE-002 AC3: enforce 80-word backstop floor server-side. The
+  // REQ-PIPE-015 AC6: enforce 80-word backstop floor server-side. The
   // prompt's contract is 100-150 words; the floor catches genuinely
   // truncated outputs (single-paragraph 30-word stubs) without
   // rejecting the model's natural lower-end distribution. CF-030
@@ -716,7 +716,7 @@ function validateAndSanitizeArticle(
     return null;
   }
 
-  // REQ-PIPE-002 AC2: sanity-range for headline length.
+  // REQ-PIPE-015 AC5: sanity-range for headline length.
   if (title.length < 5 || title.length > 500) {
     log('warn', 'digest.generation', {
       status: 'chunk_article_dropped_title_length',
