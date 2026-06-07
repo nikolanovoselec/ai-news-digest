@@ -145,6 +145,14 @@ export async function handleChunkBatch(
       // timed out, run.status flipped to 'failed').
       const completed = await countChunkCompletions(env.DB, body.scrape_run_id);
       const finalStatus: 'ready' | 'failed' = completed > 0 ? 'ready' : 'failed';
+      log('warn', 'digest.generation', {
+        status: 'chunk_terminal_failure_rescue',
+        scrape_run_id: body.scrape_run_id,
+        chunk_index: body.chunk_index,
+        completed_chunks: completed,
+        total_chunks: body.total_chunks,
+        final_status: finalStatus,
+      });
       await finishRun(env.DB, body.scrape_run_id, finalStatus);
       if (finalStatus === 'failed') {
         // CF-001: no finalize will run for this scrape_run; stamp the
@@ -328,11 +336,11 @@ export async function processOneChunk(
   await upsertVectors(env, prepared, body);
 
   // Record completion + conditionally enqueue finalize.
-  // `completedCount` is returned for the chunk-status API (status route reads
-  // it from D1 directly) but not consumed here, hence the leading underscore.
+  // `completedCount` is logged so live tails can prove whether each chunk
+  // advanced the D1 completion ledger.
   const {
     isFirstCompletion,
-    completedCount: _completedCount,
+    completedCount,
   } = await recordChunkCompletionAndCheckFinalize(env, body);
 
   const tokensIn = llmRun.tokensIn;
@@ -360,6 +368,8 @@ export async function processOneChunk(
     scrape_run_id: body.scrape_run_id,
     chunk_index: body.chunk_index,
     total_chunks: body.total_chunks,
+    completed_chunks: completedCount,
+    first_completion: isFirstCompletion,
     articles_ingested: articlesIngested,
     articles_deduped: articlesDeduped,
     tokens_in: tokensIn,
@@ -489,6 +499,12 @@ async function runChunkLLM(
   const llmRun = await runJson<LLMChunkPayload>({
     ai: asAiBinding(env.AI),
     cloudflareApiToken: env.CLOUDFLARE_API_TOKEN,
+    metadata: {
+      purpose: 'scrape_chunk',
+      scrape_run_id: body.scrape_run_id,
+      chunk_index: body.chunk_index,
+      total_chunks: body.total_chunks,
+    },
     params: {
       messages: [
         { role: 'system', content: PROCESS_CHUNK_SYSTEM },

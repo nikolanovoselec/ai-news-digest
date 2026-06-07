@@ -84,6 +84,8 @@ export interface RunJsonOptions<T> {
   narrow: (rawResponse: unknown) => T | null;
   /** Optional override; defaults to DEFAULT_MODEL_ID. */
   model?: string;
+  /** Up to five AI Gateway metadata entries for log correlation. */
+  metadata?: Record<string, string | number | boolean> | undefined;
   /** Existing Cloudflare API token, reused for AI Gateway auth when set. */
   cloudflareApiToken?: string | undefined;
   /** Test seam for the AI Gateway HTTP path. */
@@ -150,6 +152,7 @@ async function runModel<T>(
     return runAiGatewayChatCompletion({
       model,
       params: options.params,
+      metadata: options.metadata,
       cloudflareApiToken: token,
       fetchImpl: options.fetchImpl ?? fetch,
     });
@@ -161,6 +164,7 @@ async function runModel<T>(
 async function runAiGatewayChatCompletion(options: {
   model: string;
   params: Record<string, unknown>;
+  metadata?: Record<string, string | number | boolean> | undefined;
   cloudflareApiToken: string;
   fetchImpl: typeof fetch;
 }): Promise<unknown> {
@@ -172,6 +176,9 @@ async function runAiGatewayChatCompletion(options: {
       headers: {
         'Content-Type': 'application/json',
         'cf-aig-authorization': `Bearer ${options.cloudflareApiToken}`,
+        ...(options.metadata !== undefined
+          ? { 'cf-aig-metadata': JSON.stringify(options.metadata) }
+          : {}),
       },
       body: JSON.stringify({
         model: options.model,

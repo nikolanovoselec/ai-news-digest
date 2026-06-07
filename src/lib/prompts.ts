@@ -104,8 +104,10 @@ LENGTH — 100 to 150 WORDS (NON-NEGOTIABLE CONTRACT):
     HOW paragraphs with concrete grounded facts — never pad with
     filler, never repeat, but never cut short either.
   - Maximum 150 words. Do not exceed.
-  - Truncated outputs are rejected server-side as malformed. Your
-    target is 100-150; aim for the middle of that range.
+  - Truncated outputs are rejected server-side as malformed. In
+    practice, write 120-135 words for every non-drop article. The
+    100-word minimum is a floor, not a target; 88-99 word summaries
+    are invalid and must be expanded before you return JSON.
 
 STRUCTURE — 2 to 3 PARAGRAPHS:
 
@@ -229,7 +231,7 @@ Return JSON:
     {
       "index": 0,
       "title": "punchy NYT-style headline, 45-80 characters, about candidate [0] specifically",
-      "details": "2 paragraphs of 2-4 sentences each, 100-150 words total, separated by \\n (WHAT happened / HOW it works / optional IMPACT for the reader) — grounded in candidate [0]'s snippet only, every claim traceable to a single passage, distinctive mechanism named; for dropped candidates use an empty string",
+      "details": "2 paragraphs of 2-4 sentences each, 100-150 words total, ideally 120-135 words, separated by \\n (WHAT happened / HOW it works / optional IMPACT for the reader) — grounded in candidate [0]'s snippet only, every claim traceable to a single passage, distinctive mechanism named; for dropped candidates use an empty string",
       "tags": ["only tags from the allowlist above"]
     }
   ]

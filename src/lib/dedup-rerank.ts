@@ -153,6 +153,12 @@ async function runOneBatch(
     ai: asAiBinding(env.AI),
     cloudflareApiToken: (env as { CLOUDFLARE_API_TOKEN?: string })
       .CLOUDFLARE_API_TOKEN,
+    metadata: {
+      purpose: 'dedup_rerank',
+      pair_count: pairs.length,
+      first_pair_a: pairs[0]?.a.id ?? '',
+      first_pair_b: pairs[0]?.b.id ?? '',
+    },
     params: {
       messages: [
         { role: 'system', content: RERANK_SYSTEM },
