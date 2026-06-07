@@ -93,6 +93,12 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
       ai,
       cloudflareApiToken: 'cf-test-token',
       fetchImpl: fetchImpl as unknown as typeof fetch,
+      metadata: {
+        purpose: 'scrape_chunk',
+        scrape_run_id: 'run-1',
+        chunk_index: 2,
+        total_chunks: 4,
+      },
       params: { messages: [{ role: 'user', content: 'json' }] },
       narrow: (raw) => (typeof raw === 'string' ? (JSON.parse(raw) as { articles: unknown[] }) : null),
       model: 'google-ai-studio/gemini-2.5-flash',
@@ -105,6 +111,12 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
     expect(String(url)).toContain('/compat/chat/completions');
     expect((init as RequestInit).headers).toMatchObject({
       'cf-aig-authorization': 'Bearer cf-test-token',
+      'cf-aig-metadata': JSON.stringify({
+        purpose: 'scrape_chunk',
+        scrape_run_id: 'run-1',
+        chunk_index: 2,
+        total_chunks: 4,
+      }),
     });
     expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({
       model: 'google-ai-studio/gemini-2.5-flash',
