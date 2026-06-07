@@ -8,6 +8,9 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { runJson, previewRawResponse } from '~/lib/llm-json';
+import { DEFAULT_MODEL_ID } from '~/lib/models';
+
+const WORKERS_AI_TEST_MODEL = '@cf/openai/gpt-oss-120b';
 
 function makeAi(responses: Array<{ response: string; usage?: { input_tokens?: number; output_tokens?: number } }>) {
   let i = 0;
@@ -27,6 +30,7 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
     ]);
     const result = await runJson({
       ai,
+      model: WORKERS_AI_TEST_MODEL,
       params: { messages: [] },
       narrow: (raw) => (typeof raw === 'string' ? (JSON.parse(raw) as { articles: unknown[] }) : null),
     });
@@ -44,6 +48,7 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
     ]);
     const result = await runJson({
       ai,
+      model: WORKERS_AI_TEST_MODEL,
       params: { messages: [] },
       narrow: (raw) => {
         try {
@@ -102,7 +107,6 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
       },
       params: { messages: [{ role: 'user', content: 'json' }] },
       narrow: (raw) => (typeof raw === 'string' ? (JSON.parse(raw) as { articles: unknown[] }) : null),
-      model: 'google-ai-studio/gemini-2.5-flash',
     });
 
     expect(ai.run).not.toHaveBeenCalled();
@@ -121,7 +125,7 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
       }),
     });
     expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({
-      model: 'google-ai-studio/gemini-2.5-flash',
+      model: DEFAULT_MODEL_ID,
       reasoning_effort: 'none',
     });
     expect(result.ok).toBe(true);
@@ -136,7 +140,6 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
       ai,
       params: { messages: [] },
       narrow: () => null,
-      model: 'google-ai-studio/gemini-2.5-flash',
     });
     expect(ai.run).not.toHaveBeenCalled();
     expect(result.ok).toBe(false);
@@ -158,6 +161,7 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
     };
     const result = await runJson({
       ai: aiThrowing,
+      model: WORKERS_AI_TEST_MODEL,
       params: { messages: [] },
       narrow: (raw) => (typeof raw === 'string' ? (JSON.parse(raw) as { articles: unknown[] }) : null),
     });

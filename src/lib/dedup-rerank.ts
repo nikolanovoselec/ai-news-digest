@@ -98,6 +98,13 @@ interface BatchPayload {
   verdicts?: unknown;
 }
 
+export interface RerankBatchOptions {
+  /** Test seam/model override; production omits this and uses DEFAULT_MODEL_ID. */
+  model?: string;
+  /** Test seam for Gateway-backed defaults. */
+  fetchImpl?: typeof fetch;
+}
+
 function narrowBatchPayload(raw: unknown): BatchPayload | null {
   const parsed = parseLLMJson(raw);
   if (parsed === null) return null;
@@ -146,6 +153,7 @@ function buildBatchUser(pairs: ReadonlyArray<RerankPair>): string {
 async function runOneBatch(
   env: Pick<Env, 'AI' | 'AI_GATEWAY_API_TOKEN' | 'AI_GATEWAY_URL'>,
   pairs: ReadonlyArray<RerankPair>,
+  options: RerankBatchOptions = {},
 ): Promise<boolean[]> {
   if (pairs.length === 0) return [];
 
@@ -153,6 +161,8 @@ async function runOneBatch(
     ai: asAiBinding(env.AI),
     aiGatewayApiToken: env.AI_GATEWAY_API_TOKEN,
     aiGatewayUrl: env.AI_GATEWAY_URL,
+    ...(options.model !== undefined ? { model: options.model } : {}),
+    ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
     metadata: {
       purpose: 'dedup_rerank',
       pair_count: pairs.length,
@@ -227,15 +237,16 @@ async function runOneBatch(
  *  in that batch, so the caller never accidentally merges on a model
  *  outage. Never throws. */
 export async function rerankBorderlinePairsBatch(
-  env: Pick<Env, 'AI'>,
+  env: Pick<Env, 'AI' | 'AI_GATEWAY_API_TOKEN' | 'AI_GATEWAY_URL'>,
   pairs: ReadonlyArray<RerankPair>,
+  options: RerankBatchOptions = {},
 ): Promise<boolean[]> {
   if (pairs.length === 0) return [];
 
   const out: boolean[] = [];
   for (let start = 0; start < pairs.length; start += RERANK_BATCH_SIZE) {
     const slice = pairs.slice(start, start + RERANK_BATCH_SIZE);
-    const verdicts = await runOneBatch(env, slice);
+    const verdicts = await runOneBatch(env, slice, options);
     for (const v of verdicts) out.push(v);
   }
   return out;

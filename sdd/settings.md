@@ -141,11 +141,11 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The server accepts only model identifiers present in the `MODELS` catalog and rejects any other identifier with HTTP 400 and error code `invalid_model_id`.
-2. The catalog records a short description and per-million-token prices so per-digest cost estimates are computed from the same source as runtime cost accounting.
-3. The system default model is the catalog entry used when no accepted user setting applies; Gateway-backed defaults require configured `AI_GATEWAY_URL` and `AI_GATEWAY_API_TOKEN` before any LLM call is attempted.
-4. If a model dropdown is exposed, it lists the same catalog options that other config surfaces accept, grouped under "Featured" and "Budget" section headers, and pre-selects the system default.
-5. If a model dropdown is exposed, it lives inside an "Advanced" collapsible section, collapsed by default.
+1. Saving settings with an unavailable model choice is rejected before the user's stored model changes. <!-- @impl: src/pages/api/settings.ts::PUT -->
+2. The model catalog carries user-facing descriptions and per-token pricing, and cost estimates use the same catalog data. <!-- @impl: src/lib/models.ts::estimateCost -->
+3. The system default model is used when no accepted user setting applies, and provider-backed defaults fail closed until runtime inference credentials are configured. <!-- @impl: src/lib/llm-json.ts::runModel -->
+4. If a model picker is exposed, it lists accepted options with descriptions and cost categories, pre-selecting the active or default choice. <!-- @impl: src/lib/models.ts::MODELS -->
+5. If model selection is hidden, the settings form preserves the active or default choice without requiring user input. <!-- @impl: src/pages/settings.astro::currentModelId = DEFAULT_MODEL_ID -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 

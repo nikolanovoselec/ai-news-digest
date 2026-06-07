@@ -9,6 +9,8 @@ import {
   type RerankPair,
 } from '~/lib/dedup-rerank';
 
+const WORKERS_AI_TEST_MODEL = '@cf/openai/gpt-oss-120b';
+
 function makeAi(response: unknown) {
   return {
     AI: {
@@ -23,6 +25,13 @@ function makeAiSequence(responses: unknown[]) {
   return {
     AI: { run: fn },
   } as unknown as Pick<Env, 'AI'> & { AI: { run: ReturnType<typeof vi.fn> } };
+}
+
+function rerankViaWorkersAi(
+  env: Pick<Env, 'AI' | 'AI_GATEWAY_API_TOKEN' | 'AI_GATEWAY_URL'>,
+  pairs: ReadonlyArray<RerankPair>,
+): Promise<boolean[]> {
+  return rerankBorderlinePairsBatch(env, pairs, { model: WORKERS_AI_TEST_MODEL });
 }
 
 function pair(i: number, sameEventHint: boolean): RerankPair {
@@ -67,7 +76,7 @@ describe('readRerankFloor - REQ-PIPE-009', () => {
 describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
   it('returns [] on empty input without calling the AI', async () => {
     const env = makeAi({ response: '{"verdicts":[]}' });
-    const verdicts = await rerankBorderlinePairsBatch(env, []);
+    const verdicts = await rerankViaWorkersAi(env, []);
     expect(verdicts).toEqual([]);
     expect((env.AI as unknown as { run: ReturnType<typeof vi.fn> }).run).not
       .toHaveBeenCalled();
@@ -77,7 +86,7 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
     const env = makeAi(
       verdictResponse([{ i: 0, same_event: true }]),
     );
-    const verdicts = await rerankBorderlinePairsBatch(env, [pair(0, true)]);
+    const verdicts = await rerankViaWorkersAi(env, [pair(0, true)]);
     expect(verdicts).toEqual([true]);
     expect((env.AI as unknown as { run: ReturnType<typeof vi.fn> }).run).toHaveBeenCalledTimes(1);
   });
@@ -92,7 +101,7 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
         { i: 4, same_event: true },
       ]),
     );
-    const verdicts = await rerankBorderlinePairsBatch(env, [
+    const verdicts = await rerankViaWorkersAi(env, [
       pair(0, true),
       pair(1, false),
       pair(2, true),
@@ -111,7 +120,7 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
       verdictEntries.push({ i, same_event: i % 2 === 0 });
     }
     const env = makeAi(verdictResponse(verdictEntries));
-    const verdicts = await rerankBorderlinePairsBatch(env, pairs);
+    const verdicts = await rerankViaWorkersAi(env, pairs);
     expect(verdicts).toHaveLength(RERANK_BATCH_SIZE);
     expect(verdicts.every((v, i) => v === (i % 2 === 0))).toBe(true);
     expect((env.AI as unknown as { run: ReturnType<typeof vi.fn> }).run).toHaveBeenCalledTimes(1);
@@ -133,7 +142,7 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
       verdictResponse(firstBatch),
       verdictResponse(secondBatch),
     ]);
-    const verdicts = await rerankBorderlinePairsBatch(env, pairs);
+    const verdicts = await rerankViaWorkersAi(env, pairs);
     expect(verdicts).toHaveLength(RERANK_BATCH_SIZE + 1);
     for (let i = 0; i < RERANK_BATCH_SIZE; i++) {
       expect(verdicts[i]).toBe(true);
@@ -146,13 +155,13 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
     const env = makeAi({
       response: 'Here is the JSON:\n```json\n{"verdicts":[{"i":0,"same_event":true}]}\n```',
     });
-    const verdicts = await rerankBorderlinePairsBatch(env, [pair(0, true)]);
+    const verdicts = await rerankViaWorkersAi(env, [pair(0, true)]);
     expect(verdicts).toEqual([true]);
   });
 
   it('requests JSON mode and a bounded output budget for rerank calls', async () => {
     const env = makeAi(verdictResponse([{ i: 0, same_event: true }]));
-    await rerankBorderlinePairsBatch(env, [pair(0, true)]);
+    await rerankViaWorkersAi(env, [pair(0, true)]);
     const run = (env.AI as unknown as { run: ReturnType<typeof vi.fn> }).run;
     const params = run.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(params.response_format).toEqual({ type: 'json_object' });
@@ -161,7 +170,7 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
 
   it('returns all-false for a batch when the LLM emits unparseable JSON', async () => {
     const env = makeAi({ response: 'not-json' });
-    const verdicts = await rerankBorderlinePairsBatch(env, [
+    const verdicts = await rerankViaWorkersAi(env, [
       pair(0, true),
       pair(1, true),
       pair(2, true),
@@ -173,7 +182,7 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
     const env = {
       AI: { run: vi.fn().mockRejectedValue(new Error('boom')) },
     } as unknown as Pick<Env, 'AI'>;
-    const verdicts = await rerankBorderlinePairsBatch(env, [
+    const verdicts = await rerankViaWorkersAi(env, [
       pair(0, true),
       pair(1, true),
     ]);
@@ -182,14 +191,14 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
 
   it('returns all-false when the response is missing a verdicts array', async () => {
     const env = makeAi({ response: '{"other_field":true}' });
-    const verdicts = await rerankBorderlinePairsBatch(env, [pair(0, true)]);
+    const verdicts = await rerankViaWorkersAi(env, [pair(0, true)]);
     expect(verdicts).toEqual([false]);
   });
 
   it('defaults a pair to false when the model drops its verdict entry', async () => {
     // Model returns only one verdict for a two-pair input.
     const env = makeAi(verdictResponse([{ i: 0, same_event: true }]));
-    const verdicts = await rerankBorderlinePairsBatch(env, [
+    const verdicts = await rerankViaWorkersAi(env, [
       pair(0, true),
       pair(1, true),
     ]);
@@ -203,7 +212,7 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
         { i: 99, same_event: true },
       ]),
     );
-    const verdicts = await rerankBorderlinePairsBatch(env, [pair(0, true)]);
+    const verdicts = await rerankViaWorkersAi(env, [pair(0, true)]);
     expect(verdicts).toEqual([true]);
   });
 
@@ -211,7 +220,7 @@ describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
     const env = makeAi({
       response: { verdicts: [{ i: 0, same_event: true }] },
     });
-    const verdicts = await rerankBorderlinePairsBatch(env, [pair(0, true)]);
+    const verdicts = await rerankViaWorkersAi(env, [pair(0, true)]);
     expect(verdicts).toEqual([true]);
   });
 });

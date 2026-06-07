@@ -17,7 +17,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 4. Article-pool ingestion (URL deduplication, source-list aggregation, first-ingestion timestamp preservation, and per-item publisher resolution) is governed by [REQ-PIPE-017](#req-pipe-017-article-pool-ingestion-contract).
 5. Body-fetch behaviour for candidates with thin feed snippets is governed by [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-feed-snippets).
 6. Google News query-RSS long-tail backstop coverage is governed by [REQ-PIPE-019](#req-pipe-019-google-news-query-rss-long-tail-backstop).
-7. A run waiting too long for scrape completion exits failed rather than looping silently; if the dispatch sentinel (`chunk_count = -1`) persists past the shorter coordinator budget, the pipeline resets it once, re-dispatches the coordinator, and then applies the longer scrape-wait budget before failing the run.
+7. A run waiting too long for scrape completion exits failed rather than looping silently. <!-- @impl: src/queue/pipeline-consumer.ts::runScrapeWait -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-PERF-001](constraints.md#con-perf-001-100-user-thundering-herd-target), [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
@@ -84,11 +84,12 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Each chunk yields a JSON payload shaped `{articles: [{index, title, details, tags[]}]}` and no other top-level keys. Every input candidate gets exactly one entry whose `index` echoes the bracketed input index; unusable candidates return `{ "index": N, "title": "", "details": "", "tags": [] }` drop records instead of being omitted.
-2. Titles are NYT-style headlines, 45 to 80 characters, active voice, rewritten rather than copied from the source feed. The 45 to 80 range is the prompt-side target; the consumer additionally enforces a hard sanity range of 5 to 500 characters server-side, dropping non-drop titles outside that range so genuinely broken cases (single-character labels, paragraph-as-title) never reach the reading surface.
-3. `details` is a plaintext body of 100 to 150 words split into 2 or 3 paragraphs (WHAT happened, HOW it works, and optionally IMPACT for the reader), each 2 to 4 sentences, with no lists, HTML, or Markdown.
-4. The 100 to 150 word range is the prompt-side contract; the consumer additionally enforces an 80-word backstop server-side, dropping responses below that threshold so a model that ships a single-sentence stub cannot reach the reading surface. The backstop is a true sanity floor (genuinely truncated outputs), not the model's normal operating range.
-5. `tags` values come exclusively from the system-approved allowlist: the union of the default-seed hashtag list shared with new accounts plus every tag for which a discovered-source cache currently exists. Any tag the LLM invents outside that union is discarded server-side before persistence, and an article that ends up with zero valid tags is dropped.
+1. Each chunk response uses a single JSON object with an `articles` array as the output payload. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
+2. Every input candidate gets exactly one article entry whose `index` echoes the bracketed input index. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
+3. Unusable candidates return empty title/details/tags drop records instead of being omitted. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
+4. Titles are NYT-style headlines, 45 to 80 characters, active voice, and rewritten rather than copied from the source feed. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
+5. `details` is plaintext body of 100 to 150 words split into 2 or 3 paragraphs, with no lists, HTML, or Markdown. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
+6. `tags` values come exclusively from the system-approved allowlist supplied to the chunk prompt. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
 
@@ -109,9 +110,13 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. A chunk failure marks only that chunk's portion of the run as failed; other chunks in the same tick still persist their articles.
-2. Every article returned by the LLM echoes its input candidate's index; the consumer aligns output back to the input by that echoed value, dropping any article whose index is missing, invalid, or does not match an input candidate so a summary can never be stapled to the wrong canonical URL.
-3. Before a summary is persisted, the consumer verifies the LLM-generated title shares at least one substantive non-stopword token with the source candidate's headline; summaries with zero topical overlap are dropped so a mis-wired LLM response can never appear as a real article.
+1. A chunk failure does not prevent successful chunks in the same tick from persisting their articles. <!-- @impl: src/queue/scrape-chunk-consumer.ts::handleChunkBatch -->
+2. Persisted summaries are aligned to their source candidate by the LLM-returned `index` value. <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
+3. Articles whose index is missing, invalid, or unmatched are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
+4. Summaries whose generated title has zero topical overlap with the source headline are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
+5. Non-drop titles outside the server-side sanity range are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
+6. Details below the server-side minimum word count are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
+7. Tags outside the allowlist are discarded, and articles with zero valid tags are dropped. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
 
@@ -258,10 +263,12 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. The recorded finish time reflects when the run actually completed, not when the queue happened to redeliver the closing message. A redelivered last-chunk message that re-enters the closing path leaves the existing finish time intact, so the per-tick duration shown on the history page does not drift forward across retries.
-2. The per-tick token, cost, articles-ingested, and articles-deduplicated counters advance exactly once per chunk regardless of how many times the queue redelivers that chunk's message. A redelivered chunk that has already been recorded as completed for the run leaves these counters at their existing values, so the stats widget and history page never show inflated tokens, cost, or article counts attributable to retry traffic rather than real LLM work.
-3. The daily cleanup pass also retires runs whose state machine never reached a terminal status. Any run still tagged as in-progress well after the longest plausible tick duration is force-failed so its row no longer blocks the operator from kicking a fresh pipeline, and the history page surfaces the row as failed rather than indefinitely as running.
-4. A run stuck before coordinator fan-out can reclaim the dispatch sentinel and redispatch the coordinator once, while duplicate first-attempt redeliveries do not double-fan-out chunks or inflate run counters.
+1. A redelivered closing message leaves the run's original finish time intact. <!-- @impl: src/lib/scrape-run.ts::finishRun -->
+2. Per-tick token, cost, ingestion, and dedupe counters advance exactly once per completed chunk. <!-- @impl: src/lib/articles-repo.ts::recordChunkCompletion -->
+3. The daily cleanup pass force-fails in-progress runs that exceed the longest plausible tick duration. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
+4. If a run stalls before any chunks are queued, the pipeline makes one bounded coordinator recovery attempt. <!-- @impl: src/queue/pipeline-consumer.ts::runScrapeWait -->
+5. Duplicate initial coordinator deliveries cannot queue the same run's chunks more than once. <!-- @impl: src/queue/scrape-coordinator.ts::claimCoordinatorDispatch -->
+6. A coordinator retry after an interrupted fan-out can continue the same run instead of abandoning it as a duplicate. <!-- @impl: src/queue/scrape-coordinator.ts::claimCoordinatorDispatch -->
 
 **Constraints:** [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
 

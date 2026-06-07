@@ -69,6 +69,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD52](#ad52-glm-47-flash-integration-canary-for-pipeline-default) | GLM 4.7 Flash integration canary for pipeline default | Architecture | 2026-06-06 |
 | [AD53](#ad53-gpt-oss-20b-integration-retest-for-pipeline-default) | GPT OSS 20B integration retest for pipeline default | Architecture | 2026-06-06 |
 | [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default) | Gemini 2.5 Flash-Lite via AI Gateway for pipeline default | Architecture | 2026-06-07 |
+| [AD55](#ad55-adr-ledger-escalation-threshold-after-model-canary-growth) | ADR ledger escalation threshold after model-canary growth | Documentation | 2026-06-07 |
 
 ---
 
@@ -1360,7 +1361,6 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Future doc growth in any of the three files MUST reopen this AD before a new bare hatch lands. A bare `doc-allow-large` marker on these files without an AD46-or-successor reference is a `doc-updater` HIGH finding.
 - If `deployment.md` grows to the point where the operator workflow itself becomes hard to follow, the split should be a deliberate workflow redesign (e.g., a master deploy runbook with linked sub-pages), not a lane-discipline split.
 - Pass 6 (file-level shape consistency) findings against `deployment.md` are accepted under AD46d's hybrid-rendering carve-out. If a future review surfaces a shape-mismatch in a section that does NOT serve a runbook-or-registry purpose, AD46d does not cover it and the standard Pass 6 conversion applies.
-- The ADR ledger crossed 50 ADRs during the 2026-06 model-canary sequence and AD46 was revisited. The single-file ledger remains accepted because chronological reading and cross-ADR anchors are still clearer in one file; the next mandatory escalation is 75 ADRs or 3500 lines.
 
 **Related requirements:** none direct — operational/documentation concern.
 
@@ -1596,6 +1596,26 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - The chunk prompt and JSON repair optimisations remain part of the cost-control envelope; source snippets are not shortened.
 
 **Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+
+---
+
+### AD55: ADR ledger escalation threshold after model-canary growth
+
+**Status:** Accepted (2026-06-07)
+
+**Extends:** [AD46](#ad46-documentation-file-size-hatches-and-hybrid-renderings-deployment-colocation-architecture-diagrams-adr-index-deployment-hybrid-shape)
+
+**Decision:** Keep `documentation/decisions/README.md` as the ADR ledger after the 2026-06 model-canary sequence pushed the ledger past 50 ADRs. The next mandatory split evaluation is 75 ADRs or 3500 lines, whichever comes first.
+
+**Context:** AD46c accepted the single-file ADR ledger for chronological reading and stable cross-ADR anchors. The model-canary sequence added AD50 through AD54, so the ledger needed a fresh threshold decision without mutating AD46.
+
+**Consequences:**
+
+- AD46 remains historical; this decision is the current threshold for the ADR ledger.
+- The single-file ledger remains accepted while chronological reading and cross-ADR anchors are clearer in one file.
+- Crossing either threshold requires a new ADR or a deliberate ledger split.
+
+**Related requirements:** none direct — documentation structure concern.
 
 ---
 

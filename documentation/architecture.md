@@ -293,6 +293,8 @@ Finalize consumer (semantic same-story dedupe - REQ-PIPE-003, REQ-PIPE-009)
   └─ Enqueue one DEDUP_SWEEP message scoped to last 7d (derived from DEDUP_TIME_WINDOW_SECONDS at runtime - REQ-PIPE-013 AC 3)
 ```
 
+The operator-driven `pipeline-jobs` orchestrator wraps this scrape flow with `scrape_kick` and `scrape_wait` phases. During `scrape_wait`, it polls the linked `scrape_runs` row on a bounded 10-second cadence. If the coordinator has claimed dispatch but the internal `chunk_count = -1` marker remains past the shorter coordinator budget, the orchestrator resets that marker and sends one replacement coordinator message. After that one recovery attempt, the longer scrape-wait cap applies; a still-running scrape is marked failed rather than re-enqueued forever.
+
 ### 5.2 Operator force-refresh
 
 Implements [REQ-OPS-005](../sdd/observability.md#req-ops-005-admin-force-refresh-endpoint). The endpoint reuses an in-progress run when one exists within the last two minutes; otherwise it starts a fresh coordinator dispatch - same data flow as the 4-hour cron. See [`api-reference.md - POST /api/admin/force-refresh`](api-reference.md#post-apiadminforce-refresh-also-get) for the full request/response contract.

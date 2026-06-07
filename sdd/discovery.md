@@ -37,7 +37,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. For each picked tag without a curated source, the default LLM asks for up to 5 RSS, Atom, or JSON feed URLs.
+1. For each picked tag without a curated source, the default LLM asks for up to 5 RSS, Atom, or JSON feed URLs. <!-- @impl: src/lib/prompts.ts::discoveryUserPrompt = Return up to 5 -->
 2. The discovery prompt prefers first-party blogs, release notes, and changelogs where they exist, and instructs the model to omit a suggestion when no first-party feed and no aggregator fallback applies, so the model never invents URLs to fill the response.
 3. The discovery prompt names a Google News query-RSS fallback that the model must include for tags without a first-party feed, so a consumer or brand tag never returns zero sources.
 4. Each suggested URL is validated end-to-end before persistence: HTTPS scheme, SSRF filter (no private ranges, loopback, link-local, Cloudflare internal), HTTP 200, content-type matches the declared kind, parseable body, and at least one item with a title and URL. A URL failing any check is dropped from the result.

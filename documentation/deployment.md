@@ -130,7 +130,7 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 
 **Workflow file:** `.github/workflows/deploy-integration.yml`
 
-**Cloudflare resources** (all suffixed `-integration`, fully isolated from prod):
+**Cloudflare resources** (integration-owned resources use `-integration`; AI Gateway uses the configured Gateway name and is shared by default unless `AI_GATEWAY_NAME` points at an integration-specific Gateway):
 
 | Resource | Name |
 |---|---|
@@ -139,7 +139,7 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 | KV | `ai-news-digest-integration-kv` (auto-derived) |
 | Queues | `scrape-coordinator-integration`, `scrape-chunks-integration`, `scrape-finalize-integration`, `dedup-sweep-integration`, `pipeline-jobs-integration` |
 | DLQ | `ai-news-dlq-integration` (unbound; receives terminal retry exhaustion from finalize + pipeline-jobs consumers) |
-| AI Gateway | Gateway endpoint configured per deployment via Worker secrets |
+| AI Gateway | `AI_GATEWAY_NAME` repo variable, default `ai-news-digest` (shared); set an integration-specific Gateway name to isolate |
 | Workers AI | shared `AI` binding for embeddings (no per-env isolation needed) |
 | Vectorize | `ai-news-embeddings-integration` |
 
