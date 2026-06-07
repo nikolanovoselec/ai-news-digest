@@ -35,26 +35,38 @@ export interface ModelOption {
   category: 'featured' | 'budget';
 }
 
-// Default model: Gemini 2.5 Flash via Cloudflare AI Gateway BYOK.
+// Default model: Gemini 2.5 Flash-Lite via Cloudflare AI Gateway BYOK.
 // The integration canary uses the OpenAI-compatible AI Gateway endpoint
 // with the existing CLOUDFLARE_API_TOKEN secret for gateway auth; the
 // Google AI Studio provider key is stored in the gateway, not in source
-// or Worker env. Do not promote this develop-branch default to
-// production without a fresh integration scrape proving chunk reliability,
-// JSON validity, summary quality, and same-story dedup quality.
+// or Worker env. Flash-Lite is the lower-cost Gemini canary after
+// Gemini 2.0 Flash returned "no longer available" from Google AI
+// Studio. Do not promote this develop-branch default to production
+// without a fresh integration scrape proving chunk reliability, JSON
+// validity, summary quality, and same-story dedup quality.
 //
 // This constant is the single source-of-truth for the pipeline's model
 // id (chunk summarisation, rerank, discovery all flow through
 // DEFAULT_MODEL_ID).
-export const DEFAULT_MODEL_ID = 'google-ai-studio/gemini-2.5-flash';
+export const DEFAULT_MODEL_ID = 'google-ai-studio/gemini-2.5-flash-lite';
 
 export const MODELS: ModelOption[] = [
   // Featured — headline choices users see at the top of the dropdown.
   {
+    id: 'google-ai-studio/gemini-2.5-flash-lite',
+    name: 'Gemini 2.5 Flash-Lite',
+    description:
+      'Lower-cost Gemini integration canary via Cloudflare AI Gateway BYOK and Google AI Studio. Current replacement for unavailable Gemini 2.0 Flash.',
+    inputPricePerMtok: 0.10,
+    outputPricePerMtok: 0.40,
+    contextTokens: 1_048_576,
+    category: 'featured',
+  },
+  {
     id: 'google-ai-studio/gemini-2.5-flash',
     name: 'Gemini 2.5 Flash',
     description:
-      'Integration canary via Cloudflare AI Gateway BYOK and Google AI Studio. Large context, strong JSON/tool-following candidate for same-quality summarisation.',
+      'Higher-output-cost Gemini AI Gateway model. Completed integration mechanically but missed the 70% savings target.',
     inputPricePerMtok: 0.30,
     outputPricePerMtok: 2.50,
     contextTokens: 1_048_576,
