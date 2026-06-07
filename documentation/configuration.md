@@ -166,7 +166,7 @@ The `KV` namespace uses a structured key scheme. All keys are shared across all 
 | `dedup:auto_sweep_watermark` | Unix seconds as UTF-8 integer string | None (permanent until invalidated) | Last successful auto-sweep completion; older borderline pairs skip deterministic rerank per [AD48](decisions/README.md#ad48-dedup-cost-reduction-borderline-rerank-watermark-batched-rerank-call-pipeline-wide-gpt-oss-20b). |
 | `ratelimit:{routeClass}:{identity}:{windowIndex}` | Integer string | Window size | Rate-limit counters; see [Rate-limit rules](#rate-limit-rules) below. Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9. |
 
-`writeWatermark` writes `dedup:auto_sweep_watermark` when the sweep finishes. `clearWatermark` deletes it on `embed-backfill?reembed=1` because new embeddings change cosine geometry; a missing key means always rerank.
+`writeWatermark` writes `dedup:auto_sweep_watermark` when the sweep finishes. `clearWatermark` deletes it on `embed-backfill?reembed=1` because new embeddings change cosine geometry; a missing key means always rerank. Source anchors: `src/lib/dedup-watermark.ts`, `src/pages/api/admin/embed-backfill.ts`.
 
 ### Rate-limit rules
 

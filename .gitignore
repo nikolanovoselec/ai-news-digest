@@ -44,3 +44,6 @@ graphify-out/obsidian/
 .graphify_uncached.txt
 .graphify_chunk_*.txt
 .graphify_old.json
+
+# graphify local root marker (machine-local)
+graphify-out/.graphify_root

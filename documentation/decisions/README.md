@@ -1458,7 +1458,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - `github.event.workflow_run.event == 'push'` — only post-merge runs trigger deploy; pull_request runs do not.
 - `github.event.workflow_run.head_repository.full_name == github.repository` — only runs originating from this repo, never from a fork.
 
-**Context:** The outer `workflow_run` trigger filter `branches: [main]` matches the PR head ref name, not the source repository. A fork contributor who opens a PR with a head branch literally named `main` passes that filter. Without the two extra guards, the deploy job would check out the fork's untrusted SHA with `actions:write` permissions and access to all deploy secrets (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `OAUTH_JWT_SECRET`, OAuth client secrets, Resend API key). This is the standard `workflow_run` pwn-request vector for public repos documented in GitHub's security hardening guide. Mirror of codeflare#385 (commit `1dfc042`).
+**Context:** The outer `workflow_run` trigger filter `branches: [main]` matches the PR head ref name, not the source repository. A fork contributor who opens a PR with a head branch literally named `main` passes that filter. Without the two extra guards, the deploy job would check out the fork's untrusted SHA with `actions:write` permissions and access to all deploy secrets (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `OAUTH_JWT_SECRET`, OAuth client secrets, Resend API key). This is the standard `workflow_run` pwn-request vector for public repos documented in GitHub's security hardening guide. Mirror of codeflare#385 (commit `1dfc042`). <!-- @impl: .github/workflows/deploy.yml::workflow_run.event -->
 
 **Alternatives considered:**
 
@@ -1492,7 +1492,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Consequences:**
 
-- The 2026-06-06 integration run reproduced the prior failure class: most `scrape-chunks` queue executions were canceled after body fetch and before chunk completion; only 1 of 7 chunks completed, finalize did not run, and the pipeline ended `scrape_wait_stalled`.
+- The 2026-06-06 integration run reproduced the prior failure class: most `scrape-chunks` queue executions were canceled after body fetch and before chunk completion; only 1 of 7 chunks completed, finalize did not run, and the pipeline ended `scrape_wait_stalled` (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)).
 - Gemma is not a viable drop-in default under current chunking.
 - Cost projections should compare `scrape_runs.tokens_in`, `scrape_runs.tokens_out`, and `estimated_cost_usd` between each integration canary and the 120B production baseline.
 
@@ -1516,8 +1516,8 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Consequences:**
 
-- The 2026-06-06 Granite run completed all chunks and finalize, so it did not reproduce Gemma's cancellation failure.
-- Granite still failed the content contract: most candidates were dropped for missing index alignment, several chunks needed invalid-JSON retries, and the scrape ingested only three articles from 89 LLM survivors.
+- The 2026-06-06 Granite run completed all chunks and finalize, so it did not reproduce Gemma's cancellation failure (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)).
+- Granite still failed the content contract: most candidates were dropped for missing index alignment, several chunks needed invalid-JSON retries, and the scrape ingested only three articles from 89 LLM survivors (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)).
 - Granite's very low price is not enough; a cheap run that misses most stories is not an acceptable production replacement.
 
 **Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
@@ -1540,7 +1540,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Consequences:**
 
-- The 2026-06-06 GLM run reproduced the chunk-cancellation failure: 0 of 4 chunks completed, the first `scrape-chunks` execution was canceled after `chunk_article_bodies_fetched`, and the pipeline ended `scrape_wait_stalled`.
+- The 2026-06-06 GLM run reproduced the chunk-cancellation failure: 0 of 4 chunks completed, the first `scrape-chunks` execution was canceled after `chunk_article_bodies_fetched`, and the pipeline ended `scrape_wait_stalled` (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)).
 - No articles were ingested and no chunk token cost was recorded because no chunk LLM call completed.
 - GLM is not a viable drop-in default under current chunking.
 
@@ -1578,9 +1578,9 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Decision:** Promote `google-ai-studio/gemini-2.5-flash-lite` as `DEFAULT_MODEL_ID` and route Gateway-backed models through Cloudflare AI Gateway's OpenAI-compatible chat-completions endpoint. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all use the same default model.
 
-**Context:** Workers AI canaries did not meet the release target: Gemma and GLM reproduced chunk cancellations, Granite failed alignment/quality, and 20B did not reach the required 70%+ savings.
+**Context:** Workers AI canaries did not meet the release target: Gemma and GLM reproduced chunk cancellations, Granite failed alignment/quality, and 20B did not reach the required 70%+ savings. <!-- @impl: src/lib/models.ts::DEFAULT_MODEL_ID -->
 
-The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 rows, kept 38/44 summaries in the 100-150 word target, and reduced total chunk-plus-rerank cost to about $0.0209 versus GLM's about $0.0885.
+The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 rows, kept 38/44 summaries in the 100-150 word target, and reduced total chunk-plus-rerank cost to about $0.0209 versus GLM's about $0.0885. Audit IDs: pipeline `01KTHM7CHAK1S2E7R7PJX6NDJN`, scrape `01KTHM7FW2FT5EFZGBT9K9QGFF`, dedup `01KTHMDRAE935N76DSHZ27295A`.
 
 **Alternatives considered:**
 
@@ -1607,7 +1607,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 
 **Decision:** Keep `documentation/decisions/README.md` as the ADR ledger after the 2026-06 model-canary sequence pushed the ledger past 50 ADRs. The next mandatory split evaluation is 75 ADRs or 3500 lines, whichever comes first.
 
-**Context:** AD46c accepted the single-file ADR ledger for chronological reading and stable cross-ADR anchors. The model-canary sequence added AD50 through AD54, so the ledger needed a fresh threshold decision without mutating AD46.
+**Context:** AD46c accepted the single-file ADR ledger for chronological reading and stable cross-ADR anchors. The model-canary sequence added AD50 through AD54, so the ledger needed a fresh threshold decision without mutating AD46. <!-- @impl: documentation/decisions/README.md::AD54 -->
 
 **Consequences:**
 

@@ -148,7 +148,7 @@ describe('discoverTag', () => {
     expect(feeds[0]!.kind).toBe('json');
   });
 
-  it('REQ-DISC-007 AC4 / REQ-DISC-005: drops SSRF-unsafe URLs (private IP) from LLM suggestions', async () => {
+  it('REQ-DISC-007 AC5 / REQ-DISC-005: drops SSRF-unsafe URLs (private IP) from LLM suggestions', async () => {
     // No fetch mock — if the code tries to fetch 127.0.0.1 the call
     // will throw and the test fails loudly. The SSRF filter MUST
     // short-circuit before any network call.
@@ -171,7 +171,7 @@ describe('discoverTag', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('REQ-DISC-007 AC4: drops URLs with content-type mismatch', async () => {
+  it('REQ-DISC-007 AC5: drops URLs with content-type mismatch', async () => {
     mockFetch([
       {
         urlMatch: 'example.com/feed',

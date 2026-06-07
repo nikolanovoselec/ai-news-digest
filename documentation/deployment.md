@@ -147,11 +147,16 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 
 **One-time per-fork setup:**
 
-1. **Create the AI Gateway path.** Create or choose a Cloudflare AI Gateway named `ai-news-digest`, or set the repo/environment variable `AI_GATEWAY_NAME` to a different Gateway name. Add the Google AI Studio provider key to that Gateway, enable `google-ai-studio/gemini-2.5-flash-lite`, and store a least-privilege Gateway inference token as `AI_GATEWAY_API_TOKEN`.
+1. **Create the AI Gateway path.**
+   - Create or choose a Cloudflare AI Gateway named `ai-news-digest`.
+   - For a different name, set variable `AI_GATEWAY_NAME`.
+   - Add the Google AI Studio provider key to that Gateway.
+   - Enable `google-ai-studio/gemini-2.5-flash-lite`.
+   - Store the least-privilege Gateway token as secret `AI_GATEWAY_API_TOKEN`.
 2. **Create the GitHub Environment.** Repo → Settings → Environments → New environment → name it `integration`. The empty environment is what activates the secret-fallback semantics in the workflow.
 3. **Set `APP_URL` as an environment variable** (Variables tab, not Secrets — it's a public hostname). Use the custom domain URL, or leave unset to deploy to the auto-assigned `*.workers.dev` URL.
 4. **Confirm the OAuth callback URL is registered** with whichever providers you use — `${APP_URL}/api/auth/google/callback` and/or `${APP_URL}/api/auth/github/callback`.
-5. **(Optional) Override secrets per-env.** Secrets added under Environments → integration → Secrets take precedence over repo-level secrets. Use this to isolate `OAUTH_JWT_SECRET`, `AI_GATEWAY_API_TOKEN`, or `AI_GATEWAY_NAME` so integration can use a separate Gateway from production.
+5. **(Optional) Override config per-env.** Environment Secrets can override `OAUTH_JWT_SECRET` and `AI_GATEWAY_API_TOKEN`. Environment Variables can override `AI_GATEWAY_NAME`, so integration can use a separate Gateway from production.
 
 **How to deploy:**
 

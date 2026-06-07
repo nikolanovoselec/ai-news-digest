@@ -117,7 +117,8 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 4. Summaries whose generated title has zero topical overlap with the source headline are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
 5. Non-drop titles outside the server-side sanity range are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 6. Details below the server-side minimum word count are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
-7. Tags outside the allowlist are discarded, and articles with zero valid tags are dropped. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
+7. Tags outside the allowlist are discarded before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
+8. Articles with zero valid tags after allowlist filtering are dropped. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
 
@@ -138,11 +139,11 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. URLs are canonicalised by stripping `utm_*` and `fbclid` tracking parameters, trimming trailing slashes, and removing default ports before any comparison. A canonical URL already present in the article pool is skipped on subsequent ticks so re-ingestion never produces a duplicate primary card. <!-- @impl: src/lib/canonical-url.ts::canonicalize -->
+1. URLs are canonicalised by stripping `utm_*` and `fbclid` tracking parameters, trimming trailing slashes, and removing default ports before comparison. <!-- @impl: src/lib/canonical-url.ts::canonicalize -->
 2. Articles describing the same news event are collapsed to a single primary card regardless of whether their headlines share vocabulary. <!-- @impl: src/lib/bidirectional-dedup.ts::classifyMatchPair -->
 3. Same-event detection runs across the entire surviving article pool, not only the current scrape tick, so a story already in the pool absorbs a newly-arrived duplicate as an alternative source even when the duplicate landed in a later scrape run. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
 4. Near-duplicate articles whose textual similarity is overwhelming collapse deterministically across sources, so wire copies of one press release land as a single primary card with the others as alternative sources regardless of publisher identity. <!-- @impl: src/lib/embeddings.ts::readHighConfidenceCosine -->
-5. When a newly-arrived article and an already-stored article describe the same news event, the merge happens regardless of which side was ingested first or how many calendar days separate them within the same-news-cycle bound ([REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants) AC 3); the survivor is the article with the earlier publication time (per [REQ-PIPE-018](#req-pipe-018-same-story-collapse-mechanics-survivor-selection-and-data-merge) AC 1). <!-- @impl: src/lib/finalize-merge.ts::mergeAsAltSource -->
+5. When a newly-arrived article and an already-stored article describe the same news event, the merge happens regardless of which side was ingested first. <!-- @impl: src/lib/finalize-merge.ts::mergeAsAltSource -->
 6. A duplicate that lands several days after its already-stored match still collapses to a single card on the next scrape tick without waiting for an operator-triggered sweep. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
 7. Same-story LLM JSON parsing accepts common model deviations, including fenced or prose-wrapped objects, trailing commas, and raw newline characters inside string values before the caller validates dedupe fields. <!-- @impl: src/lib/generate.ts::parseJsonWithRepairs -->
 

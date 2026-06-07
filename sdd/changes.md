@@ -8,11 +8,11 @@ Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are a
 
 ## 2026-06-07
 
-- The develop/integration default LLM moves to `google-ai-studio/gemini-2.5-flash-lite` via Cloudflare AI Gateway with dedicated runtime Gateway credentials. Chunk output now requires indexed one-record-per-input responses with explicit empty drop records, and scrape-wait recovery gets one coordinator redispatch before bounded failure.
+- REQ-SET-004, REQ-PIPE-002, REQ-PIPE-001, and REQ-PIPE-016 changed: the develop/integration default LLM moves to `google-ai-studio/gemini-2.5-flash-lite` via Cloudflare AI Gateway with dedicated runtime Gateway credentials. Chunk output now requires indexed one-record-per-input responses with explicit empty drop records, and scrape-wait recovery gets one coordinator redispatch before bounded failure.
 
 ## 2026-06-06
 
-- The system default model changed on develop/integration from `@cf/openai/gpt-oss-120b` through Gemma, Granite, GLM, and 20B for lower-cost canaries. Those canaries failed reliability, quality, or savings gates, so the next default is recorded on 2026-06-07.
+- REQ-SET-004 changed: the system default model changed on develop/integration from `@cf/openai/gpt-oss-120b` through Gemma, Granite, GLM, and 20B for lower-cost canaries. Those canaries failed reliability, quality, or savings gates, so the next default is recorded on 2026-06-07.
 
 ## 2026-05-14
 

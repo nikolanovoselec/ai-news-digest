@@ -29,7 +29,7 @@ News Digest hires the LLM. It remembers so you don't. This isn't enlightenment. 
 - **Starred articles outlive the cron**: 14-day retention, unless you starred it. Your saved list is forever; your unread list was a lie anyway.
 - **Federated sign-in**: GitHub or Google. Wire up one, both, or neither — the app tells the truth either way. A verified email shared across providers maps to a single account, so stars, read marks, pending discoveries, and the daily digest all live in one place no matter which button you signed in with.
 - **Looks like a real product when shared**: paste the URL into iMessage, WhatsApp, Slack, LinkedIn, or Discord — you get a brand card, not a naked URL. Surprisingly hard. Don't ask.
-- **One Worker, no servers**: Cloudflare D1 + KV + Queues + Workers AI + Vectorize. The vector index is the new arrival — 768 dimensions of cosine-flavoured opinion about whether two articles are secretly the same article. It's been right enough times that I no longer fight it. Ships in 30 seconds. Rollback is `wrangler rollback`, which I've used more times than I'd like to admit.
+- **One Worker, no servers**: Cloudflare D1 + KV + Queues + AI Gateway + Workers AI + Vectorize. The vector index is the new arrival — 768 dimensions of cosine-flavoured opinion about whether two articles are secretly the same article. It's been right enough times that I no longer fight it. Ships in 30 seconds. Rollback is `wrangler rollback`, which I've used more times than I'd like to admit.
 
 ## What's *not* in it
 
@@ -61,7 +61,13 @@ Four steps. The Deploy workflow handles D1, KV, queues, migrations, Gateway pref
 
 1. **Fork the repo.** You know how.
 
-2. **Create the AI Gateway path.** In Cloudflare, create or choose an AI Gateway named `ai-news-digest` (or set the repo variable `AI_GATEWAY_NAME` to your chosen name), add the Google AI Studio provider key to that Gateway, and create a least-privilege AI Gateway runtime token that can call `google-ai-studio/gemini-2.5-flash-lite`. The deploy workflow performs a one-token Gateway chat-completions preflight and fails before deploy on 401/404/provider-missing responses.
+2. **Create the AI Gateway path.**
+
+   - Create or choose a Cloudflare AI Gateway named `ai-news-digest`.
+   - For a different name, set repository variable `AI_GATEWAY_NAME`.
+   - Add the Google AI Studio provider key to that Gateway.
+   - Create a least-privilege Gateway token for `google-ai-studio/gemini-2.5-flash-lite`.
+   - Deploy preflights the Gateway before publishing the Worker.
 
 3. **Set repo secrets.** In your fork: `Settings` > `Secrets and variables` > `Actions` > `New repository secret`. Five required, plus at least one OAuth provider pair (GitHub or Google or both; the landing page renders one button per configured provider, alphabetical).
 

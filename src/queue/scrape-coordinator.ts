@@ -746,15 +746,17 @@ function flattenToChunkCandidates(
 }
 
 /**
- * Step 8 - Chunk, persist chunk_count, and enqueue.
+ * Step 8 - Chunk, enqueue, then persist chunk_count.
  *
  * Packs `chunkCandidates` via `packCandidatesIntoChunks` (greedy budget-
  * aware: respects `CHUNK_INPUT_CHARS_BUDGET` and `MAX_CANDIDATES_PER_CHUNK`,
  * whichever fires first), hard-caps the resulting chunk array at
- * `MAX_CHUNKS_PER_TICK`, persists `chunk_count` on the scrape_runs row
- * for the progress UI (chunks_remaining is derived from D1 via
- * `scrape_chunk_completions` per CF-007), and fan-outs one SCRAPE_CHUNKS
- * message per chunk.
+ * `MAX_CHUNKS_PER_TICK`, fan-outs one SCRAPE_CHUNKS message per chunk, then
+ * persists `chunk_count` on the scrape_runs row for the progress UI
+ * (chunks_remaining is derived from D1 via `scrape_chunk_completions` per
+ * CF-007). Keeping the real count write after every send means a crash during
+ * fan-out leaves the `-1` dispatch sentinel reclaimable by queue retry instead
+ * of treating a positive chunk_count as completed fan-out.
  */
 async function chunkAndEnqueue(
   env: Env,
@@ -785,21 +787,6 @@ async function chunkAndEnqueue(
   // from `scrape_chunk_completions` (D1 is the source of truth per
   // AD7); no priming write is needed here.
 
-  // Persist total chunk count on the scrape_runs row so the
-  // /api/scrape-status endpoint can compute 'X of Y chunks done'
-  // for the in-progress UI. Best-effort; a failure here is logged
-  // but doesn't block the fan-out. CF-021 - uses the repo helper
-  // so all `scrape_runs.chunk_count` writes live in one layer.
-  try {
-    await updateChunkCount(env.DB, scrape_run_id, totalChunks);
-  } catch (err) {
-    log('warn', 'digest.generation', {
-      status: 'coordinator_chunk_count_update_failed',
-      scrape_run_id,
-      detail: String(err).slice(0, 500),
-    });
-  }
-
   for (let i = 0; i < keptChunks.length; i++) {
     const candidates = keptChunks[i] ?? [];
     await env.SCRAPE_CHUNKS.send({
@@ -807,6 +794,21 @@ async function chunkAndEnqueue(
       chunk_index: i,
       total_chunks: totalChunks,
       candidates,
+    });
+  }
+
+  // Persist total chunk count only after every queue message is accepted.
+  // If the coordinator is canceled or throws mid-send, the row remains at
+  // the `-1` dispatch sentinel and the retry path can reclaim it. Writing a
+  // positive count before all sends complete would strand the run waiting for
+  // chunk completions that can never arrive.
+  try {
+    await updateChunkCount(env.DB, scrape_run_id, totalChunks);
+  } catch (err) {
+    log('warn', 'digest.generation', {
+      status: 'coordinator_chunk_count_update_failed',
+      scrape_run_id,
+      detail: String(err).slice(0, 500),
     });
   }
 

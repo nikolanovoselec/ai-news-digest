@@ -19,6 +19,7 @@ function makeDb(opts: {
   existingCanonicals?: string[];
   claimChanges?: number | number[];
   claimRow?: { status: string; chunk_count: number | null } | null;
+  events?: string[];
 } = {}): { db: D1Database; records: SqlRecord[] } {
   const records: SqlRecord[] = [];
   const existing = opts.existingCanonicals ?? [];
@@ -36,6 +37,9 @@ function makeDb(opts: {
         __params: params,
         run: vi.fn().mockImplementation(async () => {
           records.push({ sql, params, via: 'run' });
+          if (sql === 'UPDATE scrape_runs SET chunk_count = ?1 WHERE id = ?2') {
+            opts.events?.push('chunk_count');
+          }
           if (sql.includes('UPDATE scrape_runs SET chunk_count = -1')) {
             const changes =
               claimChanges.length > 1
@@ -141,13 +145,14 @@ function makeEnv(
 }
 
 /** Build a chunks queue that records every send call. */
-function makeChunksQueue(): {
+function makeChunksQueue(events?: string[]): {
   queue: Queue<unknown>;
   sends: unknown[];
 } {
   const sends: unknown[] = [];
   const queue = {
     send: vi.fn().mockImplementation(async (body: unknown) => {
+      events?.push('send');
       sends.push(body);
     }),
     sendBatch: vi.fn(),
@@ -284,6 +289,27 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
       expect(msg.scrape_run_id).toBe('run-3');
       expect(msg.candidates.length).toBeLessThanOrEqual(8);
     }
+  });
+
+  it('REQ-PIPE-001: writes chunk_count only after every chunk message is sent', async () => {
+    // The dispatch sentinel (-1) must remain in D1 until queue fan-out
+    // finishes. If the real chunk_count is written before the send loop
+    // completes, a coordinator crash can strand the run waiting for chunks
+    // that were never enqueued.
+    const events: string[] = [];
+    stubFetchWithItems(20);
+    const { db } = makeDb({ events });
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue(events);
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(env, { scrape_run_id: 'run-dispatch-order' });
+
+    expect(sends.length).toBeGreaterThanOrEqual(1);
+    expect(events.slice(0, sends.length)).toEqual(
+      Array.from({ length: sends.length }, () => 'send'),
+    );
+    expect(events[sends.length]).toBe('chunk_count');
   });
 
   it('REQ-PIPE-001 / CF-007: does NOT write the legacy KV chunks_remaining mirror', async () => {

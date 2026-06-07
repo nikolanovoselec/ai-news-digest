@@ -162,7 +162,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `tag-railing-flip.ts` | Shared FLIP animation helper for the tag railing | [REQ-READ-007](../sdd/reading.md#req-read-007-tag-railing-reorder-animation) |
 | `json-ld.ts` | Safe JSON-LD serializer for `<script type="application/ld+json">` blocks - rewrites every `<`, `>`, and `&` byte to its `\uNNNN` JSON form, defeating all HTML state-transition vectors that could escape the script block | [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) AC 6 |
 
-Watermark details: `writeWatermark` records terminal sweep completion, and `clearWatermark` runs on re-embed because cosine geometry changes. Discovery keeps the legacy Google News fallback until the coordinator-owned AD31 path has enough retention-window proof.
+Watermark details ([REQ-PIPE-013](../sdd/generation.md#req-pipe-013-same-story-cross-tick-automation-and-retention-coupling); sources: `src/lib/dedup-watermark.ts`, `src/pages/api/admin/embed-backfill.ts`): `writeWatermark` records terminal sweep completion, and `clearWatermark` runs on re-embed because cosine geometry changes. Discovery keeps the legacy Google News fallback until the coordinator-owned AD31 path has enough retention-window proof.
 
 ### 4.3 Pages and API Routes
 
@@ -293,7 +293,7 @@ Finalize consumer (semantic same-story dedupe - REQ-PIPE-003, REQ-PIPE-009)
   └─ Enqueue one DEDUP_SWEEP message scoped to last 7d (derived from DEDUP_TIME_WINDOW_SECONDS at runtime - REQ-PIPE-013 AC 3)
 ```
 
-The operator-driven `pipeline-jobs` orchestrator wraps this scrape flow with `scrape_kick` and `scrape_wait` phases. During `scrape_wait`, it polls the linked `scrape_runs` row on a bounded 10-second cadence. If the coordinator has claimed dispatch but the internal `chunk_count = -1` marker remains past the shorter coordinator budget, the orchestrator resets that marker and sends one replacement coordinator message. After that one recovery attempt, the longer scrape-wait cap applies; a still-running scrape is marked failed rather than re-enqueued forever.
+The operator-driven `pipeline-jobs` orchestrator wraps this scrape flow with `scrape_kick` and `scrape_wait` phases ([REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-016](../sdd/generation.md#req-pipe-016-scrape_runs-idempotency-and-stuck-run-cleanup); source: `src/queue/pipeline-consumer.ts::runScrapeWait`). During `scrape_wait`, it polls the linked `scrape_runs` row on a bounded 10-second cadence. If the coordinator has claimed dispatch but the internal `chunk_count = -1` marker remains past the shorter coordinator budget, the orchestrator resets that marker and sends one replacement coordinator message. After that one recovery attempt, the longer scrape-wait cap applies; a still-running scrape is marked failed rather than re-enqueued forever.
 
 ### 5.2 Operator force-refresh
 
