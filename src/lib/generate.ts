@@ -101,19 +101,14 @@ export function parseLLMPayload(response: unknown): LLMPayload | null {
   if (typeof response !== 'string' || response === '') return null;
 
   const cleaned = stripFencesAndPreamble(response);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
+  let parsed = parseJsonWithRepairs(cleaned);
+  if (parsed === null) {
     const candidate = extractFirstJsonObject(cleaned);
     if (candidate === null) return null;
-    try {
-      parsed = JSON.parse(candidate);
-    } catch {
-      return null;
-    }
+    parsed = parseJsonWithRepairs(candidate);
+    if (parsed === null) return null;
   }
-  if (parsed === null || typeof parsed !== 'object') return null;
+  if (typeof parsed !== 'object') return null;
   const articles = (parsed as LLMPayload).articles;
   if (!Array.isArray(articles)) return null;
   return parsed as LLMPayload;
@@ -130,20 +125,118 @@ export function parseLLMJson(response: unknown): Record<string, unknown> | null 
   }
   if (typeof response !== 'string' || response === '') return null;
   const cleaned = stripFencesAndPreamble(response);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
+  let parsed = parseJsonWithRepairs(cleaned);
+  if (parsed === null) {
     const candidate = extractFirstJsonObject(cleaned);
     if (candidate === null) return null;
-    try {
-      parsed = JSON.parse(candidate);
-    } catch {
-      return null;
-    }
+    parsed = parseJsonWithRepairs(candidate);
+    if (parsed === null) return null;
   }
-  if (parsed === null || typeof parsed !== 'object') return null;
+  if (typeof parsed !== 'object') return null;
   return parsed as Record<string, unknown>;
+}
+
+function parseJsonWithRepairs(raw: string): unknown | null {
+  const withoutTrailingCommas = removeTrailingCommasOutsideStrings(raw);
+  const escapedControlChars = escapeControlCharsInJsonStrings(raw);
+  const escapedWithoutTrailingCommas = escapeControlCharsInJsonStrings(
+    withoutTrailingCommas,
+  );
+  const variants = [
+    raw,
+    withoutTrailingCommas,
+    escapedControlChars,
+    escapedWithoutTrailingCommas,
+  ];
+
+  for (const variant of variants) {
+    try {
+      const parsed = JSON.parse(variant) as unknown;
+      if (parsed !== null) return parsed;
+    } catch {}
+  }
+  return null;
+}
+
+function removeTrailingCommasOutsideStrings(raw: string): string {
+  let out = '';
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (ch === undefined) continue;
+    if (escape) {
+      out += ch;
+      escape = false;
+      continue;
+    }
+    if (ch === '\\') {
+      out += ch;
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      out += ch;
+      inString = !inString;
+      continue;
+    }
+    if (!inString && ch === ',') {
+      let j = i + 1;
+      while (/\s/.test(raw[j] ?? '')) j += 1;
+      const next = raw[j];
+      if (next === '}' || next === ']') continue;
+    }
+    out += ch;
+  }
+
+  return out;
+}
+
+function escapeControlCharsInJsonStrings(raw: string): string {
+  let out = '';
+  let inString = false;
+  let escape = false;
+
+  for (const ch of raw) {
+    if (escape) {
+      out += ch;
+      escape = false;
+      continue;
+    }
+    if (ch === '\\') {
+      out += ch;
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      out += ch;
+      inString = !inString;
+      continue;
+    }
+    if (inString) {
+      if (ch === '\n') {
+        out += '\\n';
+        continue;
+      }
+      if (ch === '\r') {
+        out += '\\n';
+        continue;
+      }
+      if (ch === '\t') {
+        out += '\\t';
+        continue;
+      }
+      const code = ch.codePointAt(0) ?? 0;
+      if (code <= 0x1f) {
+        out += `\\u${code.toString(16).padStart(4, '0')}`;
+        continue;
+      }
+    }
+    out += ch;
+  }
+
+  return out;
 }
 
 /** Strip ```json or ``` fences and any prose preamble before the first
