@@ -338,7 +338,7 @@ done
 # suite stays useful in reduced-permissions environments.
 #
 # Bounded by E2E_SCRAPE_TIMEOUT_SEC (default 600s = 10 min). Each
-# poll is one D1 SELECT + one KV GET — cheap enough to run every 10s.
+# poll reads D1-derived scrape progress — cheap enough to run every 10s.
 printf '\n=== full-cycle scrape ===\n'
 TRIGGER_CODE=$(curl -sS -o /tmp/e2e-trigger.json -w '%{http_code}' \
   -X POST -H "Authorization: Bearer $DEV_BYPASS_TOKEN" \

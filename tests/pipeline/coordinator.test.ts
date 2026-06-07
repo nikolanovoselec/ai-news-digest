@@ -656,7 +656,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-
     expect(allCandidates.length).toBeGreaterThan(0);
   });
 
-  it('REQ-PIPE-001: when pool is empty, finishRun(ready) is called immediately', async () => {
+  it('REQ-PIPE-021 AC1: when pool is empty, the run closes as ready atomically', async () => {
     stubFetchEmpty();
     const { db, records } = makeDb();
     const { kv } = makeKv();
@@ -664,11 +664,12 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-
     const env = makeEnv(db, kv, queue);
     await runCoordinator(env, { scrape_run_id: 'run-5' });
     expect(sends.length).toBe(0);
-    const finish = records.find(
+    const close = records.find(
       (r) =>
-        r.sql.includes('UPDATE scrape_runs') &&
-        (r.params as unknown[])[1] === 'ready',
+        r.sql.includes("SET status = 'ready'") &&
+        r.sql.includes('chunk_count = 0') &&
+        r.sql.includes('finalize_recorded = 1'),
     );
-    expect(finish).toBeDefined();
+    expect(close).toBeDefined();
   });
 });

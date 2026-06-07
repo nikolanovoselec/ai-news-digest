@@ -749,8 +749,8 @@ const primaryCta = isFirstRun ? 'Save and continue' : 'Save';
 
   /** Poll /api/scrape-status every 5s and write a "X/Y chunks done,
    *  N articles ingested" line into [data-scrape-progress]. Hides
-   *  the element when no run is active, cheap to keep running -
-   *  one SQL SELECT + one KV get per poll, no LLM, no article read. */
+   *  the element when no run is active; the endpoint reads D1-derived
+   *  progress only, with no LLM or article read. */
   async function pollScrapeProgress(): Promise<void> {
     const el = document.querySelector<HTMLElement>('[data-scrape-progress]');
     if (el === null) return;
