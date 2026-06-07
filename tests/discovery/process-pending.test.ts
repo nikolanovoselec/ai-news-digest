@@ -74,14 +74,30 @@ function makeDb(pendingTags: string[]): {
   return { db, runCalls };
 }
 
-/** Build an Env stub with programmable AI.run. Always returns the same
- * JSON response — these tests don't need per-tag branching. */
+const TEST_AI_GATEWAY_URL = 'https://gateway.ai.cloudflare.com/v1/test-account/test-gateway/compat/chat/completions';
+
+/** Build an Env stub with programmable AI Gateway output. Always returns
+ * the same JSON response — these tests don't need per-tag branching. */
 function makeEnv(db: D1Database, kv: KVNamespace, aiResponse: string): Env {
-  const aiRun = vi.fn().mockImplementation(async () => ({ response: aiResponse }));
+  const previousFetch = globalThis.fetch;
+  const gatewayFetch = vi.fn().mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === TEST_AI_GATEWAY_URL) {
+      return new Response(JSON.stringify({ response: aiResponse }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (typeof previousFetch === 'function') return previousFetch.call(globalThis, input, init);
+    throw new Error(`unexpected fetch: ${url}`);
+  });
+  vi.stubGlobal('fetch', gatewayFetch);
   return {
     DB: db,
     KV: kv,
-    AI: { run: aiRun } as unknown as Ai,
+    AI: { run: vi.fn() } as unknown as Ai,
+    AI_GATEWAY_API_TOKEN: 'gateway-test-token',
+    AI_GATEWAY_URL: TEST_AI_GATEWAY_URL,
   } as unknown as Env;
 }
 

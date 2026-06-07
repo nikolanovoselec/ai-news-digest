@@ -1,10 +1,10 @@
 // Tests for src/queue/scrape-chunk-consumer.ts - REQ-PIPE-002.
 //
-// The chunk consumer calls Workers AI once per chunk, parses the JSON
+// The chunk consumer calls AI Gateway once per chunk, parses the JSON
 // response, collapses LLM-provided dedup_groups, validates tags against
 // the allowlist, and writes articles + article_sources + article_tags
-// in a single D1 batch. The tests stub env.AI.run, D1, KV, and assert
-// on the observable behaviour contracts.
+// in a single D1 batch. The tests stub Gateway fetch, env.AI.run for
+// embeddings, D1, KV, and assert on the observable behaviour contracts.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { processOneChunk, handleChunkBatch } from '~/queue/scrape-chunk-consumer';
@@ -168,14 +168,25 @@ function makeKv(opts: {
   return { kv, state: { store, sourcesKeys } };
 }
 
+const TEST_AI_GATEWAY_URL = 'https://gateway.ai.cloudflare.com/v1/test-account/test-gateway/compat/chat/completions';
+
 function makeEnv(
   db: D1Database,
   kv: KVNamespace,
   aiResponse: unknown,
 ): Env {
-  // env.AI.run is called twice per chunk: once for the chunk LLM
-  // (returns aiResponse), once for the embedding model (returns a
-  // shape the embeddings helper accepts). REQ-PIPE-003.
+  const gatewayFetch = vi.fn().mockImplementation(async (input: string | URL | Request) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url !== TEST_AI_GATEWAY_URL) throw new Error(`unexpected fetch: ${url}`);
+    return new Response(JSON.stringify(aiResponse), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  });
+  vi.stubGlobal('fetch', gatewayFetch);
+
+  // env.AI.run is still used for the embedding model. Chunk LLM output
+  // comes through the Gateway fetch mock above. REQ-PIPE-003.
   const aiRun = vi.fn().mockImplementation((model: string, params: { text?: string[] }) => {
     if (model.startsWith('@cf/baai/bge-')) {
       const count = params.text?.length ?? 0;
@@ -185,12 +196,14 @@ function makeEnv(
         ),
       });
     }
-    return Promise.resolve(aiResponse);
+    throw new Error(`unexpected AI.run model: ${model}`);
   });
   return {
     DB: db,
     KV: kv,
     AI: { run: aiRun } as unknown as Ai,
+    AI_GATEWAY_API_TOKEN: 'gateway-test-token',
+    AI_GATEWAY_URL: TEST_AI_GATEWAY_URL,
     VECTORIZE: {
       upsert: vi.fn().mockResolvedValue({ count: 0, ids: [] }),
       query: vi.fn().mockResolvedValue({ count: 0, matches: [] }),
@@ -254,7 +267,7 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
     vi.unstubAllGlobals();
   });
 
-  it('REQ-PIPE-002: builds PROCESS_CHUNK_SYSTEM + per-chunk prompt and calls env.AI.run with JSON response_format', async () => {
+  it('REQ-PIPE-002: builds PROCESS_CHUNK_SYSTEM + per-chunk prompt and calls AI Gateway with JSON response_format', async () => {
     const aiResponse = {
       response: JSON.stringify({
         articles: [
@@ -271,18 +284,16 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
     await processOneChunk(env, makeChunk());
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const runMock = (env.AI as any).run as ReturnType<typeof vi.fn>;
-    // env.AI.run is called twice per chunk: once for the chunk LLM,
-    // once for the per-article embedding model (REQ-PIPE-003).
-    expect(runMock).toHaveBeenCalledTimes(2);
-    const chunkCall = runMock.mock.calls.find(
-      (call: unknown[]) => !(call[0] as string).startsWith('@cf/baai/bge-'),
-    ) as [string, Record<string, unknown>] | undefined;
-    expect(chunkCall).toBeDefined();
-    const [model, params] = chunkCall as [string, Record<string, unknown>];
-    // The chunk LLM model identifier must be a non-empty namespaced
-    // model ID: Workers AI (`@cf/...`) or AI Gateway provider
-    // (`google-ai-studio/...`). A bare empty string is a regression.
-    expect(model).toMatch(/^(?:@\w+|[a-z0-9-]+)\/.+/);
+    // env.AI.run is called once for the per-article embedding model;
+    // the chunk LLM call goes through AI Gateway (REQ-PIPE-003).
+    expect(runMock).toHaveBeenCalledTimes(1);
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+    const gatewayCall = fetchMock.mock.calls.find(([input]) => String(input) === TEST_AI_GATEWAY_URL);
+    expect(gatewayCall).toBeDefined();
+    const params = JSON.parse(String((gatewayCall![1] as RequestInit).body)) as Record<string, unknown>;
+    // The chunk LLM model identifier must be a non-empty Gateway provider
+    // model ID. A bare empty string is a regression.
+    expect(params.model).toMatch(/^[a-z0-9-]+\/.+/);
     const messages = params.messages as Array<{ role: string; content: string }>;
     expect(messages[0]?.role).toBe('system');
     expect(messages[0]?.content).toBe(PROCESS_CHUNK_SYSTEM);
