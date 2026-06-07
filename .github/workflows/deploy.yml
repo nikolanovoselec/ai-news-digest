@@ -282,6 +282,7 @@ jobs:
             "$AI_GATEWAY_URL" \
             -H 'Content-Type: application/json' \
             -H "cf-aig-authorization: Bearer ${AI_GATEWAY_API_TOKEN}" \
+            -H 'cf-aig-skip-cache: true' \
             --data '{"model":"google-ai-studio/gemini-2.5-flash-lite","messages":[{"role":"user","content":"ping"}],"max_tokens":1,"reasoning_effort":"none"}') || {
             echo "::error::AI Gateway preflight request failed. Verify AI_GATEWAY_NAME, provider key, and AI_GATEWAY_API_TOKEN."
             rm -f "$AI_GATEWAY_PREFLIGHT_BODY"
@@ -458,7 +459,7 @@ jobs:
               skip { next }
               { print }
             '
-          # Extract the workers.dev URL wrangler prints on success.
+          # Capture a Worker URL if wrangler prints one; production normally uses APP_URL.
           WORKER_URL=$(grep -oE 'https://[^ ]+\.workers\.dev' deploy.log | head -n1 || true)
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
           echo "Deployed to: $WORKER_URL"
@@ -471,24 +472,28 @@ jobs:
         run: |
           set -e
           if [ -z "$APP_URL" ]; then
-            echo "APP_URL not set; skipping custom-domain binding"
-            exit 0
+            echo "::error::APP_URL is required for custom-domain binding"
+            exit 1
           fi
           # Extract hostname from APP_URL (strip scheme + path + port).
           # Case-insensitive scheme match so HTTPS:// / MIXED-case works too.
           HOST=$(printf '%s' "$APP_URL" | sed -E 's|^[A-Za-z]+://||; s|/.*$||; s|:.*$||')
           if [ -z "$HOST" ]; then
-            echo "Could not extract hostname from APP_URL; skipping"
-            exit 0
+            echo "Could not extract hostname from APP_URL"
+            exit 1
           fi
           # Require a fully-qualified domain (at least one dot). A single-label
           # APP_URL like `localhost` has no Cloudflare zone and isn't a valid
           # custom-domain target.
           case "$HOST" in
+            *.workers.dev)
+              echo "APP_URL must be a custom domain; workers_dev is disabled in wrangler.toml"
+              exit 1
+              ;;
             *.*) : ;;
             *)
-              echo "APP_URL hostname '$HOST' is not fully-qualified (needs at least one dot); skipping bind"
-              exit 0
+              echo "APP_URL hostname '$HOST' is not fully-qualified (needs at least one dot)"
+              exit 1
               ;;
           esac
           echo "Binding Worker to custom domain: $HOST"
@@ -521,7 +526,7 @@ jobs:
           done
           if [ -z "$ZONE_ID" ]; then
             echo "No Cloudflare zone found for $HOST in this account; cannot bind custom domain"
-            echo "Either add the zone to Cloudflare first, or point APP_URL at the workers.dev URL"
+            echo "Add the zone to Cloudflare first, or set APP_URL to a custom domain in this account"
             exit 1
           fi
 
@@ -551,24 +556,21 @@ jobs:
 
       - name: Smoke test
         env:
-          WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
           APP_URL: ${{ secrets.APP_URL }}
         run: |
-          # Prefer the custom domain (APP_URL) since that's where users land;
-          # fall back to the workers.dev URL if the custom domain hasn't
-          # propagated yet.
-          for URL in "$APP_URL" "$WORKER_URL"; do
-            if [ -z "$URL" ]; then continue; fi
-            CODE=$(curl -s --max-time 15 -o /dev/null -w "%{http_code}" "$URL/" || echo "000")
-            echo "GET $URL/ → HTTP $CODE"
-            case "$CODE" in
-              200|303)
-                echo "Smoke test passed via $URL"
-                exit 0
-                ;;
-            esac
-          done
-          echo "No reachable smoke-test URL"
+          if [ -z "$APP_URL" ]; then
+            echo "::error::APP_URL is required for the production smoke test"
+            exit 1
+          fi
+          CODE=$(curl -s --max-time 15 -o /dev/null -w "%{http_code}" "$APP_URL/" || echo "000")
+          echo "GET $APP_URL/ → HTTP $CODE"
+          case "$CODE" in
+            200|303)
+              echo "Smoke test passed via $APP_URL"
+              exit 0
+              ;;
+          esac
+          echo "Smoke test failed for APP_URL"
           exit 1
 
       # End-to-end API smoke step intentionally removed. scripts/e2e-test.sh

@@ -8,7 +8,7 @@ Canonical definitions for terms used across the spec, code, and documentation. U
 | **Hashtag** | A lowercase alphanumeric-plus-hyphen interest label (no leading `#` stored) that drives source fetching and LLM ranking. Each user has between 1 and 25. |
 | **Curated source** | An operator-maintained feed entry in the global registry, declaring at least one tag drawn from the system tag list. Replacement is a code change, not a runtime mutation. |
 | **Discovered source** | A first-party feed (blog, changelog, or Google News query-RSS fallback) discovered once per tag via the LLM and cached globally for every user who selected that tag. |
-| **Pending discovery** | A `(user_id, tag)` row awaiting LLM-assisted source discovery during the next discovery-cron invocation. The 5-minute discovery cron processes up to 3 distinct tags per tick. |
+| **Pending discovery** | A `(user_id, tag)` row awaiting LLM-assisted source discovery during the next discovery-cron invocation. The 10-minute discovery cron processes up to 3 distinct tags per tick. |
 | **Source health** | A per-feed-URL counter of consecutive fetch failures, kept in the eventually-consistent edge cache; a feed is evicted from its tag's cached list after 30 consecutive failures (about five days at the six-times-daily scrape cadence). |
 | **Scrape coordinator** | The cron-triggered job that runs every 4 hours (00/04/08/12/16/20 UTC), assembles candidates from the curated source registry plus discovered tag feeds, canonical-URL-dedupes them, and fans chunks of up to 8 candidates out to the LLM consumer. |
 | **Chunk consumer** | The Worker handler that processes one up-to-8-candidate scrape chunk, runs the LLM call, and writes the resulting summaries + tags into the shared article pool. |

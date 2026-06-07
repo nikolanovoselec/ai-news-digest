@@ -1,4 +1,7 @@
 // Implements REQ-PIPE-002
+// Implements REQ-PIPE-015
+// Implements REQ-PIPE-017
+// Implements REQ-PIPE-020
 // Implements REQ-PIPE-003 (per-article embedding + Vectorize upsert)
 // Implements REQ-PIPE-003 (last-chunk SCRAPE_FINALIZE enqueue)
 //

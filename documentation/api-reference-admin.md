@@ -125,7 +125,7 @@ GET /api/admin/force-refresh
 
 ### POST /api/admin/discovery/retry
 
-Re-queues a single stuck tag for source discovery. Validates the tag against the user's `hashtags_json`, clears `sources:{tag}` and `discovery_failures:{tag}` from KV, and inserts a `pending_discoveries` row picked up by the 5-minute discovery cron. Used for one-off recovery of a tag that exhausted its retry budget.
+Re-queues a single stuck tag for source discovery. Validates the tag against the user's `hashtags_json`, clears `sources:{tag}` and `discovery_failures:{tag}` from KV, and inserts a `pending_discoveries` row picked up by the 10-minute discovery cron. Used for one-off recovery of a tag that exhausted its retry budget.
 
 ```
 POST /api/admin/discovery/retry

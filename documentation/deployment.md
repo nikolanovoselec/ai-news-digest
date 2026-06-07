@@ -88,7 +88,7 @@ The deploy job:
 4. Pushes Worker secrets via `wrangler secret put` (file-redirect form). Conditional secrets (`ADMIN_EMAIL`, `CF_ACCESS_AUD`, `DEV_BYPASS_USER_ID`) are pushed only when the corresponding GitHub Actions secret is non-empty.
 5. Deploys the Worker.
 6. Binds the custom domain extracted from `APP_URL` via the Workers Custom Domains API. Idempotent.
-7. Smoke-tests `GET /` against `APP_URL`, falling back to `*.workers.dev`. Accepts `200` or `303`.
+7. Smoke-tests `GET /` against `APP_URL`. Accepts `200` or `303`.
 
 `scripts/e2e-test.sh` is manual only (`bash scripts/e2e-test.sh --force-prod`) and not part of CI deploy — running it triggers a full LLM-cost scrape and mutates the owner's account.
 
@@ -111,7 +111,7 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 
 **Sandbox:** Mutations are scoped to the synthetic `__e2e__` user. Implements [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view-rendering), [REQ-HIST-001](../sdd/history.md#req-hist-001-day-grouped-article-history).
 
-> **Fork-friendly:** set `APP_URL` to any hostname whose apex is a zone in the same Cloudflare account. The deploy binds it automatically.
+> **Fork-friendly:** set `APP_URL` to a custom-domain hostname whose apex is a zone in the same Cloudflare account. The deploy binds it automatically.
 
 ### Environment-specific configuration
 
@@ -154,7 +154,7 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
    - Enable `google-ai-studio/gemini-2.5-flash-lite`.
    - Store the least-privilege Gateway token as secret `AI_GATEWAY_API_TOKEN`.
 2. **Create the GitHub Environment.** Repo → Settings → Environments → New environment → name it `integration`. The empty environment is what activates the secret-fallback semantics in the workflow.
-3. **Set `APP_URL` as an environment variable** (Variables tab, not Secrets — it's a public hostname). Use the custom domain URL, or leave unset to deploy to the auto-assigned `*.workers.dev` URL.
+3. **Set `APP_URL` as an environment variable** (Variables tab, not Secrets — it's a public hostname). Use a custom domain URL whose zone is in the same Cloudflare account; the integration workflow requires this value before deploy.
 4. **Confirm the OAuth callback URL is registered** with whichever providers you use — `${APP_URL}/api/auth/google/callback` and/or `${APP_URL}/api/auth/github/callback`.
 5. **(Optional) Override config per-env.** Environment Secrets can override `OAUTH_JWT_SECRET` and `AI_GATEWAY_API_TOKEN`. Environment Variables can override `AI_GATEWAY_NAME`, so integration can use a separate Gateway from production.
 
@@ -265,7 +265,7 @@ This pattern is already used by `force-refresh.ts` and `pipeline-run.ts`. Do not
 ### Setup (one-time, operator console)
 
 1. Cloudflare dashboard → Zero Trust → **Access** → Applications → Add an application → Self-hosted.
-2. Application domain: `<your-app-host>` (e.g. `news.example.com` or `ai-news-digest.<your-user>.workers.dev`), path: `/api/admin/*` (single wildcard covers all admin endpoints, current and future). Include both `POST` and `GET` — Access gates the whole route.
+2. Application domain: `<your-app-host>` (e.g. `news.example.com`), path: `/api/admin/*` (single wildcard covers all admin endpoints, current and future). Include both `POST` and `GET` — Access gates the whole route.
 3. Identity provider: any already-configured IdP that supports email assertion (Google, GitHub, One-Time PIN).
 4. Access policy: **Include** → Emails → `<admin@example>` (replace with the operator's email). Session lifetime: 24h or shorter per operator preference.
 5. Save. The Access edge now issues a `CF_Authorization` JWT cookie on successful auth; requests to the gated paths without it are redirected to the Access login page.

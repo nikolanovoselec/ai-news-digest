@@ -1,4 +1,4 @@
-// Implements REQ-DISC-001, REQ-DISC-003, REQ-DISC-005
+// Implements REQ-DISC-001, REQ-DISC-003, REQ-DISC-005, REQ-DISC-007, REQ-DISC-009
 // CF-028: priority-aware drain ordering - see processPendingDiscoveries.
 //
 // LLM-assisted source discovery for per-tag RSS/Atom/JSON feeds.

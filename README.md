@@ -75,7 +75,7 @@ Four steps. The Deploy workflow handles D1, KV, queues, migrations, Gateway pref
    - `CLOUDFLARE_ACCOUNT_ID`: find it on any zone overview in the Cloudflare dashboard
    - `AI_GATEWAY_API_TOKEN`: least-privilege runtime token for AI Gateway inference through the Gateway from step 2
    - `OAUTH_JWT_SECRET`: HMAC key for the 5-minute access token JWT. Generate: `openssl rand -base64 32`. If you use the word "password" here, you get what you deserve. (The 30-day refresh token is opaque and stored in D1, not signed — this secret only signs the short-lived access half.)
-   - `APP_URL`: canonical origin (your `*.workers.dev` URL or custom domain)
+   - `APP_URL`: canonical custom-domain origin whose zone is in the same Cloudflare account (for example, `https://news.example.com`)
 
 4. **Run the Deploy workflow.** `Actions` > `Deploy` > `Run workflow` > Branch: `main` > **Run workflow**. Takes ~2 minutes. Future pushes to `main` deploy automatically. When you break it, see `wrangler rollback` above.
 
@@ -110,10 +110,10 @@ Custom token via [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflar
 | Account | D1 | Edit | Auto-creates the D1 database and applies migrations |
 | Account | Queues | Edit | Auto-creates `scrape-coordinator`, `scrape-chunks`, `scrape-finalize`, `dedup-sweep`, and `pipeline-jobs` |
 | Account | Vectorize | Edit | Auto-creates the `ai-news-embeddings` index; stores + queries 768-dim cosine embeddings for semantic dedup |
-| Zone | Zone | Read | Only when binding a custom domain; discovers the zone |
-| Zone | Workers Routes | Edit | Only when binding a custom domain; attaches the hostname |
+| Zone | Zone | Read | Required for custom-domain binding; discovers the zone |
+| Zone | Workers Routes | Edit | Required for custom-domain binding; attaches the hostname |
 
-The Zone scopes are skipped automatically when `APP_URL` is a `*.workers.dev` URL.
+`APP_URL` must be a custom domain because the committed Worker configuration disables the auto-assigned `*.workers.dev` subdomain.
 
 </details>
 
@@ -126,15 +126,15 @@ The Zone scopes are skipped automatically when `APP_URL` is a `*.workers.dev` UR
 4. Preflights AI Gateway with a one-token `google-ai-studio/gemini-2.5-flash-lite` chat-completions request
 5. Pushes Worker secrets, including AI Gateway runtime config (Resend pair skipped when unset)
 6. `wrangler deploy`
-7. Binds `APP_URL` to the Worker (skipped on `*.workers.dev`)
-8. Smoke-tests `GET /` returns 200
+7. Binds the custom domain from `APP_URL` to the Worker
+8. Smoke-tests `GET /` on `APP_URL` returns `200` or `303`
 
 </details>
 
 <details>
 <summary><strong>Custom domain only: gate the admin endpoints</strong></summary>
 
-Operator endpoints under `/api/admin/*` (force-refresh, pipeline-run, embed-backfill, historical-dedup, discovery retry) need an extra gate so other signed-in users can't trigger them. Cloudflare Access at the zone level: [setup walkthrough](documentation/deployment.md#admin-only-routes-cloudflare-access-gating). On `*.workers.dev` you are the only user anyway — skip this unless you plan on having users.
+Operator endpoints under `/api/admin/*` (force-refresh, pipeline-run, embed-backfill, historical-dedup, discovery retry) need an extra gate so other signed-in users can't trigger them. Cloudflare Access at the zone level: [setup walkthrough](documentation/deployment.md#admin-only-routes-cloudflare-access-gating).
 
 </details>
 

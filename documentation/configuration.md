@@ -83,7 +83,9 @@ Gateway-backed Gemini calls require one Cloudflare setup path before deploying:
 1. Create or select a Cloudflare AI Gateway. Use `ai-news-digest` to match the default, or set the repository variable `AI_GATEWAY_NAME` to the Gateway name you chose.
 2. Add a Google AI Studio provider key to that Gateway and enable `google-ai-studio/gemini-2.5-flash-lite`.
 3. Create a least-privilege AI Gateway API token for runtime inference and store it as the GitHub Actions secret `AI_GATEWAY_API_TOKEN`. Do not reuse `CLOUDFLARE_API_TOKEN`; that deploy/provisioning token is intentionally deleted from Worker secrets.
-4. Confirm `CLOUDFLARE_ACCOUNT_ID` is the account that owns the Gateway. The workflow builds `AI_GATEWAY_URL` as `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions` and sends a one-token chat-completions request before deploy. HTTP 401, 404, or provider/model errors fail the workflow before a broken runtime reaches users.
+4. Confirm `CLOUDFLARE_ACCOUNT_ID` is the account that owns the Gateway.
+
+The workflow builds `AI_GATEWAY_URL` as `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions`. It sends a one-token, cache-bypassing chat-completions request before deploy; HTTP 401, 404, or provider/model errors fail the workflow before a broken runtime reaches users.
 
 ### Setting `CF_ACCESS_AUD` (production, when binding Cloudflare Access)
 
@@ -138,19 +140,20 @@ These three constants are calibrated against the bge-base-en-v1.5 cosine distrib
 
 ## Cron
 
-Three triggers are declared in `wrangler.toml`:
+Four triggers are declared in `wrangler.toml`:
 
 | Schedule | Purpose | REQ |
 |---|---|---|
 | `0 */4 * * *` | Global-feed coordinator (00/04/08/12/16/20 UTC) | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
 | `0 3 * * *` | Daily retention + refresh-token purge | [REQ-PIPE-005](../sdd/generation.md#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-AUTH-012](../sdd/authentication.md#req-auth-012-refresh-token-retention-floor-for-reuse-detection) |
-| `*/5 * * * *` | Email dispatcher + pending-discovery drain | [REQ-MAIL-003](../sdd/email.md#req-mail-003-digest-ready-email-send-policy) |
+| `*/5 * * * *` | Email dispatcher | [REQ-MAIL-003](../sdd/email.md#req-mail-003-digest-ready-email-send-policy) |
+| `2,12,22,32,42,52 * * * *` | Pending-discovery drain every 10 minutes | [REQ-DISC-001](../sdd/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup) |
 
 **Daily 03:00 UTC tick:** removes articles older than 14 days (starred articles are exempt). Also purges expired and old-revoked rows from the `refresh_tokens` table; the 7-day grace on revoked rows preserves reuse-detection history per [REQ-AUTH-012 AC 1](../sdd/authentication.md#req-auth-012-refresh-token-retention-floor-for-reuse-detection).
 
-**Every-5-minute tick:** one trigger, two unrelated chores:
-1. Per-user email dispatcher fan-out — sends digests to users in their local-day window.
-2. Pending-discovery drain — runs LLM source discovery for newly added tags with no per-user gating.
+**Every-5-minute tick:** per-user email dispatcher fan-out sends digests to users in their local-day window.
+
+**Every-10-minute discovery tick:** pending-discovery drain runs LLM source discovery for newly added tags. It is offset by 2 minutes from the email cron so the two workloads do not share the same isolate budget.
 
 ## KV Key Conventions
 
@@ -162,7 +165,6 @@ The `KV` namespace uses a structured key scheme. All keys are shared across all 
 | `discovery_failures:{tag}` | per-tag failure counter (string integer) | — | Per-tag failure bookkeeping; cleared by `POST /api/admin/discovery/retry`; also swept by the daily orphan-tag cleanup when the tag is no longer owned by any user ([REQ-PIPE-007](../sdd/generation.md#req-pipe-007-orphan-tag-source-cleanup)) |
 | `source_health:{url}` | Consecutive failure count (UTF-8 integer string) | 7 days | Per-URL fetch-health counter; incremented on each failed fetch, deleted on success. When the count reaches 30 (`CONSECUTIVE_FETCH_FAILURE_LIMIT`) the coordinator evicts the URL from its `sources:{tag}` entry. Implements [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking). |
 | `headlines:{source}:{tag}` | Array of headline objects | 10 min (600 s) | Per-source/per-tag headline cache shared across all chunk invocations within a single scrape run. Implements [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence). |
-| `scrape_run:{id}:chunks_remaining` | Integer string | — | Display mirror of chunk progress for `GET /api/scrape-status` ([REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)). Not the authoritative completion gate — that lives in D1 `scrape_chunk_completions` (migration 0007, see [AD7](decisions/README.md#ad7-d1-for-chunk-completion-tracking-replacing-kv-read-modify-write)). |
 | `dedup:auto_sweep_watermark` | Unix seconds as UTF-8 integer string | None (permanent until invalidated) | Last successful auto-sweep completion; older borderline pairs skip deterministic rerank per [AD48](decisions/README.md#ad48-dedup-cost-reduction-borderline-rerank-watermark-batched-rerank-call-pipeline-wide-gpt-oss-20b). |
 | `ratelimit:{routeClass}:{identity}:{windowIndex}` | Integer string | Window size | Rate-limit counters; see [Rate-limit rules](#rate-limit-rules) below. Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9. |
 

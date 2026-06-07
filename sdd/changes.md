@@ -6,13 +6,19 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are archived in [`changes-archive-2026-04.md`](changes-archive-2026-04.md).
 
+## 2026-06-08
+
+- REQ-PIPE-001 and REQ-PIPE-016 changed: scrape progress is documented as D1-derived chunk completion, while coordinator dispatch claims only `running` scrape runs and closes empty runs atomically so duplicate deliveries cannot reopen a terminal empty scrape.
+- REQ-DISC-001 changed: the discovery drain cadence is documented as the existing 10-minute schedule with a 2-minute offset from the email cron.
+- REQ-DISC-009, REQ-PIPE-020, and REQ-PIPE-002 changed: retryable feed-discovery misses remain queued until the bounded failure limit, invalid LLM tags cannot create unroutable articles, and legacy same-response duplicate hints are limited to the current chunk.
+
 ## 2026-06-07
 
-- REQ-SET-004, REQ-PIPE-002, REQ-PIPE-001, and REQ-PIPE-016 changed: the develop/integration default LLM moves to `google-ai-studio/gemini-2.5-flash-lite` via Cloudflare AI Gateway with dedicated runtime Gateway credentials. Chunk output now requires indexed one-record-per-input responses with explicit empty drop records, and scrape-wait recovery gets one coordinator redispatch before bounded failure.
+- REQ-SET-004, REQ-PIPE-001, REQ-PIPE-002, REQ-PIPE-003, REQ-PIPE-015, and REQ-PIPE-016 changed: the develop/integration default LLM moves to `google-ai-studio/gemini-2.5-flash-lite` via Cloudflare AI Gateway with dedicated runtime Gateway credentials. Chunk output now requires indexed one-record-per-input responses with explicit empty drop records, chunk robustness covers index-alignment/drop handling, same-story collapse remains in the later dedup pass, and scrape-wait recovery gets one coordinator redispatch before bounded failure.
 
 ## 2026-06-06
 
-- REQ-SET-004 changed: the system default model changed on develop/integration from `@cf/openai/gpt-oss-120b` through Gemma, Granite, GLM, and 20B for lower-cost canaries. Those canaries failed reliability, quality, or savings gates, so the next default is recorded on 2026-06-07.
+- REQ-SET-004 changed: develop/integration model changes remain constrained by the existing summary-quality and cost-visibility contract before a new server-side default is selected.
 
 ## 2026-05-14
 

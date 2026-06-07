@@ -1,4 +1,8 @@
 // Implements REQ-PIPE-001
+// Implements REQ-PIPE-010
+// Implements REQ-PIPE-011
+// Implements REQ-PIPE-016
+// Implements REQ-PIPE-019
 // Implements REQ-DISC-003
 //
 // Coordinator for the global-feed scrape (every-4-hours cron `0 */4 * * *`).
@@ -348,33 +352,44 @@ export async function runCoordinator(
 
   // Step 6 - empty-pool guard.
   if (survivors.length === 0) {
-    await updateChunkCount(env.DB, scrape_run_id, 0);
-    await finishRun(env.DB, scrape_run_id, 'ready');
-    // CF-001: with no survivors there is no finalize tick to flip the
-    // gate, so stamp it here. Otherwise runScrapeWait would loop forever
-    // waiting on a finalize that will never run.
-    await env.DB
-      .prepare(`UPDATE scrape_runs SET finalize_recorded = 1 WHERE id = ?1`)
-      .bind(scrape_run_id)
-      .run();
-    log('info', 'digest.generation', { status: 'coordinator_empty_pool', scrape_run_id });
+    await closeEmptyRun(env.DB, scrape_run_id);
+    log('info', 'digest.generation', {
+      status: 'coordinator_empty_pool',
+      scrape_run_id,
+    });
     return;
   }
 
   // Step 7 - flatten dedupe-clusters to chunk-ready candidates.
   const chunkCandidates = flattenToChunkCandidates(survivors);
 
-  // Step 8 - chunk, prime KV counter, enqueue.
+  // Step 8 - chunk, enqueue, then persist the D1 chunk count.
   await chunkAndEnqueue(env, chunkCandidates, candidates.length, survivors.length, scrape_run_id);
 }
 
 // ---------- step helpers (colocated; not re-exported) ---------------------
 
+async function closeEmptyRun(db: D1Database, scrape_run_id: string): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      `UPDATE scrape_runs
+         SET status = 'ready',
+             chunk_count = 0,
+             finalize_recorded = 1,
+             finished_at = COALESCE(finished_at, ?2)
+       WHERE id = ?1 AND status = 'running'`,
+    )
+    .bind(scrape_run_id, now)
+    .run();
+}
+
 /**
  * Step 0 - Atomic CAS race guard.
  *
  * CF-002: flips `chunk_count` to sentinel -1 in a single conditional UPDATE
- * so only one first-attempt coordinator delivery wins the dispatch. Returns
+ * while the row is still `running`, so only one first-attempt coordinator
+ * delivery wins the dispatch. Returns
  * `true` when this caller claimed the slot; `false` when another delivery
  * is already in flight or has finished fan-out. On a DB error, falls
  * through with `true` - the guard is best-effort.
@@ -396,7 +411,9 @@ async function claimCoordinatorDispatch(
     const cas = await env.DB
       .prepare(
         `UPDATE scrape_runs SET chunk_count = -1
-          WHERE id = ?1 AND (chunk_count IS NULL OR chunk_count = 0)`,
+          WHERE id = ?1
+            AND status = 'running'
+            AND (chunk_count IS NULL OR chunk_count = 0)`,
       )
       .bind(scrape_run_id)
       .run();
@@ -1139,7 +1156,7 @@ async function fetchAllSources(
  * Apply feed-level evictions: remove each evicted URL from its
  * `sources:{tag}` entry, clear the per-URL health counter, and - if
  * the tag's feed list has been emptied - enqueue a system-owned
- * re-discovery row so the 5-minute discovery cron repopulates the tag.
+ * re-discovery row so the 10-minute discovery cron repopulates the tag.
  *
  * Evictions are coalesced by tag so multiple URLs removed from the
  * same tag only produce one KV write and one re-discovery row.
@@ -1201,7 +1218,7 @@ export async function applyEvictions(
 
       // Re-read sources:{tag} immediately before the write to shrink
       // the read-modify-write race window. KV has no conditional-put,
-      // so if the 5-minute discovery cron has already replaced the
+      // so if the 10-minute discovery cron has already replaced the
       // entry between our initial read and this re-check, we'd
       // otherwise silently clobber its freshly-discovered feeds. Bail
       // on any mismatch - health counters are already cleared above,

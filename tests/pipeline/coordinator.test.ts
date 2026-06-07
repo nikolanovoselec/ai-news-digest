@@ -193,7 +193,7 @@ function stubFetchEmpty(): void {
   );
 }
 
-describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PIPE-011 (filtering)', () => {
+describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-PIPE-016', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -212,7 +212,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
     expect(sends.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('REQ-PIPE-001: first-attempt duplicate coordinator delivery does not fan out again', async () => {
+  it('REQ-PIPE-016 AC5: first-attempt duplicate coordinator delivery does not fan out again', async () => {
     stubFetchWithItems(1);
     const { db } = makeDb({
       claimChanges: 0,
@@ -232,7 +232,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('REQ-PIPE-001: queue retry reclaims a stuck coordinator sentinel', async () => {
+  it('REQ-PIPE-016 AC6: queue retry reclaims a stuck coordinator sentinel', async () => {
     stubFetchWithItems(1);
     const { db } = makeDb({
       claimChanges: 0,
@@ -249,6 +249,51 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
     );
 
     expect(sends.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('REQ-PIPE-016 AC7: coordinator claim ignores terminal scrape_runs rows', async () => {
+    stubFetchWithItems(1);
+    const { db, records } = makeDb({
+      claimChanges: 0,
+      claimRow: { status: 'ready', chunk_count: 0 },
+    });
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(env, { scrape_run_id: 'run-terminal' });
+
+    expect(sends.length).toBe(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    const claim = records.find((r) =>
+      r.sql.includes('UPDATE scrape_runs SET chunk_count = -1'),
+    );
+    expect(claim?.sql).toContain("status = 'running'");
+  });
+
+  it('REQ-PIPE-016 AC7: empty candidate runs close atomically as terminal', async () => {
+    stubFetchEmpty();
+    const { db, records } = makeDb();
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(env, { scrape_run_id: 'run-empty-atomic' });
+
+    expect(sends.length).toBe(0);
+    const close = records.find(
+      (r) =>
+        r.sql.includes("SET status = 'ready'") &&
+        r.sql.includes('chunk_count = 0') &&
+        r.sql.includes('finalize_recorded = 1'),
+    );
+    expect(close?.sql).toContain("WHERE id = ?1 AND status = 'running'");
+    const separateZeroCount = records.find(
+      (r) =>
+        r.sql === 'UPDATE scrape_runs SET chunk_count = ?1 WHERE id = ?2' &&
+        r.params[0] === 0,
+    );
+    expect(separateZeroCount).toBeUndefined();
   });
 
   it('REQ-PIPE-001: filters out candidates whose canonical_url is already in articles', async () => {
@@ -291,7 +336,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
     }
   });
 
-  it('REQ-PIPE-001: writes chunk_count only after every chunk message is sent', async () => {
+  it('REQ-PIPE-016 AC6: writes chunk_count only after every chunk message is sent', async () => {
     // The dispatch sentinel (-1) must remain in D1 until queue fan-out
     // finishes. If the real chunk_count is written before the send loop
     // completes, a coordinator crash can strand the run waiting for chunks
@@ -312,7 +357,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
     expect(events[sends.length]).toBe('chunk_count');
   });
 
-  it('REQ-PIPE-001 / CF-007: does NOT write the legacy KV chunks_remaining mirror', async () => {
+  it('REQ-PIPE-001 AC3 / REQ-PIPE-006 AC5 / CF-007: does NOT write the legacy KV chunks_remaining mirror', async () => {
     // CF-007 removed the KV dual-write. /api/scrape-status now derives
     // chunks_remaining from a D1 COUNT on scrape_chunk_completions.
     // Guard: no KV put with the legacy key — a regression would

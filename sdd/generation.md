@@ -1,6 +1,6 @@
 # Digest Generation
 
-A global scrape-and-summarise pipeline that runs every 4 hours: one cron-triggered coordinator run per tick assembles candidates from the curated source registry, canonical-URL-dedupes them, and fans chunks out to the LLM consumer. The consumer writes summaries and validated tags into a shared article pool; same-story grouping runs in the later dedup pass. The per-user dashboard then reads from that pool filtered by each user's active tags, so cost scales with the world (one LLM pass per tick) rather than with users × refreshes. Starred articles survive the 14-day retention cutoff.
+A global scrape-and-summarise pipeline that runs every 4 hours: one cron-triggered coordinator run per tick assembles candidates from the curated source registry, canonical-URL-dedupes them, and fans chunks out to the LLM consumer. The consumer writes summaries and validated tags into a shared article pool; broad same-story grouping runs in the later dedup pass, while legacy same-response `dedup_groups` are honored only inside the current chunk. The per-user dashboard then reads from that pool filtered by each user's active tags, so cost scales with the world (one LLM pass per tick) rather than with users × refreshes. Starred articles survive the 14-day retention cutoff.
 
 ---
 
@@ -13,7 +13,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Acceptance Criteria:**
 1. A Cron Trigger fires every 4 hours on the hour (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC) and kicks off a single coordinator run for all users. <!-- @impl: src/worker.ts::handleScrapeTick -->
 2. The coordinator partitions candidates across one or more chunk jobs whose size is capped to fit the model's context window so LLM calls stay within budget and partial failures only lose one chunk. <!-- @impl: src/queue/scrape-coordinator.ts::packCandidatesIntoChunks -->
-3. Each run is tracked by a `scrape_runs` row that transitions `running` → `ready` on success (or `failed` on abort), with a chunk counter that drops to zero when the last chunk finishes. <!-- @impl: src/queue/scrape-chunk-consumer.ts::recordChunkCompletionAndCheckFinalize -->
+3. Each run is tracked by a `scrape_runs` row that transitions `running` → `ready` on success (or `failed` on abort), with progress derived from `scrape_runs.chunk_count` and D1 chunk-completion rows. <!-- @impl: src/queue/scrape-chunk-consumer.ts::recordChunkCompletionAndCheckFinalize -->
 4. Article-pool ingestion (URL deduplication, source-list aggregation, first-ingestion timestamp preservation, and per-item publisher resolution) is governed by [REQ-PIPE-017](#req-pipe-017-article-pool-ingestion-contract). <!-- @impl: src/queue/scrape-chunk-consumer.ts::buildArticleBatchStatements -->
 5. Body-fetch behaviour for candidates with thin feed snippets is governed by [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-feed-snippets). <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 6. Google News query-RSS long-tail backstop coverage is governed by [REQ-PIPE-019](#req-pipe-019-google-news-query-rss-long-tail-backstop). <!-- @impl: src/queue/scrape-coordinator.ts::assembleAllSources -->
@@ -79,7 +79,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ### REQ-PIPE-002: Chunked LLM output content contract
 
-**Intent:** Candidate articles are summarised in batches whose JSON output adheres to a fixed shape (title, body, tags drawn from an allowlist) so the reading surface receives consistent, properly-tagged article content. The chunk pass is summarisation-only; same-story collapse is delegated to the dedup pass in REQ-PIPE-003.
+**Intent:** Candidate articles are summarised in batches whose JSON output adheres to a fixed shape (title, body, tags drawn from an allowlist) so the reading surface receives consistent, properly-tagged article content. The prompt asks for summarisation only; if a legacy model still emits same-response `dedup_groups`, the consumer may collapse only candidates from that current chunk while broader same-story collapse remains delegated to REQ-PIPE-003.
 
 **Applies To:** Admin
 
@@ -117,13 +117,34 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 4. Summaries whose generated title has zero topical overlap with the source headline are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
 5. Non-drop titles outside the server-side sanity range are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 6. Details below the server-side minimum word count are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
-7. Tags outside the allowlist are discarded, and articles with zero valid tags after filtering are dropped. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
 
 **Priority:** P0
 
 **Dependencies:** [REQ-PIPE-002](#req-pipe-002-chunked-llm-output-content-contract)
+
+**Verification:** Integration test
+
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-020: Chunk tag validation guardrails
+
+**Intent:** Server-side chunk persistence trusts only the system tag allowlist, so off-topic or hallucinated tag output cannot create unroutable articles in the shared pool.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. Tags outside the allowlist are discarded before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
+2. Articles with zero valid tags after filtering are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
+
+**Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-PIPE-002](#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-015](#req-pipe-015-chunk-processing-robustness)
 
 **Verification:** Integration test
 
@@ -271,6 +292,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 4. If a run stalls before any chunks are queued, the pipeline makes one bounded coordinator recovery attempt. <!-- @impl: src/queue/pipeline-consumer.ts::runScrapeWait -->
 5. Duplicate initial coordinator deliveries cannot queue the same run's chunks more than once. <!-- @impl: src/queue/scrape-coordinator.ts::claimCoordinatorDispatch -->
 6. A coordinator retry after an interrupted fan-out can continue the same run instead of abandoning it as a duplicate. <!-- @impl: src/queue/scrape-coordinator.ts::claimCoordinatorDispatch -->
+7. Empty candidate runs close in a terminal state that later coordinator deliveries cannot reclaim. <!-- @impl: src/queue/scrape-coordinator.ts::closeEmptyRun -->
 
 **Constraints:** [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
 

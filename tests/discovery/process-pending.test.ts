@@ -1,5 +1,5 @@
 // Tests for src/lib/discovery.ts#processPendingDiscoveries — REQ-DISC-003
-// (consecutive-failure counter) and REQ-DISC-007 AC6/AC7
+// (consecutive-failure counter) and REQ-DISC-007 AC6 and REQ-DISC-009 AC1
 // (persist sources and close pending rows on success or terminal failure).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -134,7 +134,7 @@ describe('processPendingDiscoveries', () => {
     vi.unstubAllGlobals();
   });
 
-  it('REQ-DISC-007 AC6/AC7: writes sources:{tag} and DELETEs pending rows on success', async () => {
+  it('REQ-DISC-007 AC6 / REQ-DISC-009 AC1: writes sources:{tag} and DELETEs pending rows on success', async () => {
     mockFetchOk();
     const { db, runCalls } = makeDb(['ai']);
     const { kv, puts, deletes } = makeKv();
@@ -228,8 +228,8 @@ describe('processPendingDiscoveries', () => {
     // Counter reset after eviction.
     expect(deletes).toContain('discovery_failures:rust');
 
-    // Pending row deleted on final failure (REQ-DISC-007 AC7), while
-    // retryable no-feed attempts stay queued until the counter trips (AC8).
+    // Pending row deleted on final failure (REQ-DISC-009 AC1), while
+    // retryable no-feed attempts stay queued until the counter trips (AC2).
     const del = runCalls.find(
       (c) => c.sql.startsWith('DELETE FROM pending_discoveries') && c.params[0] === 'rust',
     );

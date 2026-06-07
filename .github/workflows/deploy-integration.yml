@@ -231,8 +231,8 @@ jobs:
               if [ "$name" = "APP_URL" ]; then
                 echo "::error::vars.APP_URL not set." \
                      "Add it under Settings → Environments → integration → Variables." \
-                     "Value should be the public URL the integration worker will serve" \
-                     "(custom domain like https://news.example.com, or a *.workers.dev URL)."
+                     "Value should be the custom-domain URL the integration worker will serve" \
+                     "(for example, https://news.example.com)."
               else
                 echo "::error::Required secret '$name' is not set." \
                      "Add it at the repo level (Settings → Secrets → Actions)" \
@@ -277,6 +277,7 @@ jobs:
             "$AI_GATEWAY_URL" \
             -H 'Content-Type: application/json' \
             -H "cf-aig-authorization: Bearer ${AI_GATEWAY_API_TOKEN}" \
+            -H 'cf-aig-skip-cache: true' \
             --data '{"model":"google-ai-studio/gemini-2.5-flash-lite","messages":[{"role":"user","content":"ping"}],"max_tokens":1,"reasoning_effort":"none"}') || {
             echo "::error::AI Gateway preflight request failed. Verify AI_GATEWAY_NAME, provider key, and AI_GATEWAY_API_TOKEN."
             rm -f "$AI_GATEWAY_PREFLIGHT_BODY"
@@ -431,23 +432,26 @@ jobs:
         run: |
           set -e
           # APP_URL comes from the integration GitHub Environment variable
-          # (vars.APP_URL). When unset (fork hasn't configured a custom
-          # domain), the bind step is a no-op and the worker is reachable
-          # only at its *.workers.dev URL.
+          # (vars.APP_URL). It is required earlier in this workflow because
+          # integration also deploys only through a custom domain.
           if [ -z "$APP_URL" ]; then
-            echo "vars.APP_URL not set — skipping custom-domain bind (workers.dev URL only)"
-            exit 0
+            echo "::error::vars.APP_URL is required for custom-domain binding"
+            exit 1
           fi
           HOST=$(printf '%s' "$APP_URL" | sed -E 's|^[A-Za-z]+://||; s|/.*$||; s|:.*$||')
           if [ -z "$HOST" ]; then
-            echo "Could not extract hostname from APP_URL; skipping"
-            exit 0
+            echo "Could not extract hostname from APP_URL"
+            exit 1
           fi
           case "$HOST" in
+            *.workers.dev)
+              echo "APP_URL must be a custom domain; workers_dev is disabled in wrangler.toml"
+              exit 1
+              ;;
             *.*) : ;;
             *)
-              echo "APP_URL hostname '$HOST' is not fully-qualified; skipping bind"
-              exit 0
+              echo "APP_URL hostname '$HOST' is not fully-qualified"
+              exit 1
               ;;
           esac
           echo "Binding integration Worker to custom domain: $HOST"

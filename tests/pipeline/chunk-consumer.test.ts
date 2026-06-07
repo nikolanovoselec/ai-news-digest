@@ -259,7 +259,7 @@ function makeChunk(
   };
 }
 
-describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)', () => {
+describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -380,7 +380,7 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
     expect(altInserts.length).toBe(1);
   });
 
-  it('REQ-PIPE-015 AC7/AC8: drops tags outside the allowlist; articles with zero tags are dropped', async () => {
+  it('REQ-PIPE-020 AC1/AC2: drops tags outside the allowlist; articles with zero tags are dropped', async () => {
     // The first article's tags are ALL outside the allowlist → article
     // dropped. The second article's tags are inside the default set →
     // article kept.
@@ -1045,12 +1045,12 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 (chunk robustness)
     expect(articleInserts[0]!.params).not.toContain('Hi.');
   });
 
-  // CF-041 - REQ-PIPE-015 AC7: an article that ends up with zero valid
+  // CF-041 - REQ-PIPE-020 AC2: an article that ends up with zero valid
   // tags is DROPPED. The chunk consumer's validateAndSanitizeArticle
   // returns null when the post-allowlist tag set is empty, which keeps
   // article_tags rows useful for downstream filtering and stops the
   // pool getting polluted with un-routable rows.
-  it('REQ-PIPE-015 AC7 (CF-041): LLM article with tags:[] is dropped', async () => {
+  it('REQ-PIPE-020 AC2 (CF-041): LLM article with tags:[] is dropped', async () => {
     const aiResponse = {
       response: JSON.stringify({
         articles: [

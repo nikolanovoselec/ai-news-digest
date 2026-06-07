@@ -1,4 +1,4 @@
-// Tests for src/lib/llm-json.ts — REQ-PIPE-002 + REQ-PIPE-003 (CF-009).
+// Tests for src/lib/llm-json.ts — REQ-PIPE-002 + REQ-PIPE-003 + REQ-SET-004 (CF-009).
 //
 // Single-model architecture (2026-05-06): the helper runs ONE model
 // per call. Earlier primary→fallback semantics were removed when the
@@ -23,7 +23,7 @@ function makeAi(responses: Array<{ response: string; usage?: { input_tokens?: nu
   };
 }
 
-describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
+describe('runJson — REQ-PIPE-002 / REQ-PIPE-003 / REQ-SET-004', () => {
   it('REQ-PIPE-002: success path returns ok=true with token counts', async () => {
     const ai = makeAi([
       { response: '{"articles": [{"title": "ok"}]}', usage: { input_tokens: 10, output_tokens: 20 } },
@@ -82,7 +82,7 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
     expect(result.modelUsed).toBe('custom-model');
   });
 
-  it('REQ-PIPE-002: gateway models use AI Gateway compat instead of AI.run when gateway config is present', async () => {
+  it('REQ-SET-004 AC6: gateway models use AI Gateway compat instead of AI.run when gateway config is present', async () => {
     const ai = makeAi([]);
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(
@@ -135,7 +135,7 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
     expect(result.tokensOut).toBe(29);
   });
 
-  it('REQ-PIPE-002: gateway models fail closed when gateway config is missing', async () => {
+  it('REQ-SET-004 AC6: gateway models fail closed when gateway config is missing', async () => {
     const ai = makeAi([]);
     const result = await runJson({
       ai,

@@ -23,7 +23,9 @@ This document describes **what** the system is and **how requests flow through i
 
 ## 1. Overview
 
-`news-digest` is a single Cloudflare Worker serving an Astro-rendered web app. A 4-hour scrape run scrapes a curated set of RSS/Atom/JSON feeds, summarises new candidates through the default LLM (Gemini via AI Gateway), and writes them to the shared **article pool**. Per-user dashboards filter the pool by the user's hashtags - there are no per-user LLM calls. A 5-minute cron drains pending feed-discovery jobs and dispatches daily digest emails. A 03:00 UTC cron purges articles older than 14 days (starred articles exempt).
+`news-digest` is a single Cloudflare Worker serving an Astro-rendered web app. A 4-hour scrape run scrapes a curated set of RSS/Atom/JSON feeds, summarises new candidates through the default LLM (Gemini via AI Gateway), and writes them to the shared **article pool**. Per-user dashboards filter the pool by the user's hashtags - there are no per-user LLM calls.
+
+Separate cron triggers dispatch email every 5 minutes and drain pending feed-discovery jobs every 10 minutes on a 2-minute offset. A 03:00 UTC cron purges articles older than 14 days (starred articles exempt).
 
 <!-- doc-allow-element: AD46 diagram-section exemption (component map) -->
 ```
@@ -57,8 +59,8 @@ Implements [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-su
 | Component | Role |
 |---|---|
 | Astro Worker | Serves all HTML pages and JSON APIs in the Cloudflare Workers runtime |
-| Cron Triggers | 5-minute (discovery + email dispatch), 4-hour (scrape), daily 03:00 UTC (retention) |
-| Queue Consumers | `SCRAPE_COORDINATOR`, `SCRAPE_CHUNKS`, `SCRAPE_FINALIZE`, `DEDUP_SWEEP`, cleanup |
+| Cron Triggers | 4-hour scrape, daily 03:00 UTC retention, 5-minute email, 10-minute discovery |
+| Queue Consumers | `SCRAPE_COORDINATOR`, `SCRAPE_CHUNKS`, `SCRAPE_FINALIZE`, `DEDUP_SWEEP`, `PIPELINE_JOBS` |
 | D1 | Strongly-consistent storage: users, articles, scrape_runs, refresh_tokens, pending_discoveries |
 | KV | Edge-cached `sources:{tag}`, headline cache, per-URL fetch-health counters, rate-limit counters |
 | AI Gateway + Workers AI | Gateway-backed LLM calls for summaries/discovery/rerank; Workers AI embeddings for same-story dedup |
@@ -122,7 +124,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `google-jwks.ts` | RS256 signature verification for Google `id_token`s via JWKS (`https://www.googleapis.com/oauth2/v3/certs`); caches the key set for 1 hour in KV (`oidc:jwks:google`) to bound isolate-level fetch cost (CF-013) | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `oauth-providers.ts` | GitHub + Google adapters with id_token validation | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `oauth-errors.ts` | OAuth error code allowlist and sanitizer | [REQ-AUTH-004](../sdd/authentication.md#req-auth-004-oauth-error-surfacing) |
-| `prompts.ts` | LLM system prompts for chunk processing and source discovery (the finalize-pass dedup prompt was removed when REQ-PIPE-003 replaced LLM dedup with embedding-based same-story matching) | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-DISC-001](../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery) |
+| `prompts.ts` | LLM system prompts for chunk processing and source discovery | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-DISC-007](../sdd/discovery.md#req-disc-007-per-tag-feed-discovery-execution-and-persistence) |
 | `rate-limit.ts` | KV window-counter rate limiter for auth routes, mutation routes, and authenticated polling endpoints | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9 |
 | `session-jwt.ts` | HMAC-SHA256 sign/verify for the access-token JWT | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation) |
 | `refresh-tokens.ts` | 30-day opaque refresh-token storage in D1 with rotation and reuse detection | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout) |
@@ -156,13 +158,12 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `system-user.ts` | Sentinel user-id constants (`__system__`, `__e2e__`) | [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking) |
 | `title-overlap.ts` | Token-overlap alignment guard for the chunk consumer | [REQ-PIPE-015](../sdd/generation.md#req-pipe-015-chunk-processing-robustness) |
 | `feed-health.ts` | Per-URL fetch-health counter for the self-healing discovery loop | [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking) |
-| `kv/chunks-remaining.ts` | KV writer for the `scrape_run:{id}:chunks_remaining` display mirror - wraps `KV.put`/`delete` so the coordinator hot path doesn't inline raw KV calls (per [AD27](decisions/README.md#ad27-all-kv-writers-route-through-srclibkvfamilyts-helpers)) | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
-| `kv/discovery-failures.ts` | KV writer for the discovery failure-counter family (per [AD27](decisions/README.md#ad27-all-kv-writers-route-through-srclibkvfamilyts-helpers)) | [REQ-DISC-001](../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery) |
-| `discovery.ts` | LLM discovery pipeline and pending-discovery cron drain; curated tags short-circuit, while AD31 keeps Google News fallback transitional. | [REQ-DISC-001](../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery), [REQ-DISC-005](../sdd/discovery.md#req-disc-005-discovery-prompt-injection-protection) |
+| `kv/discovery-failures.ts` | KV writer for the discovery failure-counter family | [REQ-DISC-009](../sdd/discovery.md#req-disc-009-pending-discovery-row-lifecycle) |
+| `discovery.ts` | LLM discovery pipeline, pending-discovery cron drain, and row lifecycle closure | [REQ-DISC-001](../sdd/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-007](../sdd/discovery.md#req-disc-007-per-tag-feed-discovery-execution-and-persistence), [REQ-DISC-009](../sdd/discovery.md#req-disc-009-pending-discovery-row-lifecycle) |
 | `tag-railing-flip.ts` | Shared FLIP animation helper for the tag railing | [REQ-READ-007](../sdd/reading.md#req-read-007-tag-railing-reorder-animation) |
 | `json-ld.ts` | Safe JSON-LD serializer for `<script type="application/ld+json">` blocks - rewrites every `<`, `>`, and `&` byte to its `\uNNNN` JSON form, defeating all HTML state-transition vectors that could escape the script block | [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) AC 6 |
 
-Watermark details ([REQ-PIPE-013](../sdd/generation.md#req-pipe-013-same-story-cross-tick-automation-and-retention-coupling); sources: `src/lib/dedup-watermark.ts`, `src/pages/api/admin/embed-backfill.ts`): `writeWatermark` records terminal sweep completion, and `clearWatermark` runs on re-embed because cosine geometry changes. Discovery keeps the legacy Google News fallback until the coordinator-owned AD31 path has enough retention-window proof.
+Watermark details ([REQ-PIPE-009 AC 9](../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates); sources: `src/lib/dedup-watermark.ts`, `src/pages/api/admin/embed-backfill.ts`): `writeWatermark` records terminal sweep completion, and `clearWatermark` runs on re-embed because cosine geometry changes. Discovery keeps the legacy Google News fallback until the coordinator-owned AD31 path has enough retention-window proof.
 
 ### 4.3 Pages and API Routes
 
@@ -206,9 +207,9 @@ CSP blocks Astro-emitted inline client bundles, so layout-wide scripts that need
 
 | Path | Role | Implements |
 |---|---|---|
-| `src/worker.ts` | Cron + queue dispatch entry - three cron branches, five queue message types. The queue dispatcher normalises `batch.queue` by stripping a recognised env suffix (`-integration` / `-staging`) before the switch, so the same handler routes both production and integration queue messages. | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-005](../sdd/generation.md#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-MAIL-003](../sdd/email.md#req-mail-003-digest-ready-email-send-policy) |
-| `src/queue/scrape-coordinator.ts` | Fan-out, freshness filter, eviction pass, multi-source aggregation on re-discovery, per-tag Google News baseline synthesis (REQ-PIPE-001 AC 6), publisher blocklist filter before chunk dispatch (REQ-PIPE-011 AC 3), chunk dispatch | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-010](../sdd/generation.md#req-pipe-010-body-fetch-for-thin-feed-snippets), [REQ-PIPE-011](../sdd/generation.md#req-pipe-011-candidate-filtering-rules), [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking) |
-| `src/queue/scrape-chunk-consumer.ts` | Per-chunk LLM call (summarisation only), canonical-URL dedup within chunk, embedding generation via `embeddings.ts`, D1 batch insert (writes `embedding_status='embedded'`, `embedded_at`, and `source_snippet`), Vectorize upsert post-batch, atomic completion gate, finalize handoff | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) |
+| `src/worker.ts` | Cron + queue dispatch entry - four cron branches, five queue message types. Queue dispatch strips recognised env suffixes before switching handlers. | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-005](../sdd/generation.md#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-MAIL-003](../sdd/email.md#req-mail-003-digest-ready-email-send-policy), [REQ-DISC-001](../sdd/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup) |
+| `src/queue/scrape-coordinator.ts` | Fan-out, freshness filter, eviction pass, Google News backstop synthesis, publisher blocklist filter, and chunk dispatch | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-010](../sdd/generation.md#req-pipe-010-body-fetch-for-thin-feed-snippets), [REQ-PIPE-011](../sdd/generation.md#req-pipe-011-candidate-filtering-rules), [REQ-PIPE-019](../sdd/generation.md#req-pipe-019-google-news-query-rss-long-tail-backstop), [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking) |
+| `src/queue/scrape-chunk-consumer.ts` | Per-chunk LLM call, in-chunk compatibility dedup, article-pool writes, embeddings, Vectorize upsert, completion gate, finalize handoff | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-015](../sdd/generation.md#req-pipe-015-chunk-processing-robustness), [REQ-PIPE-017](../sdd/generation.md#req-pipe-017-article-pool-ingestion-contract), [REQ-PIPE-020](../sdd/generation.md#req-pipe-020-chunk-tag-validation-guardrails), [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) |
 | `src/queue/scrape-finalize-consumer.ts` | Same-story dedupe pass: bidirectional merge (AD41), two-tier cosine band, LLM rerank, auto-sweep enqueue on gate flip. See note below. | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-PIPE-012](../sdd/generation.md#req-pipe-012-same-story-matching-policy-variants), [REQ-PIPE-013](../sdd/generation.md#req-pipe-013-same-story-cross-tick-automation-and-retention-coupling) |
 | `src/queue/dedup-sweep-consumer.ts` | Queue-driven historical-dedup sweep. Each message runs one batch, re-enqueues a continuation, and CAS-guards `dedup_runs` counters against redelivery. Flips status to `'done'`/`'failed'` at the terminal step. Full Vectorize outage stalls rather than advances the cursor - see AC 6. | [REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1, AC 6 |
 | `src/lib/historical-dedup.ts` | Shared batch primitive (`runHistoricalDedupBatch`). Composite-cursor keyset pagination; bidirectional merge (AD42 - PASS 1 folds `self` into older anchor, PASS 2 absorbs newer matches into `self`); threshold + same-vendor penalty + aggregator-host exemption. | [REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1 |
@@ -251,7 +252,7 @@ Cron (00/04/08/12/16/20 UTC)
 Coordinator
   ├─ Synthesise per-tag Google News query-RSS source for every tag in
   │  (default-seed ∪ curated ∪ discovered KV); skip tags with a bespoke
-  │  hand-tuned GN curated entry (REQ-PIPE-001 AC 6)
+  │  hand-tuned GN curated entry (REQ-PIPE-019)
   ├─ Fan out {tag × source} pairs (concurrency 10)
   ├─ Record per-URL fetch outcome → KV source_health:{url}
   ├─ Evict URLs at 30 consecutive failures; re-queue discovery if feed list empties
