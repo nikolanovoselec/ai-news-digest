@@ -164,20 +164,24 @@ async function runAiGatewayChatCompletion(options: {
   cloudflareApiToken: string;
   fetchImpl: typeof fetch;
 }): Promise<unknown> {
-  const response = await options.fetchImpl(AI_GATEWAY_CHAT_COMPLETIONS_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'cf-aig-authorization': `Bearer ${options.cloudflareApiToken}`,
+  const response = await options.fetchImpl.call(
+    globalThis,
+    AI_GATEWAY_CHAT_COMPLETIONS_URL,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'cf-aig-authorization': `Bearer ${options.cloudflareApiToken}`,
+      },
+      body: JSON.stringify({
+        model: options.model,
+        // Gemini 2.5 Flash enables hidden thinking tokens unless told not
+        // to. The canary needs summary quality, not chain-of-thought spend.
+        reasoning_effort: 'none',
+        ...options.params,
+      }),
     },
-    body: JSON.stringify({
-      model: options.model,
-      // Gemini 2.5 Flash enables hidden thinking tokens unless told not
-      // to. The canary needs summary quality, not chain-of-thought spend.
-      reasoning_effort: 'none',
-      ...options.params,
-    }),
-  });
+  );
 
   const bodyText = await response.text();
   let body: unknown = undefined;
