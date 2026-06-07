@@ -19,7 +19,7 @@
  * Shared inference parameters across the LLM calls. Temperature and
  * response_format are identical; only `max_tokens` varies per call
  * site (CF-023): chunk processing produces large multi-article
- * payloads, while finalize and discovery produce tiny JSON envelopes.
+ * payloads, while discovery and rerank produce tiny JSON envelopes.
  *
  * - `temperature: 0.6` — warm enough for the model to pick complete
  *   summaries over minimum-entropy short replies, cool enough for
@@ -34,18 +34,18 @@ const LLM_BASE_PARAMS = {
 
 /**
  * Chunk-prompt OUTPUT budget. The chunk consumer runs `DEFAULT_MODEL_ID`
- * once per chunk (single-model architecture; no fallback). The Workers
- * AI runtime enforces `prompt_tokens + max_tokens ≤ contextTokens`.
- * The current GLM canary has 131K context; the 128K gpt-oss entries
- * remain a useful lower-bound sanity check for rollback. 14K reserves
- * enough headroom for 8 × 100-150 word summaries plus JSON overhead,
- * while reducing the chance that Workers AI keeps a slow model alive
- * writing long, expensive rejected-candidate prose. That leaves ~114K
- * tokens for input on 128K rollback models (~399K chars at ~3.5
- * chars/token), which still comfortably covers the coordinator's
- * greedy chunk packer (`scrape-coordinator.ts:CHUNK_INPUT_CHARS_BUDGET`).
- * Larger-context models simply leave more headroom. User-selected
- * budget models in `MODELS` are never wired here.
+ * once per chunk (single-model architecture; no fallback). Model
+ * runtimes enforce `prompt_tokens + max_tokens ≤ contextTokens`.
+ * The Gemini AI Gateway canary has a much larger context, but the 128K
+ * gpt-oss entries remain a useful lower-bound sanity check for rollback.
+ * 14K reserves enough headroom for 8 × 100-150 word summaries plus JSON
+ * overhead, while reducing the chance that a slow model keeps writing
+ * long, expensive rejected-candidate prose. That leaves ~114K tokens for
+ * input on 128K rollback models (~399K chars at ~3.5 chars/token), which
+ * still comfortably covers the coordinator's greedy chunk packer
+ * (`scrape-coordinator.ts:CHUNK_INPUT_CHARS_BUDGET`). Larger-context
+ * models simply leave more headroom. User-selected budget models in
+ * `MODELS` are never wired here.
  */
 export const CHUNK_LLM_PARAMS = {
   ...LLM_BASE_PARAMS,
@@ -54,7 +54,7 @@ export const CHUNK_LLM_PARAMS = {
 
 /**
  * Discovery-prompt budget — output is `{ feeds: [{ url, name, kind }] }`,
- * usually a handful of entries. Same 4K cap as finalize: small JSON
+ * usually a handful of entries. Same 4K cap as rerank: small JSON
  * envelope, no benefit from the chunk-sized 50K reservation.
  */
 export const DISCOVERY_LLM_PARAMS = {

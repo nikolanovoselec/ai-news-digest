@@ -88,6 +88,7 @@ export async function discoverTag(tag: string, env: Env): Promise<DiscoveredFeed
   const userPrompt = discoveryUserPrompt(tag);
   const llmRun = await runJson<LLMDiscoveryPayload>({
     ai: asAiBinding(env.AI),
+    cloudflareApiToken: env.CLOUDFLARE_API_TOKEN,
     params: {
       messages: [
         { role: 'system', content: DISCOVERY_SYSTEM },

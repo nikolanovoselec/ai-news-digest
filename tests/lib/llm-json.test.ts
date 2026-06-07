@@ -77,6 +77,44 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
     expect(result.modelUsed).toBe('custom-model');
   });
 
+  it('REQ-PIPE-002: gateway models use AI Gateway compat instead of AI.run when the token is present', async () => {
+    const ai = makeAi([]);
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '{"articles": []}' } }],
+          usage: { prompt_tokens: 11, completion_tokens: 13, total_tokens: 40 },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await runJson({
+      ai,
+      cloudflareApiToken: 'cf-test-token',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      params: { messages: [{ role: 'user', content: 'json' }] },
+      narrow: (raw) => (typeof raw === 'string' ? (JSON.parse(raw) as { articles: unknown[] }) : null),
+      model: 'google-ai-studio/gemini-2.5-flash',
+    });
+
+    expect(ai.run).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(String(url)).toContain('/compat/chat/completions');
+    expect((init as RequestInit).headers).toMatchObject({
+      'cf-aig-authorization': 'Bearer cf-test-token',
+    });
+    expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({
+      model: 'google-ai-studio/gemini-2.5-flash',
+      reasoning_effort: 'none',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.tokensIn).toBe(11);
+    expect(result.tokensOut).toBe(29);
+  });
+
   it('returns ok=false with a captured error when ai.run throws (e.g. AiError 3046 timeout)', async () => {
     // Workers AI surfaces request-timeouts and capacity errors as
     // thrown AiError objects. The helper must catch the throw and

@@ -45,19 +45,18 @@ describe('MODELS catalog', () => {
 });
 
 describe('DEFAULT_MODEL_ID', () => {
-  it('REQ-SET-004: DEFAULT_MODEL_ID is @cf/zai-org/glm-4.7-flash — 131K context, integration canary, single-model arch', () => {
-    // 2026-06-06: retest lower-cost Workers AI options on
-    // develop/integration. Gemma failed JSON reliability on a larger
-    // refresh; GLM is retested with a smaller chunk contract before
-    // any production promotion.
-    expect(DEFAULT_MODEL_ID).toBe('@cf/zai-org/glm-4.7-flash');
+  it('REQ-SET-004: DEFAULT_MODEL_ID is Gemini 2.5 Flash via AI Gateway — integration canary, single-model arch', () => {
+    // 2026-06-07: move the integration canary from direct Workers AI
+    // cheap-model swaps to Cloudflare AI Gateway BYOK + Gemini 2.5
+    // Flash. No production promotion without a fresh integration proof.
+    expect(DEFAULT_MODEL_ID).toBe('google-ai-studio/gemini-2.5-flash');
   });
 
   it('REQ-SET-004: DEFAULT_MODEL_ID is present in MODELS', () => {
     const found = MODELS.find((m) => m.id === DEFAULT_MODEL_ID);
     expect(found).toBeDefined();
     expect(found?.category).toBe('featured');
-    expect(found?.contextTokens).toBeGreaterThanOrEqual(128_000);
+    expect(found?.contextTokens).toBeGreaterThanOrEqual(1_000_000);
   });
 });
 
@@ -77,18 +76,18 @@ describe('modelById', () => {
 
 describe('estimateCost', () => {
   it('REQ-SET-004: estimateCost computes USD from per-million-token prices', () => {
-    // GLM 4.7 Flash: input $0.0605 / output $0.40 per Mtok.
-    // 1,000,000 in -> $0.0605; 1,000,000 out -> $0.40; total $0.4605.
+    // Gemini 2.5 Flash: input $0.30 / output $2.50 per Mtok.
+    // 1,000,000 in -> $0.30; 1,000,000 out -> $2.50; total $2.80.
     const cost = estimateCost(DEFAULT_MODEL_ID, 1_000_000, 1_000_000);
-    expect(cost).toBeCloseTo(0.4605, 6);
+    expect(cost).toBeCloseTo(2.80, 6);
   });
 
   it('REQ-SET-004: estimateCost scales linearly with token counts', () => {
-    // 2,000 input tokens * $0.0605/Mtok = $0.000121
-    // 1,000 output tokens * $0.40/Mtok = $0.000400
-    // total ~= $0.000521
+    // 2,000 input tokens * $0.30/Mtok = $0.000600
+    // 1,000 output tokens * $2.50/Mtok = $0.002500
+    // total ~= $0.003100
     const cost = estimateCost(DEFAULT_MODEL_ID, 2_000, 1_000);
-    expect(cost).toBeCloseTo(0.000521, 9);
+    expect(cost).toBeCloseTo(0.0031, 9);
   });
 
   it('REQ-SET-004: estimateCost is non-zero for Kimi K2.5 (published pricing)', () => {

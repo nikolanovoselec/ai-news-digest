@@ -158,6 +158,8 @@ async function runOneBatch(
 
   const llmRun = await runJson<BatchPayload>({
     ai: asAiBinding(env.AI),
+    cloudflareApiToken: (env as { CLOUDFLARE_API_TOKEN?: string })
+      .CLOUDFLARE_API_TOKEN,
     params: {
       messages: [
         { role: 'system', content: RERANK_SYSTEM },
