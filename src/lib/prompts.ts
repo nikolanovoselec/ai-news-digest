@@ -97,58 +97,22 @@ Shape:
 
 # DETAILS RULES — THIS IS THE CORE TASK
 
-LENGTH — 100 to 150 WORDS (NON-NEGOTIABLE CONTRACT):
-
-  - The summary MUST be 100-150 words. This is the contract; do not
-    ship under 100. If the snippet feels thin, extend the WHAT and
-    HOW paragraphs with concrete grounded facts — never pad with
-    filler, never repeat, but never cut short either.
-  - Maximum 150 words. Do not exceed.
-  - Truncated outputs are rejected server-side as malformed. In
-    practice, write 120-135 words for every non-drop article. The
-    100-word minimum is a floor, not a target; 88-99 word summaries
-    are invalid and must be expanded before you return JSON.
-
-STRUCTURE — 2 to 3 PARAGRAPHS:
-
-  - 2 short paragraphs for a simple story; 3 paragraphs when there is real technical substance to unpack.
-  - Paragraph breaks use the JSON escape sequence \\n (one backslash + n).
-  - Each paragraph 2-4 full sentences.
-  - No bullet lists, no Markdown, no HTML — plaintext only.
-
-PARAGRAPH ROLES:
-
-  1. WHAT happened — the concrete facts in the snippet: who announced what, what shipped, what changed, when.
-  2. HOW it works — the technical substance: architecture, API, mechanism, numbers.
-  3. IMPACT for the reader (optional third paragraph when the story warrants it) — cost, migration effort, security posture, performance, or a concrete use case.
-
-SOURCE-GROUNDING (read this twice):
-
-  - Every claim must be traceable to a single passage in the snippet. If the candidate snippet does not state a fact, you do not state it either — even if the fact would round out the summary.
-  - Never weld facts from different sections of the article into one sentence. If the article describes mechanism A in §1 and mechanism B in §3, do not write "A with B" — that fuses two distinct claims and corrupts the meaning.
-  - Use the article's own terminology for named mechanisms, products, and protocols. Do not paraphrase them into generic phrasing.
-
-PRESERVE-NOVELTY:
-
-  - Identify the most distinctive technical mechanism the article introduces (named protocol, architecture component, named pattern, specific number). Make sure that mechanism appears by name in your summary — do not smooth it into generic "enterprise AI" or "cloud security" phrasing.
-  - If the article's contribution is a specific number (token-reduction percentage, latency, cost figure), keep the number.
-
-Format example — a 2-paragraph, ~120-word summary in the exact format your output must follow:
-
-  "Cloudflare released Emdash, an open-source WordPress-style content platform for Workers. The announcement ships with a public GitHub repo, a curated plugin compatibility layer for Yoast and Advanced Custom Fields, and a managed D1-backed content schema. Emdash targets small teams that want WordPress authoring without the PHP self-hosting burden.\\nTechnically, Emdash replaces PHP + MySQL with a TypeScript runtime and an R2-backed media store. The editor is a Gutenberg-style block editor that serialises every block to structured JSON and renders at the edge with no round-trip to an origin database. Sites deploy as a single Worker with sub-100ms TTFB globally, and hashed-asset CDN caching is automatic."
+- Write 100-150 words for every non-drop article; aim for 120-135.
+- Never ship under 100 words. If the snippet is thin, add grounded WHAT/HOW/IMPACT facts from that same snippet; do not pad or repeat.
+- Never exceed 150 words.
+- Use 2 short paragraphs for simple stories; use 3 only when there is real technical substance.
+- Paragraph breaks use the JSON escape sequence \\n (one backslash + n).
+- Each paragraph has 2-4 full sentences. No bullets, Markdown, or HTML.
+- Paragraph roles: WHAT happened; HOW it works; optional IMPACT for cost, migration, security, performance, or concrete use.
+- Every claim must be traceable to the candidate snippet. Do not add outside facts or fuse unrelated article sections into one claim.
+- Preserve the article's distinctive mechanism, named product/protocol, architecture component, or specific number.
 
 # TAGS RULES
 
 - Pick ONLY from the tag allowlist supplied in the user message. Never invent.
-- Return EVERY allowlist tag the article touches: topic tags, vendor/platform tags, and language tags all count.
+- Return EVERY allowlist tag the article touches: topic, vendor/platform, language, security, and cloud tags all count.
 - Single-tag output is a failure unless the article is truly about one thing.
-
-Examples (assume the tag is in the allowlist):
-
-  - "Cloudflare uses Rust in the Workers runtime" → ["cloudflare","workers","rust"]
-  - "AWS Lambda gets TypeScript 5.9 support" → ["aws","serverless","cloud"]
-  - "Terraform releases Kubernetes provider updates" → ["terraform","kubernetes","devsecops"]
-  - Any Cloudflare-authored post → always include "cloudflare" if present in the allowlist.
+- Any Cloudflare-authored post → include "cloudflare" if present in the allowlist.
 
 # DROP RULES
 
