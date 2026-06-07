@@ -46,8 +46,6 @@ export function asAiBinding(ai: unknown): AiBinding {
   return ai as AiBinding;
 }
 
-const AI_GATEWAY_CHAT_COMPLETIONS_URL =
-  'https://gateway.ai.cloudflare.com/v1/ab75f75941a21a81db27bf12e99c620b/ai-news-digest/compat/chat/completions';
 const AI_GATEWAY_MODEL_PREFIXES = ['google-ai-studio/'] as const;
 
 function modelUsesAiGateway(model: string): boolean {
@@ -86,8 +84,10 @@ export interface RunJsonOptions<T> {
   model?: string;
   /** Up to five AI Gateway metadata entries for log correlation. */
   metadata?: Record<string, string | number | boolean> | undefined;
-  /** Existing Cloudflare API token, reused for AI Gateway auth when set. */
-  cloudflareApiToken?: string | undefined;
+  /** Least-privilege runtime bearer token for Cloudflare AI Gateway. */
+  aiGatewayApiToken?: string | undefined;
+  /** Runtime-configured AI Gateway compat chat completions endpoint. */
+  aiGatewayUrl?: string | undefined;
   /** Test seam for the AI Gateway HTTP path. */
   fetchImpl?: typeof fetch | undefined;
 }
@@ -147,13 +147,17 @@ async function runModel<T>(
   model: string,
   options: RunJsonOptions<T>,
 ): Promise<unknown> {
-  const token = options.cloudflareApiToken?.trim();
-  if (token && modelUsesAiGateway(model)) {
+  if (modelUsesAiGateway(model)) {
+    const token = options.aiGatewayApiToken?.trim();
+    const gatewayUrl = normalizeAiGatewayUrl(options.aiGatewayUrl);
+    if (!token) throw new Error('AI Gateway API token missing for gateway model');
+    if (gatewayUrl === null) throw new Error('AI Gateway URL missing or invalid for gateway model');
     return runAiGatewayChatCompletion({
       model,
       params: options.params,
       metadata: options.metadata,
-      cloudflareApiToken: token,
+      aiGatewayApiToken: token,
+      aiGatewayUrl: gatewayUrl,
       fetchImpl: options.fetchImpl ?? fetch,
     });
   }
@@ -161,21 +165,36 @@ async function runModel<T>(
   return options.ai.run(model, options.params);
 }
 
+function normalizeAiGatewayUrl(raw: string | undefined): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:') return null;
+    if (url.username !== '' || url.password !== '') return null;
+    if (!url.pathname.endsWith('/compat/chat/completions')) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 async function runAiGatewayChatCompletion(options: {
   model: string;
   params: Record<string, unknown>;
   metadata?: Record<string, string | number | boolean> | undefined;
-  cloudflareApiToken: string;
+  aiGatewayApiToken: string;
+  aiGatewayUrl: string;
   fetchImpl: typeof fetch;
 }): Promise<unknown> {
   const response = await options.fetchImpl.call(
     globalThis,
-    AI_GATEWAY_CHAT_COMPLETIONS_URL,
+    options.aiGatewayUrl,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'cf-aig-authorization': `Bearer ${options.cloudflareApiToken}`,
+        'cf-aig-authorization': `Bearer ${options.aiGatewayApiToken}`,
         // Dynamic scrape chunks are retry-sensitive: if the model returns
         // malformed JSON once, serving that same cached body makes every
         // queue retry fail immediately. Always ask Gateway for a fresh

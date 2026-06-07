@@ -5,7 +5,7 @@
 // Receives one message per cron tick containing `{scrape_run_id}`; fans out across
 // CURATED_SOURCES + discovered-tag feeds; canonical-dedupes the pool;
 // filters out articles already present in `articles.canonical_url`;
-// chunks survivors into slices of ≤100; and enqueues one
+// chunks survivors into slices of ≤8; and enqueues one
 // `scrape-chunks` message per chunk. Per-run progress tracking lives
 // in the D1 `scrape_chunk_completions` table (CF-007); the chunk
 // consumer detects the last chunk via the D1-derived completion count.
@@ -189,17 +189,16 @@ export function packCandidatesIntoChunks(
 const COORDINATOR_FETCH_CONCURRENCY = 10;
 
 /** Per-source item cap. Curated feeds frequently expose 50+ items;
- * downstream chunking and the global 10× chunk ceiling make a per-feed
+ * downstream chunking and the per-tick chunk ceiling make a per-feed
  * cap the simplest lever to keep the pool balanced across sources. */
 const PER_SOURCE_ITEM_CAP = 10;
 
 /** Upper bound on chunks enqueued per tick. Guards against a discovered-
- * tag explosion inflating the candidate pool to unsafe levels. Normal
- * load: ~520 candidates (52 curated × 10 items) packs into ~5-10 chunks
- * under the budget-aware packer (`packCandidatesIntoChunks`); cap at
- * 40 leaves headroom for a discovered-tag set without exploding LLM
- * cost. */
-const MAX_CHUNKS_PER_TICK = 40;
+ * tag explosion inflating the candidate pool to unsafe levels. With the
+ * defensive 8-candidate chunk cap, the normal curated upper bound
+ * (~520 candidates = 52 curated × 10 items) needs 65 thin-snippet chunks;
+ * cap at 80 keeps that load untruncated while still bounding LLM spend. */
+const MAX_CHUNKS_PER_TICK = 80;
 
 /** Freshness cutoff for keeping a candidate after the canonical-dedupe
  * pass. Anything older than 48 hours is treated as stale and dropped

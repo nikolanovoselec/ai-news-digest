@@ -144,15 +144,15 @@ function buildBatchUser(pairs: ReadonlyArray<RerankPair>): string {
  *  network error, or any malformed shape → all `false` (matches the
  *  pre-AD48 single-pair conservative fallback). Never throws. */
 async function runOneBatch(
-  env: Pick<Env, 'AI'>,
+  env: Pick<Env, 'AI' | 'AI_GATEWAY_API_TOKEN' | 'AI_GATEWAY_URL'>,
   pairs: ReadonlyArray<RerankPair>,
 ): Promise<boolean[]> {
   if (pairs.length === 0) return [];
 
   const llmRun = await runJson<BatchPayload>({
     ai: asAiBinding(env.AI),
-    cloudflareApiToken: (env as { CLOUDFLARE_API_TOKEN?: string })
-      .CLOUDFLARE_API_TOKEN,
+    aiGatewayApiToken: env.AI_GATEWAY_API_TOKEN,
+    aiGatewayUrl: env.AI_GATEWAY_URL,
     metadata: {
       purpose: 'dedup_rerank',
       pair_count: pairs.length,

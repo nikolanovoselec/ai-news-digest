@@ -68,6 +68,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD51](#ad51-granite-40-h-micro-integration-canary-for-pipeline-default) | Granite 4.0 H Micro integration canary for pipeline default | Architecture | 2026-06-06 |
 | [AD52](#ad52-glm-47-flash-integration-canary-for-pipeline-default) | GLM 4.7 Flash integration canary for pipeline default | Architecture | 2026-06-06 |
 | [AD53](#ad53-gpt-oss-20b-integration-retest-for-pipeline-default) | GPT OSS 20B integration retest for pipeline default | Architecture | 2026-06-06 |
+| [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default) | Gemini 2.5 Flash-Lite via AI Gateway for pipeline default | Architecture | 2026-06-07 |
 
 ---
 
@@ -1359,7 +1360,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Future doc growth in any of the three files MUST reopen this AD before a new bare hatch lands. A bare `doc-allow-large` marker on these files without an AD46-or-successor reference is a `doc-updater` HIGH finding.
 - If `deployment.md` grows to the point where the operator workflow itself becomes hard to follow, the split should be a deliberate workflow redesign (e.g., a master deploy runbook with linked sub-pages), not a lane-discipline split.
 - Pass 6 (file-level shape consistency) findings against `deployment.md` are accepted under AD46d's hybrid-rendering carve-out. If a future review surfaces a shape-mismatch in a section that does NOT serve a runbook-or-registry purpose, AD46d does not cover it and the standard Pass 6 conversion applies.
-- The ADR ledger's single-file design implicitly limits the ledger's growth ceiling. If the ledger reaches 50 ADRs or 2500 lines, the next PR-boundary `doc-updater` run MUST escalate this AD for revision before accepting further ADR additions to the single file.
+- The ADR ledger crossed 50 ADRs during the 2026-06 model-canary sequence and AD46 was revisited. The single-file ledger remains accepted because chronological reading and cross-ADR anchors are still clearer in one file; the next mandatory escalation is 75 ADRs or 3500 lines.
 
 **Related requirements:** none direct — operational/documentation concern.
 
@@ -1444,7 +1445,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Operator-triggered `/api/admin/historical-dedup` and `?reembed=1` invalidate the watermark (the latter via `clearWatermark`, the former via a `bypassWatermark: true` flag propagated through every continuation queue message) so a manual sweep after a threshold or prompt change re-judges everything.
 - Test fixtures that previously mocked single-pair `{"same_event": ...}` responses now mock the batched `{"verdicts":[{"i":N,"same_event":...}]}` shape; a no-verdicts response degrades to "all false" per pair, preserving the conservative default.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
+**Related requirements:** [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
 
 ---
 
@@ -1495,7 +1496,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Gemma is not a viable drop-in default under current chunking.
 - Cost projections should compare `scrape_runs.tokens_in`, `scrape_runs.tokens_out`, and `estimated_cost_usd` between each integration canary and the 120B production baseline.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
 
 ---
 
@@ -1519,7 +1520,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Granite still failed the content contract: most candidates were dropped for missing index alignment, several chunks needed invalid-JSON retries, and the scrape ingested only three articles from 89 LLM survivors.
 - Granite's very low price is not enough; a cheap run that misses most stories is not an acceptable production replacement.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
 
 ---
 
@@ -1543,13 +1544,13 @@ Three reasons the AD41 fix did not collapse this cluster:
 - No articles were ingested and no chunk token cost was recorded because no chunk LLM call completed.
 - GLM is not a viable drop-in default under current chunking.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
 
 ---
 
 ### AD53: GPT OSS 20B integration retest for pipeline default
 
-**Status:** Accepted for develop/integration retest (2026-06-06)
+**Status:** Superseded by [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default) (2026-06-07); accepted for develop/integration retest on 2026-06-06.
 
 **Decision:** Flip `DEFAULT_MODEL_ID` on develop from the failed GLM canary to `@cf/openai/gpt-oss-20b` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
 
@@ -1567,7 +1568,34 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Even a successful 20B run does not meet the 70% reduction target by itself; it would need pipeline waste reductions to reach the target while preserving quality.
 - If 20B fails reliability or quality gates again, rollback is a one-line `DEFAULT_MODEL_ID` revert to `@cf/openai/gpt-oss-120b` plus matching test/doc updates.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+
+---
+
+### AD54: Gemini 2.5 Flash-Lite AI Gateway canary for pipeline default
+
+**Status:** Accepted for develop-to-main release (2026-06-07)
+
+**Decision:** Promote `google-ai-studio/gemini-2.5-flash-lite` as `DEFAULT_MODEL_ID` and route Gateway-backed models through Cloudflare AI Gateway's OpenAI-compatible chat-completions endpoint. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all use the same default model.
+
+**Context:** Workers AI canaries did not meet the release target: Gemma and GLM reproduced chunk cancellations, Granite failed alignment/quality, and 20B did not reach the required 70%+ savings.
+
+The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 rows, kept 38/44 summaries in the 100-150 word target, and reduced total chunk-plus-rerank cost to about $0.0209 versus GLM's about $0.0885.
+
+**Alternatives considered:**
+
+- *Keep GLM.* Rejected because the successful retest was only about 60.7% cheaper than baseline and missed the requested savings threshold.
+- *Keep Workers AI-only defaults.* Rejected for this release because the tested Workers AI candidates failed reliability, quality, or savings gates.
+- *Use Gateway cache as retry fallback.* Rejected because malformed JSON replay can poison queue retries; Gateway calls set `cf-aig-skip-cache: true`.
+
+**Consequences:**
+
+- Runtime Gateway auth uses dedicated `AI_GATEWAY_API_TOKEN` plus configured `AI_GATEWAY_URL`; the broad deploy token stays in GitHub Actions.
+- The provider key remains stored in Cloudflare AI Gateway, not in source or Worker env.
+- Gateway-backed calls must fail closed when the token or URL is missing or invalid.
+- The chunk prompt and JSON repair optimisations remain part of the cost-control envelope; source snippets are not shortened.
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
 
 ---
 

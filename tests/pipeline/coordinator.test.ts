@@ -2,8 +2,8 @@
 //
 // The coordinator fetches CURATED_SOURCES + discovered-tag feeds,
 // canonical-dedupes the pool, filters already-seen canonical URLs,
-// chunks survivors into ≤100-item slices, and enqueues SCRAPE_CHUNKS
-// messages with a KV counter primed to the chunk count. These tests
+// chunks survivors into ≤8-item slices, and enqueues SCRAPE_CHUNKS
+// messages with D1-backed chunk completion tracking. These tests
 // stub fetch, D1, KV, and the queue producer.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -264,7 +264,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
     expect(sends.length).toBe(0);
   });
 
-  it('REQ-PIPE-001: chunks survivors into slices of ≤100 and enqueues SCRAPE_CHUNKS per chunk', async () => {
+  it('REQ-PIPE-001: chunks survivors into slices of ≤8 and enqueues SCRAPE_CHUNKS per chunk', async () => {
     // Stub fetch to return many items per call. Per-source cap is 10 in
     // the coordinator, so we'll see ~10 × (curated sources) items. With
     // >50 curated sources, we reach multiple chunks easily.
@@ -282,7 +282,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
         total_chunks: number;
       };
       expect(msg.scrape_run_id).toBe('run-3');
-      expect(msg.candidates.length).toBeLessThanOrEqual(100);
+      expect(msg.candidates.length).toBeLessThanOrEqual(8);
     }
   });
 

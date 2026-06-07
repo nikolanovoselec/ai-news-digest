@@ -9,8 +9,8 @@ Cross-cutting architectural and technology decisions that apply to every domain.
 | Framework | Astro on Cloudflare Workers | Server-rendered Astro with the `astrojs/cloudflare` adapter; islands for interactive UI only where needed. |
 | Database | Cloudflare D1 | Strong consistency for users, digests, articles, pending discoveries. |
 | Cache / KV | Cloudflare KV | Eventually-consistent edge-distributed cache for discovered sources, headlines, source health. |
-| Job queue | Cloudflare Queues | A scrape-coordinator queue + a scrape-chunks queue carry the global pipeline; one coordinator message per cron tick fans out one chunk message per ~100 candidates. |
-| LLM | Cloudflare Workers AI | Single global default model in production; prompts are centralised in one module so all LLM-facing strings flow through one allowlist. |
+| Job queue | Cloudflare Queues | A scrape-coordinator queue + a scrape-chunks queue carry the global pipeline; one coordinator message per cron tick fans out one chunk message per ≤8 candidates. |
+| LLM | Cloudflare AI Gateway + Workers AI | Single global default model in production; Gateway-backed Gemini handles summarisation, discovery, and rerank; Workers AI supplies embeddings. Prompts are centralised in one module so all LLM-facing strings flow through one allowlist. |
 | Email | Resend | Transactional "your digest is ready" notifications with verified sending domain. |
 | Auth | Custom federated OAuth/OIDC (GitHub, Google) + HMAC-SHA256 JWT | Pattern adopted from the codeflare repo; no third-party auth library. New providers add a single registry entry plus a `fetchProfile` adapter. |
 | PWA | `@vite-pwa/astro` | Manifest, service worker, install prompt. |

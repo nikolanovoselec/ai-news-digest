@@ -23,7 +23,7 @@ This document describes **what** the system is and **how requests flow through i
 
 ## 1. Overview
 
-`news-digest` is a single Cloudflare Worker serving an Astro-rendered web app. A 4-hour scrape run scrapes a curated set of RSS/Atom/JSON feeds, summarises new candidates with Workers AI, and writes them to the shared **article pool**. Per-user dashboards filter the pool by the user's hashtags - there are no per-user LLM calls. A 5-minute cron drains pending feed-discovery jobs and dispatches daily digest emails. A 03:00 UTC cron purges articles older than 14 days (starred articles exempt).
+`news-digest` is a single Cloudflare Worker serving an Astro-rendered web app. A 4-hour scrape run scrapes a curated set of RSS/Atom/JSON feeds, summarises new candidates through the default LLM (Gemini via AI Gateway), and writes them to the shared **article pool**. Per-user dashboards filter the pool by the user's hashtags - there are no per-user LLM calls. A 5-minute cron drains pending feed-discovery jobs and dispatches daily digest emails. A 03:00 UTC cron purges articles older than 14 days (starred articles exempt).
 
 <!-- doc-allow-element: AD46 diagram-section exemption (component map) -->
 ```
@@ -40,8 +40,8 @@ This document describes **what** the system is and **how requests flow through i
 │                └──────────────┘       └──────┬───────┘             │
 │                                              ▼                     │
 │                ┌──────────────┐       ┌──────────────┐             │
-│                │      KV      │       │ Workers AI   │             │
-│                │  (cache)     │       │   (LLM)      │             │
+│                │      KV      │       │ AI Gateway   │             │
+│                │  (cache)     │       │ + Workers AI │             │
 │                └──────────────┘       └──────────────┘             │
 └────────────────────────────────────────────────────────────────────┘
                   │                                        │
@@ -61,7 +61,7 @@ Implements [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-su
 | Queue Consumers | `SCRAPE_COORDINATOR`, `SCRAPE_CHUNKS`, `SCRAPE_FINALIZE`, `DEDUP_SWEEP`, cleanup |
 | D1 | Strongly-consistent storage: users, articles, scrape_runs, refresh_tokens, pending_discoveries |
 | KV | Edge-cached `sources:{tag}`, headline cache, per-URL fetch-health counters, rate-limit counters |
-| Workers AI | LLM inference for chunk summarisation and source discovery; bge-base-en-v1.5 embeddings for same-story dedup |
+| AI Gateway + Workers AI | Gateway-backed LLM calls for summaries/discovery/rerank; Workers AI embeddings for same-story dedup |
 | Vectorize | 768-dim cosine index over every surviving article's embedding; queried per article on ingest and on operator-driven historical sweeps |
 | Resend | Transactional email transport for digest-ready notifications |
 | Federated OAuth | GitHub and Google sign-in (at least one provider must be configured) |
@@ -114,11 +114,11 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `jwt-secret.ts` | Runtime guard rejecting `OAUTH_JWT_SECRET` shorter than 32 bytes | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation) |
 | `errors.ts` | Closed `ErrorCode` enum and sanitized response builder | [REQ-OPS-002](../sdd/observability.md#req-ops-002-sanitized-error-surfaces) |
 | `generate.ts` | LLM response payload extraction and JSON parsing | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) |
-| `llm-json.ts` | Single LLM-call entrypoint (single-model architecture, 2026-05-06 - fallback path removed); runs `DEFAULT_MODEL_ID` once per call; centralises token-cost accounting | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) |
+| `llm-json.ts` | Single LLM-call entrypoint; routes Gateway-backed models through `AI_GATEWAY_URL`, runs `DEFAULT_MODEL_ID` once, and centralises token-cost accounting | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) |
 | `headline-cache.ts` | KV-backed shared headline cache | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
 | `log.ts` | Structured JSON log emitter with closed `LogEvent` enum | [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-logging) |
 | `default-hashtags.ts` | Seed hashtag list for new accounts | [REQ-SET-008](../sdd/settings.md#req-set-008-hashtag-persistence-validation-and-defaults) |
-| `models.ts` | `MODELS` catalog, `DEFAULT_MODEL_ID` (`@cf/openai/gpt-oss-20b` for the 2026-06-06 develop/integration retest; prior 120B baseline and 20B rollback are recorded in [AD48](decisions/README.md#ad48-dedup-cost-reduction-borderline-rerank-watermark-batched-rerank-call-pipeline-wide-gpt-oss-20b), Gemma retest in [AD50](decisions/README.md#ad50-gemma-4-26b-integration-canary-for-pipeline-default), Granite canary in [AD51](decisions/README.md#ad51-granite-40-h-micro-integration-canary-for-pipeline-default), GLM canary in [AD52](decisions/README.md#ad52-glm-47-flash-integration-canary-for-pipeline-default), current 20B retest in [AD53](decisions/README.md#ad53-gpt-oss-20b-integration-retest-for-pipeline-default)), cost estimator (cost accounting still live for chunk + discovery LLM calls; per-user model selection *Deprecated 2026-04-23 with REQ-SET-004*) | [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../sdd/settings.md#req-set-004-server-side-model-catalog-and-default) |
+| `models.ts` | `MODELS` catalog, `DEFAULT_MODEL_ID` (`google-ai-studio/gemini-2.5-flash-lite` via AI Gateway; see [AD54](decisions/README.md#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default)), and token-cost estimator | [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection) |
 | `google-jwks.ts` | RS256 signature verification for Google `id_token`s via JWKS (`https://www.googleapis.com/oauth2/v3/certs`); caches the key set for 1 hour in KV (`oidc:jwks:google`) to bound isolate-level fetch cost (CF-013) | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `oauth-providers.ts` | GitHub + Google adapters with id_token validation | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `oauth-errors.ts` | OAuth error code allowlist and sanitizer | [REQ-AUTH-004](../sdd/authentication.md#req-auth-004-oauth-error-surfacing) |
@@ -137,7 +137,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `bidirectional-dedup.ts` | Shared per-match dedup classifier (`classifyMatchPair`). Encapsulates same-vendor penalty, high-confidence band, time-window gate, equal-time ULID tie-break, and direction flag. Per-consumer outer control flow stays at each call site. See [AD43](decisions/README.md#ad43-shared-per-match-dedup-classifier-outer-control-flow-stays-per-consumer). | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) |
 | `embeddings.ts` | bge-base-en-v1.5 embedding helpers: input builder (`source_snippet` preferred, falls back to `details_json`; length-capped), cosine similarity, threshold parser, time-window parser, same-vendor penalty parser, batch caller for the AI binding | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) |
 | `dedup-rerank.ts` | LLM same-event judgment for borderline cosine pairs: rerank-floor parser, prompt builder + narrow-JSON parser, batched multi-pair call (cap 15 per round-trip, AD48) that returns per-pair same-event verdicts (conservative all-false on parse failure). Used by both the per-tick finalize pass and the historical re-run sweep. | [REQ-PIPE-009](../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) |
-| `dedup-watermark.ts` | KV-backed auto-sweep watermark (`dedup:auto_sweep_watermark`). `writeWatermark` is called when the sweep's terminal batch flips to `done`; `clearWatermark` is called by `embed-backfill?reembed=1` because re-embedding changes cosine geometry and invalidates prior verdicts. A missing key reads as 0 (cold start / post-invalidation), which disables skipping and falls back to the pre-watermark always-rerank path. | [REQ-PIPE-009](../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) |
+| `dedup-watermark.ts` | KV-backed auto-sweep watermark (`dedup:auto_sweep_watermark`); clears on re-embed and defaults missing state to no skip. | [REQ-PIPE-009](../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) |
 | `finalize-merge.ts` | `pickWinner`, `buildMergeStatements`, and `mergeAsAltSource` (existing-article-wins variant used by the semantic-dedup pass and the historical re-run sweep) | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) |
 | `scrape-run.ts` | `scrape_runs` lifecycle helpers (`running` → `ready` / `failed`) | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress) |
 | `ssrf.ts` | SSRF denylist filter - rejects non-HTTPS, private, loopback, link-local, CGNAT, and metadata-host destinations; used by both discovery URL validation and article body fetching | [REQ-DISC-005](../sdd/discovery.md#req-disc-005-discovery-prompt-injection-protection), [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
@@ -158,9 +158,11 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `feed-health.ts` | Per-URL fetch-health counter for the self-healing discovery loop | [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking) |
 | `kv/chunks-remaining.ts` | KV writer for the `scrape_run:{id}:chunks_remaining` display mirror - wraps `KV.put`/`delete` so the coordinator hot path doesn't inline raw KV calls (per [AD27](decisions/README.md#ad27-all-kv-writers-route-through-srclibkvfamilyts-helpers)) | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
 | `kv/discovery-failures.ts` | KV writer for the discovery failure-counter family (per [AD27](decisions/README.md#ad27-all-kv-writers-route-through-srclibkvfamilyts-helpers)) | [REQ-DISC-001](../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery) |
-| `discovery.ts` | LLM discovery pipeline and pending-discovery cron drain. Tags in the curated registry short-circuit both paths. The LLM's legacy Google News fallback is transitionally redundant while the coordinator owns per-tag GN synthesis (AD31); both paths coexist until the discovery prompt is retrained, which is deferred until the AD31 coordinator path proves stable across one full 14-day retention window — until then, keeping both paths avoids regressing tag coverage if coordinator synthesis ever fails. | [REQ-DISC-001](../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery), [REQ-DISC-005](../sdd/discovery.md#req-disc-005-discovery-prompt-injection-protection) |
+| `discovery.ts` | LLM discovery pipeline and pending-discovery cron drain; curated tags short-circuit, while AD31 keeps Google News fallback transitional. | [REQ-DISC-001](../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery), [REQ-DISC-005](../sdd/discovery.md#req-disc-005-discovery-prompt-injection-protection) |
 | `tag-railing-flip.ts` | Shared FLIP animation helper for the tag railing | [REQ-READ-007](../sdd/reading.md#req-read-007-tag-railing-reorder-animation) |
 | `json-ld.ts` | Safe JSON-LD serializer for `<script type="application/ld+json">` blocks - rewrites every `<`, `>`, and `&` byte to its `\uNNNN` JSON form, defeating all HTML state-transition vectors that could escape the script block | [REQ-OPS-004](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) AC 6 |
+
+Watermark details: `writeWatermark` records terminal sweep completion, and `clearWatermark` runs on re-embed because cosine geometry changes. Discovery keeps the legacy Google News fallback until the coordinator-owned AD31 path has enough retention-window proof.
 
 ### 4.3 Pages and API Routes
 
@@ -194,8 +196,11 @@ Page components (`src/pages/*.astro`) and API handlers (`src/pages/api/**.ts`) -
 | `src/scripts/alt-sources-modal.ts` | Alt-source picker open/close and responsive desktop anchor (positions below trigger on ≥768 px viewports, centred on mobile). Mirrored to `public/scripts/alt-sources-modal.js` (CSP requires external bundles) | [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view-rendering) |
 | `src/scripts/card-interactions.ts` | Document-level star-toggle delegation (covers `/digest`, `/starred`, `/history`, and article-detail header) plus tag-disclosure popover bindings. Mirrored to `public/scripts/card-interactions.js` and loaded layout-wide via `Base.astro` (CSP blocks the inline Astro bundle that would otherwise be emitted per-page) | [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles), [REQ-READ-001](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest) |
 | `src/scripts/install-prompt.ts` | PWA install-prompt bindings | [REQ-PWA-001](../sdd/pwa.md#req-pwa-001-installable-pwa-manifest) |
-| `src/scripts/theme-toggle.ts` | Document-level delegated click handler for `[data-theme-toggle]` (flips `data-theme` on `<html>`, persists to `localStorage.theme` + `theme` cookie, updates `meta[name="theme-color"]`). Mirrored to `public/scripts/theme-toggle.js` and loaded layout-wide via `Base.astro` (Astro 5 `directRenderScript` inlines the component-level bundle into HTML; the site CSP `script-src 'self'` then blocks it - same constraint as `page-effects.js` and `card-interactions.js`). Pure helpers consumed by the unit-test suite stay in `src/scripts/bundled/theme-toggle.ts`. | [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash) |
+| `src/scripts/theme-toggle.ts` | Delegated `[data-theme-toggle]` handler; updates `data-theme`, storage, cookie, and `theme-color`. Mirrored to `public/scripts/theme-toggle.js` for CSP. | [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash) |
 | `src/styles/global.css` | Design tokens, type scale, focus ring, motion system | [REQ-DES-001](../sdd/design.md#req-des-001-swiss-minimal-visual-language), [REQ-DES-002](../sdd/design.md#req-des-002-light-and-dark-mode-with-no-flash), [REQ-DES-003](../sdd/design.md#req-des-003-deliberate-motion-system) |
+
+
+CSP blocks Astro-emitted inline client bundles, so layout-wide scripts that need runtime event handlers are mirrored to `public/scripts/` and loaded as external files.
 
 ### 4.5 Worker, Queue, and Migrations
 
@@ -259,11 +264,11 @@ Coordinator
        ▼
 Chunk consumer (per chunk)
   ├─ Fetch article bodies for short-snippet candidates (concurrency 20)
-  ├─ Single Workers AI call; align output to inputs by echoed index
+  ├─ Single DEFAULT_MODEL_ID call; align output to inputs by echoed index
   ├─ Filter LLM tags against system-approved allowlist
   ├─ Canonical-URL dedup within chunk (first-source-wins)
   ├─ Build embedding inputs (title + body, length-capped)
-  ├─ Single Workers AI call to bge-base-en-v1.5 → vectors
+  ├─ Single Workers AI embedding call to bge-base-en-v1.5 → vectors
   ├─ INSERT articles (with embedding_status='embedded', source_snippet), alt_sources, tags, scrape_run counters (D1 batch)
   ├─ VECTORIZE.upsert(id, vector, {published_at, primary_source_url}); on failure UPDATE row to embedding_status='failed'
   └─ Atomic completion gate (D1 - see AD7): last chunk stamps run `ready`,

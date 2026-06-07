@@ -498,7 +498,8 @@ async function runChunkLLM(
 }> {
   const llmRun = await runJson<LLMChunkPayload>({
     ai: asAiBinding(env.AI),
-    cloudflareApiToken: env.CLOUDFLARE_API_TOKEN,
+    aiGatewayApiToken: env.AI_GATEWAY_API_TOKEN,
+    aiGatewayUrl: env.AI_GATEWAY_URL,
     metadata: {
       purpose: 'scrape_chunk',
       scrape_run_id: body.scrape_run_id,

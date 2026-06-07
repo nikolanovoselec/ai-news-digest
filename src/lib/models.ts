@@ -5,7 +5,7 @@
 // the settings dropdown is rendered from it, and per-digest cost is computed
 // from its per-million-token prices. Updating the catalog is a code edit +
 // deploy; there is no runtime fetch or KV cache. Gateway-backed entries use
-// the workflow-provisioned CLOUDFLARE_API_TOKEN secret for runtime auth.
+// a dedicated AI_GATEWAY_API_TOKEN runtime secret plus AI_GATEWAY_URL.
 // See /sdd/settings.md REQ-SET-004 and REQUIREMENTS.md "Model selection".
 //
 // Single-model architecture (2026-05-06): the chunk/finalize/discovery
@@ -25,7 +25,7 @@ export interface ModelOption {
   /** USD per million output tokens. */
   outputPricePerMtok: number;
   /** Total context window size in tokens (input + output combined).
-   *  Workers AI enforces `prompt_tokens + max_tokens <= contextTokens`
+   *  Inference providers enforce `prompt_tokens + max_tokens <= contextTokens`
    *  per call. The chunk packer + LLM_PARAMS are tuned to fit inside
    *  the smallest reasonable context (~128K). Larger contexts simply
    *  leave more headroom. This is the single number that varies per
@@ -37,13 +37,14 @@ export interface ModelOption {
 
 // Default model: Gemini 2.5 Flash-Lite via Cloudflare AI Gateway BYOK.
 // The integration canary uses the OpenAI-compatible AI Gateway endpoint
-// with the existing CLOUDFLARE_API_TOKEN secret for gateway auth; the
-// Google AI Studio provider key is stored in the gateway, not in source
-// or Worker env. Flash-Lite is the lower-cost Gemini canary after
-// Gemini 2.0 Flash returned "no longer available" from Google AI
-// Studio. Do not promote this develop-branch default to production
-// without a fresh integration scrape proving chunk reliability, JSON
-// validity, summary quality, and same-story dedup quality.
+// configured by AI_GATEWAY_URL, with a least-privilege AI_GATEWAY_API_TOKEN
+// runtime secret for gateway auth; the Google AI Studio provider key is
+// stored in the gateway, not in source or Worker env. Flash-Lite is the
+// lower-cost Gemini release candidate after Gemini 2.0 Flash returned
+// "no longer available" from Google AI Studio. Production promotion is
+// gated on fresh CI, PR-boundary review, and a clean integration scrape
+// proving chunk reliability, JSON validity, summary quality, and
+// same-story dedup quality.
 //
 // This constant is the single source-of-truth for the pipeline's model
 // id (chunk summarisation, rerank, discovery all flow through
@@ -86,7 +87,7 @@ export const MODELS: ModelOption[] = [
     id: '@cf/zai-org/glm-4.7-flash',
     name: 'GLM 4.7 Flash',
     description:
-      'Default integration canary. Z.ai GLM Flash instruction model, 131K context. Low cost; retesting with smaller chunks after Gemma failed JSON reliability.',
+      'Z.ai GLM Flash instruction model, 131K context. Low cost, but integration retests missed the required savings and reproduced chunk-cancellation risk.',
     inputPricePerMtok: 0.0605,
     outputPricePerMtok: 0.40,
     contextTokens: 131_072,

@@ -33,7 +33,7 @@ jobs:
     # resolution fallback: env-scoped secrets win when defined,
     # otherwise the repo-level secret is used. Default state: no
     # env-scoped secrets, everything falls through to repo level
-    # (CLOUDFLARE_API_TOKEN, OAUTH_JWT_SECRET, GOOGLE_OAUTH_*).
+    # (CLOUDFLARE_API_TOKEN, AI_GATEWAY_API_TOKEN, OAUTH_JWT_SECRET, GOOGLE_OAUTH_*).
     # If integration ever needs a different value (e.g. a separate
     # JWT secret for cross-env identity isolation), add it under
     # Settings → Environments → integration; the workflow picks it
@@ -213,6 +213,8 @@ jobs:
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           OAUTH_JWT_SECRET: ${{ secrets.OAUTH_JWT_SECRET }}
+          AI_GATEWAY_API_TOKEN: ${{ secrets.AI_GATEWAY_API_TOKEN }}
+          AI_GATEWAY_NAME: ${{ vars.AI_GATEWAY_NAME }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.RESEND_FROM }}
           DEV_BYPASS_TOKEN: ${{ secrets.DEV_BYPASS_TOKEN }}
@@ -244,17 +246,33 @@ jobs:
             rm "$TMP"
           done
 
-          # Gemini runs through Cloudflare AI Gateway BYOK. Reuse the
-          # existing deploy token as the Worker runtime gateway token;
-          # never print it, and keep the provider key stored in Gateway.
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "::error::Required secret 'CLOUDFLARE_API_TOKEN' is not set."
+          # Gemini runs through Cloudflare AI Gateway BYOK. Runtime uses
+          # a dedicated least-privilege Gateway token, not the broad
+          # deploy/provisioning token. The provider key stays in Gateway.
+          if [ -z "${AI_GATEWAY_API_TOKEN:-}" ]; then
+            echo "::error::Required secret 'AI_GATEWAY_API_TOKEN' is not set."
             exit 1
           fi
-          TMP=$(mktemp)
-          printf '%s' "$CLOUDFLARE_API_TOKEN" > "$TMP"
-          npx --yes wrangler secret put CLOUDFLARE_API_TOKEN --env integration < "$TMP"
-          rm "$TMP"
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::error::Required secret 'CLOUDFLARE_ACCOUNT_ID' is not set."
+            exit 1
+          fi
+          AI_GATEWAY_NAME="${AI_GATEWAY_NAME:-ai-news-digest}"
+          case "$CLOUDFLARE_ACCOUNT_ID" in
+            *[!A-Za-z0-9]*|'') echo "::error::CLOUDFLARE_ACCOUNT_ID has an invalid format."; exit 1 ;;
+          esac
+          case "$AI_GATEWAY_NAME" in
+            *[!A-Za-z0-9._-]*|'') echo "::error::AI_GATEWAY_NAME may contain only letters, numbers, dot, underscore, and dash."; exit 1 ;;
+          esac
+          AI_GATEWAY_URL="https://gateway.ai.cloudflare.com/v1/${CLOUDFLARE_ACCOUNT_ID}/${AI_GATEWAY_NAME}/compat/chat/completions"
+          for name in AI_GATEWAY_API_TOKEN AI_GATEWAY_URL; do
+            TMP=$(mktemp)
+            printf '%s' "${!name}" > "$TMP"
+            npx --yes wrangler secret put "$name" --env integration < "$TMP"
+            rm "$TMP"
+          done
+          printf 'y\n' | npx --yes wrangler secret delete CLOUDFLARE_API_TOKEN --env integration \
+            || echo "CLOUDFLARE_API_TOKEN delete returned non-zero (likely already absent)"
 
           # Sign-in providers — each pair independently optional. Same
           # logic as deploy.yml: at least one must be configured. Per-

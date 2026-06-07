@@ -77,7 +77,7 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
     expect(result.modelUsed).toBe('custom-model');
   });
 
-  it('REQ-PIPE-002: gateway models use AI Gateway compat instead of AI.run when the token is present', async () => {
+  it('REQ-PIPE-002: gateway models use AI Gateway compat instead of AI.run when gateway config is present', async () => {
     const ai = makeAi([]);
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(
@@ -91,7 +91,8 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
 
     const result = await runJson({
       ai,
-      cloudflareApiToken: 'cf-test-token',
+      aiGatewayApiToken: 'gateway-test-token',
+      aiGatewayUrl: 'https://gateway.ai.cloudflare.com/v1/test-account/test-gateway/compat/chat/completions',
       fetchImpl: fetchImpl as unknown as typeof fetch,
       metadata: {
         purpose: 'scrape_chunk',
@@ -110,7 +111,7 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
     const [url, init] = fetchImpl.mock.calls[0] ?? [];
     expect(String(url)).toContain('/compat/chat/completions');
     expect((init as RequestInit).headers).toMatchObject({
-      'cf-aig-authorization': 'Bearer cf-test-token',
+      'cf-aig-authorization': 'Bearer gateway-test-token',
       'cf-aig-skip-cache': 'true',
       'cf-aig-metadata': JSON.stringify({
         purpose: 'scrape_chunk',
@@ -127,6 +128,22 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003', () => {
     if (!result.ok) return;
     expect(result.tokensIn).toBe(11);
     expect(result.tokensOut).toBe(29);
+  });
+
+  it('REQ-PIPE-002: gateway models fail closed when gateway config is missing', async () => {
+    const ai = makeAi([]);
+    const result = await runJson({
+      ai,
+      params: { messages: [] },
+      narrow: () => null,
+      model: 'google-ai-studio/gemini-2.5-flash',
+    });
+    expect(ai.run).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.attempt.rawResponse).toEqual({
+      error: expect.stringContaining('AI Gateway API token missing'),
+    });
   });
 
   it('returns ok=false with a captured error when ai.run throws (e.g. AiError 3046 timeout)', async () => {

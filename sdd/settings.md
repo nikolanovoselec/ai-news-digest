@@ -136,16 +136,16 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 ### REQ-SET-004: Model selection
 
-**Intent:** Users pick the Workers AI model that writes their summaries, trading cost against quality visibly.
+**Intent:** The app has one server-side model catalog and default model for digest-generation LLM calls, with cost metadata visible anywhere model configuration is exposed.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The model dropdown lists the same model options that other config surfaces accept, grouped under "Featured" and "Budget" section headers.
-2. Each option shows a short description and an estimated per-digest cost computed from the model's per-million-token prices.
-3. The dropdown pre-selects the system default model.
-4. On save, the server rejects any model identifier not in the accepted list with HTTP 400 and error code `invalid_model_id`.
-5. The model dropdown lives inside an "Advanced" collapsible section, collapsed by default.
+1. The server accepts only model identifiers present in the `MODELS` catalog and rejects any other identifier with HTTP 400 and error code `invalid_model_id`.
+2. The catalog records a short description and per-million-token prices so per-digest cost estimates are computed from the same source as runtime cost accounting.
+3. The system default model is the catalog entry used when no accepted user setting applies; Gateway-backed defaults require configured `AI_GATEWAY_URL` and `AI_GATEWAY_API_TOKEN` before any LLM call is attempted.
+4. If a model dropdown is exposed, it lists the same catalog options that other config surfaces accept, grouped under "Featured" and "Budget" section headers, and pre-selects the system default.
+5. If a model dropdown is exposed, it lives inside an "Advanced" collapsible section, collapsed by default.
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 

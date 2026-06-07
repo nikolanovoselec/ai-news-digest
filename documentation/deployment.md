@@ -139,7 +139,8 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 | KV | `ai-news-digest-integration-kv` (auto-derived) |
 | Queues | `scrape-coordinator-integration`, `scrape-chunks-integration`, `scrape-finalize-integration`, `dedup-sweep-integration`, `pipeline-jobs-integration` |
 | DLQ | `ai-news-dlq-integration` (unbound; receives terminal retry exhaustion from finalize + pipeline-jobs consumers) |
-| Workers AI | shared `AI` binding (no per-env isolation needed) |
+| AI Gateway | Gateway endpoint configured per deployment via Worker secrets |
+| Workers AI | shared `AI` binding for embeddings (no per-env isolation needed) |
 | Vectorize | `ai-news-embeddings-integration` |
 
 **One-time per-fork setup:**
@@ -182,7 +183,8 @@ curl -i ${APP_URL}/api/admin/force-refresh
 | `DEDUP_SWEEP` | Queue | `dedup-sweep` | Self-chaining historical-dedup sweep; the kicker enqueues the first message and the consumer re-enqueues a continuation per batch until the corpus tail is reached ([REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1) |
 | `PIPELINE_JOBS` | Queue | `pipeline-jobs` (`pipeline-jobs-integration` on integration) | Backend-driven full pipeline orchestrator; one consumer walks the seven phases by self-chaining messages ([REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)) |
 | — | Queue (DLQ) | `ai-news-dlq` (`ai-news-dlq-integration` on integration) | Dead-letter queue for the finalize and pipeline-jobs consumers. Terminal queue retry exhaustion lands messages here so they are inspectable rather than silently dropped (CF-001). Provisioned by the deploy workflow inline `wrangler queues create` block; no binding needed in `wrangler.toml`. |
-| `AI` | Workers AI | (account-level) | LLM inference and bge-base-en-v1.5 embedding generation |
+| AI Gateway | Cloudflare AI Gateway | configured by `AI_GATEWAY_URL` | Gateway-backed Gemini LLM calls for summaries, discovery, and rerank |
+| `AI` | Workers AI | (account-level) | bge-base-en-v1.5 embedding generation; non-Gateway model fallback |
 | `VECTORIZE` | Vectorize index | `ai-news-embeddings` | 768-dim cosine index for same-story dedup; provisioned by the deploy workflow via `wrangler vectorize create` ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
 
 ## Dependency Automation

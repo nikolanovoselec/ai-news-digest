@@ -6,9 +6,13 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are archived in [`changes-archive-2026-04.md`](changes-archive-2026-04.md).
 
+## 2026-06-07
+
+- The develop/integration default LLM moves to `google-ai-studio/gemini-2.5-flash-lite` via Cloudflare AI Gateway with dedicated runtime Gateway credentials. Chunk output now requires indexed one-record-per-input responses with explicit empty drop records, and scrape-wait recovery gets one coordinator redispatch before bounded failure.
+
 ## 2026-06-06
 
-- The system default Workers AI model changes on develop/integration from `@cf/openai/gpt-oss-120b` to `@cf/google/gemma-4-26b-a4b-it`, then `@cf/ibm-granite/granite-4.0-h-micro`, then `@cf/zai-org/glm-4.7-flash`, then `@cf/openai/gpt-oss-20b`, for lower-cost canaries. Gemma and GLM reproduced chunk cancellations, and Granite missed most candidate alignments; 20B promotion remains gated on an integration scrape that proves chunk reliability, JSON validity, summary quality, and same-story dedup quality.
+- The system default model changed on develop/integration from `@cf/openai/gpt-oss-120b` through Gemma, Granite, GLM, and 20B for lower-cost canaries. Those canaries failed reliability, quality, or savings gates, so the next default is recorded on 2026-06-07.
 
 ## 2026-05-14
 

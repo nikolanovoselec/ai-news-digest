@@ -7,7 +7,7 @@ Environment variables, secrets, and platform bindings required to run the system
 ## Contents
 
 - [Worker Secrets](#worker-secrets)
-- [GitHub Actions Secrets (CI deploy only)](#github-actions-secrets-ci-deploy-only)
+- [GitHub Actions Secrets](#github-actions-secrets)
 - [Platform Bindings](#platform-bindings)
 - [Worker Vars (non-secret)](#worker-vars-non-secret)
 - [Cron](#cron)
@@ -34,12 +34,16 @@ Stored via `wrangler secret put <name>`. Never committed to git.
 | `RESEND_API_KEY` | Conditional (email dispatch) | none — email silently skipped when unset | `src/lib/email.ts` | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email-content), [REQ-MAIL-003](../sdd/email.md#req-mail-003-digest-ready-email-send-policy) |
 | `RESEND_FROM` | Conditional (when `RESEND_API_KEY` set) | none | `src/lib/email.ts` | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email-content) |
 | `APP_URL` | Yes | none | `src/pages/api/auth/account.ts`, `src/pages/api/tags.ts`, all Origin-check routes | [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints) |
+| `AI_GATEWAY_API_TOKEN` | Yes | none | `src/lib/llm-json.ts` | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection) |
+| `AI_GATEWAY_URL` | Yes | none | `src/lib/llm-json.ts` | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection) |
 | `ADMIN_EMAIL` | Conditional (admin routes) | none — every `/api/admin/*` returns 403 when unset | `src/middleware/admin-auth.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8 |
 | `CF_ACCESS_AUD` | Optional | none (Layer 0 perimeter skipped when unset) | `src/middleware/admin-auth.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8a |
 | `DEV_BYPASS_TOKEN` | Optional | none — `/api/dev/*` returns 404 when unset | `src/pages/api/dev/login.ts`, `src/pages/api/dev/trigger-scrape.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
 | `DEV_BYPASS_USER_ID` | Optional | `__e2e__` (synthetic row) | `src/pages/api/dev/login.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
 
-Notes: The `GH_` prefix on the GitHub OAuth secrets is required because GitHub Actions reserves the `GITHUB_*` namespace for its built-in tokens. `RESEND_FROM` accepts a bare address (`digest@example.com`) or RFC 5322 display-name form (`Acme News <digest@example.com>`) — see [RESEND_FROM display-name handling](#resend_from-display-name-handling).
+Notes: The deploy workflow derives `AI_GATEWAY_URL` from `CLOUDFLARE_ACCOUNT_ID` and optional repository variable `AI_GATEWAY_NAME` (default `ai-news-digest`), then stores it with `wrangler secret put`. `AI_GATEWAY_API_TOKEN` must be a dedicated runtime Gateway token, not the broader deploy token.
+
+The `GH_` prefix on the GitHub OAuth secrets is required because GitHub Actions reserves the `GITHUB_*` namespace for its built-in tokens. `RESEND_FROM` accepts a bare address (`digest@example.com`) or RFC 5322 display-name form (`Acme News <digest@example.com>`); see [RESEND_FROM display-name handling](#resend_from-display-name-handling).
 
 ### RESEND_FROM display-name handling
 
@@ -49,14 +53,15 @@ A bare address (e.g., `digest@example.com`) is automatically wrapped in `News Di
 
 Unset is the right value for almost every deployment. When unset, `/api/dev/login` mints sessions for the synthetic `__e2e__` row from `migrations/0006_e2e_user.sql` — this keeps e2e tests from mutating the operator's account. Set this only for unusual cases (e.g., impersonating a specific staging account); the deploy workflow does not propagate the value.
 
-## GitHub Actions Secrets (CI deploy only)
+## GitHub Actions Secrets
 
-The deploy job reads these secrets from GitHub Actions. The first two are Cloudflare credentials; the rest are Worker secrets that CI pushes to the Worker on each deploy via `wrangler secret put`.
+The deploy job reads these secrets from GitHub Actions. `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are deploy credentials; `AI_GATEWAY_API_TOKEN` and the application secrets are pushed to the Worker via `wrangler secret put`. Deploy also deletes any legacy Worker secret named `CLOUDFLARE_API_TOKEN`.
 
 | Secret | Required | Description |
 |---|---|---|
 | `CLOUDFLARE_API_TOKEN` | Yes | Token with Workers Scripts:Edit scope for deployment |
-| `CLOUDFLARE_ACCOUNT_ID` | Yes | Target Cloudflare account id |
+| `CLOUDFLARE_ACCOUNT_ID` | Yes | Target Cloudflare account id; also forms the Worker `AI_GATEWAY_URL` |
+| `AI_GATEWAY_API_TOKEN` | Yes | Dedicated runtime token for Cloudflare AI Gateway inference; not used for deploy/provisioning |
 | `GH_OAUTH_CLIENT_ID` | Conditional | GitHub OAuth App client ID (required when GitHub sign-in is enabled) |
 | `GH_OAUTH_CLIENT_SECRET` | Conditional | GitHub OAuth App client secret (required when `GH_OAUTH_CLIENT_ID` is set) |
 | `GOOGLE_OAUTH_CLIENT_ID` | Conditional | Google OAuth 2.0 client ID (required when Google sign-in is enabled) |
@@ -68,6 +73,8 @@ The deploy job reads these secrets from GitHub Actions. The first two are Cloudf
 | `DEV_BYPASS_TOKEN` | Conditional | Bearer token that enables `/api/dev/login` and `/api/dev/trigger-scrape`; omit in production |
 | `ADMIN_EMAIL` | Conditional | Operator email that gates `/api/admin/*`; when unset every admin endpoint returns HTTP 403 ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8) |
 | `CF_ACCESS_AUD` | Optional | Cloudflare Access audience tag; when set, enables Layer 0 perimeter check (assertion presence + `aud`-claim match) on `/api/admin/*`; when unset, Layer 0 is skipped and admin is gated by session + `ADMIN_EMAIL` alone ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8, AD29). See [Setting `CF_ACCESS_AUD`](#setting-cf_access_aud-production-when-binding-cloudflare-access) for setup. |
+
+Optional repository variable: `AI_GATEWAY_NAME` overrides the default Gateway name (`ai-news-digest`) used to build `AI_GATEWAY_URL`. Set it under Settings → Secrets and variables → Actions → Variables when your Cloudflare Gateway uses a different name.
 
 ### Setting `CF_ACCESS_AUD` (production, when binding Cloudflare Access)
 
@@ -90,11 +97,11 @@ Declared in `wrangler.toml`:
 | `DB` | D1 database | Primary strongly-consistent store — users, articles, scrape_runs, pending_discoveries, stars |
 | `KV` | KV namespace | Edge cache for discovered sources, headlines, source health |
 | `SCRAPE_COORDINATOR` | Queue producer | Producer binding — one message per every-4-hours cron tick kicks the coordinator |
-| `SCRAPE_CHUNKS` | Queue producer | Producer binding — one message per ~100-candidate LLM chunk |
+| `SCRAPE_CHUNKS` | Queue producer | Producer binding — one message per ≤8-candidate LLM chunk |
 | `SCRAPE_FINALIZE` | Queue producer | Producer binding — one message per scrape run, enqueued by the last chunk consumer after the run is stamped `ready`; triggers the same-story dedup pass ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
 | `DEDUP_SWEEP` | Queue producer + consumer | Self-chaining queue carrying operator-triggered historical-dedup sweep messages. The kicker (admin route) sends the first message; the consumer processes one batch then re-enqueues a continuation until the corpus tail is reached, decoupling the sweep from the operator's browser tab ([REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1) |
 | `PIPELINE_JOBS` | Queue producer + consumer | Self-chaining queue for the backend-driven full pipeline orchestrator. One consumer walks seven phases by chaining messages; the producer binding is used by the kicker routes. No browser tab dependency ([REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)) |
-| `AI` | Workers AI | LLM inference for chunk summarization and source discovery, plus bge-base-en-v1.5 embedding generation for same-story dedup |
+| `AI` | Workers AI | bge-base-en-v1.5 embedding generation for same-story dedup; non-Gateway model fallback |
 | `VECTORIZE` | Vectorize index | 768-dim cosine index over every surviving article's embedding; queried in the finalize pass and by the historical re-run sweep ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
 | `ASSETS` | Fetcher (static assets) | Cloudflare static-asset binding for serving the Astro-built output; falls back to `new Response('news-digest')` in tests |
 
@@ -147,8 +154,10 @@ The `KV` namespace uses a structured key scheme. All keys are shared across all 
 | `source_health:{url}` | Consecutive failure count (UTF-8 integer string) | 7 days | Per-URL fetch-health counter; incremented on each failed fetch, deleted on success. When the count reaches 30 (`CONSECUTIVE_FETCH_FAILURE_LIMIT`) the coordinator evicts the URL from its `sources:{tag}` entry. Implements [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking). |
 | `headlines:{source}:{tag}` | Array of headline objects | 10 min (600 s) | Per-source/per-tag headline cache shared across all chunk invocations within a single scrape run. Implements [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence). |
 | `scrape_run:{id}:chunks_remaining` | Integer string | — | Display mirror of chunk progress for `GET /api/scrape-status` ([REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)). Not the authoritative completion gate — that lives in D1 `scrape_chunk_completions` (migration 0007, see [AD7](decisions/README.md#ad7-d1-for-chunk-completion-tracking-replacing-kv-read-modify-write)). |
-| `dedup:auto_sweep_watermark` | Unix seconds as UTF-8 integer string | None (permanent until invalidated) | Timestamp of the last successful auto-sweep completion. The rerank pass in `dedup-sweep-consumer.ts` skips the LLM call for any borderline pair whose two articles both predate this watermark — their verdict was recorded by the prior sweep and the model is deterministic at temperature 0. Written by `writeWatermark` on terminal sweep completion; deleted by `clearWatermark` when `embed-backfill?reembed=1` is triggered (re-embedding changes cosine geometry, invalidating prior verdicts). A missing key is treated as 0 (always rerank). See [AD48](decisions/README.md#ad48-dedup-cost-reduction-borderline-rerank-watermark-batched-rerank-call-pipeline-wide-gpt-oss-20b). Implements [REQ-PIPE-009](../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates). |
+| `dedup:auto_sweep_watermark` | Unix seconds as UTF-8 integer string | None (permanent until invalidated) | Last successful auto-sweep completion; older borderline pairs skip deterministic rerank per [AD48](decisions/README.md#ad48-dedup-cost-reduction-borderline-rerank-watermark-batched-rerank-call-pipeline-wide-gpt-oss-20b). |
 | `ratelimit:{routeClass}:{identity}:{windowIndex}` | Integer string | Window size | Rate-limit counters; see [Rate-limit rules](#rate-limit-rules) below. Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9. |
+
+`writeWatermark` writes `dedup:auto_sweep_watermark` when the sweep finishes. `clearWatermark` deletes it on `embed-backfill?reembed=1` because new embeddings change cosine geometry; a missing key means always rerank.
 
 ### Rate-limit rules
 
