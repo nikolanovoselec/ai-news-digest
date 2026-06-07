@@ -1,8 +1,8 @@
 // Implements REQ-PIPE-002
 // Implements REQ-PIPE-003
 //
-// Single LLM-call entrypoint used by every Workers-AI site that expects
-// a JSON response (chunk consumer, finalize consumer, discovery).
+// Single LLM-call entrypoint used by every model site that expects
+// a JSON response (chunk consumer, dedup rerank, discovery).
 //
 // Single-model architecture (2026-05-06): the helper runs ONE model
 // per call. The previous primary-then-fallback path (Gemma → 120b)
@@ -46,6 +46,14 @@ export function asAiBinding(ai: unknown): AiBinding {
   return ai as AiBinding;
 }
 
+const AI_GATEWAY_CHAT_COMPLETIONS_URL =
+  'https://gateway.ai.cloudflare.com/v1/ab75f75941a21a81db27bf12e99c620b/ai-news-digest/compat/chat/completions';
+const AI_GATEWAY_MODEL_PREFIXES = ['google-ai-studio/'] as const;
+
+function modelUsesAiGateway(model: string): boolean {
+  return AI_GATEWAY_MODEL_PREFIXES.some((prefix) => model.startsWith(prefix));
+}
+
 export interface AttemptInfo {
   modelUsed: string;
   tokensIn: number;
@@ -76,6 +84,10 @@ export interface RunJsonOptions<T> {
   narrow: (rawResponse: unknown) => T | null;
   /** Optional override; defaults to DEFAULT_MODEL_ID. */
   model?: string;
+  /** Existing Cloudflare API token, reused for AI Gateway auth when set. */
+  cloudflareApiToken?: string | undefined;
+  /** Test seam for the AI Gateway HTTP path. */
+  fetchImpl?: typeof fetch | undefined;
 }
 
 export async function runJson<T>(
@@ -83,9 +95,9 @@ export async function runJson<T>(
 ): Promise<LlmRunResult<T>> {
   const model = options.model ?? DEFAULT_MODEL_ID;
 
-  // The Workers-AI binding's contract is `Promise<unknown>` because
-  // every model emits a slightly different envelope. The shared
-  // helpers in ~/lib/generate accept the wider AIRunResponse shape
+  // The model-runner boundary is `Promise<unknown>` because every
+  // provider emits a slightly different envelope. The shared helpers
+  // in ~/lib/generate accept the wider AIRunResponse shape
   // (which has an index signature) and gracefully tolerate missing
   // fields, so a single cast at the boundary is safe.
   //
@@ -95,7 +107,7 @@ export async function runJson<T>(
   let result: AIRunResponse | null = null;
   let threwError: string | null = null;
   try {
-    result = (await options.ai.run(model, options.params)) as AIRunResponse;
+    result = (await runModel(model, options)) as AIRunResponse;
   } catch (err) {
     threwError = String(err).slice(0, 500);
   }
@@ -127,6 +139,63 @@ export async function runJson<T>(
       rawResponse: threwError !== null ? { error: threwError } : raw,
     },
   };
+}
+
+async function runModel<T>(
+  model: string,
+  options: RunJsonOptions<T>,
+): Promise<unknown> {
+  const token = options.cloudflareApiToken?.trim();
+  if (token && modelUsesAiGateway(model)) {
+    return runAiGatewayChatCompletion({
+      model,
+      params: options.params,
+      cloudflareApiToken: token,
+      fetchImpl: options.fetchImpl ?? fetch,
+    });
+  }
+
+  return options.ai.run(model, options.params);
+}
+
+async function runAiGatewayChatCompletion(options: {
+  model: string;
+  params: Record<string, unknown>;
+  cloudflareApiToken: string;
+  fetchImpl: typeof fetch;
+}): Promise<unknown> {
+  const response = await options.fetchImpl(AI_GATEWAY_CHAT_COMPLETIONS_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'cf-aig-authorization': `Bearer ${options.cloudflareApiToken}`,
+    },
+    body: JSON.stringify({
+      model: options.model,
+      // Gemini 2.5 Flash enables hidden thinking tokens unless told not
+      // to. The canary needs summary quality, not chain-of-thought spend.
+      reasoning_effort: 'none',
+      ...options.params,
+    }),
+  });
+
+  const bodyText = await response.text();
+  let body: unknown = undefined;
+  if (bodyText !== '') {
+    try {
+      body = JSON.parse(bodyText) as unknown;
+    } catch {
+      body = bodyText;
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `AI Gateway HTTP ${response.status}: ${previewRawResponse(body, 500)}`,
+    );
+  }
+
+  return body;
 }
 
 /** Truncate a raw LLM response for log emission so a 50KB JSON dump

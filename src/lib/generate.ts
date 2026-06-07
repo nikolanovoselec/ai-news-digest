@@ -4,7 +4,7 @@
 // (src/queue/scrape-chunk-consumer.ts).
 
 
-/** Shape Workers AI `.run()` returns. Different models surface token counts
+/** Shape model calls return. Different providers surface token counts
  * under slightly different keys — the reader at the usage site tolerates all
  * the common variants (`usage.input_tokens`, `usage.prompt_tokens`,
  * top-level `tokens_in`). */
@@ -15,6 +15,7 @@ export interface AIRunResponse {
     output_tokens?: number;
     prompt_tokens?: number;
     completion_tokens?: number;
+    total_tokens?: number;
   };
   tokens_in?: number;
   tokens_out?: number;
@@ -28,14 +29,14 @@ interface LLMPayload {
 }
 
 /**
- * Pull the model-produced text out of an `AIRunResponse`. Resolves two
- * shapes across Workers AI's model families:
+ * Pull the model-produced text out of an `AIRunResponse`. Resolves common
+ * shapes across Workers AI and AI Gateway model families:
  *
  *   1. Flat: `{ response: "<JSON string>" | <object> }` — Llama, Mistral,
  *      Kimi, and most other text-generation models.
  *   2. OpenAI envelope: `{ choices: [{ message: { content: "..." } }] }`
- *      — every `@cf/openai/*` endpoint, which proxies OpenAI's
- *      chat-completions API shape directly.
+ *      — every `@cf/openai/*` endpoint and the AI Gateway compat path,
+ *      which proxy the chat-completions API shape directly.
  *
  * Any other shape returns `undefined`, which `parseLLMPayload` then
  * treats as `llm_invalid_json`.
@@ -56,6 +57,19 @@ export function extractResponsePayload(aiResult: AIRunResponse): unknown {
       if (message !== null && message !== undefined && typeof message === 'object') {
         const content = message['content'];
         if (typeof content === 'string') return content;
+        if (Array.isArray(content)) {
+          const text = content
+            .map((part) => {
+              if (typeof part === 'string') return part;
+              if (part !== null && typeof part === 'object') {
+                const value = (part as Record<string, unknown>)['text'];
+                if (typeof value === 'string') return value;
+              }
+              return '';
+            })
+            .join('');
+          if (text !== '') return text;
+        }
         // Reject `null` content (tool-call-only responses) so the
         // caller correctly classifies them as llm_invalid_json instead
         // of silently passing null through the parser.
@@ -258,10 +272,28 @@ export function extractTokensIn(r: AIRunResponse): number {
 
 /** Extract output-token count. Mirrors {@link extractTokensIn}. */
 export function extractTokensOut(r: AIRunResponse): number {
-  if (typeof r.usage?.output_tokens === 'number') return r.usage.output_tokens;
-  if (typeof r.usage?.completion_tokens === 'number')
-    return r.usage.completion_tokens;
-  if (typeof r.tokens_out === 'number') return r.tokens_out;
-  return 0;
+  const visibleOut = (() => {
+    if (typeof r.usage?.output_tokens === 'number') return r.usage.output_tokens;
+    if (typeof r.usage?.completion_tokens === 'number') {
+      return r.usage.completion_tokens;
+    }
+    if (typeof r.tokens_out === 'number') return r.tokens_out;
+    return 0;
+  })();
+
+  // Gemini via AI Gateway can report hidden thinking tokens in
+  // `total_tokens` without including them in `completion_tokens`.
+  // Those tokens are billed as output, so count total - input when it
+  // is larger than the visible output token count.
+  const tokensIn = extractTokensIn(r);
+  if (
+    typeof r.usage?.total_tokens === 'number' &&
+    tokensIn > 0 &&
+    r.usage.total_tokens > tokensIn
+  ) {
+    return Math.max(visibleOut, r.usage.total_tokens - tokensIn);
+  }
+
+  return visibleOut;
 }
 

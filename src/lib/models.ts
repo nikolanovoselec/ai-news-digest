@@ -1,11 +1,12 @@
 // Implements REQ-SET-004
 //
-// Hardcoded Workers AI model catalog. The list is the source of truth —
+// Hardcoded inference model catalog. The list is the source of truth —
 // server-side validation (`model_id` must appear in `MODELS`) keys off it,
 // the settings dropdown is rendered from it, and per-digest cost is computed
 // from its per-million-token prices. Updating the catalog is a code edit +
-// deploy; there is no runtime fetch, no KV cache, no Cloudflare API token
-// path. See /sdd/settings.md REQ-SET-004 and REQUIREMENTS.md "Model selection".
+// deploy; there is no runtime fetch or KV cache. Gateway-backed entries use
+// the workflow-provisioned CLOUDFLARE_API_TOKEN secret for runtime auth.
+// See /sdd/settings.md REQ-SET-004 and REQUIREMENTS.md "Model selection".
 //
 // Single-model architecture (2026-05-06): the chunk/finalize/discovery
 // pipelines run one model per call, no fallback. Swapping models means
@@ -34,22 +35,31 @@ export interface ModelOption {
   category: 'featured' | 'budget';
 }
 
-// Default model: @cf/zai-org/glm-4.7-flash. 131K context,
-// low-cost Z.ai instruction model, $0.0605/$0.40 per Mtok. Re-enabled
-// on 2026-06-06 after Gemma failed a full-current-corpus integration
-// refresh with invalid/truncated JSON. This canary keeps the strict
-// one-record-per-input contract and uses smaller chunks to reduce GLM
-// timeout/alignment risk. Do not promote this develop-branch default to
+// Default model: Gemini 2.5 Flash via Cloudflare AI Gateway BYOK.
+// The integration canary uses the OpenAI-compatible AI Gateway endpoint
+// with the existing CLOUDFLARE_API_TOKEN secret for gateway auth; the
+// Google AI Studio provider key is stored in the gateway, not in source
+// or Worker env. Do not promote this develop-branch default to
 // production without a fresh integration scrape proving chunk reliability,
 // JSON validity, summary quality, and same-story dedup quality.
 //
 // This constant is the single source-of-truth for the pipeline's model
 // id (chunk summarisation, rerank, discovery all flow through
 // DEFAULT_MODEL_ID).
-export const DEFAULT_MODEL_ID = '@cf/zai-org/glm-4.7-flash';
+export const DEFAULT_MODEL_ID = 'google-ai-studio/gemini-2.5-flash';
 
 export const MODELS: ModelOption[] = [
   // Featured — headline choices users see at the top of the dropdown.
+  {
+    id: 'google-ai-studio/gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    description:
+      'Integration canary via Cloudflare AI Gateway BYOK and Google AI Studio. Large context, strong JSON/tool-following candidate for same-quality summarisation.',
+    inputPricePerMtok: 0.30,
+    outputPricePerMtok: 2.50,
+    contextTokens: 1_048_576,
+    category: 'featured',
+  },
   {
     id: '@cf/openai/gpt-oss-120b',
     name: 'GPT OSS 120B',

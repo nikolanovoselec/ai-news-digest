@@ -22,6 +22,7 @@ declare namespace Cloudflare {
     GOOGLE_OAUTH_CLIENT_ID: string;
     GOOGLE_OAUTH_CLIENT_SECRET: string;
     OAUTH_JWT_SECRET: string;
+    CLOUDFLARE_API_TOKEN?: string;
     RESEND_API_KEY: string;
     RESEND_FROM: string;
     APP_URL: string;

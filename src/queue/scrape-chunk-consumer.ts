@@ -488,6 +488,7 @@ async function runChunkLLM(
 }> {
   const llmRun = await runJson<LLMChunkPayload>({
     ai: asAiBinding(env.AI),
+    cloudflareApiToken: env.CLOUDFLARE_API_TOKEN,
     params: {
       messages: [
         { role: 'system', content: PROCESS_CHUNK_SYSTEM },

@@ -249,6 +249,18 @@ jobs:
             rm "$TMP"
           done
 
+          # Gemini runs through Cloudflare AI Gateway BYOK. Reuse the
+          # existing deploy token as the Worker runtime gateway token;
+          # never print it, and keep the provider key stored in Gateway.
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error::Required secret 'CLOUDFLARE_API_TOKEN' is not set in the repo."
+            exit 1
+          fi
+          TMP=$(mktemp)
+          printf '%s' "$CLOUDFLARE_API_TOKEN" > "$TMP"
+          npx --yes wrangler secret put CLOUDFLARE_API_TOKEN < "$TMP"
+          rm "$TMP"
+
           # Sign-in providers — each pair is independently optional, but
           # at least ONE complete pair must be set or the app has no way
           # for users to authenticate. Partial pairs (id without secret
