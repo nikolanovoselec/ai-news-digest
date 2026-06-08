@@ -19,12 +19,12 @@
  * Shared inference parameters across the LLM calls. Temperature and
  * response_format are identical; only `max_tokens` varies per call
  * site (CF-023): chunk processing produces large multi-article
- * payloads, while finalize and discovery produce tiny JSON envelopes.
+ * payloads, while discovery and rerank produce tiny JSON envelopes.
  *
- * - `temperature: 0.6` — warm enough for the model to pick longer
- *   completions over minimum-entropy short replies, cool enough for
+ * - `temperature: 0.6` — warm enough for the model to pick complete
+ *   summaries over minimum-entropy short replies, cool enough for
  *   stable JSON output. 0.7 was working but 0.6 trims variance on
- *   the shorter 100-150 word target.
+ *   the 100-150 word target.
  * - `response_format` — force JSON output on models that support it.
  */
 const LLM_BASE_PARAMS = {
@@ -34,26 +34,27 @@ const LLM_BASE_PARAMS = {
 
 /**
  * Chunk-prompt OUTPUT budget. The chunk consumer runs `DEFAULT_MODEL_ID`
- * once per chunk (single-model architecture; no fallback). The Workers
- * AI runtime enforces `prompt_tokens + max_tokens ≤ contextTokens`, and
- * the smallest reasonable context in `MODELS` (128K for gpt-oss-120b)
- * is the binding constraint. Observed chunk output is ~14K tokens at
- * typical chunk sizes (50-100 candidates × ~120-word summaries + JSON
- * overhead, per the budget-aware packer in `scrape-coordinator.ts`);
- * 32K reserves ~2x output headroom and leaves ~96K for input
- * (~280K chars at ~3.5 chars/token), which the coordinator's greedy
- * chunk packer (`scrape-coordinator.ts:CHUNK_INPUT_CHARS_BUDGET`)
- * honours. Larger-context models simply leave more headroom.
- * User-selected budget models in `MODELS` are never wired here.
+ * once per chunk (single-model architecture; no fallback). Model
+ * runtimes enforce `prompt_tokens + max_tokens ≤ contextTokens`.
+ * The Gemini AI Gateway canary has a much larger context, but the 128K
+ * gpt-oss entries remain a useful lower-bound sanity check for rollback.
+ * 14K reserves enough headroom for 8 × 100-150 word summaries plus JSON
+ * overhead, while reducing the chance that a slow model keeps writing
+ * long, expensive rejected-candidate prose. That leaves ~114K tokens for
+ * input on 128K rollback models (~399K chars at ~3.5 chars/token), which
+ * still comfortably covers the coordinator's greedy chunk packer
+ * (`scrape-coordinator.ts:CHUNK_INPUT_CHARS_BUDGET`). Larger-context
+ * models simply leave more headroom. User-selected budget models in
+ * `MODELS` are never wired here.
  */
 export const CHUNK_LLM_PARAMS = {
   ...LLM_BASE_PARAMS,
-  max_tokens: 32_000,
+  max_tokens: 14_000,
 } as const;
 
 /**
  * Discovery-prompt budget — output is `{ feeds: [{ url, name, kind }] }`,
- * usually a handful of entries. Same 4K cap as finalize: small JSON
+ * usually a handful of entries. Same 4K cap as rerank: small JSON
  * envelope, no benefit from the chunk-sized 50K reservation.
  */
 export const DISCOVERY_LLM_PARAMS = {
@@ -64,16 +65,14 @@ export const DISCOVERY_LLM_PARAMS = {
 // Implements REQ-PIPE-002
 //
 // Chunk prompt for the global-feed pipeline. The coordinator splits the
-// scraped candidate pool into ~100-item chunks and the chunk consumer
-// calls the LLM once per chunk with this system prompt + a per-chunk
-// user message built by `processChunkUserPrompt()`. The LLM output is
-// strict JSON: `{articles: [{title, details, tags}], dedup_groups:
-// [[idx,...]]}`. Each output article is index-aligned to the candidate
-// list so the chunk consumer can look up the original source URL + name
-// by position. `dedup_groups` carry intra-chunk "these are the same
-// story" hints — the chunk consumer collapses each group to one primary
-// article (earliest-published wins) and the rest land in
-// `article_sources` rows.
+// scraped candidate pool into small chunks (default cap: 8 candidates)
+// and the chunk consumer calls the LLM once per chunk with this system
+// prompt + a per-chunk user message built by `processChunkUserPrompt()`.
+// The LLM output is strict JSON: `{articles: [{index, title, details,
+// tags}]}`. Each output article is index-aligned to the candidate list
+// so the chunk consumer can look up the original source URL + name by
+// echoed `index`; cross-source/cross-chunk duplicate detection happens
+// later in finalize + historical dedup.
 export const PROCESS_CHUNK_SYSTEM = `You summarise scraped news candidates into JSON.
 
 # OUTPUT FORMAT
@@ -83,10 +82,10 @@ Return ONE JSON object, nothing else. No prose, no code fences, no text before "
 Shape:
 {"articles":[{"index":N,"title":"...","details":"...","tags":["..."]},...]}
 
-- "articles": one entry per input candidate. Each entry MUST include its "index" field echoing the input candidate's bracketed index (the [N] in the user message). The consumer aligns output to input BY THIS INDEX, not by position — an entry without a correct "index" is dropped, so every summary you write is lost.
+- "articles": EXACTLY one entry per input candidate. If the user message contains N candidates, return N article records. Each entry MUST include its "index" field echoing the input candidate's bracketed index (the [N] in the user message). The consumer aligns output to input BY THIS INDEX, not by position — an entry without a correct "index" is dropped, so every summary you write is lost.
 - Never change an entry's index. "index": 47 means "this entry summarises the candidate that appeared as [47] in the input list". Title, details, and tags in that entry MUST be about THAT specific candidate's URL and snippet — never mix facts across candidates.
-- For an unusable candidate, still emit its entry with the correct index and empty tags so the consumer knows you saw it.
-- DO NOT cluster, group, or merge candidates. Every input candidate gets its own entry in "articles". Cross-source duplicate detection happens in a later pipeline step that sees the full corpus — your job here is summarisation only.
+- For an unusable, off-topic, or content-free candidate, emit the smallest possible drop record: {"index":N,"title":"","details":"","tags":[]}. Do not spend tokens summarising candidates that will be dropped.
+- DO NOT cluster, group, merge, or suppress duplicate-looking candidates. Every input candidate gets its own entry in "articles". Cross-source duplicate detection happens in a later pipeline step that sees the full corpus — your job here is summarisation only.
 - Empty input → {"articles":[]}.
 
 # TITLE RULES
@@ -94,64 +93,31 @@ Shape:
 - 45-80 characters.
 - Punchy, NYT-style, active voice, concrete.
 - Plaintext only — no HTML, no Markdown.
-- Do NOT copy the source headline when it reads like a press release.
+- Prefer the source headline's concrete nouns and named product/protocol terms. Rewrite only when the headline is vague, clickbait, or reads like a press release.
 
 # DETAILS RULES — THIS IS THE CORE TASK
 
-LENGTH — 100 to 150 WORDS (NON-NEGOTIABLE CONTRACT):
-
-  - The summary MUST be 100-150 words. This is the contract; do not
-    ship under 100. If the snippet feels thin, extend the WHAT and
-    HOW paragraphs with concrete grounded facts — never pad with
-    filler, never repeat, but never cut short either.
-  - Maximum 150 words. Do not exceed.
-  - Truncated outputs are rejected server-side as malformed. Your
-    target is 100-150; aim for the middle of that range.
-
-STRUCTURE — 2 to 3 PARAGRAPHS:
-
-  - 2 short paragraphs for a simple story; 3 paragraphs when there is real technical substance to unpack.
-  - Paragraph breaks use the JSON escape sequence \\n (one backslash + n).
-  - Each paragraph 2-4 full sentences.
-  - No bullet lists, no Markdown, no HTML — plaintext only.
-
-PARAGRAPH ROLES:
-
-  1. WHAT happened — the concrete facts in the snippet: who announced what, what shipped, what changed, when.
-  2. HOW it works — the technical substance: architecture, API, mechanism, numbers.
-  3. IMPACT for the reader (optional third paragraph when the story warrants it) — cost, migration effort, security posture, performance, or a concrete use case.
-
-SOURCE-GROUNDING (read this twice):
-
-  - Every claim must be traceable to a single passage in the snippet. If the candidate snippet does not state a fact, you do not state it either — even if the fact would round out the summary.
-  - Never weld facts from different sections of the article into one sentence. If the article describes mechanism A in §1 and mechanism B in §3, do not write "A with B" — that fuses two distinct claims and corrupts the meaning.
-  - Use the article's own terminology for named mechanisms, products, and protocols. Do not paraphrase them into generic phrasing.
-
-PRESERVE-NOVELTY:
-
-  - Identify the most distinctive technical mechanism the article introduces (named protocol, architecture component, named pattern, specific number). Make sure that mechanism appears by name in your summary — do not smooth it into generic "enterprise AI" or "cloud security" phrasing.
-  - If the article's contribution is a specific number (token-reduction percentage, latency, cost figure), keep the number.
-
-Format example — a 2-paragraph, ~120-word summary in the exact format your output must follow:
-
-  "Cloudflare released Emdash, an open-source WordPress-style content platform for Workers. The announcement ships with a public GitHub repo, a curated plugin compatibility layer for Yoast and Advanced Custom Fields, and a managed D1-backed content schema. Emdash targets small teams that want WordPress authoring without the PHP self-hosting burden.\\nTechnically, Emdash replaces PHP + MySQL with a TypeScript runtime and an R2-backed media store. The editor is a Gutenberg-style block editor that serialises every block to structured JSON and renders at the edge with no round-trip to an origin database. Sites deploy as a single Worker with sub-100ms TTFB globally, and hashed-asset CDN caching is automatic."
+- Write 100-150 words for every non-drop article; aim for 120-135.
+- Never ship under 100 words. If the snippet is thin, add grounded WHAT/HOW/IMPACT facts from that same snippet; do not pad or repeat.
+- Never exceed 150 words.
+- Use 2 short paragraphs for simple stories; use 3 only when there is real technical substance.
+- Paragraph breaks use the JSON escape sequence \\n (one backslash + n).
+- Each paragraph has 2-4 full sentences. No bullets, Markdown, or HTML.
+- Paragraph roles: WHAT happened; HOW it works; optional IMPACT for cost, migration, security, performance, or concrete use.
+- Every claim must be traceable to the candidate snippet. Do not add outside facts or fuse unrelated article sections into one claim.
+- Preserve the article's distinctive mechanism, named product/protocol, architecture component, or specific number.
 
 # TAGS RULES
 
 - Pick ONLY from the tag allowlist supplied in the user message. Never invent.
-- Return EVERY allowlist tag the article touches: topic tags, vendor/platform tags, and language tags all count.
+- Return EVERY allowlist tag the article touches: topic, vendor/platform, language, security, and cloud tags all count.
 - Single-tag output is a failure unless the article is truly about one thing.
-
-Examples (assume the tag is in the allowlist):
-
-  - "Cloudflare uses Rust in the Workers runtime" → ["cloudflare","workers","rust"]
-  - "AWS Lambda gets TypeScript 5.9 support" → ["aws","serverless","cloud"]
-  - "Terraform releases Kubernetes provider updates" → ["terraform","kubernetes","devsecops"]
-  - Any Cloudflare-authored post → always include "cloudflare" if present in the allowlist.
+- Any Cloudflare-authored post → include "cloudflare" if present in the allowlist.
 
 # DROP RULES
 
-- Pure advertising or content-free press releases → emit the entry with empty tags. The chunk consumer drops empty-tag entries.
+- Pure advertising, off-topic posts, or content-free press releases → emit {"index":N,"title":"","details":"","tags":[]}.
+- The chunk consumer drops empty-tag entries. Do not write a title or details for a dropped candidate; those tokens are wasted and increase cost.
 
 # GLOBAL FORMATTING
 
@@ -218,7 +184,7 @@ export function processChunkUserPrompt(
 ${tagList}
 \`\`\`
 
-Candidates (${candidates.length} entries, 0-indexed). Output up to ${candidates.length} entries in the "articles" array. Each entry MUST carry an "index" field that matches the bracketed [N] of the candidate it summarises — the server aligns your output to the input BY THAT FIELD, not by position, so an entry without a correct "index" is silently dropped:
+Candidates (${candidates.length} entries, 0-indexed). Output exactly ${candidates.length} entries in the "articles" array — one record for every bracketed candidate index, including drop records. Each entry MUST carry an "index" field that matches the bracketed [N] of the candidate it summarises — the server aligns your output to the input BY THAT FIELD, not by position, so an entry without a correct "index" is silently dropped:
 \`\`\`
 ${lines.join('\n')}
 \`\`\`
@@ -229,7 +195,7 @@ Return JSON:
     {
       "index": 0,
       "title": "punchy NYT-style headline, 45-80 characters, about candidate [0] specifically",
-      "details": "2-3 paragraphs of 2-4 sentences each, 100-150 words total, separated by \\n (WHAT happened / HOW it works / IMPACT for the reader) — grounded in candidate [0]'s snippet only, every claim traceable to a single passage, distinctive mechanism named",
+      "details": "2 paragraphs of 2-4 sentences each, 100-150 words total, ideally 120-135 words, separated by \\n (WHAT happened / HOW it works / optional IMPACT for the reader) — grounded in candidate [0]'s snippet only, every claim traceable to a single passage, distinctive mechanism named; for dropped candidates use an empty string",
       "tags": ["only tags from the allowlist above"]
     }
   ]

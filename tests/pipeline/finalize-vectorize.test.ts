@@ -4,8 +4,10 @@
 // followed by mergeAsAltSource for any older sufficiently-similar
 // match. Mocks Vectorize at the binding boundary.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { processOneFinalize } from '~/queue/scrape-finalize-consumer';
+
+const TEST_AI_GATEWAY_URL = 'https://gateway.ai.cloudflare.com/v1/test-account/test-gateway/compat/chat/completions';
 
 interface DbCall {
   sql: string;
@@ -179,13 +181,26 @@ function makeEnv(
     sweepQueue?: Queue;
   } = {},
 ): Env {
+  const providerRun = opts.aiBinding?.run ?? vi.fn().mockResolvedValue({ response: '{"same_event":false}' });
+  const gatewayFetch = vi.fn().mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url !== TEST_AI_GATEWAY_URL) throw new Error(`unexpected fetch: ${url}`);
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    const model = typeof body.model === 'string' ? body.model : 'google-ai-studio/gemini-2.5-flash-lite';
+    const response = await providerRun(model, body);
+    return new Response(JSON.stringify(response), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  });
+  vi.stubGlobal('fetch', gatewayFetch);
   const base: Record<string, unknown> = {
     DB: db,
     VECTORIZE: vectorize,
     DEDUP_SWEEP: opts.sweepQueue ?? makeMockSweepQueue().binding,
-    AI: opts.aiBinding ?? {
-      run: vi.fn().mockResolvedValue({ response: '{"same_event":false}' }),
-    },
+    AI: { run: vi.fn() },
+    AI_GATEWAY_API_TOKEN: 'gateway-test-token',
+    AI_GATEWAY_URL: TEST_AI_GATEWAY_URL,
     DEDUP_COSINE_THRESHOLD: opts.cosineThreshold ?? '0.85',
     DEDUP_SAME_VENDOR_PENALTY: opts.sameVendorPenalty ?? '0.05',
     DEDUP_RERANK_FLOOR: opts.rerankFloor ?? '0.72',
@@ -200,6 +215,9 @@ function makeEnv(
 describe('processOneFinalize — REQ-PIPE-003 / REQ-PIPE-012 (policy variants) / REQ-PIPE-013 (cross-tick automation)', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('REQ-PIPE-003: no-ops when run already has finalize_recorded=1', async () => {

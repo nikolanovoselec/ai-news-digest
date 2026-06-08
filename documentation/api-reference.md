@@ -569,7 +569,7 @@ GET /api/scrape-status
 
 **Notes**
 
-`chunks_remaining` and `chunks_total` are `null` when the coordinator has not yet written the chunk count to KV. `articles_ingested` defaults to `0`. The KV counter is a display mirror; the authoritative completion gate is in D1 (`scrape_chunk_completions`).
+`chunks_remaining` and `chunks_total` are `null` until the coordinator writes the D1 `scrape_runs.chunk_count` total. `articles_ingested` defaults to `0`. Chunk progress is derived from D1: `scrape_runs.chunk_count` minus rows in `scrape_chunk_completions`.
 
 The "running" predicate consults the most-recent `scrape_runs` row, matching the SSR `scrape_running` field in `GET /api/digest/today`. A stuck older row never causes the two sources to disagree (regression fixed in PR #220, 2026-05-07).
 

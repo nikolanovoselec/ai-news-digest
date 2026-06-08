@@ -1,6 +1,6 @@
 // Tests for src/lib/discovery.ts#processPendingDiscoveries — REQ-DISC-003
-// (consecutive-failure counter) + REQ-DISC-001 AC 5 (DELETE pending on
-// resolution).
+// (consecutive-failure counter) and REQ-DISC-007 AC6 and REQ-DISC-009 AC1
+// (persist sources and close pending rows on success or terminal failure).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { processPendingDiscoveries } from '~/lib/discovery';
@@ -74,14 +74,30 @@ function makeDb(pendingTags: string[]): {
   return { db, runCalls };
 }
 
-/** Build an Env stub with programmable AI.run. Always returns the same
- * JSON response — these tests don't need per-tag branching. */
+const TEST_AI_GATEWAY_URL = 'https://gateway.ai.cloudflare.com/v1/test-account/test-gateway/compat/chat/completions';
+
+/** Build an Env stub with programmable AI Gateway output. Always returns
+ * the same JSON response — these tests don't need per-tag branching. */
 function makeEnv(db: D1Database, kv: KVNamespace, aiResponse: string): Env {
-  const aiRun = vi.fn().mockImplementation(async () => ({ response: aiResponse }));
+  const previousFetch = globalThis.fetch;
+  const gatewayFetch = vi.fn().mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === TEST_AI_GATEWAY_URL) {
+      return new Response(JSON.stringify({ response: aiResponse }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (typeof previousFetch === 'function') return previousFetch.call(globalThis, input, init);
+    throw new Error(`unexpected fetch: ${url}`);
+  });
+  vi.stubGlobal('fetch', gatewayFetch);
   return {
     DB: db,
     KV: kv,
-    AI: { run: aiRun } as unknown as Ai,
+    AI: { run: vi.fn() } as unknown as Ai,
+    AI_GATEWAY_API_TOKEN: 'gateway-test-token',
+    AI_GATEWAY_URL: TEST_AI_GATEWAY_URL,
   } as unknown as Env;
 }
 
@@ -118,7 +134,7 @@ describe('processPendingDiscoveries', () => {
     vi.unstubAllGlobals();
   });
 
-  it('REQ-DISC-001: writes sources:{tag} and DELETEs pending rows on success', async () => {
+  it('REQ-DISC-007 AC6 / REQ-DISC-009 AC1: writes sources:{tag} and DELETEs pending rows on success', async () => {
     mockFetchOk();
     const { db, runCalls } = makeDb(['ai']);
     const { kv, puts, deletes } = makeKv();
@@ -212,8 +228,8 @@ describe('processPendingDiscoveries', () => {
     // Counter reset after eviction.
     expect(deletes).toContain('discovery_failures:rust');
 
-    // Pending row deleted on final failure (REQ-DISC-001 AC 5 —
-    // "regardless of success").
+    // Pending row deleted on final failure (REQ-DISC-009 AC1), while
+    // retryable no-feed attempts stay queued until the counter trips (AC2).
     const del = runCalls.find(
       (c) => c.sql.startsWith('DELETE FROM pending_discoveries') && c.params[0] === 'rust',
     );

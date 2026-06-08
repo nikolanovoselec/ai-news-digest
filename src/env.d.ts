@@ -50,6 +50,13 @@ interface Env {
   // which providers are enabled.
   OAUTH_JWT_SECRET: string;
 
+  // Runtime auth for Cloudflare AI Gateway BYOK. The deploy workflow
+  // pushes a least-privilege gateway token separately from the broad
+  // GitHub Actions deploy/provisioning token; the provider key remains
+  // stored in AI Gateway.
+  AI_GATEWAY_API_TOKEN?: string;
+  AI_GATEWAY_URL?: string;
+
   RESEND_API_KEY: string;
   RESEND_FROM: string;
   APP_URL: string;

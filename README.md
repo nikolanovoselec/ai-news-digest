@@ -29,7 +29,7 @@ News Digest hires the LLM. It remembers so you don't. This isn't enlightenment. 
 - **Starred articles outlive the cron**: 14-day retention, unless you starred it. Your saved list is forever; your unread list was a lie anyway.
 - **Federated sign-in**: GitHub or Google. Wire up one, both, or neither — the app tells the truth either way. A verified email shared across providers maps to a single account, so stars, read marks, pending discoveries, and the daily digest all live in one place no matter which button you signed in with.
 - **Looks like a real product when shared**: paste the URL into iMessage, WhatsApp, Slack, LinkedIn, or Discord — you get a brand card, not a naked URL. Surprisingly hard. Don't ask.
-- **One Worker, no servers**: Cloudflare D1 + KV + Queues + Workers AI + Vectorize. The vector index is the new arrival — 768 dimensions of cosine-flavoured opinion about whether two articles are secretly the same article. It's been right enough times that I no longer fight it. Ships in 30 seconds. Rollback is `wrangler rollback`, which I've used more times than I'd like to admit.
+- **One Worker, no servers**: Cloudflare D1 + KV + Queues + AI Gateway + Workers AI + Vectorize. The vector index is the new arrival — 768 dimensions of cosine-flavoured opinion about whether two articles are secretly the same article. It's been right enough times that I no longer fight it. Ships in 30 seconds. Rollback is `wrangler rollback`, which I've used more times than I'd like to admit.
 
 ## What's *not* in it
 
@@ -51,30 +51,40 @@ The result: 60+ written requirements across 10 product domains (authentication, 
 |---|---|
 | Framework | [Astro 5](https://astro.build) on [Cloudflare Workers](https://workers.cloudflare.com) |
 | DB / Cache / Queues | [D1](https://developers.cloudflare.com/d1/) · [KV](https://developers.cloudflare.com/kv/) · [Queues](https://developers.cloudflare.com/queues/) |
-| LLM | [Workers AI](https://developers.cloudflare.com/workers-ai/): `gpt-oss-120b` (single-model architecture; native JSON mode, 128K context) |
+| LLM | [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) + Workers AI: `google-ai-studio/gemini-2.5-flash-lite` default; Workers AI embeddings for dedup |
 | Email | [Resend](https://resend.com) |
 | Auth | GitHub OAuth + Google OIDC. 5-min HMAC-SHA256 access JWT + 30-day device-bound refresh token (rotated, reuse-detected) |
 
 ## Deploy your own
 
-Three steps. The Deploy workflow handles D1, KV, queues, migrations, and secret push. No `wrangler deploy` from your laptop.
+Four steps. The Deploy workflow handles D1, KV, queues, migrations, Gateway preflight, and secret push. No `wrangler deploy` from your laptop.
 
 1. **Fork the repo.** You know how.
 
-2. **Set repo secrets.** In your fork: `Settings` > `Secrets and variables` > `Actions` > `New repository secret`. Four required, plus at least one OAuth provider pair (GitHub or Google or both; the landing page renders one button per configured provider, alphabetical).
+2. **Create the AI Gateway path.**
+
+   - Create or choose a Cloudflare AI Gateway named `ai-news-digest`.
+   - For a different name, set repository variable `AI_GATEWAY_NAME`.
+   - Add the Google AI Studio provider key to that Gateway.
+   - Create a least-privilege Gateway token for `google-ai-studio/gemini-2.5-flash-lite`.
+   - Deploy preflights the Gateway before publishing the Worker.
+
+3. **Set repo secrets.** In your fork: `Settings` > `Secrets and variables` > `Actions` > `New repository secret`. Five required, plus at least one OAuth provider pair (GitHub or Google or both; the landing page renders one button per configured provider, alphabetical).
 
    - `CLOUDFLARE_API_TOKEN`: see [token scopes](#api-token-scopes) below
    - `CLOUDFLARE_ACCOUNT_ID`: find it on any zone overview in the Cloudflare dashboard
+   - `AI_GATEWAY_API_TOKEN`: least-privilege runtime token for AI Gateway inference through the Gateway from step 2
    - `OAUTH_JWT_SECRET`: HMAC key for the 5-minute access token JWT. Generate: `openssl rand -base64 32`. If you use the word "password" here, you get what you deserve. (The 30-day refresh token is opaque and stored in D1, not signed — this secret only signs the short-lived access half.)
-   - `APP_URL`: canonical origin (your `*.workers.dev` URL or custom domain)
+   - `APP_URL`: canonical custom-domain origin whose zone is in the same Cloudflare account (for example, `https://news.example.com`)
 
-3. **Run the Deploy workflow.** `Actions` > `Deploy` > `Run workflow` > Branch: `main` > **Run workflow**. Takes ~2 minutes. Future pushes to `main` deploy automatically. When you break it, see `wrangler rollback` above.
+4. **Run the Deploy workflow.** `Actions` > `Deploy` > `Run workflow` > Branch: `main` > **Run workflow**. Takes ~2 minutes. Future pushes to `main` deploy automatically. When you break it, see `wrangler rollback` above.
 
 <details>
 <summary><strong>Full secret reference (OAuth providers, optional integrations)</strong></summary>
 
 | Secret | Required | What it's for |
 |---|---|---|
+| `AI_GATEWAY_API_TOKEN` | yes | Runtime bearer token for Cloudflare AI Gateway inference. Scope it to Gateway/model inference only; do not reuse the broad deploy token. |
 | `GH_OAUTH_CLIENT_ID` | one provider pair required | GitHub OAuth App client id. Create at github.com → Settings → Developer settings → OAuth Apps → New. Authorization callback URL is `<APP_URL>/api/auth/github/callback`. The `GH_` prefix (not `GITHUB_`) is mandatory; GitHub Actions reserves the `GITHUB_*` namespace for its built-in tokens. |
 | `GH_OAUTH_CLIENT_SECRET` | with the id | Generated alongside the GitHub client id. Server-side only. |
 | `GOOGLE_OAUTH_CLIENT_ID` | one provider pair required | Google OAuth 2.0 client id. Create at console.cloud.google.com → APIs & Services → Credentials → OAuth client ID → Web application. Authorized redirect URI is `<APP_URL>/api/auth/google/callback`. |
@@ -83,7 +93,7 @@ Three steps. The Deploy workflow handles D1, KV, queues, migrations, and secret 
 | `RESEND_FROM` | optional | Sender address (e.g. `News Digest <hello@yourdomain.com>`). Required when `RESEND_API_KEY` is set. |
 | `DEV_BYPASS_TOKEN` | optional | Enables `/api/dev/login` for `scripts/e2e-test.sh`. When unset, the endpoint returns 404. |
 
-A pair with only one field set is rejected by the deploy workflow so a half-configured provider never reaches runtime.
+A pair with only one field set is rejected by the deploy workflow so a half-configured provider never reaches runtime. The workflow builds `AI_GATEWAY_URL` from `CLOUDFLARE_ACCOUNT_ID` and the optional repository variable `AI_GATEWAY_NAME` (default `ai-news-digest`), then preflights `google-ai-studio/gemini-2.5-flash-lite` against that Gateway before publishing the Worker.
 
 </details>
 
@@ -99,12 +109,11 @@ Custom token via [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflar
 | Account | Workers KV Storage | Edit | Auto-creates the KV namespace |
 | Account | D1 | Edit | Auto-creates the D1 database and applies migrations |
 | Account | Queues | Edit | Auto-creates `scrape-coordinator`, `scrape-chunks`, `scrape-finalize`, `dedup-sweep`, and `pipeline-jobs` |
-| Account | Workers AI | Read | LLM inference for summaries + source discovery; bge-base-en-v1.5 for article embeddings |
 | Account | Vectorize | Edit | Auto-creates the `ai-news-embeddings` index; stores + queries 768-dim cosine embeddings for semantic dedup |
-| Zone | Zone | Read | Only when binding a custom domain; discovers the zone |
-| Zone | Workers Routes | Edit | Only when binding a custom domain; attaches the hostname |
+| Zone | Zone | Read | Required for custom-domain binding; discovers the zone |
+| Zone | Workers Routes | Edit | Required for custom-domain binding; attaches the hostname |
 
-The Zone scopes are skipped automatically when `APP_URL` is a `*.workers.dev` URL.
+`APP_URL` must be a custom domain because the committed Worker configuration disables the auto-assigned `*.workers.dev` subdomain.
 
 </details>
 
@@ -114,17 +123,18 @@ The Zone scopes are skipped automatically when `APP_URL` is a `*.workers.dev` UR
 1. Idempotently looks up (or creates) the D1 database, KV namespace, queues (`scrape-coordinator`, `scrape-chunks`, `scrape-finalize`, `dedup-sweep`, `pipeline-jobs`), and the `ai-news-embeddings` Vectorize index. All resolved IDs are patched into a CI-only copy of `wrangler.toml` so the deploy binds the right resources without committing back to the repo.
 2. (D1 + KV are looked up by name; the workflow creates them on first deploy if they don't exist yet.)
 3. Applies D1 migrations
-4. Pushes Worker secrets (Resend pair skipped when unset)
-5. `wrangler deploy`
-6. Binds `APP_URL` to the Worker (skipped on `*.workers.dev`)
-7. Smoke-tests `GET /` returns 200
+4. Preflights AI Gateway with a one-token `google-ai-studio/gemini-2.5-flash-lite` chat-completions request
+5. Pushes Worker secrets, including AI Gateway runtime config (Resend pair skipped when unset)
+6. `wrangler deploy`
+7. Binds the custom domain from `APP_URL` to the Worker
+8. Smoke-tests `GET /` on `APP_URL` returns `200` or `303`
 
 </details>
 
 <details>
 <summary><strong>Custom domain only: gate the admin endpoints</strong></summary>
 
-Operator endpoints under `/api/admin/*` (force-refresh, pipeline-run, embed-backfill, historical-dedup, discovery retry) need an extra gate so other signed-in users can't trigger them. Cloudflare Access at the zone level: [setup walkthrough](documentation/deployment.md#admin-only-routes-cloudflare-access-gating). On `*.workers.dev` you are the only user anyway — skip this unless you plan on having users.
+Operator endpoints under `/api/admin/*` (force-refresh, pipeline-run, embed-backfill, historical-dedup, discovery retry) need an extra gate so other signed-in users can't trigger them. Cloudflare Access at the zone level: [setup walkthrough](documentation/deployment.md#admin-only-routes-cloudflare-access-gating).
 
 </details>
 
@@ -136,7 +146,13 @@ npx wrangler d1 migrations apply DB --local
 npm run dev
 ```
 
-Copy `.dev.vars.example` to `.dev.vars`, add at least one OAuth client ID + secret pair (GitHub, Google, or both) and a random `OAUTH_JWT_SECRET` (≥32 bytes).
+Copy `.dev.vars.example` to `.dev.vars`, then add:
+
+- at least one OAuth client ID + secret pair (GitHub, Google, or both)
+- a random `OAUTH_JWT_SECRET` (≥32 bytes)
+- AI Gateway values: `AI_GATEWAY_API_TOKEN` and `AI_GATEWAY_URL`
+
+See [AI Gateway setup](documentation/configuration.md#ai-gateway-setup).
 
 ## License
 

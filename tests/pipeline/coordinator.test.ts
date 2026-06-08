@@ -2,8 +2,8 @@
 //
 // The coordinator fetches CURATED_SOURCES + discovered-tag feeds,
 // canonical-dedupes the pool, filters already-seen canonical URLs,
-// chunks survivors into ≤100-item slices, and enqueues SCRAPE_CHUNKS
-// messages with a KV counter primed to the chunk count. These tests
+// chunks survivors into ≤8-item slices, and enqueues SCRAPE_CHUNKS
+// messages with D1-backed chunk completion tracking. These tests
 // stub fetch, D1, KV, and the queue producer.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -17,9 +17,15 @@ interface SqlRecord {
 
 function makeDb(opts: {
   existingCanonicals?: string[];
+  claimChanges?: number | number[];
+  claimRow?: { status: string; chunk_count: number | null } | null;
+  events?: string[];
 } = {}): { db: D1Database; records: SqlRecord[] } {
   const records: SqlRecord[] = [];
   const existing = opts.existingCanonicals ?? [];
+  const claimChanges = Array.isArray(opts.claimChanges)
+    ? [...opts.claimChanges]
+    : [opts.claimChanges ?? 1];
   // Stable canonical_url → article_id map so the coordinator's
   // multi-source aggregation step can resolve a real id and emit
   // INSERT statements the test can assert on.
@@ -31,6 +37,16 @@ function makeDb(opts: {
         __params: params,
         run: vi.fn().mockImplementation(async () => {
           records.push({ sql, params, via: 'run' });
+          if (sql === 'UPDATE scrape_runs SET chunk_count = ?1 WHERE id = ?2') {
+            opts.events?.push('chunk_count');
+          }
+          if (sql.includes('UPDATE scrape_runs SET chunk_count = -1')) {
+            const changes =
+              claimChanges.length > 1
+                ? claimChanges.shift()
+                : claimChanges[0];
+            return { success: true, meta: { changes: changes ?? 0 } };
+          }
           return { success: true, meta: { changes: 1 } };
         }),
         all: vi.fn().mockImplementation(async () => {
@@ -58,7 +74,13 @@ function makeDb(opts: {
           }
           return { success: true, results: [] };
         }),
-        first: vi.fn().mockResolvedValue(null),
+        first: vi.fn().mockImplementation(async () => {
+          records.push({ sql, params, via: 'first' });
+          if (sql.includes('SELECT status, chunk_count FROM scrape_runs')) {
+            return opts.claimRow ?? null;
+          }
+          return null;
+        }),
       };
       return bound;
     },
@@ -123,13 +145,14 @@ function makeEnv(
 }
 
 /** Build a chunks queue that records every send call. */
-function makeChunksQueue(): {
+function makeChunksQueue(events?: string[]): {
   queue: Queue<unknown>;
   sends: unknown[];
 } {
   const sends: unknown[] = [];
   const queue = {
     send: vi.fn().mockImplementation(async (body: unknown) => {
+      events?.push('send');
       sends.push(body);
     }),
     sendBatch: vi.fn(),
@@ -170,7 +193,7 @@ function stubFetchEmpty(): void {
   );
 }
 
-describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PIPE-011 (filtering)', () => {
+describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-PIPE-016 / REQ-PIPE-021', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -187,6 +210,90 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
     await runCoordinator(env, { scrape_run_id: 'run-1' });
     // At least one chunk sent - curated registry is non-empty.
     expect(sends.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('REQ-PIPE-016 AC5: first-attempt duplicate coordinator delivery does not fan out again', async () => {
+    stubFetchWithItems(1);
+    const { db } = makeDb({
+      claimChanges: 0,
+      claimRow: { status: 'running', chunk_count: -1 },
+    });
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(
+      env,
+      { scrape_run_id: 'run-duplicate' },
+      { attempts: 1 },
+    );
+
+    expect(sends.length).toBe(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('REQ-PIPE-016 AC6: queue retry reclaims a stuck coordinator sentinel', async () => {
+    stubFetchWithItems(1);
+    const { db } = makeDb({
+      claimChanges: 0,
+      claimRow: { status: 'running', chunk_count: -1 },
+    });
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(
+      env,
+      { scrape_run_id: 'run-retry' },
+      { attempts: 2 },
+    );
+
+    expect(sends.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('REQ-PIPE-021 AC2: coordinator claim ignores terminal scrape_runs rows', async () => {
+    stubFetchWithItems(1);
+    const { db, records } = makeDb({
+      claimChanges: 0,
+      claimRow: { status: 'ready', chunk_count: 0 },
+    });
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(env, { scrape_run_id: 'run-terminal' });
+
+    expect(sends.length).toBe(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    const claim = records.find((r) =>
+      r.sql.includes('UPDATE scrape_runs SET chunk_count = -1'),
+    );
+    expect(claim?.sql).toContain("status = 'running'");
+  });
+
+  it('REQ-PIPE-021 AC1: empty candidate runs close atomically as terminal', async () => {
+    stubFetchEmpty();
+    const { db, records } = makeDb();
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(env, { scrape_run_id: 'run-empty-atomic' });
+
+    expect(sends.length).toBe(0);
+    const close = records.find(
+      (r) =>
+        r.sql.includes("SET status = 'ready'") &&
+        r.sql.includes('chunk_count = 0') &&
+        r.sql.includes('finalize_recorded = 1'),
+    );
+    expect(close?.sql).toContain("WHERE id = ?1 AND status = 'running'");
+    const separateZeroCount = records.find(
+      (r) =>
+        r.sql === 'UPDATE scrape_runs SET chunk_count = ?1 WHERE id = ?2' &&
+        r.params[0] === 0,
+    );
+    expect(separateZeroCount).toBeUndefined();
   });
 
   it('REQ-PIPE-001: filters out candidates whose canonical_url is already in articles', async () => {
@@ -207,7 +314,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
     expect(sends.length).toBe(0);
   });
 
-  it('REQ-PIPE-001: chunks survivors into slices of ≤100 and enqueues SCRAPE_CHUNKS per chunk', async () => {
+  it('REQ-PIPE-001: chunks survivors into slices of ≤8 and enqueues SCRAPE_CHUNKS per chunk', async () => {
     // Stub fetch to return many items per call. Per-source cap is 10 in
     // the coordinator, so we'll see ~10 × (curated sources) items. With
     // >50 curated sources, we reach multiple chunks easily.
@@ -225,11 +332,32 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
         total_chunks: number;
       };
       expect(msg.scrape_run_id).toBe('run-3');
-      expect(msg.candidates.length).toBeLessThanOrEqual(100);
+      expect(msg.candidates.length).toBeLessThanOrEqual(8);
     }
   });
 
-  it('REQ-PIPE-001 / CF-007: does NOT write the legacy KV chunks_remaining mirror', async () => {
+  it('REQ-PIPE-016 AC6: writes chunk_count only after every chunk message is sent', async () => {
+    // The dispatch sentinel (-1) must remain in D1 until queue fan-out
+    // finishes. If the real chunk_count is written before the send loop
+    // completes, a coordinator crash can strand the run waiting for chunks
+    // that were never enqueued.
+    const events: string[] = [];
+    stubFetchWithItems(20);
+    const { db } = makeDb({ events });
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue(events);
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(env, { scrape_run_id: 'run-dispatch-order' });
+
+    expect(sends.length).toBeGreaterThanOrEqual(1);
+    expect(events.slice(0, sends.length)).toEqual(
+      Array.from({ length: sends.length }, () => 'send'),
+    );
+    expect(events[sends.length]).toBe('chunk_count');
+  });
+
+  it('REQ-PIPE-001 AC3 / REQ-PIPE-006 AC5 / CF-007: does NOT write the legacy KV chunks_remaining mirror', async () => {
     // CF-007 removed the KV dual-write. /api/scrape-status now derives
     // chunks_remaining from a D1 COUNT on scrape_chunk_completions.
     // Guard: no KV put with the legacy key — a regression would
@@ -445,7 +573,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
     expect(restamp).toBeUndefined();
   });
 
-  it('REQ-PIPE-001 AC7 (CF-040): item with null pubDate is kept, NOT treated as stale', async () => {
+  it('REQ-PIPE-011 (CF-040): item with null pubDate is kept, NOT treated as stale', async () => {
     // A missing pubDate falls back to ingestion time so it always
     // passes the freshness filter. It must NOT be dropped just because
     // the parsed date field is absent - that would silently blackhole
@@ -528,7 +656,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
     expect(allCandidates.length).toBeGreaterThan(0);
   });
 
-  it('REQ-PIPE-001: when pool is empty, finishRun(ready) is called immediately', async () => {
+  it('REQ-PIPE-021 AC1: when pool is empty, the run closes as ready atomically', async () => {
     stubFetchEmpty();
     const { db, records } = makeDb();
     const { kv } = makeKv();
@@ -536,11 +664,12 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 (body-fetch) / REQ-PI
     const env = makeEnv(db, kv, queue);
     await runCoordinator(env, { scrape_run_id: 'run-5' });
     expect(sends.length).toBe(0);
-    const finish = records.find(
+    const close = records.find(
       (r) =>
-        r.sql.includes('UPDATE scrape_runs') &&
-        (r.params as unknown[])[1] === 'ready',
+        r.sql.includes("SET status = 'ready'") &&
+        r.sql.includes('chunk_count = 0') &&
+        r.sql.includes('finalize_recorded = 1'),
     );
-    expect(finish).toBeDefined();
+    expect(close).toBeDefined();
   });
 });

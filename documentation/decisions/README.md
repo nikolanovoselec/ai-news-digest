@@ -64,6 +64,13 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD47](#ad47-storage-shape-allowlist-promoted-to-spec-discipline-ad9-superseded) | Storage-shape allowlist promoted to spec-discipline; AD9 superseded | Storage | 2026-05-13 |
 | [AD48](#ad48-dedup-cost-reduction-borderline-rerank-watermark-batched-rerank-call-pipeline-wide-gpt-oss-20b) | Dedup cost reduction: borderline-rerank watermark + batched rerank call + pipeline-wide gpt-oss-20b | Architecture | 2026-05-14 |
 | [AD49](#ad49-workflow_run-deploy-gate-hardened-against-fork-pwn-request-vector) | `workflow_run` deploy gate hardened against fork pwn-request vector | Security | 2026-05-19 |
+| [AD50](#ad50-gemma-4-26b-integration-canary-for-pipeline-default) | Gemma 4 26B integration canary for pipeline default | Architecture | 2026-06-06 |
+| [AD51](#ad51-granite-40-h-micro-integration-canary-for-pipeline-default) | Granite 4.0 H Micro integration canary for pipeline default | Architecture | 2026-06-06 |
+| [AD52](#ad52-glm-47-flash-integration-canary-for-pipeline-default) | GLM 4.7 Flash integration canary for pipeline default | Architecture | 2026-06-06 |
+| [AD53](#ad53-gpt-oss-20b-integration-retest-for-pipeline-default) | GPT OSS 20B integration retest for pipeline default | Architecture | 2026-06-06 |
+| [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default) | Gemini 2.5 Flash-Lite via AI Gateway for pipeline default | Architecture | 2026-06-07 |
+| [AD55](#ad55-adr-ledger-escalation-threshold-after-model-canary-growth) | ADR ledger escalation threshold after model-canary growth | Documentation | 2026-06-07 |
+| [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired) | Scrape progress derives from D1; KV progress mirror retired | Storage | 2026-06-08 |
 
 ---
 
@@ -179,13 +186,13 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 **Consequences:** KV writers are centralised through `src/lib/kv/` helpers (AD27) to keep the byte-equal invariant load-bearing. Any new strongly-consistent state (counters requiring transactions, per-user locking) must go into D1, not KV. AD7 applied this directly to chunk-completion tracking.
 
-**Related requirements:** [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery), [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
+**Related requirements:** [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
 ---
 
 ### AD6: Polling for scrape-run progress, not SSE or WebSockets
 
-**Status:** Accepted (2026-04-23)
+**Status:** Accepted (2026-04-23); extended by [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired)
 
 **Decision:** While a scrape run is in progress, the client polls `GET /api/scrape-status` every 5 seconds to drive the "Update in progress" indicator and the Force Refresh progress display on `/settings`.
 
@@ -195,7 +202,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 - Server-Sent Events streaming phase updates - no clean transport between the Queue consumer and the SSE HTTP handler without adding Durable Objects.
 - WebSockets via per-user DO - works for codeflare (terminals), overkill here.
 
-**Rationale:** Polling `GET /api/scrape-status` (one D1 SELECT + one KV get) is negligible overhead at the operator-only volume this endpoint serves. No DO complexity, no WebSocket protocol, no phase-update machinery. The UX difference is imperceptible for a one-shot status flip.
+**Rationale:** At acceptance time, polling `GET /api/scrape-status` (one D1 SELECT + one KV get) was negligible overhead at the operator-only volume this endpoint serves. No DO complexity, no WebSocket protocol, no phase-update machinery. The UX difference was imperceptible for a one-shot status flip. AD56 later retired the KV progress read.
 
 **Consequences:** The 5-second poll cadence is the resolution floor for progress visibility. If scrape runs become significantly faster (sub-10 s), the polling interval should be revisited. Clients that close the browser tab during a run will miss intermediate progress but can rehydrate via `/api/scrape-status` on next open.
 
@@ -205,7 +212,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 ### AD7: D1 for chunk completion tracking, replacing KV read-modify-write
 
-**Status:** Accepted (2026-04-24)
+**Status:** Accepted (2026-04-24); extended by [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired)
 
 **Decision:** Move the "last chunk done" gate from a KV decrement (`scrape_run:{id}:chunks_remaining`) to a D1 `INSERT OR IGNORE` + `SELECT COUNT(*)` pattern on a dedicated `scrape_chunk_completions` table, with a follow-up conditional `UPDATE scrape_runs SET finalize_enqueued = 1 WHERE finalize_enqueued = 0` to gate the finalize handoff.
 
@@ -220,9 +227,9 @@ KV's eventual consistency made both races effectively undetectable via testing i
 - Durable Object for serialized counter updates - correct, but adds a DO dependency to a pipeline that runs without one today.
 - KV with Compare-And-Swap (`getWithMetadata` + `put` with `expirationTtl` as a CAS surrogate) - fragile; KV has no native CAS and the surrogate is not atomic.
 
-**Rationale:** AD5's own principle applies directly: completion counting needs transactional semantics. `INSERT OR IGNORE` into a table keyed by `(scrape_run_id, chunk_index)` is idempotent under redelivery and gives an exact count via `SELECT COUNT(*)` - no race. The finalize-enqueue gate is collapsed into a single atomic `UPDATE … WHERE finalize_enqueued = 0`; D1 returns `meta.changes` for exactly one consumer. The KV counter (`scrape_run:{id}:chunks_remaining`) is retained as a derived mirror for the `/api/scrape-status` progress display but is no longer authoritative. Implements [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) and the same-story finalize gate now in [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) (the prior LLM-finalize-dedup REQ that owned this gate was retired in the 2026-05-13 same-story matching consolidation).
+**Rationale:** AD5's own principle applies directly: completion counting needs transactional semantics. `INSERT OR IGNORE` into a table keyed by `(scrape_run_id, chunk_index)` is idempotent under redelivery and gives an exact count via `SELECT COUNT(*)` - no race. The finalize-enqueue gate is collapsed into a single atomic `UPDATE … WHERE finalize_enqueued = 0`; D1 returns `meta.changes` for exactly one consumer. At acceptance time, the KV counter (`scrape_run:{id}:chunks_remaining`) was retained as a derived mirror for the `/api/scrape-status` progress display but was no longer authoritative; AD56 later retired that mirror. Implements [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) and the same-story finalize gate now in [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) (the prior LLM-finalize-dedup REQ that owned this gate was retired in the 2026-05-13 same-story matching consolidation).
 
-**Consequences:** The `scrape_chunk_completions` table grows one row per chunk per run; the retention cron (03:00 UTC) must cover this table or it will grow unbounded. The KV mirror is best-effort and may lag behind D1 by up to one propagation window - consumers must not rely on it for correctness, only for display.
+**Consequences:** The `scrape_chunk_completions` table grows one row per chunk per run; the retention cron (03:00 UTC) must cover this table or it will grow unbounded. At acceptance time, the KV mirror was best-effort and could lag behind D1 by up to one propagation window - consumers could not rely on it for correctness, only for display. AD56 later removed that propagation window by deriving progress from D1 only.
 
 **Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)
 
@@ -281,7 +288,7 @@ KV's eventual consistency made both races effectively undetectable via testing i
 - Schema changes update both the affected REQ AC and this ADR (and the corresponding migration files) in lockstep.
 - `documentation/architecture.md` references the storage shapes in §4.2 (libraries) and §4.5 (Worker, queue, and migrations); `documentation/configuration.md` documents the KV bindings and naming conventions. This ADR explains why those high-level references coexist with the inline persistence names in the REQs.
 
-**Related requirements:** [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery), [REQ-DISC-002](../../sdd/discovery.md#req-disc-002-discovery-progress-visibility), [REQ-AUTH-002](../../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-SET-001](../../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../../sdd/settings.md#req-set-005-email-notification-preference)
+**Related requirements:** [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-002](../../sdd/discovery.md#req-disc-002-discovery-progress-visibility), [REQ-AUTH-002](../../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-SET-001](../../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../../sdd/settings.md#req-set-005-email-notification-preference)
 
 ---
 
@@ -758,7 +765,7 @@ PR #185 attempted to compensate with `margin-top: -0.3em`. The user reported thi
 
 ### AD27: All KV writers route through `src/lib/kv/<family>.ts` helpers
 
-**Status:** Accepted (2026-05-05)
+**Status:** Accepted (2026-05-05); extended by [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired)
 
 **Decision:** Every KV writer for a multi-site key family lives in a dedicated helper file under `src/lib/kv/<family>.ts`. Inline `env.KV.put(...)` or `env.KV.delete(...)` calls from queue handlers, page routes, or other lib files are prohibited when the key family has more than one call site.
 
@@ -767,7 +774,7 @@ PR #185 attempted to compensate with `margin-top: -0.3em`. The user reported thi
 - `scrape_run:{id}:chunks_remaining` - written from both the coordinator and the chunk consumer.
 - `discovery_failures:{tag}` - written (put + delete) from `discovery.ts`, `cleanup.ts`, and two admin retry routes.
 
-The `source_health:{url}` family was already centralised in `src/lib/feed-health.ts`, `headlines:{source}:{tag}` in `src/lib/headline-cache.ts`, and rate-limit keys in `src/lib/rate-limit.ts`. Single-call-site readers (e.g., `/api/scrape-status` reading `chunks_remaining`) remain inline - the invariant targets writers and multi-site families only.
+The `source_health:{url}` family was already centralised in `src/lib/feed-health.ts`, `headlines:{source}:{tag}` in `src/lib/headline-cache.ts`, and rate-limit keys in `src/lib/rate-limit.ts`. At acceptance time, single-call-site readers (e.g., `/api/scrape-status` reading `chunks_remaining`) remained inline - the invariant targeted writers and multi-site families only. AD56 later retired that progress reader.
 
 **Alternatives considered:**
 
@@ -777,10 +784,10 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 **Consequences:**
 
 - New KV key families with more than one writer MUST add a `src/lib/kv/<family>.ts` helper before the first writer lands. Code review MUST flag inline `env.KV.put(...)` writes outside `src/lib/kv/` or the pre-existing centralised files; PRs introducing such writes are blocked at review.
-- Single-call-site reads (e.g., `scrape-status.ts` reading `chunks_remaining`) may remain inline - the invariant is about multi-site writers, not all KV access.
+- Single-call-site reads may remain inline - the invariant is about multi-site writers, not all KV access. AD56 later retired the `chunks_remaining` read path specifically.
 - Existing files `src/lib/feed-health.ts`, `src/lib/headline-cache.ts`, `src/lib/sources-cache.ts`, and `src/lib/rate-limit.ts` are already compliant; they predate this ADR and serve the same pattern.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-llm-assisted-source-discovery-for-per-tag-feeds)
+**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup)
 
 ---
 
@@ -859,7 +866,7 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 
 **Status:** Accepted (2026-05-06)
 
-**Decision:** The per-tag Google News query-RSS baseline is owned by the coordinator (REQ-PIPE-001 AC 6), which synthesises a GN source for every tag in the union of (defaults ∪ curated ∪ discovered KV) on every tick. The discovery LLM (REQ-DISC-001 AC 3) is the legacy producer of the same kind of URL, written once into KV `sources:{tag}` for tags without a first-party feed; its prompt instruction to emit a Google News fallback is now redundant. Discovery LLM should be retrained on first-party sources only in a follow-up pass; until then both paths coexist and the prefer-direct-source pass absorbs any minor overlap.
+**Decision:** The per-tag Google News query-RSS baseline is owned by the coordinator (REQ-PIPE-019), which synthesises a GN source for every tag in the union of (defaults ∪ curated ∪ discovered KV) on every tick. The discovery LLM (REQ-DISC-007 AC 3) is the legacy producer of the same kind of URL, written once into KV `sources:{tag}` for tags without a first-party feed; its prompt instruction to emit a Google News fallback is now redundant. Discovery LLM should be retrained on first-party sources only in a follow-up pass; until then both paths coexist and the prefer-direct-source pass absorbs any minor overlap.
 
 **Context:** Two independent code paths produce a Google News query-RSS source for the same tag. The discovery-LLM path persists per-tag once at first discovery. The coordinator-baseline path synthesises every tick. A discovered non-curated tag without a first-party feed therefore fans out a GN query twice - once via the KV-cached discovery URL, once via coordinator synthesis. The query strings differ slightly (LLM-crafted phrasing vs. tag-with-dashes-as-spaces), so canonical-URL dedup may miss the overlap; the prefer-direct-source pass cleans up downstream when a direct copy lands in the same tick. This was flagged as an unresolved architectural question in the PR #201 review.
 
@@ -872,11 +879,11 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 
 **Consequences:**
 
-- REQ-PIPE-001 AC 6 is the canonical home of GN baseline behaviour; reviewers MUST NOT flag the discovery LLM's GN fallback as a missing capability - it is intentionally redundant during the transition.
+- REQ-PIPE-019 is the canonical home of GN baseline behaviour; reviewers MUST NOT flag the discovery LLM's GN fallback as a missing capability - it is intentionally redundant during the transition.
 - A follow-up issue should retrain the discovery LLM prompt on first-party sources only and remove the GN fallback instruction. Until then, the existing KV entries continue to fan out and the coordinator-baseline pass absorbs the duplicate.
 - The aggregator-vs-direct dedup pass continues to absorb GN-vs-direct overlap as it does today; no new behaviour is required of it.
 
-**Related requirements:** REQ-PIPE-001 AC 6, REQ-DISC-001 AC 3.
+**Related requirements:** REQ-PIPE-019, REQ-DISC-007 AC 3.
 
 ---
 
@@ -1355,7 +1362,6 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Future doc growth in any of the three files MUST reopen this AD before a new bare hatch lands. A bare `doc-allow-large` marker on these files without an AD46-or-successor reference is a `doc-updater` HIGH finding.
 - If `deployment.md` grows to the point where the operator workflow itself becomes hard to follow, the split should be a deliberate workflow redesign (e.g., a master deploy runbook with linked sub-pages), not a lane-discipline split.
 - Pass 6 (file-level shape consistency) findings against `deployment.md` are accepted under AD46d's hybrid-rendering carve-out. If a future review surfaces a shape-mismatch in a section that does NOT serve a runbook-or-registry purpose, AD46d does not cover it and the standard Pass 6 conversion applies.
-- The ADR ledger's single-file design implicitly limits the ledger's growth ceiling. If the ledger reaches 50 ADRs or 2500 lines, the next PR-boundary `doc-updater` run MUST escalate this AD for revision before accepting further ADR additions to the single file.
 
 **Related requirements:** none direct — operational/documentation concern.
 
@@ -1411,7 +1417,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Future storage-shape REQs (D1 columns, KV key shapes) pass automatically; no new ADR required for the same pattern.
 - If a future audit ever wants to tighten the carveout — e.g., to only cover column names appearing in user-facing settings UIs — the allowlist is the place to scope, not a new ADR.
 
-**Related requirements:** [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-llm-assisted-per-tag-feed-discovery), [REQ-DISC-002](../../sdd/discovery.md#req-disc-002-discovery-progress-visibility), [REQ-AUTH-002](../../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-replay-detection), [REQ-SET-001](../../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../../sdd/settings.md#req-set-005-email-notification-preference), [REQ-MAIL-001](../../sdd/email.md#req-mail-001-digest-ready-email-content), [REQ-MAIL-003](../../sdd/email.md#req-mail-003-scheduled-send-policy-and-opt-out)
+**Related requirements:** [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-002](../../sdd/discovery.md#req-disc-002-discovery-progress-visibility), [REQ-AUTH-002](../../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout), [REQ-SET-001](../../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../../sdd/settings.md#req-set-005-email-notification-preference), [REQ-MAIL-001](../../sdd/email.md#req-mail-001-digest-ready-email-content), [REQ-MAIL-003](../../sdd/email.md#req-mail-003-digest-ready-email-send-policy)
 
 ---
 
@@ -1440,7 +1446,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Operator-triggered `/api/admin/historical-dedup` and `?reembed=1` invalidate the watermark (the latter via `clearWatermark`, the former via a `bypassWatermark: true` flag propagated through every continuation queue message) so a manual sweep after a threshold or prompt change re-judges everything.
 - Test fixtures that previously mocked single-pair `{"same_event": ...}` responses now mock the batched `{"verdicts":[{"i":N,"same_event":...}]}` shape; a no-verdicts response degrades to "all false" per pair, preserving the conservative default.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-SET-004](../../sdd/settings.md#req-set-004-server-side-model-catalog-and-default)
+**Related requirements:** [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
 
 ---
 
@@ -1453,7 +1459,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - `github.event.workflow_run.event == 'push'` — only post-merge runs trigger deploy; pull_request runs do not.
 - `github.event.workflow_run.head_repository.full_name == github.repository` — only runs originating from this repo, never from a fork.
 
-**Context:** The outer `workflow_run` trigger filter `branches: [main]` matches the PR head ref name, not the source repository. A fork contributor who opens a PR with a head branch literally named `main` passes that filter. Without the two extra guards, the deploy job would check out the fork's untrusted SHA with `actions:write` permissions and access to all deploy secrets (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `OAUTH_JWT_SECRET`, OAuth client secrets, Resend API key). This is the standard `workflow_run` pwn-request vector for public repos documented in GitHub's security hardening guide. Mirror of codeflare#385 (commit `1dfc042`).
+**Context:** The outer `workflow_run` trigger filter `branches: [main]` matches the PR head ref name, not the source repository. A fork contributor who opens a PR with a head branch literally named `main` passes that filter. Without the two extra guards, the deploy job would check out the fork's untrusted SHA with `actions:write` permissions and access to all deploy secrets (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `OAUTH_JWT_SECRET`, OAuth client secrets, Resend API key). This is the standard `workflow_run` pwn-request vector for public repos documented in GitHub's security hardening guide. Mirror of codeflare#385 (commit `1dfc042`). <!-- @impl: .github/workflows/deploy.yml::workflow_run.event -->
 
 **Alternatives considered:**
 
@@ -1468,6 +1474,170 @@ Three reasons the AD41 fix did not collapse this cluster:
 - The legitimate post-merge path remains: PR Checks runs on the merge commit (event=push, head_repository=this repo), Deploy fires when it ends green.
 
 **Related:** [AD12](#ad12-integration-env-separate-cloudflare-resources-manual-trigger-from-develop-crons-disabled), [AD28](#ad28-npm-audit-gating-split---high-advisory-critical-blocking)
+
+---
+
+### AD50: Gemma 4 26B integration canary for pipeline default
+
+**Status:** Superseded by AD51 after failed integration canary (2026-06-06)
+
+**Decision:** Flip `DEFAULT_MODEL_ID` on develop from `@cf/openai/gpt-oss-120b` to `@cf/google/gemma-4-26b-a4b-it` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
+
+**Context:** Application-side token accounting showed chunk summarisation dominated recorded model cost, so the first canary retested a lower-cost long-context Workers AI candidate. A previous 2026-05 attempt was abandoned after chunk-sized prompts hit Workers AI wall-clock cancellations, so this is explicitly a live integration retest, not a production promotion. <!-- @impl: src/queue/scrape-chunk-consumer.ts::runChunkLLM -->
+
+**Alternatives considered:**
+
+- *Keep 120B and only pursue pre-LLM pruning / prompt compaction.* Safest for quality, but it does not answer whether the cheapest operational lever is viable again on current Workers AI infrastructure.
+- *Shadow/canary per-call model routing while production remains 120B.* Safer for production, but it violates the project's current single-model simplicity and requires a larger code change before the cheapest experiment can start.
+- *Switch directly in production.* Rejected — prior Gemma evidence included chunk cancellations, and the project requires unchanged summary/dedup quality before promotion.
+
+**Consequences:**
+
+- The 2026-06-06 integration run reproduced the prior failure class: most `scrape-chunks` executions were canceled after body fetch.
+- Only 1 of 7 chunks completed, finalize did not run, and the pipeline ended `scrape_wait_stalled` (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)).
+- Gemma is not a viable drop-in default under current chunking.
+- Cost projections should compare `scrape_runs.tokens_in`, `scrape_runs.tokens_out`, and `estimated_cost_usd` between each integration canary and the 120B production baseline.
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+
+---
+
+### AD51: Granite 4.0 H Micro integration canary for pipeline default
+
+**Status:** Superseded by AD52 after failed content-quality canary (2026-06-06)
+
+**Decision:** Flip `DEFAULT_MODEL_ID` on develop from the failed Gemma canary to `@cf/ibm-granite/granite-4.0-h-micro` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
+
+**Context:** Gemma's same-day canary failed before enough chunks completed to evaluate quality, so the next canary tried Granite as the aggressive lower-cost Workers AI candidate. The decision remained integration-only until reliability and article quality could be checked from scrape-run outputs. <!-- @impl: src/lib/models.ts::MODELS -->
+
+**Alternatives considered:**
+
+- *Try GLM 4.7 Flash first.* Plausible and near the 70% target, but Granite offers a larger projected cost reduction and a 131K context window, so it is useful as the aggressive lower-bound canary.
+- *Try Qwen3 30B A3B FP8 first.* Rejected for this immediate canary because its 32K context would require chunk-size/output-budget changes before testing.
+- *Return directly to 120B.* Safest operationally, but it stops the integration-only search for a lower-cost drop-in.
+
+**Consequences:**
+
+- The 2026-06-06 Granite run completed all chunks and finalize, so it did not reproduce Gemma's cancellation failure (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)).
+- Granite still failed the content contract: most candidates were dropped for missing index alignment, several chunks needed invalid-JSON retries, and the scrape ingested only three articles from 89 LLM survivors (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)).
+- Granite's very low price is not enough; a cheap run that misses most stories is not an acceptable production replacement.
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+
+---
+
+### AD52: GLM 4.7 Flash integration canary for pipeline default
+
+**Status:** Superseded by AD53 after failed operational canary (2026-06-06)
+
+**Decision:** Flip `DEFAULT_MODEL_ID` on develop from the failed Granite canary to `@cf/zai-org/glm-4.7-flash` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
+
+**Context:** Gemma failed reliability, and Granite failed the output contract, so GLM became the next lower-cost drop-in candidate for the integration environment. The test kept the existing chunk shape and evaluated whether reliability, quality, and savings could all hold together. <!-- @impl: src/lib/models.ts::MODELS -->
+
+**Alternatives considered:**
+
+- *Try Qwen3 30B A3B FP8 next.* Rejected for this immediate canary because its 32K context would require chunk-size/output-budget changes before testing.
+- *Try Llama 3.2 11B next.* Plausible quality-wise, but its projected reduction is closer to 65%, below the 70% target without additional pipeline savings.
+- *Return directly to 120B.* Safest operationally, but it stops the integration-only search before trying the strongest remaining 128K-plus cost candidate.
+
+**Consequences:**
+
+- The 2026-06-06 GLM run reproduced the chunk-cancellation failure: 0 of 4 chunks completed, the first `scrape-chunks` execution was canceled after `chunk_article_bodies_fetched`, and the pipeline ended `scrape_wait_stalled` (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)).
+- No articles were ingested and no chunk token cost was recorded because no chunk LLM call completed.
+- GLM is not a viable drop-in default under current chunking.
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+
+---
+
+### AD53: GPT OSS 20B integration retest for pipeline default
+
+**Status:** Superseded by [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default) (2026-06-07); accepted for develop/integration retest on 2026-06-06.
+
+**Decision:** Flip `DEFAULT_MODEL_ID` on develop from the failed GLM canary to `@cf/openai/gpt-oss-20b` and deploy that branch to the isolated integration Worker. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all continue to route through `DEFAULT_MODEL_ID`.
+
+**Context:** GPT OSS 20B is the lower-cost sibling of the 120B production baseline and keeps the same native JSON-mode path used by the existing Workers AI calls. AD48 previously rolled it back after mid-call cancellations on chunk-sized prompts, but a focused integration retest was useful after Gemma and GLM reproduced cancellations and Granite failed quality. <!-- @impl: src/lib/models.ts::MODELS -->
+
+**Alternatives considered:**
+
+- *Return directly to 120B.* Safest operationally, but it leaves the closest 120B sibling untested in the current integration setup.
+- *Try Qwen3 30B A3B FP8 next.* Rejected for this immediate retest because its 32K context would require chunk-size/output-budget changes before testing.
+- *Stop model swaps and implement 120B waste reduction.* Still the safer long-term path if 20B fails reliability or quality gates.
+
+**Consequences:**
+
+- Integration scrape runs must be checked for chunk cancellations, `chunk_invalid_json`, title-alignment drops, word-count drops, accepted article count, and same-story duplicate quality before considering any production promotion.
+- Even a successful 20B run does not meet the 70% reduction target by itself; it would need pipeline waste reductions to reach the target while preserving quality.
+- If 20B fails reliability or quality gates again, rollback is a one-line `DEFAULT_MODEL_ID` revert to `@cf/openai/gpt-oss-120b` plus matching test/doc updates.
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+
+---
+
+### AD54: Gemini 2.5 Flash-Lite AI Gateway canary for pipeline default
+
+**Status:** Accepted for develop-to-main release (2026-06-07)
+
+**Decision:** Promote `google-ai-studio/gemini-2.5-flash-lite` as `DEFAULT_MODEL_ID` and route Gateway-backed models through Cloudflare AI Gateway's OpenAI-compatible chat-completions endpoint. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all use the same default model.
+
+**Context:** Workers AI canaries did not meet the release target: Gemma and GLM reproduced chunk cancellations, Granite failed alignment/quality, and 20B did not reach the required 70%+ savings. <!-- @impl: src/lib/models.ts::DEFAULT_MODEL_ID -->
+
+The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 rows, kept 38/44 summaries in the 100-150 word target, and reduced total chunk-plus-rerank cost to about $0.0209 versus GLM's about $0.0885 (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)). Audit IDs: pipeline `01KTHM7CHAK1S2E7R7PJX6NDJN`, scrape `01KTHM7FW2FT5EFZGBT9K9QGFF`, dedup `01KTHMDRAE935N76DSHZ27295A`.
+
+**Alternatives considered:**
+
+- *Keep GLM.* Rejected because the successful retest was only about 60.7% cheaper than baseline and missed the requested savings threshold.
+- *Keep Workers AI-only defaults.* Rejected for this release because the tested Workers AI candidates failed reliability, quality, or savings gates.
+- *Use Gateway cache as retry fallback.* Rejected because malformed JSON replay can poison queue retries; Gateway calls set `cf-aig-skip-cache: true`.
+
+**Consequences:**
+
+- Runtime Gateway auth uses dedicated `AI_GATEWAY_API_TOKEN` plus configured `AI_GATEWAY_URL`; the broad deploy token stays in GitHub Actions.
+- The provider key remains stored in Cloudflare AI Gateway, not in source or Worker env.
+- Gateway-backed calls must fail closed when the token or URL is missing or invalid.
+- The chunk prompt and JSON repair optimisations remain part of the cost-control envelope; source snippets are not shortened.
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+
+---
+
+### AD55: ADR ledger escalation threshold after model-canary growth
+
+**Status:** Accepted (2026-06-07)
+
+**Extends:** [AD46](#ad46-documentation-file-size-hatches-and-hybrid-renderings-deployment-colocation-architecture-diagrams-adr-index-deployment-hybrid-shape)
+
+**Decision:** Keep `documentation/decisions/README.md` as the ADR ledger after the 2026-06 model-canary sequence pushed the ledger past 50 ADRs. The next mandatory split evaluation is 75 ADRs or 3500 lines, whichever comes first.
+
+**Context:** AD46c accepted the single-file ADR ledger for chronological reading and stable cross-ADR anchors. The model-canary sequence added AD50 through AD54, so the ledger needed a fresh threshold decision without mutating AD46. <!-- @impl: documentation/decisions/README.md::AD54 -->
+
+**Consequences:**
+
+- AD46 remains historical; this decision is the current threshold for the ADR ledger.
+- The single-file ledger remains accepted while chronological reading and cross-ADR anchors are clearer in one file.
+- Crossing either threshold requires a new ADR or a deliberate ledger split.
+
+**Related requirements:** none direct — documentation structure concern.
+
+---
+
+### AD56: Scrape progress derived from D1; KV progress mirror retired
+
+**Status:** Accepted (2026-06-08)
+
+**Extends:** [AD6](#ad6-polling-for-scrape-run-progress-not-sse-or-websockets), [AD7](#ad7-d1-for-chunk-completion-tracking-replacing-kv-read-modify-write), [AD27](#ad27-all-kv-writers-route-through-srclibkvfamilyts-helpers)
+
+**Decision:** `/api/scrape-status` derives in-flight chunk progress from D1 (`scrape_runs.chunk_count` minus `scrape_chunk_completions` rows). The legacy KV progress mirror `scrape_run:{id}:chunks_remaining` is retired and is no longer written by the coordinator or chunk consumer.
+
+**Context:** AD7 moved the correctness gate to D1 but originally kept KV as a best-effort display mirror. Later implementation removed the mirror entirely so display and correctness now share the same D1 source. That avoids cache-lag discrepancies and removes one multi-writer KV family from the AD27 helper surface. <!-- @impl: src/pages/api/scrape-status.ts::GET -->
+
+**Consequences:**
+
+- Scrape progress UI reads D1-derived fields only; there is no KV propagation window for progress display.
+- The retired `scrape_run:{id}:chunks_remaining` key remains historical context in AD7/AD27, but new code must not reintroduce it without a new ADR.
+- AD27 still governs active multi-writer KV families such as `discovery_failures:{tag}`.
+
+**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
 
 ---
 

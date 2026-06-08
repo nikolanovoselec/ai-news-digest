@@ -13,9 +13,9 @@ import {
 } from '~/lib/prompts';
 
 describe('LLM param sets — REQ-PIPE-002 / REQ-DISC-001 (CF-023)', () => {
-  it('CHUNK_LLM_PARAMS reserves 32K output, leaving room for ~96K input on the 128K-context default model', () => {
+  it('CHUNK_LLM_PARAMS reserves 14K output while staying compatible with 128K+ rollback models', () => {
     expect(CHUNK_LLM_PARAMS.temperature).toBe(0.6);
-    expect(CHUNK_LLM_PARAMS.max_tokens).toBe(32_000);
+    expect(CHUNK_LLM_PARAMS.max_tokens).toBe(14_000);
     expect(CHUNK_LLM_PARAMS.response_format.type).toBe('json_object');
   });
   it('DISCOVERY_LLM_PARAMS is the small-payload variant (4K tokens) for feed-list output', () => {
@@ -150,6 +150,7 @@ describe('PROCESS_CHUNK_SYSTEM + processChunkUserPrompt — REQ-PIPE-002', () =>
     expect(PROCESS_CHUNK_SYSTEM).toContain('"index"');
     // And the JSON shape at the top of the prompt must document it.
     expect(PROCESS_CHUNK_SYSTEM).toMatch(/"index"\s*:\s*N/);
+    expect(PROCESS_CHUNK_SYSTEM).toContain('EXACTLY one entry per input candidate');
   });
 
   it('REQ-PIPE-002: PROCESS_CHUNK_SYSTEM forbids inventing tags outside the allowlist', () => {
@@ -205,6 +206,9 @@ describe('PROCESS_CHUNK_SYSTEM + processChunkUserPrompt — REQ-PIPE-002', () =>
     expect(prompt).toContain('title');
     expect(prompt).toContain('details');
     expect(prompt).toContain('tags');
+    expect(prompt).toContain('Output exactly 2 entries');
+    expect(prompt).toContain('one record for every bracketed candidate index');
+    expect(prompt).not.toContain('Output up to');
     expect(prompt).not.toContain('dedup_groups');
   });
 

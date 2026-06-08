@@ -44,7 +44,7 @@ describe('scrape-run helpers — REQ-PIPE-006', () => {
 
     await startRun(db, {
       id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
-      model_id: '@cf/google/gemma-4-26b-a4b-it',
+      model_id: '@cf/zai-org/glm-4.7-flash',
     });
 
     expect(calls).toHaveLength(1);
@@ -54,7 +54,7 @@ describe('scrape-run helpers — REQ-PIPE-006', () => {
     // Param order: id, model_id, started_at. chunk_count is a literal
     // 0 in the SQL (CF-021 — coordinator is sole writer; no seed path).
     expect(call.params[0]).toBe('01ARZ3NDEKTSV4RRFFQ69G5FAV');
-    expect(call.params[1]).toBe('@cf/google/gemma-4-26b-a4b-it');
+    expect(call.params[1]).toBe('@cf/zai-org/glm-4.7-flash');
     expect(call.params[2]).toBe(nowSeconds);
     expect(call.params).toHaveLength(3);
   });
@@ -69,7 +69,7 @@ describe('scrape-run helpers — REQ-PIPE-006', () => {
     const db = makeDb(calls);
     await startRun(db, {
       id: 'run-id-2',
-      model_id: '@cf/google/gemma-4-26b-a4b-it',
+      model_id: '@cf/zai-org/glm-4.7-flash',
     });
 
     expect(calls).toHaveLength(1);

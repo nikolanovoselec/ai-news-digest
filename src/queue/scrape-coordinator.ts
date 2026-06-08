@@ -1,11 +1,16 @@
 // Implements REQ-PIPE-001
+// Implements REQ-PIPE-010
+// Implements REQ-PIPE-011
+// Implements REQ-PIPE-016
+// Implements REQ-PIPE-019
+// Implements REQ-PIPE-021
 // Implements REQ-DISC-003
 //
 // Coordinator for the global-feed scrape (every-4-hours cron `0 */4 * * *`).
 // Receives one message per cron tick containing `{scrape_run_id}`; fans out across
 // CURATED_SOURCES + discovered-tag feeds; canonical-dedupes the pool;
 // filters out articles already present in `articles.canonical_url`;
-// chunks survivors into slices of ≤100; and enqueues one
+// chunks survivors into slices of ≤8; and enqueues one
 // `scrape-chunks` message per chunk. Per-run progress tracking lives
 // in the D1 `scrape_chunk_completions` table (CF-007); the chunk
 // consumer detects the last chunk via the D1-derived completion count.
@@ -36,7 +41,7 @@ import {
   loadExistingCanonicalUrls,
   updateChunkCount,
 } from '~/lib/articles-repo';
-import { handleBatch } from '~/lib/queue-handler';
+import { handleBatch, type QueueMessageContext } from '~/lib/queue-handler';
 import { finishRun } from '~/lib/scrape-run';
 import { clearHealth, recordFetchResult } from '~/lib/feed-health';
 import { SYSTEM_USER_ID } from '~/lib/system-user';
@@ -70,44 +75,50 @@ function applyPreferDirectOverGoogleNews(
  * usually fills a chunk to its character budget long before this
  * hits, but the count cap protects against a flood of thin-snippet
  * candidates (e.g. all-Google-News, ~400 chars each) producing a
- * single 800-candidate chunk that times out the consumer. Was 50
- * fixed-size; 25 as a ceiling lets short-snippet days pack efficiently
- * while the budget rule keeps long-essay days safe. */
+ * single huge chunk that times out the consumer or causes the model
+ * to omit candidate indexes. Was 50 fixed-size, then 25, then 16.
+ * GLM retest drops the default ceiling to 8: more queue traffic and
+ * prompt overhead, but a simpler "one JSON record per input index"
+ * task per model call. */
 // Reduced from 100 -> 25 on 2026-05-05 after observing two regressions
 // at the 60-candidate size on integration (the project at the time ran
-// a primary->fallback two-model setup; gpt-oss-120b is now the single
-// model, see DEFAULT_MODEL_ID in src/lib/models.ts):
+// a primary->fallback two-model setup; the active single model is now
+// DEFAULT_MODEL_ID in src/lib/models.ts):
 //   1. The then-primary model timed out (`AiError: 3046: Request
 //      timeout`) on every 60-candidate chunk - Workers AI inference
 //      time grows superlinearly in prompt size and wall-clock, not
 //      context size, is the binding constraint.
-//   2. The then-fallback model (gpt-oss-120b, now the single model)
+//   2. The then-fallback model (gpt-oss-120b, later the single model)
 //      refused 60-candidate chunks with "creating 60 individual
 //      summaries exceeds the practical limits of this interaction"
 //      and returned 0 usable articles, OR returned 1-2 short summaries
 //      that title-overlap-dropped against 60 input candidates.
 // A residual 5-candidate chunk in the same run produced 3 articles
 // with `alignment_mode: echoed_index` (60% yield), confirming the
-// model handles small batches correctly. 25 stays conservative under
-// the single-model regime: 188-candidate days now pack into ~8 chunks
-// (vs 4 at 60) - more queue traffic but every chunk completes.
-const MAX_CANDIDATES_PER_CHUNK = 25;
+// model handles small batches correctly. 2026-06 GLM retest used 8
+// because GLM/Gemma canaries showed missing-index, timeout, and JSON
+// reliability failures even when the pipeline wait cap was fixed.
+// Gemini Flash-Lite handled 8-candidate chunks reliably on the
+// 2026-06-07 integration canary (11/11 completed, 0 invalid JSON).
+// A follow-up 12-candidate canary reduced fan-out to 7 chunks but
+// produced malformed JSON and failed the scrape, so keep the cap at 8
+// until a larger-batch prompt can prove JSON reliability.
+const MAX_CANDIDATES_PER_CHUNK = 8;
 
 /** Greedy chunk-packer character budget. The chunk consumer runs the
- * single default model (gpt-oss-120b, 128K context); the context
- * window is the binding constraint here. Of the 128K,
- * `CHUNK_LLM_PARAMS.max_tokens` reserves 32K for output, leaving
- * ~96K tokens for the input prompt. Reserving ~5K for the system
- * prompt + per-candidate framing leaves ~91K tokens for snippet
- * content. At ~3.5 chars/token for English prose that is ~318K
- * chars; we round down to 280K for safety margin against estimator
- * drift on non-English snippets and JSON-escape inflation. See
- * `CHUNK_LLM_PARAMS` in `src/lib/prompts.ts` for the same arithmetic
- * from the output-budget side. The chunk consumer's per-field
- * BODY_SNIPPET_MAX_CHARS (16K) is the per-candidate ceiling - long-
- * essay chunks hit this budget cap on ~17 max-sized candidates well
- * before the count cap, which is the intended pack shape on
- * essay-heavy days. */
+ * single default model (see DEFAULT_MODEL_ID); the context window is
+ * the binding constraint here. The current GLM canary has 131K
+ * context; 128K gpt-oss entries remain the rollback lower bound.
+ * `CHUNK_LLM_PARAMS.max_tokens` reserves 14K for output, leaving
+ * ~114K tokens for input on 128K rollback models. At ~3.5 chars/token
+ * for English prose that is ~399K chars; we round down to 280K for
+ * safety margin against estimator drift on non-English snippets and
+ * JSON-escape inflation. See `CHUNK_LLM_PARAMS` in `src/lib/prompts.ts`
+ * for the same arithmetic from the output-budget side. The chunk
+ * consumer's per-field BODY_SNIPPET_MAX_CHARS (16K) is the per-candidate
+ * ceiling - long-essay chunks hit this budget cap on ~17 max-sized
+ * candidates before or near the 16-count cap, which is the intended
+ * pack shape on essay-heavy days. */
 const CHUNK_INPUT_CHARS_BUDGET = 280_000;
 
 /** Per-candidate framing overhead in the user prompt - the
@@ -183,17 +194,16 @@ export function packCandidatesIntoChunks(
 const COORDINATOR_FETCH_CONCURRENCY = 10;
 
 /** Per-source item cap. Curated feeds frequently expose 50+ items;
- * downstream chunking and the global 10× chunk ceiling make a per-feed
+ * downstream chunking and the per-tick chunk ceiling make a per-feed
  * cap the simplest lever to keep the pool balanced across sources. */
 const PER_SOURCE_ITEM_CAP = 10;
 
 /** Upper bound on chunks enqueued per tick. Guards against a discovered-
- * tag explosion inflating the candidate pool to unsafe levels. Normal
- * load: ~520 candidates (52 curated × 10 items) packs into ~5-10 chunks
- * under the budget-aware packer (`packCandidatesIntoChunks`); cap at
- * 40 leaves headroom for a discovered-tag set without exploding LLM
- * cost. */
-const MAX_CHUNKS_PER_TICK = 40;
+ * tag explosion inflating the candidate pool to unsafe levels. With the
+ * defensive 8-candidate chunk cap, the normal curated upper bound
+ * (~520 candidates = 52 curated × 10 items) needs 65 thin-snippet chunks;
+ * cap at 80 keeps that load untruncated while still bounding LLM spend. */
+const MAX_CHUNKS_PER_TICK = 80;
 
 /** Freshness cutoff for keeping a candidate after the canonical-dedupe
  * pass. Anything older than 48 hours is treated as stale and dropped
@@ -274,7 +284,7 @@ export async function handleCoordinatorBatch(
   env: Env,
 ): Promise<void> {
   await handleBatch(batch, env, {
-    process: runCoordinator,
+    process: (env, body, context) => runCoordinator(env, body, context),
     throwLogStatus: 'coordinator_throw',
     extraLogFields: (body) => ({ scrape_run_id: body.scrape_run_id }),
     onTerminalFailure: async (env, body) => {
@@ -291,11 +301,16 @@ export async function handleCoordinatorBatch(
 export async function runCoordinator(
   env: Env,
   body: CoordinatorMessage,
+  context: Partial<QueueMessageContext> = {},
 ): Promise<void> {
   const { scrape_run_id } = body;
 
   // Step 0 - race guard: only one coordinator wins per scrape_run_id.
-  const claimed = await claimCoordinatorDispatch(env, scrape_run_id);
+  const claimed = await claimCoordinatorDispatch(
+    env,
+    scrape_run_id,
+    context.attempts ?? 1,
+  );
   if (!claimed) return;
 
   // Step 1 - build full source list (curated + KV-discovered).
@@ -338,58 +353,95 @@ export async function runCoordinator(
 
   // Step 6 - empty-pool guard.
   if (survivors.length === 0) {
-    await finishRun(env.DB, scrape_run_id, 'ready');
-    // CF-001: with no survivors there is no finalize tick to flip the
-    // gate, so stamp it here. Otherwise runScrapeWait would loop forever
-    // waiting on a finalize that will never run.
-    await env.DB
-      .prepare(`UPDATE scrape_runs SET finalize_recorded = 1 WHERE id = ?1`)
-      .bind(scrape_run_id)
-      .run();
-    log('info', 'digest.generation', { status: 'coordinator_empty_pool', scrape_run_id });
+    await closeEmptyRun(env.DB, scrape_run_id);
+    log('info', 'digest.generation', {
+      status: 'coordinator_empty_pool',
+      scrape_run_id,
+    });
     return;
   }
 
   // Step 7 - flatten dedupe-clusters to chunk-ready candidates.
   const chunkCandidates = flattenToChunkCandidates(survivors);
 
-  // Step 8 - chunk, prime KV counter, enqueue.
+  // Step 8 - chunk, enqueue, then persist the D1 chunk count.
   await chunkAndEnqueue(env, chunkCandidates, candidates.length, survivors.length, scrape_run_id);
 }
 
 // ---------- step helpers (colocated; not re-exported) ---------------------
 
+async function closeEmptyRun(db: D1Database, scrape_run_id: string): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      `UPDATE scrape_runs
+         SET status = 'ready',
+             chunk_count = 0,
+             finalize_recorded = 1,
+             finished_at = COALESCE(finished_at, ?2)
+       WHERE id = ?1 AND status = 'running'`,
+    )
+    .bind(scrape_run_id, now)
+    .run();
+}
+
 /**
  * Step 0 - Atomic CAS race guard.
  *
  * CF-002: flips `chunk_count` to sentinel -1 in a single conditional UPDATE
- * so only one concurrent coordinator delivery wins the dispatch. Returns
+ * while the row is still `running`, so only one first-attempt coordinator
+ * delivery wins the dispatch. Returns
  * `true` when this caller claimed the slot; `false` when another delivery
- * already ran (caller should return immediately). On a DB error, falls
+ * is already in flight or has finished fan-out. On a DB error, falls
  * through with `true` - the guard is best-effort.
  *
- * The sentinel is rolled back when the real chunk count is written in Step 8.
- * If dispatch crashes, the `-1` is recoverable on a subsequent retry or via
- * `force-refresh` (which seeds a fresh scrape_run_id).
+ * CF-089: queue retries are different from duplicate first-attempt deliveries.
+ * If the first delivery crashes after writing the `-1` sentinel but before
+ * Step 8 writes the real chunk count, Cloudflare redelivers the same message
+ * with `attempts > 1`. Treating that retry as a duplicate acks the only
+ * recovery path and leaves the parent pipeline stuck at `chunk_count = -1`.
+ * A retry may therefore reclaim a still-running `-1` sentinel; first-attempt
+ * duplicates still no-op.
  */
-async function claimCoordinatorDispatch(env: Env, scrape_run_id: string): Promise<boolean> {
+async function claimCoordinatorDispatch(
+  env: Env,
+  scrape_run_id: string,
+  attempts: number,
+): Promise<boolean> {
   try {
     const cas = await env.DB
       .prepare(
         `UPDATE scrape_runs SET chunk_count = -1
-          WHERE id = ?1 AND (chunk_count IS NULL OR chunk_count = 0)`,
+          WHERE id = ?1
+            AND status = 'running'
+            AND (chunk_count IS NULL OR chunk_count = 0)`,
       )
       .bind(scrape_run_id)
       .run();
     const claimed = (cas.meta?.changes ?? 0) === 1;
-    if (!claimed) {
-      log('warn', 'digest.generation', {
-        status: 'coordinator_duplicate_dispatch',
-        scrape_run_id,
-      });
-      return false;
+    if (claimed) return true;
+
+    if (attempts > 1) {
+      const row = await env.DB
+        .prepare(`SELECT status, chunk_count FROM scrape_runs WHERE id = ?1`)
+        .bind(scrape_run_id)
+        .first<{ status: string; chunk_count: number | null }>();
+      if (row?.status === 'running' && row.chunk_count === -1) {
+        log('warn', 'digest.generation', {
+          status: 'coordinator_retry_reclaimed_sentinel',
+          scrape_run_id,
+          attempts,
+        });
+        return true;
+      }
     }
-    return true;
+
+    log('warn', 'digest.generation', {
+      status: 'coordinator_duplicate_dispatch',
+      scrape_run_id,
+      attempts,
+    });
+    return false;
   } catch (err) {
     log('warn', 'digest.generation', {
       status: 'coordinator_race_guard_cas_failed',
@@ -712,15 +764,17 @@ function flattenToChunkCandidates(
 }
 
 /**
- * Step 8 - Chunk, persist chunk_count, and enqueue.
+ * Step 8 - Chunk, enqueue, then persist chunk_count.
  *
  * Packs `chunkCandidates` via `packCandidatesIntoChunks` (greedy budget-
  * aware: respects `CHUNK_INPUT_CHARS_BUDGET` and `MAX_CANDIDATES_PER_CHUNK`,
  * whichever fires first), hard-caps the resulting chunk array at
- * `MAX_CHUNKS_PER_TICK`, persists `chunk_count` on the scrape_runs row
- * for the progress UI (chunks_remaining is derived from D1 via
- * `scrape_chunk_completions` per CF-007), and fan-outs one SCRAPE_CHUNKS
- * message per chunk.
+ * `MAX_CHUNKS_PER_TICK`, fan-outs one SCRAPE_CHUNKS message per chunk, then
+ * persists `chunk_count` on the scrape_runs row for the progress UI
+ * (chunks_remaining is derived from D1 via `scrape_chunk_completions` per
+ * CF-007). Keeping the real count write after every send means a crash during
+ * fan-out leaves the `-1` dispatch sentinel reclaimable by queue retry instead
+ * of treating a positive chunk_count as completed fan-out.
  */
 async function chunkAndEnqueue(
   env: Env,
@@ -751,21 +805,6 @@ async function chunkAndEnqueue(
   // from `scrape_chunk_completions` (D1 is the source of truth per
   // AD7); no priming write is needed here.
 
-  // Persist total chunk count on the scrape_runs row so the
-  // /api/scrape-status endpoint can compute 'X of Y chunks done'
-  // for the in-progress UI. Best-effort; a failure here is logged
-  // but doesn't block the fan-out. CF-021 - uses the repo helper
-  // so all `scrape_runs.chunk_count` writes live in one layer.
-  try {
-    await updateChunkCount(env.DB, scrape_run_id, totalChunks);
-  } catch (err) {
-    log('warn', 'digest.generation', {
-      status: 'coordinator_chunk_count_update_failed',
-      scrape_run_id,
-      detail: String(err).slice(0, 500),
-    });
-  }
-
   for (let i = 0; i < keptChunks.length; i++) {
     const candidates = keptChunks[i] ?? [];
     await env.SCRAPE_CHUNKS.send({
@@ -773,6 +812,21 @@ async function chunkAndEnqueue(
       chunk_index: i,
       total_chunks: totalChunks,
       candidates,
+    });
+  }
+
+  // Persist total chunk count only after every queue message is accepted.
+  // If the coordinator is canceled or throws mid-send, the row remains at
+  // the `-1` dispatch sentinel and the retry path can reclaim it. Writing a
+  // positive count before all sends complete would strand the run waiting for
+  // chunk completions that can never arrive.
+  try {
+    await updateChunkCount(env.DB, scrape_run_id, totalChunks);
+  } catch (err) {
+    log('warn', 'digest.generation', {
+      status: 'coordinator_chunk_count_update_failed',
+      scrape_run_id,
+      detail: String(err).slice(0, 500),
     });
   }
 
@@ -1103,7 +1157,7 @@ async function fetchAllSources(
  * Apply feed-level evictions: remove each evicted URL from its
  * `sources:{tag}` entry, clear the per-URL health counter, and - if
  * the tag's feed list has been emptied - enqueue a system-owned
- * re-discovery row so the 5-minute discovery cron repopulates the tag.
+ * re-discovery row so the 10-minute discovery cron repopulates the tag.
  *
  * Evictions are coalesced by tag so multiple URLs removed from the
  * same tag only produce one KV write and one re-discovery row.
@@ -1165,7 +1219,7 @@ export async function applyEvictions(
 
       // Re-read sources:{tag} immediately before the write to shrink
       // the read-modify-write race window. KV has no conditional-put,
-      // so if the 5-minute discovery cron has already replaced the
+      // so if the 10-minute discovery cron has already replaced the
       // entry between our initial read and this re-check, we'd
       // otherwise silently clobber its freshly-discovered feeds. Bail
       // on any mismatch - health counters are already cleared above,

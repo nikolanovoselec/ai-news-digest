@@ -1,4 +1,4 @@
-// Implements REQ-DISC-001, REQ-DISC-003, REQ-DISC-005
+// Implements REQ-DISC-001, REQ-DISC-003, REQ-DISC-005, REQ-DISC-007, REQ-DISC-009
 // CF-028: priority-aware drain ordering - see processPendingDiscoveries.
 //
 // LLM-assisted source discovery for per-tag RSS/Atom/JSON feeds.
@@ -88,6 +88,12 @@ export async function discoverTag(tag: string, env: Env): Promise<DiscoveredFeed
   const userPrompt = discoveryUserPrompt(tag);
   const llmRun = await runJson<LLMDiscoveryPayload>({
     ai: asAiBinding(env.AI),
+    aiGatewayApiToken: env.AI_GATEWAY_API_TOKEN,
+    aiGatewayUrl: env.AI_GATEWAY_URL,
+    metadata: {
+      purpose: 'discovery',
+      tag,
+    },
     params: {
       messages: [
         { role: 'system', content: DISCOVERY_SYSTEM },

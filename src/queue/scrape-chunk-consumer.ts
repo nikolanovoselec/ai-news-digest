@@ -1,4 +1,7 @@
 // Implements REQ-PIPE-002
+// Implements REQ-PIPE-015
+// Implements REQ-PIPE-017
+// Implements REQ-PIPE-020
 // Implements REQ-PIPE-003 (per-article embedding + Vectorize upsert)
 // Implements REQ-PIPE-003 (last-chunk SCRAPE_FINALIZE enqueue)
 //
@@ -145,6 +148,14 @@ export async function handleChunkBatch(
       // timed out, run.status flipped to 'failed').
       const completed = await countChunkCompletions(env.DB, body.scrape_run_id);
       const finalStatus: 'ready' | 'failed' = completed > 0 ? 'ready' : 'failed';
+      log('warn', 'digest.generation', {
+        status: 'chunk_terminal_failure_rescue',
+        scrape_run_id: body.scrape_run_id,
+        chunk_index: body.chunk_index,
+        completed_chunks: completed,
+        total_chunks: body.total_chunks,
+        final_status: finalStatus,
+      });
       await finishRun(env.DB, body.scrape_run_id, finalStatus);
       if (finalStatus === 'failed') {
         // CF-001: no finalize will run for this scrape_run; stamp the
@@ -328,11 +339,11 @@ export async function processOneChunk(
   await upsertVectors(env, prepared, body);
 
   // Record completion + conditionally enqueue finalize.
-  // `completedCount` is returned for the chunk-status API (status route reads
-  // it from D1 directly) but not consumed here, hence the leading underscore.
+  // `completedCount` is logged so live tails can prove whether each chunk
+  // advanced the D1 completion ledger.
   const {
     isFirstCompletion,
-    completedCount: _completedCount,
+    completedCount,
   } = await recordChunkCompletionAndCheckFinalize(env, body);
 
   const tokensIn = llmRun.tokensIn;
@@ -360,6 +371,8 @@ export async function processOneChunk(
     scrape_run_id: body.scrape_run_id,
     chunk_index: body.chunk_index,
     total_chunks: body.total_chunks,
+    completed_chunks: completedCount,
+    first_completion: isFirstCompletion,
     articles_ingested: articlesIngested,
     articles_deduped: articlesDeduped,
     tokens_in: tokensIn,
@@ -488,6 +501,14 @@ async function runChunkLLM(
 }> {
   const llmRun = await runJson<LLMChunkPayload>({
     ai: asAiBinding(env.AI),
+    aiGatewayApiToken: env.AI_GATEWAY_API_TOKEN,
+    aiGatewayUrl: env.AI_GATEWAY_URL,
+    metadata: {
+      purpose: 'scrape_chunk',
+      scrape_run_id: body.scrape_run_id,
+      chunk_index: body.chunk_index,
+      total_chunks: body.total_chunks,
+    },
     params: {
       messages: [
         { role: 'system', content: PROCESS_CHUNK_SYSTEM },
@@ -499,6 +520,19 @@ async function runChunkLLM(
   });
 
   if (!llmRun.ok) {
+    // Count invalid-JSON attempts as real model spend. The chunk will
+    // retry, but Workers AI already consumed tokens for this attempt;
+    // recording them keeps canary cost comparisons honest without
+    // changing retry behavior or article output.
+    if (llmRun.attempt.tokensIn > 0 || llmRun.attempt.tokensOut > 0) {
+      await addChunkStats(env.DB, body.scrape_run_id, {
+        tokens_in: llmRun.attempt.tokensIn,
+        tokens_out: llmRun.attempt.tokensOut,
+        estimated_cost_usd: llmRun.attempt.costUsd,
+        articles_ingested: 0,
+        articles_deduped: 0,
+      });
+    }
     log('warn', 'digest.generation', {
       status: 'chunk_invalid_json',
       scrape_run_id: body.scrape_run_id,
@@ -506,6 +540,7 @@ async function runChunkLLM(
       model_used: llmRun.attempt.modelUsed,
       tokens_in: llmRun.attempt.tokensIn,
       tokens_out: llmRun.attempt.tokensOut,
+      estimated_cost_usd: llmRun.attempt.costUsd,
       response_preview: previewRawResponse(llmRun.attempt.rawResponse),
     });
     throw new Error('chunk_invalid_json');
@@ -663,7 +698,7 @@ function validateAndSanitizeArticle(
     .filter((p) => p !== '');
   if (title === '' || details.length === 0) return null;
 
-  // REQ-PIPE-002 AC3: enforce 80-word backstop floor server-side. The
+  // REQ-PIPE-015 AC6: enforce 80-word backstop floor server-side. The
   // prompt's contract is 100-150 words; the floor catches genuinely
   // truncated outputs (single-paragraph 30-word stubs) without
   // rejecting the model's natural lower-end distribution. CF-030
@@ -684,7 +719,7 @@ function validateAndSanitizeArticle(
     return null;
   }
 
-  // REQ-PIPE-002 AC2: sanity-range for headline length.
+  // REQ-PIPE-015 AC5: sanity-range for headline length.
   if (title.length < 5 || title.length > 500) {
     log('warn', 'digest.generation', {
       status: 'chunk_article_dropped_title_length',

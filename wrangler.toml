@@ -43,7 +43,7 @@ id = "34a836c647a4453fb167e60d00b06f0d"
 
 # Global-feed queues (REQ-PIPE-001, REQ-PIPE-002). The coordinator runs
 # every 4 hours (cron `0 */4 * * *`) and emits one message per tick; the
-# chunk consumer handles one ~100-candidate LLM call per message.
+# chunk consumer handles one up-to-8-candidate LLM call per message.
 [[queues.producers]]
 binding = "SCRAPE_COORDINATOR"
 queue = "scrape-coordinator"
@@ -52,9 +52,9 @@ queue = "scrape-coordinator"
 binding = "SCRAPE_CHUNKS"
 queue = "scrape-chunks"
 
-# REQ-PIPE-008: cross-chunk semantic dedup pass. The chunk consumer that
-# closes the run enqueues exactly one finalize message; this consumer
-# runs the post-merge LLM call over the run's surviving article titles.
+# REQ-PIPE-003 / REQ-PIPE-009: cross-chunk semantic dedup pass. The chunk
+# consumer that closes the run enqueues exactly one finalize message; this
+# consumer embeds survivors and reranks borderline same-story pairs.
 [[queues.producers]]
 binding = "SCRAPE_FINALIZE"
 queue = "scrape-finalize"
@@ -319,6 +319,5 @@ crons = []
 # APP_URL for integration is NOT hardcoded here. The deploy workflow
 # reads `vars.APP_URL` from the GitHub Environment named "integration"
 # and pushes it as a Worker secret at deploy time. Forks set their
-# own integration hostname under Settings → Environments → integration
-# → Variables → APP_URL. Falls back to the *.workers.dev URL
-# Cloudflare auto-assigns when the variable is unset.
+# own custom-domain hostname under Settings → Environments → integration
+# → Variables → APP_URL; the workflow requires it before deploy.

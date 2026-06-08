@@ -55,7 +55,14 @@ describe('handleBatch - happy path', () => {
       throwLogStatus: 'test_failed',
     });
 
-    expect(process).toHaveBeenCalledWith(fakeEnv, { id: 'a' });
+    expect(process).toHaveBeenCalledWith(
+      fakeEnv,
+      { id: 'a' },
+      {
+        attempts: 1,
+        maxAttempts: 3,
+      },
+    );
     expect(message.ack).toHaveBeenCalledTimes(1);
     expect(message.retry).not.toHaveBeenCalled();
   });

@@ -6,6 +6,20 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are archived in [`changes-archive-2026-04.md`](changes-archive-2026-04.md).
 
+## 2026-06-08
+
+- REQ-PIPE-001 and REQ-PIPE-016 changed, and REQ-PIPE-021 added: scrape progress is documented as D1-derived chunk completion, coordinator dispatch recovery remains in REQ-PIPE-016, and terminal-row safety for empty scrape runs is split into its own sibling contract.
+- REQ-DISC-001 changed: the discovery drain cadence is documented as the existing 10-minute schedule with a 2-minute offset from the email cron.
+- REQ-DISC-009, REQ-PIPE-020, and REQ-PIPE-002 changed: retryable feed-discovery misses remain queued until the bounded failure limit, invalid LLM tags cannot create unroutable articles, and legacy same-response duplicate hints are limited to the current chunk.
+
+## 2026-06-07
+
+- REQ-SET-004, REQ-PIPE-001, REQ-PIPE-002, REQ-PIPE-003, REQ-PIPE-015, and REQ-PIPE-016 changed: the develop/integration default LLM moves to `google-ai-studio/gemini-2.5-flash-lite` via Cloudflare AI Gateway with dedicated runtime Gateway credentials. Chunk output now requires indexed one-record-per-input responses with explicit empty drop records, chunk robustness covers index-alignment/drop handling, same-story collapse remains in the later dedup pass, and scrape-wait recovery gets one coordinator redispatch before bounded failure.
+
+## 2026-06-06
+
+- REQ-SET-004 changed: develop/integration model changes remain constrained by the existing summary-quality and cost-visibility contract before a new server-side default is selected.
+
 ## 2026-05-14
 
 - REQ-PIPE-009 gains two acceptance criteria for the dedup cost reductions captured in AD48: borderline pairs for one self now ride in a single batched LLM call (parse failure falls back to "different events" per pair), and the recurring background sweep skips the same-event judgment for pairs whose two articles both predate the last successful sweep watermark. An operator-initiated sweep ignores the watermark and re-judges every borderline pair end-to-end.

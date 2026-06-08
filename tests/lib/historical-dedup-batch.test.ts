@@ -21,10 +21,11 @@
 //   8. AC 11 — same-vendor cosine penalty
 //   9. REQ-PIPE-009 — borderline cosine triggers LLM rerank
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { runHistoricalDedupBatch } from '~/lib/historical-dedup';
 
 const DEFAULT_THRESHOLD = 0.88;
+const TEST_AI_GATEWAY_URL = 'https://gateway.ai.cloudflare.com/v1/test-account/test-gateway/compat/chat/completions';
 
 interface ArticleRow {
   id: string;
@@ -220,11 +221,25 @@ async function callBatch(opts: CallOpts) {
   const aiRun =
     opts.aiRun ??
     vi.fn().mockResolvedValue({ response: '{"same_event":false}' });
+  const gatewayFetch = vi.fn().mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url !== TEST_AI_GATEWAY_URL) throw new Error(`unexpected fetch: ${url}`);
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    const model = typeof body.model === 'string' ? body.model : 'google-ai-studio/gemini-2.5-flash-lite';
+    const response = await aiRun(model, body);
+    return new Response(JSON.stringify(response), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  });
+  vi.stubGlobal('fetch', gatewayFetch);
   const kv = makeKv(opts.kvWatermarkSeconds ?? null);
   const env = {
     DB: db,
     VECTORIZE: vectorize,
-    AI: { run: aiRun },
+    AI: { run: vi.fn() },
+    AI_GATEWAY_API_TOKEN: 'gateway-test-token',
+    AI_GATEWAY_URL: TEST_AI_GATEWAY_URL,
     KV: kv,
     DEDUP_RERANK_FLOOR: opts.rerankFloor,
     DEDUP_COSINE_THRESHOLD: opts.cosineThreshold,
@@ -265,6 +280,10 @@ function singleMatch(opts: {
 }
 
 describe('runHistoricalDedupBatch — REQ-PIPE-003', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('REQ-PIPE-003: empty corpus returns done:true, scanned:0, merged:0', async () => {
     const { result } = await callBatch({ articles: [] });
     expect(result.scanned).toBe(0);

@@ -4,6 +4,11 @@
 OAUTH_JWT_SECRET=local-dev-secret-32-chars-minimum-abcdef
 APP_URL=http://localhost:4321
 
+# Required for Gateway-backed default LLM calls. Use a dedicated
+# least-privilege AI Gateway runtime token; do not reuse a deploy token.
+AI_GATEWAY_API_TOKEN=your-ai-gateway-runtime-token
+AI_GATEWAY_URL=https://gateway.ai.cloudflare.com/v1/your-account-id/ai-news-digest/compat/chat/completions
+
 # Sign-in providers — set at least one pair. The landing page renders
 # one button per provider that has both id+secret configured, listed
 # alphabetically. A pair with only one field set is rejected by the

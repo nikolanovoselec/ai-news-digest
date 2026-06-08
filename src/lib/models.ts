@@ -1,11 +1,12 @@
 // Implements REQ-SET-004
 //
-// Hardcoded Workers AI model catalog. The list is the source of truth —
+// Hardcoded inference model catalog. The list is the source of truth —
 // server-side validation (`model_id` must appear in `MODELS`) keys off it,
 // the settings dropdown is rendered from it, and per-digest cost is computed
 // from its per-million-token prices. Updating the catalog is a code edit +
-// deploy; there is no runtime fetch, no KV cache, no Cloudflare API token
-// path. See /sdd/settings.md REQ-SET-004 and REQUIREMENTS.md "Model selection".
+// deploy; there is no runtime fetch or KV cache. Gateway-backed entries use
+// a dedicated AI_GATEWAY_API_TOKEN runtime secret plus AI_GATEWAY_URL.
+// See /sdd/settings.md REQ-SET-004 and REQUIREMENTS.md "Model selection".
 //
 // Single-model architecture (2026-05-06): the chunk/finalize/discovery
 // pipelines run one model per call, no fallback. Swapping models means
@@ -24,7 +25,7 @@ export interface ModelOption {
   /** USD per million output tokens. */
   outputPricePerMtok: number;
   /** Total context window size in tokens (input + output combined).
-   *  Workers AI enforces `prompt_tokens + max_tokens <= contextTokens`
+   *  Inference providers enforce `prompt_tokens + max_tokens <= contextTokens`
    *  per call. The chunk packer + LLM_PARAMS are tuned to fit inside
    *  the smallest reasonable context (~128K). Larger contexts simply
    *  leave more headroom. This is the single number that varies per
@@ -34,38 +35,79 @@ export interface ModelOption {
   category: 'featured' | 'budget';
 }
 
-// Default model: @cf/openai/gpt-oss-120b. 128K context, native JSON
-// mode, $0.35/$0.75 per Mtok. AD48 swapped this to gpt-oss-20b on
-// 2026-05-14 to cut chunk-summarisation cost ~60%, but the first
-// production run after the swap (pipeline_run 01KRJYV8R0D0EX7HBPR2VS2YCT)
-// failed with scrape_wait_stalled — every scrape-chunks queue
-// invocation produced outcome=canceled mid-LLM-call, the same wall-
-// clock failure mode that took Gemma 4 26B out of contention on
-// 2026-05. Reverted to gpt-oss-120b for chunk reliability; the
-// AD48 watermark + batched rerank changes stay in place and carry
-// most of the cost reduction on their own. See AD48 rollback note.
-// This constant is the single source-of-truth for the pipeline's
-// model id (chunk summarisation, rerank, discovery all flow through
+// Default model: Gemini 2.5 Flash-Lite via Cloudflare AI Gateway BYOK.
+// The integration canary uses the OpenAI-compatible AI Gateway endpoint
+// configured by AI_GATEWAY_URL, with a least-privilege AI_GATEWAY_API_TOKEN
+// runtime secret for gateway auth; the Google AI Studio provider key is
+// stored in the gateway, not in source or Worker env. Flash-Lite is the
+// lower-cost Gemini release candidate after Gemini 2.0 Flash returned
+// "no longer available" from Google AI Studio. Production promotion is
+// gated on fresh CI, PR-boundary review, and a clean integration scrape
+// proving chunk reliability, JSON validity, summary quality, and
+// same-story dedup quality.
+//
+// This constant is the single source-of-truth for the pipeline's model
+// id (chunk summarisation, rerank, discovery all flow through
 // DEFAULT_MODEL_ID).
-export const DEFAULT_MODEL_ID = '@cf/openai/gpt-oss-120b';
+export const DEFAULT_MODEL_ID = 'google-ai-studio/gemini-2.5-flash-lite';
 
 export const MODELS: ModelOption[] = [
-  // Featured — the four headline choices users see at the top of the dropdown.
+  // Featured — headline choices users see at the top of the dropdown.
+  {
+    id: 'google-ai-studio/gemini-2.5-flash-lite',
+    name: 'Gemini 2.5 Flash-Lite',
+    description:
+      'Lower-cost Gemini integration canary via Cloudflare AI Gateway BYOK and Google AI Studio. Current replacement for unavailable Gemini 2.0 Flash.',
+    inputPricePerMtok: 0.10,
+    outputPricePerMtok: 0.40,
+    contextTokens: 1_048_576,
+    category: 'featured',
+  },
+  {
+    id: 'google-ai-studio/gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    description:
+      'Higher-output-cost Gemini AI Gateway model. Completed integration mechanically but missed the 70% savings target.',
+    inputPricePerMtok: 0.30,
+    outputPricePerMtok: 2.50,
+    contextTokens: 1_048_576,
+    category: 'featured',
+  },
   {
     id: '@cf/openai/gpt-oss-120b',
     name: 'GPT OSS 120B',
     description:
-      'Default. OpenAI 120B MoE with native JSON mode, 128K context. Reliable wall-clock for chunk-sized prompts.',
+      'OpenAI 120B MoE with native JSON mode, 128K context. Prior production baseline with reliable wall-clock for chunk-sized prompts.',
     inputPricePerMtok: 0.35,
     outputPricePerMtok: 0.75,
     contextTokens: 128_000,
     category: 'featured',
   },
   {
+    id: '@cf/zai-org/glm-4.7-flash',
+    name: 'GLM 4.7 Flash',
+    description:
+      'Z.ai GLM Flash instruction model, 131K context. Low cost, but integration retests missed the required savings and reproduced chunk-cancellation risk.',
+    inputPricePerMtok: 0.0605,
+    outputPricePerMtok: 0.40,
+    contextTokens: 131_072,
+    category: 'featured',
+  },
+  {
+    id: '@cf/ibm-granite/granite-4.0-h-micro',
+    name: 'Granite 4.0 H Micro',
+    description:
+      'IBM Granite instruction model, 131K context. Very low cost, but the 2026-06 integration canary missed most candidate alignments.',
+    inputPricePerMtok: 0.017,
+    outputPricePerMtok: 0.112,
+    contextTokens: 131_000,
+    category: 'featured',
+  },
+  {
     id: '@cf/google/gemma-4-26b-a4b-it',
     name: 'Gemma 4 26B',
     description:
-      'Google instruction-tuned, 256K context. Cheaper than 120B but timed out on chunk-sized prompts in 2026-05 production runs.',
+      'Google instruction-tuned, 256K context. Rejected as primary after full-current-corpus integration refresh hit invalid/truncated JSON.',
     inputPricePerMtok: 0.10,
     outputPricePerMtok: 0.30,
     contextTokens: 256_000,
@@ -75,7 +117,7 @@ export const MODELS: ModelOption[] = [
     id: '@cf/openai/gpt-oss-20b',
     name: 'GPT OSS 20B',
     description:
-      'Native JSON mode, 128K context. Cheaper sibling of 120B at $0.20/$0.30 per Mtok, but mid-call cancels on chunk-sized prompts in production (AD48 rollback, 2026-05-14).',
+      'Native JSON mode, 128K context. Cheaper sibling of 120B at $0.20/$0.30 per Mtok, but integration retests showed late chunks, invalid-JSON retries, and title-alignment drops.',
     inputPricePerMtok: 0.20,
     outputPricePerMtok: 0.30,
     contextTokens: 128_000,

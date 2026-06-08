@@ -31,6 +31,7 @@
 // classification accuracy on a smaller model does not degrade from
 // attention dilution.
 
+import { parseLLMJson } from '~/lib/generate';
 import { runJson, asAiBinding } from '~/lib/llm-json';
 import { log } from '~/lib/log';
 
@@ -97,18 +98,17 @@ interface BatchPayload {
   verdicts?: unknown;
 }
 
+export interface RerankBatchOptions {
+  /** Test seam/model override; production omits this and uses DEFAULT_MODEL_ID. */
+  model?: string;
+  /** Test seam for Gateway-backed defaults. */
+  fetchImpl?: typeof fetch;
+}
+
 function narrowBatchPayload(raw: unknown): BatchPayload | null {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === 'string') {
-    if (raw === '') return null;
-    try {
-      return JSON.parse(raw) as BatchPayload;
-    } catch {
-      return null;
-    }
-  }
-  if (typeof raw === 'object') return raw as BatchPayload;
-  return null;
+  const parsed = parseLLMJson(raw);
+  if (parsed === null) return null;
+  return parsed as BatchPayload;
 }
 
 const RERANK_SYSTEM = [
@@ -151,19 +151,32 @@ function buildBatchUser(pairs: ReadonlyArray<RerankPair>): string {
  *  network error, or any malformed shape → all `false` (matches the
  *  pre-AD48 single-pair conservative fallback). Never throws. */
 async function runOneBatch(
-  env: Pick<Env, 'AI'>,
+  env: Pick<Env, 'AI' | 'AI_GATEWAY_API_TOKEN' | 'AI_GATEWAY_URL'>,
   pairs: ReadonlyArray<RerankPair>,
+  options: RerankBatchOptions = {},
 ): Promise<boolean[]> {
   if (pairs.length === 0) return [];
 
   const llmRun = await runJson<BatchPayload>({
     ai: asAiBinding(env.AI),
+    aiGatewayApiToken: env.AI_GATEWAY_API_TOKEN,
+    aiGatewayUrl: env.AI_GATEWAY_URL,
+    ...(options.model !== undefined ? { model: options.model } : {}),
+    ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
+    metadata: {
+      purpose: 'dedup_rerank',
+      pair_count: pairs.length,
+      first_pair_a: pairs[0]?.a.id ?? '',
+      first_pair_b: pairs[0]?.b.id ?? '',
+    },
     params: {
       messages: [
         { role: 'system', content: RERANK_SYSTEM },
         { role: 'user', content: buildBatchUser(pairs) },
       ],
       temperature: 0,
+      response_format: { type: 'json_object' },
+      max_tokens: 2_000,
     },
     narrow: (raw) => narrowBatchPayload(raw),
   }).catch((err: unknown) => {
@@ -224,15 +237,16 @@ async function runOneBatch(
  *  in that batch, so the caller never accidentally merges on a model
  *  outage. Never throws. */
 export async function rerankBorderlinePairsBatch(
-  env: Pick<Env, 'AI'>,
+  env: Pick<Env, 'AI' | 'AI_GATEWAY_API_TOKEN' | 'AI_GATEWAY_URL'>,
   pairs: ReadonlyArray<RerankPair>,
+  options: RerankBatchOptions = {},
 ): Promise<boolean[]> {
   if (pairs.length === 0) return [];
 
   const out: boolean[] = [];
   for (let start = 0; start < pairs.length; start += RERANK_BATCH_SIZE) {
     const slice = pairs.slice(start, start + RERANK_BATCH_SIZE);
-    const verdicts = await runOneBatch(env, slice);
+    const verdicts = await runOneBatch(env, slice, options);
     for (const v of verdicts) out.push(v);
   }
   return out;

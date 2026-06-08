@@ -67,7 +67,7 @@ describe('packCandidatesIntoChunks (REQ-PIPE-001)', () => {
     expect(packCandidatesIntoChunks([])).toEqual([]);
   });
 
-  it('packs thin candidates up to the count cap (100)', () => {
+  it('packs thin candidates up to an explicit count cap (100)', () => {
     // 200 thin candidates (3400 chars each) — budget would allow ~82
     // per chunk if the count cap were not the binding constraint, but
     // here we set a generous budget so the count cap fires first.
@@ -76,6 +76,14 @@ describe('packCandidatesIntoChunks (REQ-PIPE-001)', () => {
     );
     const chunks = packCandidatesIntoChunks(candidates, 10_000_000, 100);
     expect(chunks.map((c) => c.length)).toEqual([100, 100]);
+  });
+
+  it('uses the Flash-Lite reliable default count cap of 8 candidates', () => {
+    const candidates = Array.from({ length: 40 }, (_, i) =>
+      makeCandidate({ canonical_url: `https://example.com/${i}` }),
+    );
+    const chunks = packCandidatesIntoChunks(candidates, 10_000_000);
+    expect(chunks.map((c) => c.length)).toEqual([8, 8, 8, 8, 8]);
   });
 
   it('packs thin candidates up to the budget cap (280K) when budget binds first', () => {

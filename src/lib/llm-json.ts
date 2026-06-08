@@ -1,8 +1,8 @@
 // Implements REQ-PIPE-002
 // Implements REQ-PIPE-003
 //
-// Single LLM-call entrypoint used by every Workers-AI site that expects
-// a JSON response (chunk consumer, finalize consumer, discovery).
+// Single LLM-call entrypoint used by every model site that expects
+// a JSON response (chunk consumer, dedup rerank, discovery).
 //
 // Single-model architecture (2026-05-06): the helper runs ONE model
 // per call. The previous primary-then-fallback path (Gemma → 120b)
@@ -46,6 +46,17 @@ export function asAiBinding(ai: unknown): AiBinding {
   return ai as AiBinding;
 }
 
+const AI_GATEWAY_MODEL_PREFIXES = ['google-ai-studio/'] as const;
+
+// Keep each Gateway call well below the queue/Worker wall-clock budget so
+// a stalled upstream provider surfaces through runJson's ok:false path
+// instead of letting the platform cancel the isolate.
+const AI_GATEWAY_TIMEOUT_MS = 120_000;
+
+function modelUsesAiGateway(model: string): boolean {
+  return AI_GATEWAY_MODEL_PREFIXES.some((prefix) => model.startsWith(prefix));
+}
+
 export interface AttemptInfo {
   modelUsed: string;
   tokensIn: number;
@@ -76,6 +87,14 @@ export interface RunJsonOptions<T> {
   narrow: (rawResponse: unknown) => T | null;
   /** Optional override; defaults to DEFAULT_MODEL_ID. */
   model?: string;
+  /** Up to five AI Gateway metadata entries for log correlation. */
+  metadata?: Record<string, string | number | boolean> | undefined;
+  /** Least-privilege runtime bearer token for Cloudflare AI Gateway. */
+  aiGatewayApiToken?: string | undefined;
+  /** Runtime-configured AI Gateway compat chat completions endpoint. */
+  aiGatewayUrl?: string | undefined;
+  /** Test seam for the AI Gateway HTTP path. */
+  fetchImpl?: typeof fetch | undefined;
 }
 
 export async function runJson<T>(
@@ -83,9 +102,9 @@ export async function runJson<T>(
 ): Promise<LlmRunResult<T>> {
   const model = options.model ?? DEFAULT_MODEL_ID;
 
-  // The Workers-AI binding's contract is `Promise<unknown>` because
-  // every model emits a slightly different envelope. The shared
-  // helpers in ~/lib/generate accept the wider AIRunResponse shape
+  // The model-runner boundary is `Promise<unknown>` because every
+  // provider emits a slightly different envelope. The shared helpers
+  // in ~/lib/generate accept the wider AIRunResponse shape
   // (which has an index signature) and gracefully tolerate missing
   // fields, so a single cast at the boundary is safe.
   //
@@ -95,7 +114,7 @@ export async function runJson<T>(
   let result: AIRunResponse | null = null;
   let threwError: string | null = null;
   try {
-    result = (await options.ai.run(model, options.params)) as AIRunResponse;
+    result = (await runModel(model, options)) as AIRunResponse;
   } catch (err) {
     threwError = String(err).slice(0, 500);
   }
@@ -129,9 +148,100 @@ export async function runJson<T>(
   };
 }
 
+async function runModel<T>(
+  model: string,
+  options: RunJsonOptions<T>,
+): Promise<unknown> {
+  if (modelUsesAiGateway(model)) {
+    const token = options.aiGatewayApiToken?.trim();
+    const gatewayUrl = normalizeAiGatewayUrl(options.aiGatewayUrl);
+    if (!token) throw new Error('AI Gateway API token missing for gateway model');
+    if (gatewayUrl === null) throw new Error('AI Gateway URL missing or invalid for gateway model');
+    return runAiGatewayChatCompletion({
+      model,
+      params: options.params,
+      metadata: options.metadata,
+      aiGatewayApiToken: token,
+      aiGatewayUrl: gatewayUrl,
+      fetchImpl: options.fetchImpl ?? fetch,
+    });
+  }
+
+  return options.ai.run(model, options.params);
+}
+
+function normalizeAiGatewayUrl(raw: string | undefined): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:') return null;
+    if (url.username !== '' || url.password !== '') return null;
+    if (!url.pathname.endsWith('/compat/chat/completions')) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function runAiGatewayChatCompletion(options: {
+  model: string;
+  params: Record<string, unknown>;
+  metadata?: Record<string, string | number | boolean> | undefined;
+  aiGatewayApiToken: string;
+  aiGatewayUrl: string;
+  fetchImpl: typeof fetch;
+}): Promise<unknown> {
+  const response = await options.fetchImpl.call(
+    globalThis,
+    options.aiGatewayUrl,
+    {
+      method: 'POST',
+      signal: AbortSignal.timeout(AI_GATEWAY_TIMEOUT_MS),
+      headers: {
+        'Content-Type': 'application/json',
+        'cf-aig-authorization': `Bearer ${options.aiGatewayApiToken}`,
+        // Dynamic scrape chunks are retry-sensitive: if the model returns
+        // malformed JSON once, serving that same cached body makes every
+        // queue retry fail immediately. Always ask Gateway for a fresh
+        // provider response.
+        'cf-aig-skip-cache': 'true',
+        ...(options.metadata !== undefined
+          ? { 'cf-aig-metadata': JSON.stringify(options.metadata) }
+          : {}),
+      },
+      body: JSON.stringify({
+        model: options.model,
+        // Gemini 2.5 Flash enables hidden thinking tokens unless told not
+        // to. The canary needs summary quality, not chain-of-thought spend.
+        reasoning_effort: 'none',
+        ...options.params,
+      }),
+    },
+  );
+
+  const bodyText = await response.text();
+  let body: unknown = undefined;
+  if (bodyText !== '') {
+    try {
+      body = JSON.parse(bodyText) as unknown;
+    } catch {
+      body = bodyText;
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `AI Gateway HTTP ${response.status}: ${previewRawResponse(body, 500)}`,
+    );
+  }
+
+  return body;
+}
+
 /** Truncate a raw LLM response for log emission so a 50KB JSON dump
  *  doesn't blow past Cloudflare's structured-log size budget. */
 export function previewRawResponse(raw: unknown, max = 400): string {
-  const s = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  const s = typeof raw === 'string' ? raw : JSON.stringify(raw) ?? String(raw);
   return s.slice(0, max);
 }

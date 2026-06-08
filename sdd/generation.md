@@ -1,6 +1,6 @@
 # Digest Generation
 
-A global scrape-and-summarise pipeline that runs every 4 hours: one cron-triggered coordinator run per tick assembles candidates from the curated source registry, canonical-URL-dedupes them, and fans chunks out to the LLM consumer. The consumer writes summaries + tags + cluster groupings into a shared article pool. The per-user dashboard then reads from that pool filtered by each user's active tags, so cost scales with the world (one LLM pass per tick) rather than with users × refreshes. Starred articles survive the 14-day retention cutoff.
+A global scrape-and-summarise pipeline that runs every 4 hours: one cron-triggered coordinator run per tick assembles candidates from the curated source registry, canonical-URL-dedupes them, and fans chunks out to the LLM consumer. The consumer writes summaries and validated tags into a shared article pool; broad same-story grouping runs in the later dedup pass, while legacy same-response `dedup_groups` are honored only inside the current chunk. The per-user dashboard then reads from that pool filtered by each user's active tags, so cost scales with the world (one LLM pass per tick) rather than with users × refreshes. Starred articles survive the 14-day retention cutoff.
 
 ---
 
@@ -11,13 +11,13 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. A Cron Trigger fires every 4 hours on the hour (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC) and kicks off a single coordinator run for all users.
-2. The coordinator partitions candidates across one or more chunk jobs whose size is capped to fit the model's context window so LLM calls stay within budget and partial failures only lose one chunk.
-3. Each run is tracked by a `scrape_runs` row that transitions `running` → `ready` on success (or `failed` on abort), with a chunk counter that drops to zero when the last chunk finishes.
-4. Article-pool ingestion (URL deduplication, source-list aggregation, first-ingestion timestamp preservation, and per-item publisher resolution) is governed by [REQ-PIPE-017](#req-pipe-017-article-pool-ingestion-contract).
-5. Body-fetch behaviour for candidates with thin feed snippets is governed by [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-feed-snippets).
-6. Google News query-RSS long-tail backstop coverage is governed by [REQ-PIPE-019](#req-pipe-019-google-news-query-rss-long-tail-backstop).
-7. A run that has been waiting on its scrape phase to complete for longer than the configured budget exits with a failed status rather than looping silently, and the dashboard surfaces the failed state on the next history refresh so the operator sees the stall and can re-kick the pipeline instead of the run staying in `running` indefinitely until queue retries exhaust.
+1. A Cron Trigger fires every 4 hours on the hour (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC) and kicks off a single coordinator run for all users. <!-- @impl: src/worker.ts::handleScrapeTick -->
+2. The coordinator partitions candidates across one or more chunk jobs whose size is capped to fit the model's context window so LLM calls stay within budget and partial failures only lose one chunk. <!-- @impl: src/queue/scrape-coordinator.ts::packCandidatesIntoChunks -->
+3. Each run is tracked by a `scrape_runs` row that transitions `running` → `ready` on success (or `failed` on abort), with progress derived from `scrape_runs.chunk_count` and D1 chunk-completion rows. <!-- @impl: src/queue/scrape-chunk-consumer.ts::recordChunkCompletionAndCheckFinalize -->
+4. Article-pool ingestion (URL deduplication, source-list aggregation, first-ingestion timestamp preservation, and per-item publisher resolution) is governed by [REQ-PIPE-017](#req-pipe-017-article-pool-ingestion-contract). <!-- @impl: src/queue/scrape-chunk-consumer.ts::buildArticleBatchStatements -->
+5. Body-fetch behaviour for candidates with thin feed snippets is governed by [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-feed-snippets). <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+6. Google News query-RSS long-tail backstop coverage is governed by [REQ-PIPE-019](#req-pipe-019-google-news-query-rss-long-tail-backstop). <!-- @impl: src/queue/scrape-coordinator.ts::assembleAllSources -->
+7. A run waiting too long for scrape completion exits failed rather than looping silently. <!-- @impl: src/queue/pipeline-consumer.ts::runScrapeWait -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-PERF-001](constraints.md#con-perf-001-100-user-thundering-herd-target), [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
@@ -79,16 +79,18 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ### REQ-PIPE-002: Chunked LLM output content contract
 
-**Intent:** Candidate articles are summarised in batches whose JSON output adheres to a fixed shape (title, body, tags drawn from an allowlist) so the reading surface receives consistent, properly-tagged article content. The chunk pass is summarisation-only; same-story collapse is delegated to the dedup pass in REQ-PIPE-003.
+**Intent:** Candidate articles are summarised in batches whose JSON output adheres to a fixed shape (title, body, tags drawn from an allowlist) so the reading surface receives consistent, properly-tagged article content. The prompt asks for summarisation only; if a legacy model still emits same-response `dedup_groups`, the consumer may collapse only candidates from that current chunk while broader same-story collapse remains delegated to REQ-PIPE-003.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Each chunk yields a JSON payload shaped `{articles: [{title, details[], tags[]}]}` and no other top-level keys. Every input candidate gets its own entry.
-2. Titles are NYT-style headlines, 45 to 80 characters, active voice, rewritten rather than copied from the source feed. The 45 to 80 range is the prompt-side target; the consumer additionally enforces a hard sanity range of 5 to 500 characters server-side, dropping titles outside that range so genuinely broken cases (single-character labels, paragraph-as-title) never reach the reading surface.
-3. `details` is a plaintext body of 100 to 150 words split into 2 or 3 paragraphs (WHAT happened, HOW it works, and optionally IMPACT for the reader), each 2 to 4 sentences, with no lists, HTML, or Markdown.
-4. The 100 to 150 word range is the prompt-side contract; the consumer additionally enforces an 80-word backstop server-side, dropping responses below that threshold so a model that ships a single-sentence stub cannot reach the reading surface. The backstop is a true sanity floor (genuinely truncated outputs), not the model's normal operating range.
-5. `tags` values come exclusively from the system-approved allowlist: the union of the default-seed hashtag list shared with new accounts plus every tag for which a discovered-source cache currently exists. Any tag the LLM invents outside that union is discarded server-side before persistence, and an article that ends up with zero valid tags is dropped.
+1. Each chunk response uses a single JSON object with an `articles` array as the output payload. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
+2. Every input candidate gets exactly one article entry whose `index` echoes the bracketed input index. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
+3. Unusable candidates return empty title/details/tags drop records instead of being omitted. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
+4. Titles are NYT-style headlines, 45 to 80 characters, active voice, and rewritten rather than copied from the source feed. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
+5. `details` is plaintext body of 100 to 150 words split into 2 or 3 paragraphs, with no lists, HTML, or Markdown. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
+6. `tags` values come exclusively from the system-approved allowlist supplied to the chunk prompt. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
+7. Chunk-response parsing accepts common model JSON deviations, including fenced or prose-wrapped objects, trailing commas, and raw newline characters inside string values. <!-- @impl: src/lib/generate.ts::parseJsonWithRepairs -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
 
@@ -109,15 +111,40 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. A chunk failure marks only that chunk's portion of the run as failed; other chunks in the same tick still persist their articles.
-2. Every article returned by the LLM echoes its input candidate's index; the consumer aligns output back to the input by that echoed value, dropping any article whose index is missing, invalid, or does not match an input candidate so a summary can never be stapled to the wrong canonical URL.
-3. Before a summary is persisted, the consumer verifies the LLM-generated title shares at least one substantive non-stopword token with the source candidate's headline; summaries with zero topical overlap are dropped so a mis-wired LLM response can never appear as a real article.
+1. A chunk failure does not prevent successful chunks in the same tick from persisting their articles. <!-- @impl: src/queue/scrape-chunk-consumer.ts::handleChunkBatch -->
+2. Persisted summaries are aligned to their source candidate by the LLM-returned `index` value. <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
+3. Articles whose index is missing, invalid, or unmatched are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
+4. Summaries whose generated title has zero topical overlap with the source headline are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
+5. Non-drop titles outside the server-side sanity range are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
+6. Details below the server-side minimum word count are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
 
 **Priority:** P0
 
 **Dependencies:** [REQ-PIPE-002](#req-pipe-002-chunked-llm-output-content-contract)
+
+**Verification:** Integration test
+
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-020: Chunk tag validation guardrails
+
+**Intent:** Server-side chunk persistence trusts only the system tag allowlist, so off-topic or hallucinated tag output cannot create unroutable articles in the shared pool.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. Tags outside the allowlist are discarded before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
+2. Articles with zero valid tags after filtering are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
+
+**Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-PIPE-002](#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-015](#req-pipe-015-chunk-processing-robustness)
 
 **Verification:** Integration test
 
@@ -132,12 +159,13 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. URLs are canonicalised by stripping `utm_*` and `fbclid` tracking parameters, trimming trailing slashes, and removing default ports before any comparison. A canonical URL already present in the article pool is skipped on subsequent ticks so re-ingestion never produces a duplicate primary card.
-2. Articles describing the same news event are collapsed to a single primary card regardless of whether their headlines share vocabulary.
-3. Same-event detection runs across the entire surviving article pool, not only the current scrape tick, so a story already in the pool absorbs a newly-arrived duplicate as an alternative source even when the duplicate landed in a later scrape run.
-4. Near-duplicate articles whose textual similarity is overwhelming collapse deterministically across sources, so wire copies of one press release land as a single primary card with the others as alternative sources regardless of publisher identity.
-5. When a newly-arrived article and an already-stored article describe the same news event, the merge happens regardless of which side was ingested first or how many calendar days separate them within the same-news-cycle bound ([REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants) AC 3); the survivor is the article with the earlier publication time (per [REQ-PIPE-018](#req-pipe-018-same-story-collapse-mechanics-survivor-selection-and-data-merge) AC 1).
-6. A duplicate that lands several days after its already-stored match still collapses to a single card on the next scrape tick without waiting for an operator-triggered sweep.
+1. URLs are canonicalised by stripping `utm_*` and `fbclid` tracking parameters, trimming trailing slashes, and removing default ports before comparison. <!-- @impl: src/lib/canonical-url.ts::canonicalize -->
+2. Articles describing the same news event are collapsed to a single primary card regardless of whether their headlines share vocabulary. <!-- @impl: src/lib/bidirectional-dedup.ts::classifyMatchPair -->
+3. Same-event detection runs across the entire surviving article pool, not only the current scrape tick, so a story already in the pool absorbs a newly-arrived duplicate as an alternative source even when the duplicate landed in a later scrape run. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+4. Near-duplicate articles whose textual similarity is overwhelming collapse deterministically across sources, so wire copies of one press release land as a single primary card with the others as alternative sources regardless of publisher identity. <!-- @impl: src/lib/embeddings.ts::readHighConfidenceCosine -->
+5. When a newly-arrived article and an already-stored article describe the same news event, the merge happens regardless of which side was ingested first. <!-- @impl: src/lib/finalize-merge.ts::mergeAsAltSource -->
+6. A duplicate that lands several days after its already-stored match still collapses to a single card on the next scrape tick without waiting for an operator-triggered sweep. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+7. Same-story LLM JSON parsing accepts common model deviations, including fenced or prose-wrapped objects, trailing commas, and raw newline characters inside string values before the caller validates dedupe fields. <!-- @impl: src/lib/generate.ts::parseJsonWithRepairs -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
@@ -258,15 +286,40 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. The recorded finish time reflects when the run actually completed, not when the queue happened to redeliver the closing message. A redelivered last-chunk message that re-enters the closing path leaves the existing finish time intact, so the per-tick duration shown on the history page does not drift forward across retries.
-2. The per-tick token, cost, articles-ingested, and articles-deduplicated counters advance exactly once per chunk regardless of how many times the queue redelivers that chunk's message. A redelivered chunk that has already been recorded as completed for the run leaves these counters at their existing values, so the stats widget and history page never show inflated tokens, cost, or article counts attributable to retry traffic rather than real LLM work.
-3. The daily cleanup pass also retires runs whose state machine never reached a terminal status. Any run still tagged as in-progress well after the longest plausible tick duration is force-failed so its row no longer blocks the operator from kicking a fresh pipeline, and the history page surfaces the row as failed rather than indefinitely as running.
+1. A redelivered closing message leaves the run's original finish time intact. <!-- @impl: src/lib/scrape-run.ts::finishRun -->
+2. Per-tick token, cost, ingestion, and dedupe counters advance exactly once per completed chunk. <!-- @impl: src/lib/articles-repo.ts::recordChunkCompletion -->
+3. The daily cleanup pass force-fails in-progress runs that exceed the longest plausible tick duration. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
+4. If a run stalls before any chunks are queued, the pipeline makes one bounded coordinator recovery attempt. <!-- @impl: src/queue/pipeline-consumer.ts::runScrapeWait -->
+5. Duplicate initial coordinator deliveries cannot queue the same run's chunks more than once. <!-- @impl: src/queue/scrape-coordinator.ts::claimCoordinatorDispatch -->
+6. A coordinator retry after an interrupted fan-out can continue the same run instead of abandoning it as a duplicate. <!-- @impl: src/queue/scrape-coordinator.ts::claimCoordinatorDispatch -->
 
 **Constraints:** [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
 
 **Priority:** P1
 
 **Dependencies:** [REQ-PIPE-006](#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
+
+**Verification:** Integration test
+
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-021: Coordinator terminal-row safety
+
+**Intent:** Coordinator idempotency never reopens a scrape run that has already reached a terminal state, including the zero-survivor path where no chunk or finalize consumer will run.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. Empty candidate runs close atomically with terminal status, zero chunk count, and finalize recorded. <!-- @impl: src/queue/scrape-coordinator.ts::closeEmptyRun -->
+2. Coordinator dispatch claims only running scrape-run rows, so terminal rows with zero chunk count cannot be reclaimed by duplicate delivery. <!-- @impl: src/queue/scrape-coordinator.ts::claimCoordinatorDispatch -->
+
+**Constraints:** [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-PIPE-016](#req-pipe-016-scrape_runs-idempotency-and-stuck-run-cleanup)
 
 **Verification:** Integration test
 

@@ -1,6 +1,6 @@
 # Source Discovery
 
-Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues new tags; the 5-minute cron processes up to 3 pending tags per invocation and caches validated feeds globally (shared across all users who selected that tag). Feeds repair themselves: a URL that fails continuously across a configurable streak is evicted from the tag's cache, and when a tag's cache empties the tag is automatically re-queued for a fresh discovery pass.
+Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues new tags; the 10-minute discovery cron processes up to 3 pending tags per invocation and caches validated feeds globally (shared across all users who selected that tag). Feeds repair themselves: a URL that fails continuously across a configurable streak is evicted from the tag's cache, and when a tag's cache empties the tag is automatically re-queued for a fresh discovery pass.
 
 ---
 
@@ -11,12 +11,13 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. On settings save, a submitted tag without a `sources:{tag}` KV entry and not covered by the curated source registry triggers an `INSERT OR IGNORE` into the `pending_discoveries` D1 table keyed by `(user_id, tag)`.
-2. A submitted tag covered by the curated source registry short-circuits discovery at settings-save time so the registry's guaranteed feed is used directly and a namespace-collision match against an unrelated company's name in an aggregator query is never cached for it.
-3. The 5-minute discovery cron defensively short-circuits curated-source tags when draining pending rows, so admin-path inserts and rows enqueued before a tag was added to the curated registry are skipped instead of running the LLM path against them.
-4. The discovery cron picks at most 3 distinct tags from `pending_discoveries` per invocation so a backlog drains across multiple ticks instead of spiking LLM cost in one minute.
-5. Within a cron pick, tags enqueued by a brand-new user's first settings save are processed before the steady-state queue so a new account sees discovered feeds on the next cron tick rather than waiting behind older pending tags from other users.
-6. Among tags at the same priority level, the earliest `added_at` wins so the order in which a single user's tags drain is deterministic and oldest-first.
+1. On settings save, a submitted tag without a `sources:{tag}` KV entry and not covered by the curated source registry triggers an `INSERT OR IGNORE` into the `pending_discoveries` D1 table keyed by `(user_id, tag)`. <!-- @impl: src/pages/api/settings.ts::findTagsNeedingDiscovery --> <!-- @impl: src/pages/api/settings.ts::PUT = INSERT OR IGNORE INTO pending_discoveries -->
+2. A submitted tag covered by the curated source registry short-circuits discovery at settings-save time so the registry's guaranteed feed is used directly and a namespace-collision match against an unrelated company's name in an aggregator query is never cached for it. <!-- @impl: src/pages/api/settings.ts::hasCuratedSource(tag) -->
+3. The discovery drain runs on a 10-minute cron offset by 2 minutes from the email dispatcher. <!-- @impl: wrangler.toml::crons = ["0 */4 * * *", "0 3 * * *", "*/5 * * * *", "2,12,22,32,42,52 * * * *"] -->
+4. The discovery cron defensively short-circuits curated-source tags when draining pending rows, so admin-path inserts and rows enqueued before a tag was added to the curated registry are skipped instead of running the LLM path against them. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
+5. The discovery cron picks at most 3 distinct tags from `pending_discoveries` per invocation so a backlog drains across multiple ticks instead of spiking LLM cost in one minute. <!-- @impl: src/worker.ts::DISCOVERY_BATCH_LIMIT = 3 -->
+6. Within a cron pick, tags enqueued by a brand-new user's first settings save are processed before the steady-state queue so a new account sees discovered feeds on the next cron tick rather than waiting behind older pending tags from other users. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
+7. Among tags at the same priority level, the earliest `added_at` wins so the order in which a single user's tags drain is deterministic and oldest-first. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
@@ -32,23 +33,45 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 ### REQ-DISC-007: Per-tag feed discovery execution and persistence
 
-**Intent:** For a pending tag the cron picks up, the LLM-discovery path produces working feed URLs without polluting the cache with unreachable or non-feed content, and the row's lifecycle in `pending_discoveries` is closed whether discovery succeeded or not so the queue does not leak rows.
+**Intent:** For a pending tag the cron picks up, the LLM-discovery path produces working feed URLs without polluting the cache with unreachable or non-feed content.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. For each picked tag without a curated source, a Workers AI call asks for up to 5 RSS, Atom, or JSON feed URLs.
-2. The discovery prompt prefers first-party blogs, release notes, and changelogs where they exist, and instructs the model to omit a suggestion when no first-party feed and no aggregator fallback applies, so the model never invents URLs to fill the response.
-3. The discovery prompt names a Google News query-RSS fallback that the model must include for tags without a first-party feed, so a consumer or brand tag never returns zero sources.
-4. Each suggested URL is validated end-to-end before persistence: HTTPS scheme, SSRF filter (no private ranges, loopback, link-local, Cloudflare internal), HTTP 200, content-type matches the declared kind, parseable body, and at least one item with a title and URL. A URL failing any check is dropped from the result.
-5. Valid feeds are persisted to `sources:{tag}` as `{ feeds: [{ name, url, kind }], discovered_at }` with no TTL so the global cache is shared across every user who selected that tag.
-6. Rows for the picked tag are deleted from `pending_discoveries` regardless of discovery success, so a tag that yielded zero valid feeds does not stay enqueued and re-run the same prompt every 5 minutes.
+1. For each picked tag without a curated source, the default LLM asks for up to 5 RSS, Atom, or JSON feed URLs. <!-- @impl: src/lib/prompts.ts::discoveryUserPrompt -->
+2. The discovery prompt prefers first-party blogs, release notes, and changelogs where they exist, and instructs the model to omit a suggestion when no first-party feed and no aggregator fallback applies, so the model never invents URLs to fill the response. <!-- @impl: src/lib/prompts.ts::DISCOVERY_SYSTEM -->
+3. The discovery prompt names a Google News query-RSS fallback that the model must include for tags without a first-party feed, so a consumer or brand tag never returns zero sources. <!-- @impl: src/lib/prompts.ts::DISCOVERY_SYSTEM -->
+4. Each suggested URL passes HTTPS, SSRF, HTTP 200, declared content-type, parseable body, and item-with-title-and-URL validation before persistence. <!-- @impl: src/lib/discovery.ts::validateFeedUrl -->
+5. A URL failing any validation gate is dropped from the discovery result. <!-- @impl: src/lib/discovery.ts::discoverTag -->
+6. Valid feeds are persisted to `sources:{tag}` as `{ feeds: [{ name, url, kind }], discovered_at }` with no TTL. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper), [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
 **Priority:** P0
 
 **Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup)
+
+**Verification:** Integration test
+
+**Status:** Implemented
+
+---
+
+### REQ-DISC-009: Pending discovery row lifecycle
+
+**Intent:** Pending discovery rows close only when the system has a durable outcome for the tag, so retryable discovery misses do not disappear and terminal outcomes do not leak queue rows.
+
+**Applies To:** User
+
+**Acceptance Criteria:**
+1. Rows for a picked tag are deleted after successful discovery or terminal no-feed failure. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
+2. Retryable no-feed attempts stay queued with a bounded failure counter. <!-- @impl: src/lib/discovery.ts::processPendingDiscoveries -->
+
+**Constraints:** None.
+
+**Priority:** P0
+
+**Dependencies:** [REQ-DISC-007](#req-disc-007-per-tag-feed-discovery-execution-and-persistence)
 
 **Verification:** Integration test
 

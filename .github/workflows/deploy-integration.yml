@@ -33,12 +33,12 @@ jobs:
     # resolution fallback: env-scoped secrets win when defined,
     # otherwise the repo-level secret is used. Default state: no
     # env-scoped secrets, everything falls through to repo level
-    # (CLOUDFLARE_API_TOKEN, OAUTH_JWT_SECRET, GOOGLE_OAUTH_*).
+    # (CLOUDFLARE_API_TOKEN, AI_GATEWAY_API_TOKEN, OAUTH_JWT_SECRET, GOOGLE_OAUTH_*).
     # If integration ever needs a different value (e.g. a separate
     # JWT secret for cross-env identity isolation), add it under
     # Settings → Environments → integration; the workflow picks it
-    # up automatically with no code change. APP_URL stays in
-    # wrangler.toml [env.integration.vars] (public hostname).
+    # up automatically with no code change. APP_URL stays in the
+    # integration GitHub Environment variables (public hostname).
     environment: integration
     steps:
       # Always deploy develop's current HEAD regardless of which branch
@@ -47,6 +47,15 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: develop
+
+      - name: Validate APP_URL
+        id: app-url
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          HOST=$(bash .github/scripts/validate-app-url.sh "$APP_URL" "vars.APP_URL")
+          echo "host=$HOST" >> "$GITHUB_OUTPUT"
+          echo "Validated APP_URL host: $HOST"
 
       - uses: actions/setup-node@v6
         with:
@@ -213,6 +222,8 @@ jobs:
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           OAUTH_JWT_SECRET: ${{ secrets.OAUTH_JWT_SECRET }}
+          AI_GATEWAY_API_TOKEN: ${{ secrets.AI_GATEWAY_API_TOKEN }}
+          AI_GATEWAY_NAME: ${{ vars.AI_GATEWAY_NAME }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.RESEND_FROM }}
           DEV_BYPASS_TOKEN: ${{ secrets.DEV_BYPASS_TOKEN }}
@@ -229,8 +240,8 @@ jobs:
               if [ "$name" = "APP_URL" ]; then
                 echo "::error::vars.APP_URL not set." \
                      "Add it under Settings → Environments → integration → Variables." \
-                     "Value should be the public URL the integration worker will serve" \
-                     "(custom domain like https://news.example.com, or a *.workers.dev URL)."
+                     "Value should be the custom-domain URL the integration worker will serve" \
+                     "(for example, https://news.example.com)."
               else
                 echo "::error::Required secret '$name' is not set." \
                      "Add it at the repo level (Settings → Secrets → Actions)" \
@@ -243,6 +254,80 @@ jobs:
             npx --yes wrangler secret put "$name" --env integration < "$TMP"
             rm "$TMP"
           done
+
+          # Gemini runs through Cloudflare AI Gateway BYOK. Runtime uses
+          # a dedicated least-privilege Gateway token, not the broad
+          # deploy/provisioning token. The provider key stays in Gateway.
+          if [ -z "${AI_GATEWAY_API_TOKEN:-}" ]; then
+            echo "::error::Required secret 'AI_GATEWAY_API_TOKEN' is not set."
+            exit 1
+          fi
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::error::Required secret 'CLOUDFLARE_ACCOUNT_ID' is not set."
+            exit 1
+          fi
+          AI_GATEWAY_NAME="${AI_GATEWAY_NAME:-ai-news-digest}"
+          case "$CLOUDFLARE_ACCOUNT_ID" in
+            *[!A-Za-z0-9]*|'') echo "::error::CLOUDFLARE_ACCOUNT_ID has an invalid format."; exit 1 ;;
+          esac
+          case "$AI_GATEWAY_NAME" in
+            *[!A-Za-z0-9._-]*|'') echo "::error::AI_GATEWAY_NAME may contain only letters, numbers, dot, underscore, and dash."; exit 1 ;;
+          esac
+          AI_GATEWAY_URL="https://gateway.ai.cloudflare.com/v1/${CLOUDFLARE_ACCOUNT_ID}/${AI_GATEWAY_NAME}/compat/chat/completions"
+          # Fail deploy before Worker publish when Gateway, provider, model,
+          # or the least-privilege Gateway token is unusable. The runtime
+          # default model is Gateway-only, so a deploy that cannot complete
+          # this one-token chat request would fail every summary/discovery/
+          # rerank call after release.
+          AI_GATEWAY_PREFLIGHT_BODY=$(mktemp)
+          AI_GATEWAY_PREFLIGHT_STATUS=$(curl -sS --max-time 20 \
+            -o "$AI_GATEWAY_PREFLIGHT_BODY" \
+            -w '%{http_code}' \
+            "$AI_GATEWAY_URL" \
+            -H 'Content-Type: application/json' \
+            -H "cf-aig-authorization: Bearer ${AI_GATEWAY_API_TOKEN}" \
+            -H 'cf-aig-skip-cache: true' \
+            --data '{"model":"google-ai-studio/gemini-2.5-flash-lite","messages":[{"role":"user","content":"ping"}],"max_tokens":1,"reasoning_effort":"none"}') || {
+            echo "::error::AI Gateway preflight request failed. Verify AI_GATEWAY_NAME, provider key, and AI_GATEWAY_API_TOKEN."
+            rm -f "$AI_GATEWAY_PREFLIGHT_BODY"
+            exit 1
+          }
+          if [ "$AI_GATEWAY_PREFLIGHT_STATUS" -lt 200 ] || [ "$AI_GATEWAY_PREFLIGHT_STATUS" -ge 300 ]; then
+            echo "::error::AI Gateway preflight failed with HTTP ${AI_GATEWAY_PREFLIGHT_STATUS}. Verify the Gateway exists, has the Google AI Studio provider key, and allows google-ai-studio/gemini-2.5-flash-lite."
+            head -c 500 "$AI_GATEWAY_PREFLIGHT_BODY" || true
+            echo
+            rm -f "$AI_GATEWAY_PREFLIGHT_BODY"
+            exit 1
+          fi
+          rm -f "$AI_GATEWAY_PREFLIGHT_BODY"
+          for name in AI_GATEWAY_API_TOKEN AI_GATEWAY_URL; do
+            TMP=$(mktemp)
+            printf '%s' "${!name}" > "$TMP"
+            npx --yes wrangler secret put "$name" --env integration < "$TMP"
+            rm "$TMP"
+          done
+          LEGACY_SECRET_LIST=$(mktemp)
+          if ! npx --yes wrangler secret list --env integration --json > "$LEGACY_SECRET_LIST"; then
+            echo "::error::Failed to list integration Worker secrets before clearing legacy CLOUDFLARE_API_TOKEN."
+            rm -f "$LEGACY_SECRET_LIST"
+            exit 1
+          fi
+          if ! LEGACY_SECRET_PRESENT=$(node - "$LEGACY_SECRET_LIST" <<'NODE'
+          const fs = require('fs');
+          const secrets = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          console.log(secrets.some((secret) => secret.name === 'CLOUDFLARE_API_TOKEN') ? 'yes' : 'no');
+          NODE
+          ); then
+            echo "::error::Failed to parse integration Worker secret list before clearing legacy CLOUDFLARE_API_TOKEN."
+            rm -f "$LEGACY_SECRET_LIST"
+            exit 1
+          fi
+          if [ "$LEGACY_SECRET_PRESENT" = "yes" ]; then
+            npx --yes wrangler secret delete CLOUDFLARE_API_TOKEN --env integration --force
+          else
+            echo "CLOUDFLARE_API_TOKEN not set on integration Worker — nothing to clear"
+          fi
+          rm -f "$LEGACY_SECRET_LIST"
 
           # Sign-in providers — each pair independently optional. Same
           # logic as deploy.yml: at least one must be configured. Per-
@@ -352,29 +437,14 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          APP_URL: ${{ vars.APP_URL }}
+          APP_HOST: ${{ steps.app-url.outputs.host }}
         run: |
           set -e
-          # APP_URL comes from the integration GitHub Environment variable
-          # (vars.APP_URL). When unset (fork hasn't configured a custom
-          # domain), the bind step is a no-op and the worker is reachable
-          # only at its *.workers.dev URL.
-          if [ -z "$APP_URL" ]; then
-            echo "vars.APP_URL not set — skipping custom-domain bind (workers.dev URL only)"
-            exit 0
-          fi
-          HOST=$(printf '%s' "$APP_URL" | sed -E 's|^[A-Za-z]+://||; s|/.*$||; s|:.*$||')
+          HOST="${APP_HOST:-}"
           if [ -z "$HOST" ]; then
-            echo "Could not extract hostname from APP_URL; skipping"
-            exit 0
+            echo "::error::Validated APP_URL host missing"
+            exit 1
           fi
-          case "$HOST" in
-            *.*) : ;;
-            *)
-              echo "APP_URL hostname '$HOST' is not fully-qualified; skipping bind"
-              exit 0
-              ;;
-          esac
           echo "Binding integration Worker to custom domain: $HOST"
 
           # Worker service name from the env-scoped block.

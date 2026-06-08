@@ -53,9 +53,18 @@ function readMaxQueueAttempts(env: Env): number {
   return 3;
 }
 
+export interface QueueMessageContext {
+  attempts: number;
+  maxAttempts: number;
+}
+
 interface BatchHandlerOptions<TBody> {
   /** Per-message processor. Throws to trigger queue retry. */
-  process: (env: Env, body: TBody) => Promise<void>;
+  process: (
+    env: Env,
+    body: TBody,
+    context: QueueMessageContext,
+  ) => Promise<void>;
   /** Stable log status emitted on processor throw. */
   throwLogStatus: string;
   /** Optional bridge for the per-consumer extra log fields. The default
@@ -93,7 +102,10 @@ export async function handleBatch<TBody>(
   const max = opts.maxAttempts ?? readMaxQueueAttempts(env);
   for (const message of batch.messages) {
     try {
-      await opts.process(env, message.body);
+      await opts.process(env, message.body, {
+        attempts: message.attempts,
+        maxAttempts: max,
+      });
       message.ack();
     } catch (err) {
       const fields = opts.extraLogFields?.(message.body) ?? {};
