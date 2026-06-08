@@ -307,7 +307,7 @@ jobs:
             rm "$TMP"
           done
           LEGACY_SECRET_LIST=$(mktemp)
-          if ! npx --yes wrangler secret list --env integration --json > "$LEGACY_SECRET_LIST"; then
+          if ! npx --yes wrangler secret list --env integration --format json > "$LEGACY_SECRET_LIST"; then
             echo "::error::Failed to list integration Worker secrets before clearing legacy CLOUDFLARE_API_TOKEN."
             rm -f "$LEGACY_SECRET_LIST"
             exit 1
