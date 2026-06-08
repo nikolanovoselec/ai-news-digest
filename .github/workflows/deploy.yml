@@ -312,12 +312,22 @@ jobs:
             rm "$TMP"
           done
           LEGACY_SECRET_LIST=$(mktemp)
-          if ! npx --yes wrangler secret list > "$LEGACY_SECRET_LIST"; then
+          if ! npx --yes wrangler secret list --format json > "$LEGACY_SECRET_LIST"; then
             echo "::error::Failed to list Worker secrets before clearing legacy CLOUDFLARE_API_TOKEN."
             rm -f "$LEGACY_SECRET_LIST"
             exit 1
           fi
-          if grep -Eq '(^|[[:space:]])CLOUDFLARE_API_TOKEN($|[[:space:]])' "$LEGACY_SECRET_LIST"; then
+          if ! LEGACY_SECRET_PRESENT=$(node - "$LEGACY_SECRET_LIST" <<'NODE'
+          const fs = require('fs');
+          const secrets = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          console.log(secrets.some((secret) => secret.name === 'CLOUDFLARE_API_TOKEN') ? 'yes' : 'no');
+          NODE
+          ); then
+            echo "::error::Failed to parse Worker secret list before clearing legacy CLOUDFLARE_API_TOKEN."
+            rm -f "$LEGACY_SECRET_LIST"
+            exit 1
+          fi
+          if [ "$LEGACY_SECRET_PRESENT" = "yes" ]; then
             npx --yes wrangler secret delete CLOUDFLARE_API_TOKEN --force
           else
             echo "CLOUDFLARE_API_TOKEN not set on Worker — nothing to clear"
