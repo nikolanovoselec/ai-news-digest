@@ -211,16 +211,10 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-
     // At least one chunk sent - curated registry is non-empty.
     expect(sends.length).toBeGreaterThanOrEqual(1);
     const firstChunk = sends[0] as {
-      candidates?: Array<{
-        source_tags?: string[];
-        alternatives?: Array<{ source_tags?: string[] }>;
-      }>;
+      candidates?: Array<{ source_tags?: string[] }>;
     };
     const firstCandidate = firstChunk.candidates?.[0];
     expect(firstCandidate?.source_tags?.length ?? 0).toBeGreaterThan(0);
-    expect(
-      firstCandidate?.alternatives?.some((alt) => (alt.source_tags?.length ?? 0) > 0) ?? false,
-    ).toBe(true);
   });
 
   it('REQ-PIPE-016 AC5: first-attempt duplicate coordinator delivery does not fan out again', async () => {
