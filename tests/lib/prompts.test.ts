@@ -9,6 +9,7 @@ import {
   DISCOVERY_SYSTEM,
   PROCESS_CHUNK_SYSTEM,
   discoveryUserPrompt,
+  compactChunkBodySnippetForPrompt,
   processChunkUserPrompt,
 } from '~/lib/prompts';
 
@@ -289,13 +290,11 @@ describe('PROCESS_CHUNK_SYSTEM + processChunkUserPrompt — REQ-PIPE-002', () =>
     expect(fenceRuns.length).toBe(4);
   });
 
-  it('REQ-PIPE-002: body_snippet is hard-capped at 16000 chars in the prompt builder (defense-in-depth above the 15K upstream SNIPPET_CAP)', () => {
-    // CF-013 — even when upstream fetchArticleBody truncates, the
-    // prompt builder applies its own cap so a future code path that
-    // forgets to truncate cannot blow the prompt token budget. The
-    // ellipsis suffix proves the cap fired. Sized strictly above
-    // SNIPPET_CAP (15000) so this layered cap remains meaningful.
-    const giant = 'A'.repeat(20000);
+  it('REQ-PIPE-002: body_snippet is compacted below the 6K prompt budget', () => {
+    // AD58 — long extracted bodies should not be sent wholesale to the
+    // summariser. The ellipsis proves the body was compacted, and the
+    // 6K cap protects the expensive LLM input budget.
+    const giant = 'A'.repeat(20_000);
     const candidates = [
       {
         index: 0,
@@ -309,16 +308,11 @@ describe('PROCESS_CHUNK_SYSTEM + processChunkUserPrompt — REQ-PIPE-002', () =>
     const prompt = processChunkUserPrompt(candidates, ['cloudflare']);
     expect(prompt).not.toContain(giant);
     expect(prompt).toContain('…');
-    expect(prompt).toContain('A'.repeat(16000));
-    expect(prompt).not.toContain('A'.repeat(16001));
+    expect(prompt).not.toContain('A'.repeat(6_001));
   });
 
-  it('REQ-PIPE-002: a 14K-char body_snippet round-trips intact through the prompt builder (long-form essays not clipped)', () => {
-    // The point of raising the cap from 2K to 16K: full-length essay
-    // bodies (~12K-14K chars after extraction) must reach the LLM
-    // without truncation, otherwise the model only sees the article
-    // preamble and produces generic, ungrounded summaries.
-    const longBody = 'X'.repeat(14000);
+  it('REQ-PIPE-002: a 5K-char body_snippet round-trips intact through the prompt builder', () => {
+    const longBody = 'X'.repeat(5_000);
     const candidates = [
       {
         index: 0,
@@ -331,9 +325,22 @@ describe('PROCESS_CHUNK_SYSTEM + processChunkUserPrompt — REQ-PIPE-002', () =>
     ];
     const prompt = processChunkUserPrompt(candidates, ['cloudflare']);
     expect(prompt).toContain(longBody);
-    // No ellipsis injected for a body within the cap.
     const ellipsisAfterBody = prompt.indexOf('…', prompt.indexOf(longBody));
     expect(ellipsisAfterBody).toBe(-1);
+  });
+
+  it('REQ-PIPE-002: compactChunkBodySnippetForPrompt retains later high-signal facts', () => {
+    const lead = `${'introductory context '.repeat(220)}.`;
+    const lowSignalMiddle = `${'background filler '.repeat(220)}.`;
+    const highSignal =
+      'CVE-2026-1234 lets attackers bypass the API gateway, increases latency by 37%, and requires patching Kubernetes ingress controllers.';
+    const lowSignalTail = `${'closing filler '.repeat(220)}.`;
+    const compacted = compactChunkBodySnippetForPrompt(
+      `${lead} ${lowSignalMiddle} ${highSignal} ${lowSignalTail}`,
+    );
+    expect(compacted.length).toBeLessThanOrEqual(6_000);
+    expect(compacted).toContain('CVE-2026-1234');
+    expect(compacted).toContain('37%');
   });
 });
 

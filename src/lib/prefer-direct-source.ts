@@ -55,8 +55,11 @@ export function isGoogleNewsUrl(url: string): boolean {
 }
 
 /** Count of tokens shared between two titles (lowercase, length ≥ 4,
- *  stopwords excluded — same canonical tokenisation used elsewhere). */
-function sharedTokenCount(a: string, b: string): number {
+ *  stopwords excluded — same canonical tokenisation used elsewhere).
+ *  Exported so the coordinator can apply the same precision-biased
+ *  Google News title-match heuristic against already-stored articles
+ *  before paying for another LLM summary. */
+export function sharedTitleTokenCount(a: string, b: string): number {
   const tokensA = tokenizeTitle(a);
   const tokensB = tokenizeTitle(b);
   let count = 0;
@@ -102,7 +105,7 @@ export function preferDirectOverGoogleNews(
 
   for (const g of google) {
     for (const d of direct) {
-      if (sharedTokenCount(g.h.title, d.h.title) >= DROP_THRESHOLD) {
+      if (sharedTitleTokenCount(g.h.title, d.h.title) >= DROP_THRESHOLD) {
         const existing =
           absorbedTagsByDirectIdx.get(d.idx) ??
           new Set<string>(d.h.source_tags ?? []);

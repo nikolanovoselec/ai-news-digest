@@ -72,6 +72,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD55](#ad55-adr-ledger-escalation-threshold-after-model-canary-growth) | ADR ledger escalation threshold after model-canary growth | Documentation | 2026-06-07 |
 | [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired) | Scrape progress derives from D1; KV progress mirror retired | Storage | 2026-06-08 |
 | [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) | AI Gateway Dynamic Routing route controls the pipeline model | Architecture | 2026-06-09 |
+| [AD58](#ad58-preserve-summary-quality-by-reducing-paid-input-not-output-length) | Preserve summary quality by reducing paid input, not output length | Architecture | 2026-06-09 |
 
 ---
 
@@ -1663,6 +1664,25 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - Model responses with at least 10 emitted tags for one article reject the chunk before D1 persistence so Queues retries the LLM call. <!-- @impl: src/queue/scrape-chunk-consumer.ts::rejectArticlesWithModelTagFanout -->
 
 **Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-020](../../sdd/generation.md#req-pipe-020-chunk-tag-validation-guardrails), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+
+---
+
+### AD58: Preserve summary quality by reducing paid input, not output length
+
+**Status:** Accepted (2026-06-09)
+
+**Decision:** Reduce scrape-refresh LLM cost by skipping duplicate Google News wrapper candidates before chunk fan-out and by compacting long article bodies into extractive prompt context. Keep the model, JSON contract, title rules, and 100-150 word summary requirement unchanged.
+
+**Context:** The integration refresh after the Dynamic Route timeout fix produced 101 articles from 142 paid candidates at about $0.032. Almost all spend was chunk summarisation; dedup rerank was negligible. Cutting output length or switching to an unproven cheaper model would directly risk reader quality, while duplicate wrappers and long low-signal body tails inflate paid input without improving summaries. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches --> <!-- @impl: src/lib/prompts.ts::compactChunkBodySnippetForPrompt -->
+
+**Consequences:**
+
+- Google News remains a long-tail source, but wrappers that strongly title-match recent stored articles are appended as source/tag sightings instead of re-summarised.
+- Long fetched article text is still used as source material, but only the lead plus later high-signal factual sentences are sent to the LLM.
+- Summary quality gates stay where they were: the chunk prompt still requires 100-150 words, server validation still drops short bodies, and semantic dedup still runs after ingestion.
+- Future cost reductions should prefer pre-LLM candidate elimination or input compaction before changing the summary contract.
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-019](../../sdd/generation.md#req-pipe-019-google-news-query-rss-long-tail-backstop), [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)
 
 ---
 
