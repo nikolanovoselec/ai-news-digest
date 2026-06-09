@@ -10,14 +10,18 @@
 import { describe, it, expect } from 'vitest';
 import { adaptersForDiscoveredFeeds } from '~/lib/sources';
 
-function gnExtractor() {
+function extractorFor(name: string, url: string) {
   const adapters = adaptersForDiscoveredFeeds(
-    [{ name: 'Google News: mcp', url: 'https://news.google.com/rss/search?q=mcp', kind: 'rss' }],
+    [{ name, url, kind: 'rss' }],
     { trusted: true },
   );
   const a = adapters[0];
-  if (a === undefined) throw new Error('synthetic GN adapter not built');
+  if (a === undefined) throw new Error(`adapter not built for ${name}`);
   return a.extract;
+}
+
+function gnExtractor() {
+  return extractorFor('Google News: mcp', 'https://news.google.com/rss/search?q=mcp');
 }
 
 describe('RSS per-item <source> override', () => {
@@ -90,6 +94,47 @@ describe('RSS per-item <source> override', () => {
     };
     const [head] = extract(parsed);
     expect(head?.source_name).toBe('Google News: mcp');
+  });
+
+  it('REQ-PIPE-010: ignores Hacker News outbound-feed descriptions so linked pages are fetched before summarization', () => {
+    const extract = extractorFor('Hacker News - Show HN', 'https://hnrss.org/show');
+    const parsed = {
+      rss: {
+        channel: {
+          item: {
+            title: 'Show HN: AI Briefs',
+            link: 'https://aibriefs.news',
+            pubDate: 'Mon, 09 Jun 2025 20:16:21 GMT',
+            description:
+              'I decided to build my own AI feeds reader since I wanted features I could not find. Comments URL: https://news.ycombinator.com/item?id=48466773 Points: 2 # Comments: 0',
+          },
+        },
+      },
+    };
+    const [head] = extract(parsed);
+    expect(head?.url).toBe('https://aibriefs.news');
+    expect(head?.source_name).toBe('Hacker News - Show HN');
+    expect(head).not.toHaveProperty('snippet');
+  });
+
+  it('REQ-PIPE-010: keeps normal publisher RSS descriptions as source snippets', () => {
+    const extract = extractorFor('Example Publisher', 'https://example.com/rss.xml');
+    const parsed = {
+      rss: {
+        channel: {
+          item: {
+            title: 'Publisher story',
+            link: 'https://example.com/story',
+            pubDate: 'Mon, 09 Jun 2025 20:16:21 GMT',
+            description:
+              'This publisher-owned feed description is a legitimate article excerpt that should remain available to the summarizer.',
+          },
+        },
+      },
+    };
+    const [head] = extract(parsed);
+    expect(head?.url).toBe('https://example.com/story');
+    expect(head?.snippet).toContain('publisher-owned feed description');
   });
 
   it('two GN-feed items with different <source> values yield two distinct source_names (the bug fix)', () => {

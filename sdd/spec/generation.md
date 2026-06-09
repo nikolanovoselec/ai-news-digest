@@ -417,12 +417,13 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. When a candidate's feed snippet is too thin to ground a faithful summary, the pipeline fetches the article body directly.
-2. The body fetch is HTTPS-only and passes an SSRF filter.
-3. The body fetch is bounded by a network timeout and a maximum download size.
-4. Readable plaintext is extracted from a successful body fetch and attached to the candidate.
-5. When body-fetch extraction yields too little text, the candidate falls back to whatever the feed itself provided.
-6. A failed body-fetch never blocks a summary.
+1. When a candidate's feed snippet is too thin to ground a faithful summary, the pipeline fetches the article body directly. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+2. Outbound-link aggregator metadata is ignored as article body when it would otherwise stop the linked page from being fetched. <!-- @impl: src/lib/sources.ts::isHackerNewsOutboundSource -->
+3. The body fetch is HTTPS-only and passes an SSRF filter. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBody -->
+4. The body fetch is bounded by a network timeout and a maximum download size. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBody -->
+5. Readable plaintext is extracted from a successful body fetch and attached to the candidate. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+6. When body-fetch extraction yields too little text, the candidate falls back to whatever the feed itself provided. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+7. A failed body-fetch never blocks a summary. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 

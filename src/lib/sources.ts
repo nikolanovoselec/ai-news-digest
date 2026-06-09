@@ -1,5 +1,6 @@
 // Implements REQ-PIPE-001
 // Implements REQ-PIPE-002
+// Implements REQ-PIPE-010
 //
 // Source adapters and fan-out for the digest pipeline. Each generic
 // source is a trusted HTTPS endpoint (Hacker News Algolia, Google News
@@ -464,7 +465,9 @@ function itemToHeadline(item: unknown, sourceName: string): Headline | null {
     parseFeedDate(item['pubDate']) ??
     parseFeedDate(item['dc:date']) ??
     parseFeedDate(item['published']);
-  const snippet = rssItemSnippet(item);
+  const snippet = isHackerNewsOutboundSource(sourceName)
+    ? null
+    : rssItemSnippet(item);
   // Per-item `<source>` override: Google News RSS includes
   // `<source url="...">Publisher Name</source>` identifying the
   // underlying publisher of each item. The TEXT (publisher name) was
@@ -540,6 +543,20 @@ function extractItemSourceUrl(node: unknown): string | null {
     return null;
   }
   return raw;
+}
+
+/**
+ * HN RSS feeds (`hnrss.org/frontpage`, `hnrss.org/show`) expose the
+ * submitted external URL in `<link>`, while `<description>` is the HN
+ * submission text plus comments/points metadata. Treating that
+ * description as article body prevents the chunk consumer from fetching
+ * the linked page and creates URL/body mismatches on the digest.
+ *
+ * Do not match "The Hacker News" — that is a publisher feed whose
+ * description belongs to its own article URL.
+ */
+function isHackerNewsOutboundSource(sourceName: string): boolean {
+  return sourceName === 'Hacker News' || sourceName.startsWith('Hacker News -');
 }
 
 function entryToHeadline(entry: unknown, sourceName: string): Headline | null {
