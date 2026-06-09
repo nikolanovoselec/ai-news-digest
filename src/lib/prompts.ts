@@ -137,7 +137,7 @@ Shape:
 const TITLE_MAX_CHARS = 300;
 const SOURCE_NAME_MAX_CHARS = 100;
 const URL_MAX_CHARS = 1000;
-// REQ-PIPE-002 / AD58: send compact source context to the LLM instead
+// REQ-PIPE-022 / AD58: send compact source context to the LLM instead
 // of full extracted article bodies. The full fetched text is still used
 // to choose the context; this prompt-facing cap keeps the expensive
 // summarisation call focused on the lead plus high-signal factual

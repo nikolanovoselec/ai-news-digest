@@ -1682,7 +1682,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - Summary quality gates stay where they were: the chunk prompt still requires 100-150 words, server validation still drops short bodies, and semantic dedup still runs after ingestion.
 - Future cost reductions should prefer pre-LLM candidate elimination or input compaction before changing the summary contract.
 
-**Related requirements:** [REQ-PIPE-019](../../sdd/generation.md#req-pipe-019-google-news-query-rss-long-tail-backstop), [REQ-PIPE-022](../../sdd/generation.md#req-pipe-022-chunk-prompt-input-compaction), [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-019](../../sdd/generation.md#req-pipe-019-google-news-query-rss-long-tail-backstop), [REQ-PIPE-022](../../sdd/generation.md#req-pipe-022-chunk-prompt-input-compaction), [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)
 
 ---
 
