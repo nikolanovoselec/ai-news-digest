@@ -130,4 +130,4 @@ The asymmetric exception is the 30-second concurrent-rotation grace window: a fi
 - [`security.md`](security.md) - Rate-limit threat model and admin auth gate; fingerprint reuse-detection threat
 - [`api-reference.md`](api-reference.md) - HTTP endpoint surface; which events fire on which routes
 - [`api-reference-admin.md`](api-reference-admin.md) - Admin endpoints; admin-gate failure events
-- [`../sdd/observability.md`](../../sdd/spec/observability.md) - REQ-OPS-001, REQ-OPS-002 acceptance criteria
+- [`../../sdd/spec/observability.md`](../../sdd/spec/observability.md) - REQ-OPS-001, REQ-OPS-002 acceptance criteria

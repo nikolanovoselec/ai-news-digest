@@ -65,7 +65,7 @@ Structured JSON logging as the single operational surface — no external observ
 4. Every response includes `X-Frame-Options: DENY` as defense-in-depth alongside `frame-ancestors 'none'`.
 5. No inline script tags exist anywhere in the app; the CSP `script-src` is `'self'` only.
 
-**Notes:** Exact CSP directive value is documented at [`documentation/security.md`](../../documentation/lanes/security.md).
+**Notes:** Exact CSP directive value is documented at [`documentation/lanes/security.md`](../../documentation/lanes/security.md).
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 

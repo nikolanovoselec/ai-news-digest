@@ -2,7 +2,7 @@
 
 Federated sign-in via GitHub or Google. No passwords, no email-verification flow, no local credential store. Sessions split into a short-lived access cookie and a long-lived rotated refresh cookie so closing the tab for weeks does not log the user out. CSRF defense via Origin check. Account deletion with cascade.
 
-Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, JWKS verification, dev-bypass gating) lives in [`documentation/security.md`](../../documentation/lanes/security.md). Cross-cutting rate-limit policy that the auth surface inherits lives in [`sdd/rate-limits.md`](rate-limits.md).
+Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, JWKS verification, dev-bypass gating) lives in [`documentation/lanes/security.md`](../../documentation/lanes/security.md). Cross-cutting rate-limit policy that the auth surface inherits lives in [`rate-limits.md`](rate-limits.md).
 
 ---
 
@@ -48,7 +48,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 4. When the access cookie is missing or expired but the refresh cookie is valid, middleware mints a new access cookie and rotates the refresh-token row inline on the same request. Both API routes and page navigations attach the re-issued cookies, so plain navigation extends the session — the user never sees a login prompt from access-token expiry alone.
 5. An explicit refresh endpoint force-rotates the refresh-token row regardless of remaining access-cookie lifetime, tolerates a concurrent-rotation race per [REQ-AUTH-008](#req-auth-008-refresh-token-rotation-and-per-device-logout), and clears both cookies on any failure path so a half-cleared session cannot persist.
 
-**Notes:** Cookie attribute set (`__Host-` prefix, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`) and the signing algorithm are documented in [`documentation/security.md`](../../documentation/lanes/security.md#auth-cookie-policy-req-auth-002--req-auth-008).
+**Notes:** Cookie attribute set (`__Host-` prefix, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`) and the signing algorithm are documented in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#auth-cookie-policy-req-auth-002--req-auth-008).
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -75,7 +75,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 3. Admin `GET` endpoints narrow the GET exemption per [REQ-AUTH-006](#req-auth-006-admin-surface-gating), so the residual same-browser-CSRF gap for idempotent admin actions stays closed.
 4. OAuth-flow entry points that only initiate a redirect to the identity provider are exempt because their only effect is setting a short-lived state cookie and redirecting, and actual authentication requires consent at the provider.
 
-**Notes:** Cookie attribute mechanism that delivers the cross-site-GET guarantee is documented at [`documentation/security.md`](../../documentation/lanes/security.md#auth-cookie-policy-req-auth-002-req-auth-008).
+**Notes:** Cookie attribute mechanism that delivers the cross-site-GET guarantee is documented at [`documentation/lanes/security.md`](../../documentation/lanes/security.md#auth-cookie-policy-req-auth-002-req-auth-008).
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -153,7 +153,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 3. Idempotent admin pipeline modes remain reachable via either `GET` or `POST`.
 4. Admin `GET` endpoints reject requests originating from a cross-site context while continuing to accept top-level navigation (operator bookmarks, post-SSO callback redirects), so the residual same-browser-CSRF gap left open by [REQ-AUTH-003](#req-auth-003-csrf-defense-for-state-changing-endpoints) AC 2's blanket GET exemption stays closed for idempotent admin actions.
 
-**Notes:** Layered-defense mechanism is documented in [`documentation/security.md`](../../documentation/lanes/security.md#admin-gate-and-jwt-exp-validation-req-auth-001-ac-8-ac-8a--ad44).
+**Notes:** Layered-defense mechanism is documented in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#admin-gate-and-jwt-exp-validation-req-auth-001-ac-8-ac-8a--ad44).
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -203,7 +203,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 1. Every successful refresh rotates the refresh-token row: the existing row is revoked, a new row is issued, and the old cookie value is single-use; the persisted row identifier is independent of the cookie secret so a leaked database dump cannot be replayed against the live system.
 2. Logout revokes only the active refresh-token row and not every row for the user, so logging out on one device does not sign the user out of other devices.
 
-**Notes:** Grace-window length and the parent-link pointer are documented at [`documentation/security.md`](../../documentation/lanes/security.md#auth-cookie-policy-req-auth-002--req-auth-008).
+**Notes:** Grace-window length and the parent-link pointer are documented at [`documentation/lanes/security.md`](../../documentation/lanes/security.md#auth-cookie-policy-req-auth-002--req-auth-008).
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -275,7 +275,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 1. Every route under `/api/dev/*` returns `404` on any deployment identified as production, regardless of token or session state. The check fail-closes: a missing or unrecognised production flag is treated as production, so an unset variable cannot accidentally enable the surface.
 
-**Notes:** `IS_PRODUCTION` semantics and the integration runbook are documented in [`documentation/security.md`](../../documentation/lanes/security.md#dev-bypass-prod-guard-req-auth-001-ac-10) and [`documentation/deployment.md`](../../documentation/lanes/deployment.md).
+**Notes:** `IS_PRODUCTION` semantics and the integration runbook are documented in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#dev-bypass-prod-guard-req-auth-001-ac-10) and [`documentation/lanes/deployment.md`](../../documentation/lanes/deployment.md).
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 

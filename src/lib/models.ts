@@ -7,7 +7,7 @@
 // Routing route so operators can change the underlying provider/model in the
 // Cloudflare dashboard without redeploying. Gateway-backed entries use a
 // dedicated AI_GATEWAY_API_TOKEN runtime secret plus AI_GATEWAY_URL.
-// See /sdd/settings.md REQ-SET-004 and REQUIREMENTS.md "Model selection".
+// See /sdd/spec/settings.md REQ-SET-004 and REQUIREMENTS.md "Model selection".
 //
 // Single-model architecture (2026-05-06): the chunk/finalize/discovery
 // pipelines run one model per call, no fallback. Swapping models means

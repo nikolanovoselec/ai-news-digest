@@ -52,7 +52,7 @@ const popoverTimers = new WeakMap<HTMLElement, number>();
 //            card-interactions.js">` — built by `scripts/build-client-
 //            scripts.mjs` as a self-contained IIFE bundle. CSP forbids
 //            inline scripts, so every script-src 'self' module ships
-//            this way (Pattern B in `documentation/architecture.md`).
+//            this way (Pattern B in `documentation/lanes/architecture.md`).
 //         b. Statically imported by `src/pages/history.astro:331`
 //            (`import { initCardInteractions } from '~/scripts/card-
 //            interactions'`) so the page can rebind tag-disclosure
