@@ -156,7 +156,8 @@ describe('RSS per-item <source> override', () => {
       items: [
         {
           title: 'Research team publishes an AI benchmark',
-          url: 'https://publisher.example/ai-benchmark',
+          url: 'https://json-aggregator.example/item/456',
+          external_url: 'https://publisher.example/ai-benchmark',
           date_published: '2025-06-09T20:16:21Z',
           summary:
             'Posted by community-user. Discussion URL: https://json-aggregator.example/item/456 Score: 21 Comments: 9',

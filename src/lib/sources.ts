@@ -337,7 +337,7 @@ function extractJsonFeed(
   for (const item of items) {
     if (!isRecord(item)) continue;
     const title = asString(item['title']);
-    const url = asString(item['url']) ?? asString(item['external_url']);
+    const url = asString(item['external_url']) ?? asString(item['url']);
     if (title === null || url === null) continue;
     const published_at = parseFeedDate(item['date_published']);
     // JSON Feed 1.1: prefer plaintext `content_text`, fall back to
