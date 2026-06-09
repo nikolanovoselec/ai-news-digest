@@ -110,8 +110,9 @@ Shape:
 # TAGS RULES
 
 - Pick ONLY from the tag allowlist supplied in the user message. Never invent.
-- Return EVERY allowlist tag the article touches: topic, vendor/platform, language, security, and cloud tags all count.
-- Single-tag output is a failure unless the article is truly about one thing.
+- Use each candidate's candidate_tags as the primary relevance hint. Return a tag only when the article is concretely about that tag.
+- Do not copy the full allowlist. 10 or more tags for one article is a failure; emit a drop record instead of broad-guessing.
+- Single-tag output is fine when the article is truly about one thing.
 - Any Cloudflare-authored post → include "cloudflare" if present in the allowlist.
 
 # DROP RULES
@@ -164,6 +165,7 @@ export function processChunkUserPrompt(
     source_name: string;
     published_at: number;
     body_snippet?: string;
+    source_tags?: string[];
   }>,
   allowedTags: readonly string[],
 ): string {
@@ -172,6 +174,9 @@ export function processChunkUserPrompt(
   for (const c of candidates) {
     lines.push(`[${c.index}] ${sanitizePromptField(c.title, TITLE_MAX_CHARS)}`);
     lines.push(`    source: ${sanitizePromptField(c.source_name, SOURCE_NAME_MAX_CHARS)}`);
+    if (Array.isArray(c.source_tags) && c.source_tags.length > 0) {
+      lines.push(`    candidate_tags: ${c.source_tags.join(', ')}`);
+    }
     lines.push(`    url: ${sanitizePromptField(c.url, URL_MAX_CHARS)}`);
     lines.push(`    published_at: ${c.published_at}`);
     if (typeof c.body_snippet === 'string' && c.body_snippet !== '') {

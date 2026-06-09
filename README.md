@@ -51,7 +51,7 @@ The result: 60+ written requirements across 10 product domains (authentication, 
 |---|---|
 | Framework | [Astro 5](https://astro.build) on [Cloudflare Workers](https://workers.cloudflare.com) |
 | DB / Cache / Queues | [D1](https://developers.cloudflare.com/d1/) · [KV](https://developers.cloudflare.com/kv/) · [Queues](https://developers.cloudflare.com/queues/) |
-| LLM | [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) + Workers AI: `google-ai-studio/gemini-2.5-flash-lite` default; Workers AI embeddings for dedup |
+| LLM | [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) Dynamic Routing route `dynamic/news_digest`; Workers AI embeddings for dedup |
 | Email | [Resend](https://resend.com) |
 | Auth | GitHub OAuth + Google OIDC. 5-min HMAC-SHA256 access JWT + 30-day device-bound refresh token (rotated, reuse-detected) |
 
@@ -65,9 +65,10 @@ Four steps. The Deploy workflow handles D1, KV, queues, migrations, Gateway pref
 
    - Create or choose a Cloudflare AI Gateway named `ai-news-digest`.
    - For a different name, set repository variable `AI_GATEWAY_NAME`.
-   - Add the Google AI Studio provider key to that Gateway.
-   - Create a least-privilege Gateway token for `google-ai-studio/gemini-2.5-flash-lite`.
-   - Deploy preflights the Gateway before publishing the Worker.
+   - Add provider keys for whichever models the `dynamic/news_digest` route uses.
+   - Create and deploy an AI Gateway Dynamic Routing route named `news_digest`.
+   - Create a least-privilege Gateway token for runtime inference.
+   - Deploy preflights `dynamic/news_digest` before publishing the Worker.
 
 3. **Set repo secrets.** In your fork: `Settings` > `Secrets and variables` > `Actions` > `New repository secret`. Five required, plus at least one OAuth provider pair (GitHub or Google or both; the landing page renders one button per configured provider, alphabetical).
 
@@ -93,7 +94,7 @@ Four steps. The Deploy workflow handles D1, KV, queues, migrations, Gateway pref
 | `RESEND_FROM` | optional | Sender address (e.g. `News Digest <hello@yourdomain.com>`). Required when `RESEND_API_KEY` is set. |
 | `DEV_BYPASS_TOKEN` | optional | Enables `/api/dev/login` for `scripts/e2e-test.sh`. When unset, the endpoint returns 404. |
 
-A pair with only one field set is rejected by the deploy workflow so a half-configured provider never reaches runtime. The workflow builds `AI_GATEWAY_URL` from `CLOUDFLARE_ACCOUNT_ID` and the optional repository variable `AI_GATEWAY_NAME` (default `ai-news-digest`), then preflights `google-ai-studio/gemini-2.5-flash-lite` against that Gateway before publishing the Worker.
+A pair with only one field set is rejected by the deploy workflow so a half-configured provider never reaches runtime. The workflow builds `AI_GATEWAY_URL` from `CLOUDFLARE_ACCOUNT_ID` and the optional repository variable `AI_GATEWAY_NAME` (default `ai-news-digest`), then preflights `dynamic/news_digest` against that Gateway before publishing the Worker.
 
 </details>
 
@@ -123,7 +124,7 @@ Custom token via [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflar
 1. Idempotently looks up (or creates) the D1 database, KV namespace, queues (`scrape-coordinator`, `scrape-chunks`, `scrape-finalize`, `dedup-sweep`, `pipeline-jobs`), and the `ai-news-embeddings` Vectorize index. All resolved IDs are patched into a CI-only copy of `wrangler.toml` so the deploy binds the right resources without committing back to the repo.
 2. (D1 + KV are looked up by name; the workflow creates them on first deploy if they don't exist yet.)
 3. Applies D1 migrations
-4. Preflights AI Gateway with a one-token `google-ai-studio/gemini-2.5-flash-lite` chat-completions request
+4. Preflights AI Gateway with a one-token `dynamic/news_digest` chat-completions request
 5. Pushes Worker secrets, including AI Gateway runtime config (Resend pair skipped when unset)
 6. `wrangler deploy`
 7. Binds the custom domain from `APP_URL` to the Worker

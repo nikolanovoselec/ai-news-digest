@@ -68,9 +68,10 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD51](#ad51-granite-40-h-micro-integration-canary-for-pipeline-default) | Granite 4.0 H Micro integration canary for pipeline default | Architecture | 2026-06-06 |
 | [AD52](#ad52-glm-47-flash-integration-canary-for-pipeline-default) | GLM 4.7 Flash integration canary for pipeline default | Architecture | 2026-06-06 |
 | [AD53](#ad53-gpt-oss-20b-integration-retest-for-pipeline-default) | GPT OSS 20B integration retest for pipeline default | Architecture | 2026-06-06 |
-| [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default) | Gemini 2.5 Flash-Lite via AI Gateway for pipeline default | Architecture | 2026-06-07 |
+| [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default) | Gemini 2.5 Flash-Lite via AI Gateway for pipeline default *(Superseded by AD57)* | Architecture | 2026-06-07 |
 | [AD55](#ad55-adr-ledger-escalation-threshold-after-model-canary-growth) | ADR ledger escalation threshold after model-canary growth | Documentation | 2026-06-07 |
 | [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired) | Scrape progress derives from D1; KV progress mirror retired | Storage | 2026-06-08 |
+| [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) | AI Gateway Dynamic Routing route controls the pipeline model | Architecture | 2026-06-09 |
 
 ---
 
@@ -1576,11 +1577,11 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 ### AD54: Gemini 2.5 Flash-Lite AI Gateway canary for pipeline default
 
-**Status:** Accepted for develop-to-main release (2026-06-07)
+**Status:** Superseded by [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) (2026-06-09); accepted for develop-to-main release on 2026-06-07.
 
 **Decision:** Promote `google-ai-studio/gemini-2.5-flash-lite` as `DEFAULT_MODEL_ID` and route Gateway-backed models through Cloudflare AI Gateway's OpenAI-compatible chat-completions endpoint. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all use the same default model.
 
-**Context:** Workers AI canaries did not meet the release target: Gemma and GLM reproduced chunk cancellations, Granite failed alignment/quality, and 20B did not reach the required 70%+ savings. <!-- @impl: src/lib/models.ts::DEFAULT_MODEL_ID -->
+**Context:** Workers AI canaries did not meet the release target: Gemma and GLM reproduced chunk cancellations, Granite failed alignment/quality, and 20B did not reach the required 70%+ savings (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)).
 
 The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 rows, kept 38/44 summaries in the 100-150 word target, and reduced total chunk-plus-rerank cost to about $0.0209 versus GLM's about $0.0885 (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)). Audit IDs: pipeline `01KTHM7CHAK1S2E7R7PJX6NDJN`, scrape `01KTHM7FW2FT5EFZGBT9K9QGFF`, dedup `01KTHMDRAE935N76DSHZ27295A`.
 
@@ -1638,6 +1639,30 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - AD27 still governs active multi-writer KV families such as `discovery_failures:{tag}`.
 
 **Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
+
+---
+
+### AD57: AI Gateway dynamic route for pipeline model control
+
+**Status:** Accepted (2026-06-09)
+
+**Supersedes:** [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default)
+
+**Decision:** Set `DEFAULT_MODEL_ID` to the Cloudflare AI Gateway Dynamic Routing route `dynamic/news_digest`. The route, not application code, chooses the concrete provider/model and any fallback or rollout policy. The single-model application contract stays intact: chunk summarisation, source discovery, and borderline dedup rerank still make one `runJson` call using `DEFAULT_MODEL_ID`.
+
+**Context:** A production scrape on direct Gemini 2.5 Flash-Lite produced articles with nearly the entire tag allowlist attached, which made unrelated stories appear in users' filtered dashboards. Operators need a fast model-control knob that does not require a code deploy for every provider swap. Cloudflare AI Gateway Dynamic Routing lets the dashboard publish a route version and use the route name in the OpenAI-compatible `model` field. <!-- @impl: src/lib/models.ts::DEFAULT_MODEL_ID --> <!-- @impl: src/lib/llm-json.ts::modelUsesAiGateway -->
+
+**Consequences:**
+
+- `dynamic/*` model ids are routed through the AI Gateway HTTP path, just like direct `google-ai-studio/*` model ids.
+- Provider-specific request parameters are not sent for dynamic routes; direct Gemini calls still pass `reasoning_effort: 'none'`.
+- `scrape_runs.model_id` records the dynamic route id. The concrete provider/model for a request must be read from AI Gateway logs.
+- Cost estimates for the dynamic route are approximate. The catalog currently mirrors the Flash-Lite baseline and must be updated if the deployed route target changes materially.
+- Any dynamic route target should keep at least the pipeline's 128K-token lower-bound context window, because chunk packing is sized around that minimum.
+- Candidate-local source tags now narrow persisted tags when present. <!-- @impl: src/queue/scrape-coordinator.ts::flattenToChunkCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::contextualTagSetForCluster -->
+- Model responses with at least 10 emitted tags for one article reject the chunk before D1 persistence so Queues retries the LLM call. <!-- @impl: src/queue/scrape-chunk-consumer.ts::rejectArticlesWithModelTagFanout -->
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-020](../../sdd/generation.md#req-pipe-020-chunk-tag-validation-guardrails), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
 
 ---
 

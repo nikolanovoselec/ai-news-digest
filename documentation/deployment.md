@@ -26,7 +26,7 @@ Local development setup and production deployment steps.
 
 - Node.js 22+ (local dev only; production runs on Cloudflare Workers)
 - Cloudflare account with Workers Paid plan enabled
-- Cloudflare AI Gateway with a Google AI Studio provider key for `google-ai-studio/gemini-2.5-flash-lite`
+- Cloudflare AI Gateway with a deployed Dynamic Routing route named `news_digest` (called as model `dynamic/news_digest`) and provider keys for the route's model nodes
 - At least one OAuth provider configured: GitHub (Settings → Developer Settings → OAuth Apps) and/or Google (console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client IDs)
 - Resend account with a verified sending domain
 - `wrangler` CLI installed (`npm i -g wrangler` or use `npx wrangler`)
@@ -84,7 +84,7 @@ CI/CD: `.github/workflows/deploy.yml` triggers on a `workflow_run` event — fir
 The deploy job:
 1. Applies D1 migrations (drift-tolerant). "Duplicate column" / "already exists" errors are handled by stamping the migration into `d1_migrations` and retrying up to 5 attempts. Real SQL errors surface immediately. Drift tolerance covers the case where an operator ran `wrangler d1 migrations apply --remote` out-of-band (e.g. during incident response); without it, the next CI deploy would block on a migration the remote already applied.
 2. Runs the same two-step security audit as PR Checks (advisory HIGH+, blocking CRITICAL) as a defence-in-depth gate — catches CVEs introduced between the merge and the deploy (transient transitive bumps, Dependabot lockfile regenerations, etc.).
-3. Preflights Cloudflare AI Gateway by sending a one-token chat-completions request through the configured `AI_GATEWAY_URL`; 401, 404, provider-missing, or model-missing responses stop the deploy before Worker publish.
+3. Preflights Cloudflare AI Gateway by sending a one-token `dynamic/news_digest` chat-completions request through the configured `AI_GATEWAY_URL`; 401, 404, missing-route, provider-missing, or model-missing responses stop the deploy before Worker publish.
 4. Pushes Worker secrets via `wrangler secret put` (file-redirect form). Conditional secrets (`ADMIN_EMAIL`, `CF_ACCESS_AUD`, `DEV_BYPASS_USER_ID`) are pushed only when the corresponding GitHub Actions secret is non-empty.
 5. Deploys the Worker.
 6. Binds the custom domain extracted from `APP_URL` via the Workers Custom Domains API. Idempotent.
@@ -141,7 +141,7 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 | KV | `ai-news-digest-integration-kv` (auto-derived) |
 | Queues | `scrape-coordinator-integration`, `scrape-chunks-integration`, `scrape-finalize-integration`, `dedup-sweep-integration`, `pipeline-jobs-integration` |
 | DLQ | `ai-news-dlq-integration` (unbound; receives terminal retry exhaustion from finalize + pipeline-jobs consumers) |
-| AI Gateway | `AI_GATEWAY_NAME` repo/environment variable, default `ai-news-digest` (shared); set an integration-specific Gateway name to isolate and ensure it has the Google AI Studio provider key |
+| AI Gateway | `AI_GATEWAY_NAME` repo/environment variable, default `ai-news-digest` (shared); set an integration-specific Gateway name to isolate and ensure it has the `news_digest` Dynamic Routing route plus provider keys |
 | Workers AI | shared `AI` binding for embeddings (no per-env isolation needed) |
 | Vectorize | `ai-news-embeddings-integration` |
 
@@ -150,8 +150,8 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 1. **Create the AI Gateway path.**
    - Create or choose a Cloudflare AI Gateway named `ai-news-digest`.
    - For a different name, set variable `AI_GATEWAY_NAME`.
-   - Add the Google AI Studio provider key to that Gateway.
-   - Enable `google-ai-studio/gemini-2.5-flash-lite`.
+   - Add provider keys for whichever models the route will call.
+   - Create and deploy a Dynamic Routing route named `news_digest`.
    - Store the least-privilege Gateway token as secret `AI_GATEWAY_API_TOKEN`.
 2. **Create the GitHub Environment.** Repo → Settings → Environments → New environment → name it `integration`. The empty environment is what activates the secret-fallback semantics in the workflow.
 3. **Set `APP_URL` as an environment variable** (Variables tab, not Secrets — it's a public hostname). Use a custom domain URL whose zone is in the same Cloudflare account; the integration workflow requires this value before deploy.
@@ -191,7 +191,7 @@ curl -i ${APP_URL}/api/admin/force-refresh
 | `DEDUP_SWEEP` | Queue | `dedup-sweep` | Self-chaining historical-dedup sweep; the kicker enqueues the first message and the consumer re-enqueues a continuation per batch until the corpus tail is reached ([REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1) |
 | `PIPELINE_JOBS` | Queue | `pipeline-jobs` (`pipeline-jobs-integration` on integration) | Backend-driven full pipeline orchestrator; one consumer walks the seven phases by self-chaining messages ([REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)) |
 | — | Queue (DLQ) | `ai-news-dlq` (`ai-news-dlq-integration` on integration) | Dead-letter queue for the finalize and pipeline-jobs consumers. Terminal queue retry exhaustion lands messages here so they are inspectable rather than silently dropped (CF-001). Provisioned by the deploy workflow inline `wrangler queues create` block; no binding needed in `wrangler.toml`. |
-| AI Gateway | Cloudflare AI Gateway | configured by `AI_GATEWAY_URL` | Gateway-backed Gemini LLM calls for summaries, discovery, and rerank; deploy preflight verifies the Gateway, Google AI Studio provider key, runtime token, and default model before publish |
+| AI Gateway | Cloudflare AI Gateway | configured by `AI_GATEWAY_URL` | Dynamic route `dynamic/news_digest` for summaries, discovery, and rerank; deploy preflight verifies the Gateway, route, runtime token, and route provider keys before publish |
 | `AI` | Workers AI | (account-level) | bge-base-en-v1.5 embedding generation; non-Gateway model fallback |
 | `VECTORIZE` | Vectorize index | `ai-news-embeddings` | 768-dim cosine index for same-story dedup; provisioned by the deploy workflow via `wrangler vectorize create` ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
 

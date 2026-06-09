@@ -3,9 +3,10 @@
 // Hardcoded inference model catalog. The list is the source of truth —
 // server-side validation (`model_id` must appear in `MODELS`) keys off it,
 // the settings dropdown is rendered from it, and per-digest cost is computed
-// from its per-million-token prices. Updating the catalog is a code edit +
-// deploy; there is no runtime fetch or KV cache. Gateway-backed entries use
-// a dedicated AI_GATEWAY_API_TOKEN runtime secret plus AI_GATEWAY_URL.
+// from its per-million-token prices. The default is an AI Gateway Dynamic
+// Routing route so operators can change the underlying provider/model in the
+// Cloudflare dashboard without redeploying. Gateway-backed entries use a
+// dedicated AI_GATEWAY_API_TOKEN runtime secret plus AI_GATEWAY_URL.
 // See /sdd/settings.md REQ-SET-004 and REQUIREMENTS.md "Model selection".
 //
 // Single-model architecture (2026-05-06): the chunk/finalize/discovery
@@ -35,24 +36,29 @@ export interface ModelOption {
   category: 'featured' | 'budget';
 }
 
-// Default model: Gemini 2.5 Flash-Lite via Cloudflare AI Gateway BYOK.
-// The integration canary uses the OpenAI-compatible AI Gateway endpoint
-// configured by AI_GATEWAY_URL, with a least-privilege AI_GATEWAY_API_TOKEN
-// runtime secret for gateway auth; the Google AI Studio provider key is
-// stored in the gateway, not in source or Worker env. Flash-Lite is the
-// lower-cost Gemini release candidate after Gemini 2.0 Flash returned
-// "no longer available" from Google AI Studio. Production promotion is
-// gated on fresh CI, PR-boundary review, and a clean integration scrape
-// proving chunk reliability, JSON validity, summary quality, and
-// same-story dedup quality.
+// Default model route: Cloudflare AI Gateway Dynamic Routing.
+// The route named `dynamic/news_digest` is configured in the Cloudflare
+// dashboard. It can point at Gemini, Workers AI, OpenAI, or a fallback/A-B
+// flow without changing application code. The app still records the route
+// id on scrape_runs; detailed provider/model routing lives in AI Gateway logs.
 //
 // This constant is the single source-of-truth for the pipeline's model
 // id (chunk summarisation, rerank, discovery all flow through
 // DEFAULT_MODEL_ID).
-export const DEFAULT_MODEL_ID = 'google-ai-studio/gemini-2.5-flash-lite';
+export const DEFAULT_MODEL_ID = 'dynamic/news_digest';
 
 export const MODELS: ModelOption[] = [
   // Featured — headline choices users see at the top of the dropdown.
+  {
+    id: 'dynamic/news_digest',
+    name: 'News Digest Dynamic Route',
+    description:
+      'Cloudflare AI Gateway Dynamic Routing route. Change the underlying model, fallback, or rollout in the AI Gateway dashboard without redeploying. Cost estimate uses the current Flash-Lite baseline and should be updated when the route target changes.',
+    inputPricePerMtok: 0.10,
+    outputPricePerMtok: 0.40,
+    contextTokens: 128_000,
+    category: 'featured',
+  },
   {
     id: 'google-ai-studio/gemini-2.5-flash-lite',
     name: 'Gemini 2.5 Flash-Lite',

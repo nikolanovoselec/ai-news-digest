@@ -45,19 +45,15 @@ describe('MODELS catalog', () => {
 });
 
 describe('DEFAULT_MODEL_ID', () => {
-  it('REQ-SET-004: DEFAULT_MODEL_ID is Gemini 2.5 Flash-Lite via AI Gateway — integration canary, single-model arch', () => {
-    // 2026-06-07: Gemini 2.0 Flash is no longer available through
-    // Google AI Studio, so test the current low-cost Gateway canary:
-    // Gemini 2.5 Flash-Lite. No production promotion without a fresh
-    // integration proof.
-    expect(DEFAULT_MODEL_ID).toBe('google-ai-studio/gemini-2.5-flash-lite');
+  it('REQ-SET-004: DEFAULT_MODEL_ID is the AI Gateway Dynamic Routing route', () => {
+    expect(DEFAULT_MODEL_ID).toBe('dynamic/news_digest');
   });
 
   it('REQ-SET-004: DEFAULT_MODEL_ID is present in MODELS', () => {
     const found = MODELS.find((m) => m.id === DEFAULT_MODEL_ID);
     expect(found).toBeDefined();
     expect(found?.category).toBe('featured');
-    expect(found?.contextTokens).toBeGreaterThanOrEqual(1_000_000);
+    expect(found?.contextTokens).toBeGreaterThanOrEqual(128_000);
   });
 });
 
@@ -77,7 +73,8 @@ describe('modelById', () => {
 
 describe('estimateCost', () => {
   it('REQ-SET-004: estimateCost computes USD from per-million-token prices', () => {
-    // Gemini 2.5 Flash-Lite: input $0.10 / output $0.40 per Mtok.
+    // Dynamic route estimate currently mirrors the Flash-Lite baseline:
+    // input $0.10 / output $0.40 per Mtok.
     // 1,000,000 in -> $0.10; 1,000,000 out -> $0.40; total $0.50.
     const cost = estimateCost(DEFAULT_MODEL_ID, 1_000_000, 1_000_000);
     expect(cost).toBeCloseTo(0.50, 6);

@@ -260,9 +260,10 @@ jobs:
             rm "$TMP"
           done
 
-          # Gemini runs through Cloudflare AI Gateway BYOK. Runtime uses
-          # a dedicated least-privilege Gateway token, not the broad
-          # deploy/provisioning token. The provider key stays in Gateway.
+          # Dynamic route inference runs through Cloudflare AI Gateway.
+          # Runtime uses a dedicated least-privilege Gateway token, not the
+          # broad deploy/provisioning token. Provider keys and model routing
+          # stay in the Gateway route config.
           if [ -z "${AI_GATEWAY_API_TOKEN:-}" ]; then
             echo "::error::Required secret 'AI_GATEWAY_API_TOKEN' is not set in the repo."
             exit 1
@@ -279,7 +280,7 @@ jobs:
             *[!A-Za-z0-9._-]*|'') echo "::error::AI_GATEWAY_NAME may contain only letters, numbers, dot, underscore, and dash."; exit 1 ;;
           esac
           AI_GATEWAY_URL="https://gateway.ai.cloudflare.com/v1/${CLOUDFLARE_ACCOUNT_ID}/${AI_GATEWAY_NAME}/compat/chat/completions"
-          # Fail deploy before Worker publish when Gateway, provider, model,
+          # Fail deploy before Worker publish when Gateway, dynamic route,
           # or the least-privilege Gateway token is unusable. The runtime
           # default model is Gateway-only, so a deploy that cannot complete
           # this one-token chat request would fail every summary/discovery/
@@ -292,13 +293,13 @@ jobs:
             -H 'Content-Type: application/json' \
             -H "cf-aig-authorization: Bearer ${AI_GATEWAY_API_TOKEN}" \
             -H 'cf-aig-skip-cache: true' \
-            --data '{"model":"google-ai-studio/gemini-2.5-flash-lite","messages":[{"role":"user","content":"ping"}],"max_tokens":1,"reasoning_effort":"none"}') || {
-            echo "::error::AI Gateway preflight request failed. Verify AI_GATEWAY_NAME, provider key, and AI_GATEWAY_API_TOKEN."
+            --data '{"model":"dynamic/news_digest","messages":[{"role":"user","content":"Return JSON: {\"ok\":true}"}],"temperature":0.6,"response_format":{"type":"json_object"},"max_tokens":10}') || {
+            echo "::error::AI Gateway preflight request failed. Verify AI_GATEWAY_NAME, dynamic route, provider key, and AI_GATEWAY_API_TOKEN."
             rm -f "$AI_GATEWAY_PREFLIGHT_BODY"
             exit 1
           }
           if [ "$AI_GATEWAY_PREFLIGHT_STATUS" -lt 200 ] || [ "$AI_GATEWAY_PREFLIGHT_STATUS" -ge 300 ]; then
-            echo "::error::AI Gateway preflight failed with HTTP ${AI_GATEWAY_PREFLIGHT_STATUS}. Verify the Gateway exists, has the Google AI Studio provider key, and allows google-ai-studio/gemini-2.5-flash-lite."
+            echo "::error::AI Gateway preflight failed with HTTP ${AI_GATEWAY_PREFLIGHT_STATUS}. Verify the Gateway exists, the dynamic/news_digest route is deployed, and the route's provider keys are configured."
             head -c 500 "$AI_GATEWAY_PREFLIGHT_BODY" || true
             echo
             rm -f "$AI_GATEWAY_PREFLIGHT_BODY"
@@ -328,7 +329,7 @@ jobs:
             exit 1
           fi
           if [ "$LEGACY_SECRET_PRESENT" = "yes" ]; then
-            npx --yes wrangler secret delete CLOUDFLARE_API_TOKEN --force
+            printf 'y\n' | npx --yes wrangler secret delete CLOUDFLARE_API_TOKEN
           else
             echo "CLOUDFLARE_API_TOKEN not set on Worker — nothing to clear"
           fi

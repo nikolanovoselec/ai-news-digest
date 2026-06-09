@@ -406,6 +406,122 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
     expect(articleInserts.length).toBe(1);
   });
 
+  it('REQ-PIPE-020: filters model tags through candidate-local source_tags before persistence', async () => {
+    const aiResponse = {
+      response: JSON.stringify({
+        articles: [
+          {
+            index: 0,
+            title: 'Croatia football squad update highlights Gvardiol return',
+            details: LONG_BODY,
+            tags: ['cloudflare', 'pqc', 'hrvatska', 'openziti'],
+          },
+        ],
+        dedup_groups: [],
+      }),
+      usage: { input_tokens: 10, output_tokens: 10 },
+    };
+    const { db, records } = makeDb();
+    const { kv } = makeKv({ chunksRemaining: '1', sourcesKeys: ['sources:hrvatska'] });
+    const env = makeEnv(db, kv, aiResponse);
+    await processOneChunk(env, makeChunk({
+      candidates: [
+        {
+          canonical_url: 'https://example.hr/gvardiol',
+          source_url: 'https://example.hr/gvardiol',
+          source_name: 'Croatia News',
+          title: 'Croatia football squad update highlights Gvardiol return',
+          published_at: 100,
+          source_tags: ['hrvatska'],
+        },
+      ],
+    }));
+
+    const tagInserts = records.filter(
+      (r) => r.via === 'batch' && r.sql.startsWith('INSERT OR IGNORE INTO article_tags'),
+    );
+    expect(tagInserts.map((r) => r.params[1])).toEqual(['hrvatska']);
+  });
+
+  it('REQ-PIPE-020: retries the chunk when model output emits 10 or more tags', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      const aiResponse = {
+        response: JSON.stringify({
+          articles: [
+            {
+              index: 0,
+              title: 'Cloudflare security update for Workers platform',
+              details: LONG_BODY,
+              tags: [
+                'cloudflare',
+                'aws',
+                'azure',
+                'gcp',
+                'pqc',
+                'openziti',
+                'kubernetes',
+                'docker',
+                'iam',
+                'generative-ai',
+              ],
+            },
+          ],
+          dedup_groups: [],
+        }),
+        usage: { input_tokens: 10, output_tokens: 10 },
+      };
+      const { db, records } = makeDb();
+      const { kv } = makeKv({ chunksRemaining: '1' });
+      const env = makeEnv(db, kv, aiResponse);
+      const message = {
+        body: makeChunk({
+          candidates: [
+            {
+              canonical_url: 'https://blog.cloudflare.com/security-update',
+              source_url: 'https://blog.cloudflare.com/security-update',
+              source_name: 'Cloudflare Blog',
+              title: 'Cloudflare security update for Workers platform',
+              published_at: 100,
+              source_tags: ['cloudflare'],
+            },
+          ],
+        }),
+        attempts: 1,
+        ack: vi.fn(),
+        retry: vi.fn(),
+      };
+      const batch = { messages: [message] } as unknown as MessageBatch<ChunkJobMessage>;
+      await handleChunkBatch(batch, env);
+
+      expect(message.retry).toHaveBeenCalledTimes(1);
+      expect(message.ack).not.toHaveBeenCalled();
+      const articleInserts = records.filter(
+        (r) => r.via === 'batch' && r.sql.startsWith('INSERT OR IGNORE INTO articles'),
+      );
+      expect(articleInserts).toHaveLength(0);
+      const completionInserts = records.filter(
+        (r) => r.sql.startsWith('INSERT OR IGNORE INTO scrape_chunk_completions'),
+      );
+      expect(completionInserts).toHaveLength(0);
+      const statsUpdate = records.find(
+        (r) =>
+          r.via === 'run' &&
+          r.sql.includes('UPDATE scrape_runs') &&
+          r.sql.includes('tokens_in = tokens_in + ?2') &&
+          r.params[0] === 'test-run',
+      );
+      expect(statsUpdate?.params.slice(1, 6)).toEqual([10, 10, expect.any(Number), 0, 0]);
+      const fanoutLog = consoleSpy.mock.calls.find((args: unknown[]) => {
+        const payload = args[0];
+        return typeof payload === 'string' && payload.includes('chunk_article_retry_tag_fanout');
+      });
+      expect(fanoutLog).toBeDefined();
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
   it('REQ-PIPE-002: articles INSERT column list matches migration 0003 schema (regression guard for the details_json / tags_json / ingested_at / scrape_run_id columns)', async () => {
     const aiResponse = {
       response: JSON.stringify({
