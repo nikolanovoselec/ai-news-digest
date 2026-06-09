@@ -123,7 +123,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-002](#req-pipe-002-chunked-llm-output-content-contract)
+**Dependencies:** [REQ-PIPE-002](#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
 
 **Verification:** Integration test
 
@@ -150,7 +150,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-002](#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-015](#req-pipe-015-chunk-processing-robustness)
+**Dependencies:** [REQ-PIPE-002](#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-PIPE-015](#req-pipe-015-chunk-processing-robustness)
 
 **Verification:** Integration test
 
