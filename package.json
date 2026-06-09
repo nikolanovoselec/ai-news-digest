@@ -24,7 +24,7 @@
     "astro": "^5.18.1",
     "fast-xml-parser": "^5.0.9",
     "tailwindcss": "^4.2.4",
-    "zod": "^3.23.8"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.8",
