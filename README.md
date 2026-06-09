@@ -41,7 +41,7 @@ The bar for "doesn't spy on you or sell you anything" is, in fairness, embarrass
 
 ## Built with Codeflare's spec-driven development framework
 
-This project was built end-to-end as a real-world test of [Codeflare](https://codeflare.ch) ([repo](https://github.com/nikolanovoselec/codeflare))'s **spec-driven development** (SDD) framework. Every feature follows the same loop: write the contract first in `sdd/{domain}.md`, write a failing test that names the requirement (`REQ-X-NNN`), write the minimal code to make it pass with an `// Implements REQ-X-NNN` annotation, then push. Three review agents (code, spec, docs) run automatically and the deploy fires on green. The agents disagree with me on a regular basis. They have been right on a regular basis.
+This project was built end-to-end as a real-world test of [Codeflare](https://codeflare.ch) ([repo](https://github.com/nikolanovoselec/codeflare))'s **spec-driven development** (SDD) framework. Every feature follows the same loop: write the contract first in `sdd/spec/{domain}.md`, write a failing test that names the requirement (`REQ-X-NNN`), write the minimal code to make it pass with an `// Implements REQ-X-NNN` annotation, then push. Three review agents (code, spec, docs) run automatically and the deploy fires on green. The agents disagree with me on a regular basis. They have been right on a regular basis.
 
 The result: 60+ written requirements across 10 product domains (authentication, generation, reading, history, email, settings, discovery, design, observability, PWA), each with a test that proves it works and a source file that points back to it. [Spec](sdd/README.md) · [Architecture](documentation/lanes/architecture.md) · [Changelog](sdd/spec/changes.md)
 

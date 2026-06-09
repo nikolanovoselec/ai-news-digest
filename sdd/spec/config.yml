@@ -5,8 +5,8 @@
 #
 # interactive: confirm every fix before applying. Safe for new SDD users.
 # auto:        apply SAFE+RISKY fixes silently on the current branch.
-#              Escalate JUDGMENT calls to sdd/.review-needed.md.
-# unleashed:   apply everything (including JUDGMENT) on a new branch + PR.
+#              Escalate JUDGMENT calls to sdd/spec/.review-queue.md.
+# unleashed:   apply everything (including JUDGMENT) on the current branch.
 #              Conservative defaults preserve information without overwriting intent.
 #              Walk-away workflow — review the PR when you come back.
 mode: unleashed
