@@ -148,13 +148,16 @@ const ESTIMATED_BODY_FETCH_CHARS = 3_000;
  * marked `force_body_fetch`, the consumer skips its own body fetch
  * and the snippet length is the actual cost. Otherwise the consumer
  * will fetch and the body could be anywhere between 0 and SNIPPET_CAP
- * (15K); we use `ESTIMATED_BODY_FETCH_CHARS` as the median guess.
+ * (15K). For forced fetches with retained fallback snippets, budget the
+ * larger of the snippet and median body estimate because the consumer
+ * prompts with whichever text is longer.
  *
  * Exported for direct testing. */
 export function estimateCandidateChars(c: ChunkCandidate): number {
   const snippet = c.body_snippet ?? '';
-  const bodyChars =
-    snippet.length >= SNIPPET_FLOOR && c.force_body_fetch !== true
+  const bodyChars = c.force_body_fetch === true
+    ? Math.max(snippet.length, ESTIMATED_BODY_FETCH_CHARS)
+    : snippet.length >= SNIPPET_FLOOR
       ? snippet.length
       : ESTIMATED_BODY_FETCH_CHARS;
   return bodyChars + PER_CANDIDATE_OVERHEAD_CHARS;

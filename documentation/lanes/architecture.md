@@ -254,7 +254,7 @@ Coordinator
   │  (default-seed ∪ curated ∪ discovered KV); skip tags with a bespoke
   │  hand-tuned GN curated entry (REQ-PIPE-019)
   ├─ Fan out {tag × source} pairs (concurrency 10)
-  ├─ Mark cross-site feed snippets for linked-page body fetch; discard discussion/score metadata fallback (REQ-PIPE-010 AC 2)
+  ├─ Mark cross-site feed snippets for linked-page body fetch; discard discussion/score metadata fallback (REQ-PIPE-010 AC 2-3)
   ├─ Record per-URL fetch outcome → KV source_health:{url}
   ├─ Evict URLs at 30 consecutive failures; re-queue discovery if feed list empties
   ├─ Drop candidates older than 48 h; keep undated candidates
@@ -299,6 +299,8 @@ Finalize consumer (semantic same-story dedupe - REQ-PIPE-003, REQ-PIPE-009)
   ├─ Atomic gate: UPDATE scrape_runs SET finalize_recorded=1 … WHERE finalize_recorded=0
   └─ Enqueue one DEDUP_SWEEP message scoped to last 7d (derived from DEDUP_TIME_WINDOW_SECONDS at runtime - REQ-PIPE-013 AC 3)
 ```
+
+Cross-site feed-snippet handling ([REQ-PIPE-010 AC 2-3](../../sdd/spec/generation.md#req-pipe-010-body-fetch-for-thin-feed-snippets)) is implemented by `feedSnippetFromCandidates`, which flags cross-site article URLs and removes discussion/score wrappers, and by `fetchAndBuildPromptCandidates`, which fetches forced candidates before prompt construction. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 
 The operator-driven `pipeline-jobs` orchestrator wraps this scrape flow with `scrape_kick` and `scrape_wait` phases ([REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-016](../../sdd/spec/generation.md#req-pipe-016-scrape_runs-idempotency-and-stuck-run-cleanup); source: `src/queue/pipeline-consumer.ts::runScrapeWait`). During `scrape_wait`, it polls the linked `scrape_runs` row on a bounded 10-second cadence. If the coordinator has claimed dispatch but the internal `chunk_count = -1` marker remains past the shorter coordinator budget, the orchestrator resets that marker and sends one replacement coordinator message. After that one recovery attempt, the longer scrape-wait cap applies; a still-running scrape is marked failed rather than re-enqueued forever.
 

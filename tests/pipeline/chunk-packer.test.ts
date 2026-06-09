@@ -46,12 +46,12 @@ describe('estimateCandidateChars (REQ-PIPE-001)', () => {
     expect(cost).toBe(5_000 + 400);
   });
 
-  it('REQ-PIPE-010: force_body_fetch estimates fetched body cost even when snippet is long', () => {
+  it('REQ-PIPE-010: force_body_fetch budgets retained long snippets as fallback prompt text', () => {
     const snippet = 'x'.repeat(5_000);
     const cost = estimateCandidateChars(
       makeCandidate({ body_snippet: snippet, force_body_fetch: true }),
     );
-    expect(cost).toBe(3400);
+    expect(cost).toBe(5_000 + 400);
   });
 
   it('treats exactly-SNIPPET_FLOOR snippets as already-fetched (boundary upper)', () => {
