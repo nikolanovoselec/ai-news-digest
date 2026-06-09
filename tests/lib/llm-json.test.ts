@@ -125,14 +125,42 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003 / REQ-SET-004', () => {
         total_chunks: 4,
       }),
     });
-    expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({
-      model: DEFAULT_MODEL_ID,
-      reasoning_effort: 'none',
-    });
+    const body = JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>;
+    expect(body).toMatchObject({ model: DEFAULT_MODEL_ID });
+    expect(body.reasoning_effort).toBeUndefined();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.tokensIn).toBe(11);
     expect(result.tokensOut).toBe(29);
+  });
+
+  it('REQ-SET-004 AC6: direct Gemini Gateway models disable hidden thinking tokens', async () => {
+    const ai = makeAi([]);
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '{"articles": []}' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await runJson({
+      ai,
+      model: 'google-ai-studio/gemini-2.5-flash-lite',
+      aiGatewayApiToken: 'gateway-test-token',
+      aiGatewayUrl: 'https://gateway.ai.cloudflare.com/v1/test-account/test-gateway/compat/chat/completions',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      params: { messages: [{ role: 'user', content: 'json' }] },
+      narrow: (raw) => (typeof raw === 'string' ? (JSON.parse(raw) as { articles: unknown[] }) : null),
+    });
+
+    const [, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({
+      model: 'google-ai-studio/gemini-2.5-flash-lite',
+      reasoning_effort: 'none',
+    });
   });
 
   it('REQ-SET-004 AC6: gateway models fail closed when gateway config is missing', async () => {

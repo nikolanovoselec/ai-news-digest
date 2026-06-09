@@ -41,7 +41,7 @@ Stored via `wrangler secret put <name>`. Never committed to git.
 | `DEV_BYPASS_TOKEN` | Optional | none — `/api/dev/*` returns 404 when unset | `src/pages/api/dev/login.ts`, `src/pages/api/dev/trigger-scrape.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
 | `DEV_BYPASS_USER_ID` | Optional | `__e2e__` (synthetic row) | `src/pages/api/dev/login.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
 
-Notes: The deploy workflow derives `AI_GATEWAY_URL` from `CLOUDFLARE_ACCOUNT_ID` and optional repository variable `AI_GATEWAY_NAME` (default `ai-news-digest`), then stores it with `wrangler secret put`. `AI_GATEWAY_API_TOKEN` must be a dedicated runtime Gateway token, not the broader deploy token.
+Notes: The deploy workflow derives `AI_GATEWAY_URL` from `CLOUDFLARE_ACCOUNT_ID` and optional repository variable `AI_GATEWAY_NAME` (default `ai-news-digest`), then stores it with `wrangler secret put`. `AI_GATEWAY_API_TOKEN` must be a dedicated runtime Gateway token, not the broader deploy token. The default pipeline model is the AI Gateway Dynamic Routing route `dynamic/news_digest`; operators change the concrete provider/model by publishing a new route version in the AI Gateway dashboard.
 
 The `GH_` prefix on the GitHub OAuth secrets is required because GitHub Actions reserves the `GITHUB_*` namespace for its built-in tokens. `RESEND_FROM` accepts a bare address (`digest@example.com`) or RFC 5322 display-name form (`Acme News <digest@example.com>`); see [RESEND_FROM display-name handling](#resend_from-display-name-handling).
 
@@ -74,18 +74,19 @@ The deploy job reads these secrets from GitHub Actions. `CLOUDFLARE_API_TOKEN` a
 | `ADMIN_EMAIL` | Conditional | Operator email that gates `/api/admin/*`; when unset every admin endpoint returns HTTP 403 ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8) |
 | `CF_ACCESS_AUD` | Optional | Cloudflare Access audience tag; when set, enables Layer 0 perimeter check (assertion presence + `aud`-claim match) on `/api/admin/*`; when unset, Layer 0 is skipped and admin is gated by session + `ADMIN_EMAIL` alone ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8, AD29). See [Setting `CF_ACCESS_AUD`](#setting-cf_access_aud-production-when-binding-cloudflare-access) for setup. |
 
-Optional repository variable: `AI_GATEWAY_NAME` overrides the default Gateway name (`ai-news-digest`) used to build `AI_GATEWAY_URL`. Set it under Settings → Secrets and variables → Actions → Variables when your Cloudflare Gateway uses a different name. The deploy workflows preflight `google-ai-studio/gemini-2.5-flash-lite` through this URL before Worker publish.
+Optional repository variable: `AI_GATEWAY_NAME` overrides the default Gateway name (`ai-news-digest`) used to build `AI_GATEWAY_URL`. Set it under Settings → Secrets and variables → Actions → Variables when your Cloudflare Gateway uses a different name. The deploy workflows preflight `dynamic/news_digest` through this URL before Worker publish.
 
 ### AI Gateway setup
 
-Gateway-backed Gemini calls require one Cloudflare setup path before deploying:
+Gateway-backed Dynamic Routing calls require one Cloudflare setup path before deploying:
 
 1. Create or select a Cloudflare AI Gateway. Use `ai-news-digest` to match the default, or set the repository variable `AI_GATEWAY_NAME` to the Gateway name you chose.
-2. Add a Google AI Studio provider key to that Gateway and enable `google-ai-studio/gemini-2.5-flash-lite`.
-3. Create a least-privilege AI Gateway API token for runtime inference and store it as the GitHub Actions secret `AI_GATEWAY_API_TOKEN`. Do not reuse `CLOUDFLARE_API_TOKEN`; that deploy/provisioning token is intentionally deleted from Worker secrets.
-4. Confirm `CLOUDFLARE_ACCOUNT_ID` is the account that owns the Gateway.
+2. Add provider keys for whichever model nodes the route will call.
+3. Create and deploy a Dynamic Routing route named `news_digest`.
+4. Create a least-privilege AI Gateway API token for runtime inference and store it as the GitHub Actions secret `AI_GATEWAY_API_TOKEN`. Do not reuse `CLOUDFLARE_API_TOKEN`; that deploy/provisioning token is intentionally deleted from Worker secrets.
+5. Confirm `CLOUDFLARE_ACCOUNT_ID` is the account that owns the Gateway.
 
-The workflow builds `AI_GATEWAY_URL` as `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions`. It sends a one-token, cache-bypassing chat-completions request before deploy; HTTP 401, 404, or provider/model errors fail the workflow before a broken runtime reaches users.
+The workflow builds `AI_GATEWAY_URL` as `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions`. It sends a one-token, cache-bypassing `dynamic/news_digest` chat-completions request before deploy; HTTP 401, 404, route, provider, or model errors fail the workflow before a broken runtime reaches users.
 
 ### Setting `CF_ACCESS_AUD` (production, when binding Cloudflare Access)
 

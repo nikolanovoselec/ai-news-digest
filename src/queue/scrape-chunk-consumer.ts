@@ -33,9 +33,9 @@
 //
 // Retry contract: throwing from the handler marks the message for queue
 // retry up to `max_retries` in wrangler.toml. We throw on
-// llm_failed/llm_invalid_json (possibly a transient model hiccup) so
-// Queues retries; we ack on parse+persist success even when the LLM
-// returned zero usable articles (no retry would help).
+// llm_failed/llm_invalid_json and 10+ tag fan-out (possibly a transient
+// model hiccup) so Queues retries; we ack on parse+persist success even
+// when the LLM returned zero usable articles (no retry would help).
 
 import {
   PROCESS_CHUNK_SYSTEM,
@@ -83,12 +83,16 @@ export interface ChunkJobMessage {
      * together — earliest-published wins as the cluster primary. */
     published_at: number;
     body_snippet?: string;
+    /** Candidate-local tag hints from the source that surfaced this
+     * article. Used as a contextual allowlist during tag validation. */
+    source_tags?: string[];
     /** Optional alternative sources discovered by the coordinator for
      * the same canonical URL (multi-feed cluster). These land in
      * `article_sources` under the primary article. */
     alternatives?: Array<{
       source_url: string;
       source_name: string;
+      source_tags?: string[];
     }>;
   }>;
 }
@@ -117,6 +121,13 @@ interface LLMChunkPayload {
  *  while staying under the per-line log retention budget that
  *  `wrangler tail` sustains under load. */
 const LOG_PAYLOAD_MAX_CHARS = 500;
+
+/** Server-side fan-out guard for model tag explosions. Real articles in
+ * this corpus usually carry 1-4 tags; broad weekly recaps can reach a
+ * few more. Ten or more model-emitted tags means the model is likely
+ * copying the allowlist instead of classifying the article, so the
+ * chunk throws and lets Queues retry the LLM call. */
+const TAG_FANOUT_RETRY_THRESHOLD = 10;
 
 /** Handle one batch of `scrape-chunks` messages. Delegates the per-
  * message try/ack/retry/terminal-failure pattern to the shared
@@ -277,6 +288,11 @@ export async function processOneChunk(
     allowedTags,
   );
 
+  // Reject broad tag fan-out before alignment/drop gates can hide it.
+  // This turns allowlist-copying model output into a queue retry instead
+  // of accepting a locally-filtered subset from a bad response.
+  rejectArticlesWithModelTagFanout(rawArticles, body);
+
   // Build per-input singleton clusters, then merge by LLM dedup hints.
   const perInputClusters: Cluster[] = body.candidates.map((c) => {
     const primary: Candidate = {
@@ -288,6 +304,9 @@ export async function processOneChunk(
       ...(typeof c.body_snippet === 'string' && c.body_snippet !== ''
         ? { body_snippet: c.body_snippet }
         : {}),
+      ...(Array.isArray(c.source_tags) && c.source_tags.length > 0
+        ? { source_tags: c.source_tags }
+        : {}),
     };
     const alternatives: Candidate[] = (c.alternatives ?? []).map((alt) => ({
       canonical_url: c.canonical_url,
@@ -295,6 +314,9 @@ export async function processOneChunk(
       source_name: alt.source_name,
       title: c.title,
       published_at: c.published_at,
+      ...(Array.isArray(alt.source_tags) && alt.source_tags.length > 0
+        ? { source_tags: alt.source_tags }
+        : {}),
     }));
     return { primary, alternatives };
   });
@@ -406,6 +428,7 @@ interface PromptCandidate {
   source_name: string;
   published_at: number;
   body_snippet?: string;
+  source_tags?: string[];
 }
 
 /** Minimum snippet length the chunk consumer treats as "already
@@ -452,6 +475,9 @@ async function fetchAndBuildPromptCandidates(
       url: c.source_url,
       source_name: c.source_name,
       published_at: c.published_at,
+      ...(Array.isArray(c.source_tags) && c.source_tags.length > 0
+        ? { source_tags: c.source_tags }
+        : {}),
     };
     if (bestSnippet !== '') return { ...base, body_snippet: bestSnippet };
     return base;
@@ -672,12 +698,69 @@ function alignLlmArticlesToInputs(
   };
 }
 
+/** Candidate-local tags that constrain what the LLM may persist for
+ * one clustered article. Empty means fall back to the global allowlist. */
+function contextualTagSetForCluster(cluster: Cluster): Set<string> {
+  const set = new Set<string>();
+  const candidates = [cluster.primary, ...cluster.alternatives];
+  for (const c of candidates) {
+    for (const tag of c.source_tags ?? []) {
+      const normalised = normalizeHashtag(tag.trim());
+      if (normalised !== '') set.add(normalised);
+    }
+  }
+  return set;
+}
+
+function countModelEmittedTags(tags: readonly unknown[]): {
+  tagCount: number;
+  uniqueTagCount: number;
+} {
+  let tagCount = 0;
+  const unique = new Set<string>();
+  for (const tag of tags) {
+    if (typeof tag !== 'string') continue;
+    const normalised = normalizeHashtag(tag.trim());
+    if (normalised === '') continue;
+    tagCount += 1;
+    unique.add(normalised);
+  }
+  return { tagCount, uniqueTagCount: unique.size };
+}
+
+/** Throw before any persistence if the model copies the tag allowlist.
+ * The shared queue handler treats this ordinary Error as retryable. */
+function rejectArticlesWithModelTagFanout(
+  rawArticles: readonly LLMChunkArticle[],
+  body: ChunkJobMessage,
+): void {
+  for (let articleIndex = 0; articleIndex < rawArticles.length; articleIndex++) {
+    const article = rawArticles[articleIndex];
+    if (article === undefined) continue;
+    const llmTags = Array.isArray(article.tags) ? article.tags : [];
+    const tagFanout = countModelEmittedTags(llmTags);
+    if (tagFanout.tagCount < TAG_FANOUT_RETRY_THRESHOLD) continue;
+    const title = sanitizeText(article.title);
+    log('warn', 'digest.generation', {
+      status: 'chunk_article_retry_tag_fanout',
+      scrape_run_id: body.scrape_run_id,
+      chunk_index: body.chunk_index,
+      article_index: articleIndex,
+      tag_count: tagFanout.tagCount,
+      unique_tag_count: tagFanout.uniqueTagCount,
+      retry_threshold: TAG_FANOUT_RETRY_THRESHOLD,
+      llm_title: title.slice(0, 120),
+    });
+    throw new Error('chunk_article_tag_fanout_retry');
+  }
+}
+
 /**
  * Validate and sanitize one surviving article.
  *
- * Returns `null` when any gate fails (title empty, details empty, word count
- * below floor, title length outside range, or zero allowed tags after
- * filtering). Callers should skip `null` returns.
+ * Returns `null` when any drop gate fails (title empty, details empty,
+ * word count below floor, title length outside range, or zero allowed tags
+ * after filtering). Callers should skip `null` returns.
  */
 function validateAndSanitizeArticle(
   s: Survivor,
@@ -685,6 +768,7 @@ function validateAndSanitizeArticle(
   body: ChunkJobMessage,
 ): PreparedArticle | null {
   const title = sanitizeText(s.llmArticle.title);
+  const llmTags = Array.isArray(s.llmArticle.tags) ? s.llmArticle.tags : [];
   const detailsRaw = s.llmArticle.details;
   const rawPieces: string[] = Array.isArray(detailsRaw)
     ? detailsRaw.flatMap((p) =>
@@ -731,7 +815,7 @@ function validateAndSanitizeArticle(
     return null;
   }
 
-  const llmTags = Array.isArray(s.llmArticle.tags) ? s.llmArticle.tags : [];
+  const contextualTagSet = contextualTagSetForCluster(s.cluster);
   const tags: string[] = [];
   const seen = new Set<string>();
   for (const t of llmTags) {
@@ -739,6 +823,7 @@ function validateAndSanitizeArticle(
     const normalised = normalizeHashtag(t.trim());
     if (normalised === '' || seen.has(normalised)) continue;
     if (!allowedTagSet.has(normalised)) continue;
+    if (contextualTagSet.size > 0 && !contextualTagSet.has(normalised)) continue;
     seen.add(normalised);
     tags.push(normalised);
   }

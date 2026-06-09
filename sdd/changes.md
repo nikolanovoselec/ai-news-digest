@@ -6,6 +6,11 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are archived in [`changes-archive-2026-04.md`](changes-archive-2026-04.md).
 
+## 2026-06-09
+
+- REQ-SET-004 and REQ-PIPE-002 changed: the pipeline default now uses the Cloudflare AI Gateway Dynamic Routing route `dynamic/news_digest`, so operators can change the concrete model, fallback, or rollout in the AI Gateway dashboard without an application deploy.
+- REQ-PIPE-020 changed: chunk tag persistence now restricts tags to candidate-local source tags when available, and 10+ model-emitted tags reject the chunk for queue retry before persistence, so a model cannot make an unrelated article visible by copying the global allowlist.
+
 ## 2026-06-08
 
 - REQ-PIPE-001 and REQ-PIPE-016 changed, and REQ-PIPE-021 added: scrape progress is documented as D1-derived chunk completion, coordinator dispatch recovery remains in REQ-PIPE-016, and terminal-row safety for empty scrape runs is split into its own sibling contract.

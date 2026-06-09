@@ -116,11 +116,11 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `jwt-secret.ts` | Runtime guard rejecting `OAUTH_JWT_SECRET` shorter than 32 bytes | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation) |
 | `errors.ts` | Closed `ErrorCode` enum and sanitized response builder | [REQ-OPS-002](../sdd/observability.md#req-ops-002-sanitized-error-surfaces) |
 | `generate.ts` | LLM response payload extraction and JSON parsing | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) |
-| `llm-json.ts` | Single LLM-call entrypoint; routes Gateway-backed models through `AI_GATEWAY_URL`, runs `DEFAULT_MODEL_ID` once, and centralises token-cost accounting | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) |
+| `llm-json.ts` | Single LLM-call entrypoint; routes direct Gateway models and AI Gateway Dynamic Routes (`dynamic/*`) through `AI_GATEWAY_URL`, runs `DEFAULT_MODEL_ID` once, and centralises token-cost accounting | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) |
 | `headline-cache.ts` | KV-backed shared headline cache | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
 | `log.ts` | Structured JSON log emitter with closed `LogEvent` enum | [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-logging) |
 | `default-hashtags.ts` | Seed hashtag list for new accounts | [REQ-SET-008](../sdd/settings.md#req-set-008-hashtag-persistence-validation-and-defaults) |
-| `models.ts` | `MODELS` catalog, `DEFAULT_MODEL_ID` (`google-ai-studio/gemini-2.5-flash-lite` via AI Gateway; see [AD54](decisions/README.md#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default)), and token-cost estimator | [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection) |
+| `models.ts` | `MODELS` catalog, `DEFAULT_MODEL_ID` (`dynamic/news_digest`, an AI Gateway Dynamic Routing route; see [AD57](decisions/README.md#ad57-ai-gateway-dynamic-route-for-pipeline-model-control)), and token-cost estimator | [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection) |
 | `google-jwks.ts` | RS256 signature verification for Google `id_token`s via JWKS (`https://www.googleapis.com/oauth2/v3/certs`); caches the key set for 1 hour in KV (`oidc:jwks:google`) to bound isolate-level fetch cost (CF-013) | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `oauth-providers.ts` | GitHub + Google adapters with id_token validation | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `oauth-errors.ts` | OAuth error code allowlist and sanitizer | [REQ-AUTH-004](../sdd/authentication.md#req-auth-004-oauth-error-surfacing) |
@@ -265,8 +265,8 @@ Coordinator
        ▼
 Chunk consumer (per chunk)
   ├─ Fetch article bodies for short-snippet candidates (concurrency 20)
-  ├─ Single DEFAULT_MODEL_ID call; align output to inputs by echoed index
-  ├─ Filter LLM tags against system-approved allowlist
+  ├─ Single DEFAULT_MODEL_ID call (`dynamic/news_digest` AI Gateway route); align output to inputs by echoed index
+  ├─ Reject 10+ model-emitted tags for queue retry; then filter tags against system-approved allowlist + candidate-local source tags
   ├─ Canonical-URL dedup within chunk (first-source-wins)
   ├─ Build embedding inputs (title + body, length-capped)
   ├─ Single Workers AI embedding call to bge-base-en-v1.5 → vectors

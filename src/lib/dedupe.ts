@@ -36,6 +36,12 @@ export interface Candidate {
   /** Optional body excerpt used downstream by the LLM prompt. Never
    * relied on for dedupe. */
   body_snippet?: string;
+  /** Candidate-local tag hints from the source that surfaced this
+   * article (curated-source tags, discovered-tag owner, or synthetic
+   * Google News tag). The chunk consumer uses these as a contextual
+   * tag allowlist so a model cannot attach the global allowlist to an
+   * unrelated article and make it visible to every user. */
+  source_tags?: string[];
 }
 
 /**

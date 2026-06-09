@@ -29,6 +29,7 @@ import {
   type CuratedSource,
 } from '~/lib/curated-sources';
 import { DEFAULT_HASHTAGS } from '~/lib/default-hashtags';
+import { HASHTAG_REGEX, normalizeHashtag } from '~/lib/hashtags';
 import {
   adaptersForDiscoveredFeeds,
   fetchFromSourceWithResult,
@@ -271,9 +272,11 @@ export interface ChunkCandidate {
   title: string;
   published_at: number;
   body_snippet?: string;
+  source_tags?: string[];
   alternatives: Array<{
     source_url: string;
     source_name: string;
+    source_tags?: string[];
   }>;
 }
 
@@ -513,6 +516,7 @@ async function assembleAllSources(env: Env): Promise<SourceForFetch[]> {
       adapter: curatedToAdapter(synth),
       sourceName: synth.name,
       feedUrl: synth.feed_url,
+      sourceTags: synth.tags,
       discoveredTag: null,
     });
   }
@@ -521,6 +525,7 @@ async function assembleAllSources(env: Env): Promise<SourceForFetch[]> {
       adapter: curatedToAdapter(s),
       sourceName: s.name,
       feedUrl: s.feed_url,
+      sourceTags: s.tags,
       discoveredTag: null as string | null,
     })),
     ...discoveredSources,
@@ -598,6 +603,7 @@ function buildCandidates(
     }
     if (!hasParsedPub) missingPubdateKept += 1;
 
+    const sourceTags = normaliseSourceTags(row.headline.source_tags ?? []);
     candidates.push({
       canonical_url: canonical,
       source_url: row.headline.url,
@@ -607,6 +613,7 @@ function buildCandidates(
       ...(typeof row.headline.snippet === 'string' && row.headline.snippet !== ''
         ? { body_snippet: row.headline.snippet }
         : {}),
+      ...(sourceTags.length > 0 ? { source_tags: sourceTags } : {}),
     });
   }
 
@@ -755,9 +762,15 @@ function flattenToChunkCandidates(
       title: c.primary.title,
       published_at: c.primary.published_at,
       ...(existingSnippet !== '' ? { body_snippet: existingSnippet } : {}),
+      ...(Array.isArray(c.primary.source_tags) && c.primary.source_tags.length > 0
+        ? { source_tags: c.primary.source_tags }
+        : {}),
       alternatives: c.alternatives.map((alt) => ({
         source_url: alt.source_url,
         source_name: alt.source_name,
+        ...(Array.isArray(alt.source_tags) && alt.source_tags.length > 0
+          ? { source_tags: alt.source_tags }
+          : {}),
       })),
     };
   });
@@ -850,6 +863,8 @@ interface SourceForFetch {
   adapter: SourceAdapter;
   sourceName: string;
   feedUrl: string;
+  /** Candidate-local tag hints stamped onto each fetched headline. */
+  sourceTags: string[];
   /** Non-null only for URLs that originated from a `sources:{tag}` KV
    * entry - the coordinator can remove the URL from that entry if its
    * fetch-failure counter crosses the eviction threshold. */
@@ -863,6 +878,22 @@ export interface FeedEviction {
   tag: string;
   url: string;
   failureCount: number;
+}
+
+function normaliseSourceTags(tags: readonly string[]): string[] {
+  const out = new Set<string>();
+  for (const tag of tags) {
+    const normalised = normalizeHashtag(tag);
+    if (HASHTAG_REGEX.test(normalised)) out.add(normalised);
+  }
+  return Array.from(out);
+}
+
+function mergeSourceTags(
+  existing: readonly string[] | undefined,
+  sourceTags: readonly string[],
+): string[] {
+  return normaliseSourceTags([...(existing ?? []), ...sourceTags]);
 }
 
 /** Convert a CuratedSource entry to a SourceAdapter that
@@ -991,6 +1022,7 @@ export async function loadDiscoveredSources(
           adapter,
           sourceName: feed.name,
           feedUrl: feed.url,
+          sourceTags: [tag],
           discoveredTag: tag,
         });
       }
@@ -1095,7 +1127,12 @@ async function fetchAllSources(
         // publisher and undid the 289656d fix in production.
         const capped = headlines
           .slice(0, PER_SOURCE_ITEM_CAP)
-          .map((h) => ({ headline: h }));
+          .map((h) => ({
+            headline: {
+              ...h,
+              source_tags: mergeSourceTags(h.source_tags, job.sourceTags),
+            },
+          }));
         let eviction: FeedEviction | null = null;
         // Only record health for live fetches on discovered feeds -
         // cache hits are neither a liveness signal nor a failure.

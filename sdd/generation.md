@@ -139,6 +139,8 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Acceptance Criteria:**
 1. Tags outside the allowlist are discarded before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 2. Articles with zero valid tags after filtering are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
+3. When the coordinator supplies candidate-local source tags, persisted tags are restricted to that candidate-local set rather than the global allowlist. <!-- @impl: src/queue/scrape-coordinator.ts::fetchAllSources --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::contextualTagSetForCluster -->
+4. Any article with 10 or more model-emitted tags causes the chunk to throw a retryable error before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::TAG_FANOUT_RETRY_THRESHOLD --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::rejectArticlesWithModelTagFanout -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
 

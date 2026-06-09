@@ -71,6 +71,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default) | Gemini 2.5 Flash-Lite via AI Gateway for pipeline default | Architecture | 2026-06-07 |
 | [AD55](#ad55-adr-ledger-escalation-threshold-after-model-canary-growth) | ADR ledger escalation threshold after model-canary growth | Documentation | 2026-06-07 |
 | [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired) | Scrape progress derives from D1; KV progress mirror retired | Storage | 2026-06-08 |
+| [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) | AI Gateway Dynamic Routing route controls the pipeline model | Architecture | 2026-06-09 |
 
 ---
 
@@ -1638,6 +1639,29 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - AD27 still governs active multi-writer KV families such as `discovery_failures:{tag}`.
 
 **Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
+
+---
+
+### AD57: AI Gateway dynamic route for pipeline model control
+
+**Status:** Accepted (2026-06-09)
+
+**Extends:** [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default)
+
+**Decision:** Set `DEFAULT_MODEL_ID` to the Cloudflare AI Gateway Dynamic Routing route `dynamic/news_digest`. The route, not application code, chooses the concrete provider/model and any fallback or rollout policy. The single-model application contract stays intact: chunk summarisation, source discovery, and borderline dedup rerank still make one `runJson` call using `DEFAULT_MODEL_ID`.
+
+**Context:** A production scrape on direct Gemini 2.5 Flash-Lite produced articles with nearly the entire tag allowlist attached, which made unrelated stories appear in users' filtered dashboards. Operators need a fast model-control knob that does not require a code deploy for every provider swap while stricter server-side validation is added. Cloudflare AI Gateway Dynamic Routing lets the dashboard publish a route version and use the route name in the OpenAI-compatible `model` field. <!-- @impl: src/lib/models.ts::DEFAULT_MODEL_ID --> <!-- @impl: src/lib/llm-json.ts::modelUsesAiGateway -->
+
+**Consequences:**
+
+- `dynamic/*` model ids are routed through the AI Gateway HTTP path, just like direct `google-ai-studio/*` model ids.
+- Provider-specific request parameters are not sent for dynamic routes; direct Gemini calls still pass `reasoning_effort: 'none'`.
+- `scrape_runs.model_id` records the dynamic route id. The concrete provider/model for a request must be read from AI Gateway logs.
+- Cost estimates for the dynamic route are approximate. The catalog currently mirrors the Flash-Lite baseline and must be updated if the deployed route target changes materially.
+- Any dynamic route target should keep at least the pipeline's 128K-token lower-bound context window, because chunk packing is sized around that minimum.
+- The route change is paired with stricter tag validation: coordinator-supplied candidate tags now narrow persisted tags, and 10+ model-emitted tags reject the chunk before D1 persistence so Queues retries the LLM call.
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
 
 ---
 
