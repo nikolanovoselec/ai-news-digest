@@ -328,7 +328,7 @@ jobs:
             exit 1
           fi
           if [ "$LEGACY_SECRET_PRESENT" = "yes" ]; then
-            npx --yes wrangler secret delete CLOUDFLARE_API_TOKEN --force
+            printf 'y\n' | npx --yes wrangler secret delete CLOUDFLARE_API_TOKEN
           else
             echo "CLOUDFLARE_API_TOKEN not set on Worker — nothing to clear"
           fi

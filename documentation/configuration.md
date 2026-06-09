@@ -55,7 +55,7 @@ Unset is the right value for almost every deployment. When unset, `/api/dev/logi
 
 ## GitHub Actions Secrets
 
-The deploy job reads these secrets from GitHub Actions. `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are deploy credentials; `AI_GATEWAY_API_TOKEN` and the application secrets are pushed to the Worker via `wrangler secret put`. Deploy also deletes any legacy Worker secret named `CLOUDFLARE_API_TOKEN`.
+The deploy job reads these secrets from GitHub Actions. `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are deploy credentials; `AI_GATEWAY_API_TOKEN` and the application secrets are pushed to the Worker via `wrangler secret put`. Deploy also deletes any legacy Worker secret named `CLOUDFLARE_API_TOKEN` after listing Worker secrets in JSON form, so the deploy token does not remain available at runtime.
 
 | Secret | Required | Description |
 |---|---|---|
