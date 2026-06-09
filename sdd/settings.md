@@ -143,7 +143,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 **Acceptance Criteria:**
 1. Saving settings with an unavailable model choice is rejected before the user's stored model changes. <!-- @impl: src/pages/api/settings.ts::PUT -->
 2. The model catalog carries user-facing descriptions and per-token pricing. <!-- @impl: src/lib/models.ts::MODELS -->
-3. The system default model is used when no accepted user setting applies. <!-- @impl: src/lib/llm-json.ts::runJson -->
+3. When no accepted user setting applies, inference uses the system default model route configured in the server-side catalog. <!-- @impl: src/lib/models.ts::DEFAULT_MODEL_ID --> <!-- @impl: src/lib/llm-json.ts::runJson -->
 4. If a model picker is exposed, it lists accepted options with descriptions and cost categories, pre-selecting the active or default choice. <!-- @impl: src/lib/models.ts::MODELS -->
 5. If model selection is hidden, the settings form preserves the active or default choice without requiring user input. <!-- @impl: src/pages/settings.astro::currentModelId = DEFAULT_MODEL_ID -->
 6. Provider-backed defaults fail closed until runtime inference credentials are configured. <!-- @impl: src/lib/llm-json.ts::runModel -->

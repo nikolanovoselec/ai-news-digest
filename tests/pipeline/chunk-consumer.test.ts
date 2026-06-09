@@ -504,6 +504,14 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
         (r) => r.sql.startsWith('INSERT OR IGNORE INTO scrape_chunk_completions'),
       );
       expect(completionInserts).toHaveLength(0);
+      const statsUpdate = records.find(
+        (r) =>
+          r.via === 'run' &&
+          r.sql.includes('UPDATE scrape_runs') &&
+          r.sql.includes('tokens_in = tokens_in + ?2') &&
+          r.params[0] === 'test-run',
+      );
+      expect(statsUpdate?.params.slice(1, 6)).toEqual([10, 10, expect.any(Number), 0, 0]);
       const fanoutLog = consoleSpy.mock.calls.find((args: unknown[]) => {
         const payload = args[0];
         return typeof payload === 'string' && payload.includes('chunk_article_retry_tag_fanout');

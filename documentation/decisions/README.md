@@ -68,7 +68,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD51](#ad51-granite-40-h-micro-integration-canary-for-pipeline-default) | Granite 4.0 H Micro integration canary for pipeline default | Architecture | 2026-06-06 |
 | [AD52](#ad52-glm-47-flash-integration-canary-for-pipeline-default) | GLM 4.7 Flash integration canary for pipeline default | Architecture | 2026-06-06 |
 | [AD53](#ad53-gpt-oss-20b-integration-retest-for-pipeline-default) | GPT OSS 20B integration retest for pipeline default | Architecture | 2026-06-06 |
-| [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default) | Gemini 2.5 Flash-Lite via AI Gateway for pipeline default | Architecture | 2026-06-07 |
+| [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default) | Gemini 2.5 Flash-Lite via AI Gateway for pipeline default *(Superseded by AD57)* | Architecture | 2026-06-07 |
 | [AD55](#ad55-adr-ledger-escalation-threshold-after-model-canary-growth) | ADR ledger escalation threshold after model-canary growth | Documentation | 2026-06-07 |
 | [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired) | Scrape progress derives from D1; KV progress mirror retired | Storage | 2026-06-08 |
 | [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) | AI Gateway Dynamic Routing route controls the pipeline model | Architecture | 2026-06-09 |
@@ -1577,7 +1577,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 ### AD54: Gemini 2.5 Flash-Lite AI Gateway canary for pipeline default
 
-**Status:** Accepted for develop-to-main release (2026-06-07)
+**Status:** Superseded by [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) (2026-06-09); accepted for develop-to-main release on 2026-06-07.
 
 **Decision:** Promote `google-ai-studio/gemini-2.5-flash-lite` as `DEFAULT_MODEL_ID` and route Gateway-backed models through Cloudflare AI Gateway's OpenAI-compatible chat-completions endpoint. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all use the same default model.
 
@@ -1646,7 +1646,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 
 **Status:** Accepted (2026-06-09)
 
-**Extends:** [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default)
+**Supersedes:** [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default)
 
 **Decision:** Set `DEFAULT_MODEL_ID` to the Cloudflare AI Gateway Dynamic Routing route `dynamic/news_digest`. The route, not application code, chooses the concrete provider/model and any fallback or rollout policy. The single-model application contract stays intact: chunk summarisation, source discovery, and borderline dedup rerank still make one `runJson` call using `DEFAULT_MODEL_ID`.
 

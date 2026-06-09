@@ -23,7 +23,7 @@ This document describes **what** the system is and **how requests flow through i
 
 ## 1. Overview
 
-`news-digest` is a single Cloudflare Worker serving an Astro-rendered web app. A 4-hour scrape run scrapes a curated set of RSS/Atom/JSON feeds, summarises new candidates through the default LLM (Gemini via AI Gateway), and writes them to the shared **article pool**. Per-user dashboards filter the pool by the user's hashtags - there are no per-user LLM calls.
+`news-digest` is a single Cloudflare Worker serving an Astro-rendered web app. A 4-hour scrape run scrapes a curated set of RSS/Atom/JSON feeds, summarises new candidates through the default LLM route (`dynamic/news_digest` via Cloudflare AI Gateway Dynamic Routing), and writes them to the shared **article pool**. Per-user dashboards filter the pool by the user's hashtags - there are no per-user LLM calls.
 
 Separate cron triggers dispatch email every 5 minutes and drain pending feed-discovery jobs every 10 minutes on a 2-minute offset. A 03:00 UTC cron purges articles older than 14 days (starred articles exempt).
 

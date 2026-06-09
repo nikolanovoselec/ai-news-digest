@@ -290,8 +290,20 @@ export async function processOneChunk(
 
   // Reject broad tag fan-out before alignment/drop gates can hide it.
   // This turns allowlist-copying model output into a queue retry instead
-  // of accepting a locally-filtered subset from a bad response.
-  rejectArticlesWithModelTagFanout(rawArticles, body);
+  // of accepting a locally-filtered subset from a bad response. Count
+  // the completed LLM call before rethrowing so retry cost remains visible.
+  try {
+    rejectArticlesWithModelTagFanout(rawArticles, body);
+  } catch (err) {
+    await addChunkStats(env.DB, body.scrape_run_id, {
+      tokens_in: llmRun.tokensIn,
+      tokens_out: llmRun.tokensOut,
+      estimated_cost_usd: llmRun.costUsd,
+      articles_ingested: 0,
+      articles_deduped: 0,
+    });
+    throw err;
+  }
 
   // Build per-input singleton clusters, then merge by LLM dedup hints.
   const perInputClusters: Cluster[] = body.candidates.map((c) => {

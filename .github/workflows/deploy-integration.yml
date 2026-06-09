@@ -255,9 +255,10 @@ jobs:
             rm "$TMP"
           done
 
-          # Gemini runs through Cloudflare AI Gateway BYOK. Runtime uses
-          # a dedicated least-privilege Gateway token, not the broad
-          # deploy/provisioning token. The provider key stays in Gateway.
+          # Dynamic route inference runs through Cloudflare AI Gateway.
+          # Runtime uses a dedicated least-privilege Gateway token, not the
+          # broad deploy/provisioning token. Provider keys and model routing
+          # stay in the Gateway route config.
           if [ -z "${AI_GATEWAY_API_TOKEN:-}" ]; then
             echo "::error::Required secret 'AI_GATEWAY_API_TOKEN' is not set."
             exit 1
