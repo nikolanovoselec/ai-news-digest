@@ -2,7 +2,7 @@
 
 Application-layer rate-limit policy that applies across the auth surface, authenticated mutations, polling endpoints, and admin side-effecting endpoints. Feature REQs in other domains reference this policy rather than restating its rules.
 
-Mechanism detail (per-bucket sizes, refresh-middleware/explicit-endpoint shared bucket, fail-mode asymmetry) lives in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#rate-limiting-req-auth-001-ac-9).
+Mechanism detail (per-bucket sizes, refresh-middleware/explicit-endpoint shared bucket, fail-mode asymmetry) lives in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#rate-limiting).
 
 ---
 
@@ -19,7 +19,7 @@ Mechanism detail (per-bucket sizes, refresh-middleware/explicit-endpoint shared 
 3. Sign-in and OAuth callback rules fail open on a backing-store outage so a transient outage cannot lock users out. Refresh-token rules fail closed so a stolen refresh cookie cannot exploit the outage.
 4. A rate-limited admin force-refresh or pipeline-run click surfaces the throttled state to the operator's settings surface with a retry-after value rather than silently dropping the action.
 
-**Notes:** Per-bucket sizes, the refresh middleware/explicit-endpoint shared bucket, and the fail-open/fail-closed asymmetry are documented in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#rate-limiting-req-auth-001-ac-9).
+**Notes:** Per-bucket sizes, the refresh middleware/explicit-endpoint shared bucket, and the fail-open/fail-closed asymmetry are documented in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#rate-limiting).
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 

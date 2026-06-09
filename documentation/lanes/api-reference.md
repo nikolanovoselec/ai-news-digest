@@ -33,7 +33,8 @@ The conventions below apply to every endpoint in this document. They are stated 
   - `session + admin email` — session cookie plus `ADMIN_EMAIL` match required.
   - `dev-bypass token` — Bearer `DEV_BYPASS_TOKEN` required.
 - **Origin check.** The `Origin check` field uses `applies` (Origin header must match `APP_URL`, mismatch returns `403 forbidden_origin`), `exempt` (intentionally not checked, justified per endpoint), or `n/a` (non-mutating GET). See [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints).
-- **Rate limit.** The `Rate limit` field appears on every endpoint that enforces a limit. It gives `{count}/{window} per {scope}` and a fail mode (`fail-open` or `fail-closed`). Exhausted buckets return `429` with a `Retry-After` header. See [REQ-AUTH-001 AC 9](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) and [`security.md`](security.md#rate-limiting-req-auth-001-ac-9) for the full matrix.
+- **Rate limit.** Present only on endpoints with a limiter; format is `{count}/{window} per {scope}` plus `fail-open` or `fail-closed`.
+- **Rate-limit failures.** Exhausted buckets return `429` with `Retry-After`; see [REQ-AUTH-001 AC 9](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) and [`security.md`](security.md#rate-limiting).
 - **Implements.** Every endpoint cites the REQ that owns its contract.
 - **Curl pattern.** For any `session`-auth endpoint, copy the cookie value from browser DevTools (Application > Cookies > `__Host-session`) and pass it verbatim. Example against `GET /api/digest/today`:
 
@@ -757,7 +758,7 @@ POST /api/tags/delete-initial
 
 ## Developer Tools
 
-Both `/api/dev/*` routes are test-only authentication paths for integration deployments. They are gated by `DEV_BYPASS_TOKEN` (timing-safe comparison). When the secret is unset OR the request token mismatches, both routes return `404` (no enumeration). Production deployments leave the secret unset; routes also return `404` when `IS_PRODUCTION = "true"` regardless of token state. See [`security.md`](security.md#dev-bypass-prod-guard-req-auth-001-ac-10).
+Both `/api/dev/*` routes are test-only authentication paths for integration deployments. They are gated by `DEV_BYPASS_TOKEN` (timing-safe comparison). When the secret is unset OR the request token mismatches, both routes return `404` (no enumeration). Production deployments leave the secret unset; routes also return `404` when `IS_PRODUCTION = "true"` regardless of token state. See [`security.md`](security.md#dev-bypass-prod-guard).
 
 ### POST /api/dev/login (Mint synthetic session)
 

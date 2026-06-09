@@ -151,7 +151,7 @@ POST /api/admin/discovery/retry
 | `401` | Not signed in | `{ error, code: "unauthorized" }` |
 | `403` | Not admin, or Origin mismatch | `{ error, code: "forbidden" }` or `{ error, code: "forbidden_origin" }` |
 
-**Implements:** [REQ-DISC-004](../../sdd/spec/discovery.md#req-disc-004-manual-re-discover)
+**Implements:** [REQ-DISC-004](../../sdd/spec/discovery.md#req-disc-004-manual-re-discover-ui-surface)
 
 **Notes**
 
@@ -184,7 +184,7 @@ POST /api/admin/discovery/retry-bulk
 | `403` | Not admin, or Origin mismatch | `{ error, code: "forbidden" }` or `{ error, code: "forbidden_origin" }` |
 | `500` | D1 batch failed | `{ error, code: "internal_error" }` |
 
-**Implements:** [REQ-DISC-004](../../sdd/spec/discovery.md#req-disc-004-manual-re-discover)
+**Implements:** [REQ-DISC-004](../../sdd/spec/discovery.md#req-disc-004-manual-re-discover-ui-surface)
 
 **Notes**
 
@@ -211,7 +211,7 @@ GET /api/admin/discovery/retry-bulk
 | `303` | Browser redirect | Redirect to `/settings?rediscover={ok\|denied\|error}` |
 | `500` | D1 batch failed (JSON path) | `{ ok: false, error: <slug> }` |
 
-**Implements:** [REQ-DISC-004](../../sdd/spec/discovery.md#req-disc-004-manual-re-discover)
+**Implements:** [REQ-DISC-004](../../sdd/spec/discovery.md#req-disc-004-manual-re-discover-ui-surface)
 
 **Notes**
 

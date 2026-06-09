@@ -11,12 +11,14 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The type scale provides 5 sizes from caption to display and 2 weights (body and heading); only system fonts are used — no webfont download is required. The exact font stacks and size values are documented in `documentation/lanes/architecture.md` (design-system section).
+1. The type scale provides 5 sizes from caption to display and 2 weights (body and heading); only system fonts are used — no webfont download is required.
 2. The palette is restricted to neutral grays with a single accent color per theme; no decorative gradients or drop shadows appear on steady-state UI surfaces. Motion-driven gradients required by another REQ (e.g., transient progress affordances) are exempt.
 3. Inputs render with a minimum 16 px font size to prevent iOS zoom-on-focus.
 4. Every interactive element shows a visible focus ring on keyboard focus.
 5. All interactive elements have a minimum 44 × 44 pixel touch target.
 6. Every page fills the mobile viewport, even when content is shorter than the viewport, so the chrome color never dominates the screen; the top of the content surface stays clear of the header and the bottom stays clear of device safe-area insets.
+
+**Notes:** Exact font stacks, size values, and tokens are documented in [`documentation/lanes/architecture.md`](../../documentation/lanes/architecture.md#design-system-tokens).
 
 **Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum)
 
@@ -86,12 +88,14 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. A single easing curve is used everywhere; durations are 150 ms (micro interactions), 250 ms (components), 400 ms (page transitions). The exact curve and token names are documented in `documentation/lanes/architecture.md` (design-system section).
+1. A single easing curve is used everywhere, with deliberate duration bands for micro-interactions, component transitions, and page transitions.
 2. Astro View Transitions handle route changes with a 250 ms cross-fade by default.
 3. The digest card → article detail route uses the View Transitions shared-element morph so the card expands into the detail view.
 4. All motion is wrapped in `@media (prefers-reduced-motion: no-preference)`; under `reduce`, transitions collapse to instant state changes.
 5. Hashtag chip selection, button `:active` press, and card hover (desktop) each have a single, short transition (150–200 ms) on the relevant property only.
 6. The site header chrome stays visually solid throughout every route transition — the user never sees stale body content from the outgoing page bleeding through the header band while the page beneath cross-fades. Because the header is identical on every route, it does not animate during the swap; it simply remains in place with the theme background.
+
+**Notes:** Exact motion durations, easing curve, and token names are documented in [`documentation/lanes/architecture.md`](../../documentation/lanes/architecture.md#motion-tokens).
 
 **Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum)
 

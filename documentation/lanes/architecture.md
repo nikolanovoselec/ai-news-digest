@@ -176,7 +176,7 @@ Page components (`src/pages/*.astro`) and API handlers (`src/pages/api/**.ts`) -
 | `digest/[id]/[slug].astro` | Article detail view with shared-element morph and read tracking | [REQ-READ-002](../../sdd/spec/reading.md#req-read-002-article-detail-view-rendering), [REQ-READ-003](../../sdd/spec/reading.md#req-read-003-read-tracking) |
 | `history.astro` | `/history` - day-grouped paginated history with tag filtering | [REQ-HIST-001](../../sdd/spec/history.md#req-hist-001-day-grouped-article-history) |
 | `starred.astro` | `/starred` - user's starred articles | [REQ-STAR-002](../../sdd/spec/reading.md#req-star-002-starred-articles-page) |
-| `settings.astro` | `/settings` - hashtags, schedule, timezone, model, email toggle, account deletion, stuck-tag rediscovery | [REQ-SET-001](../../sdd/spec/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../../sdd/spec/settings.md#req-set-005-email-notification-preference), [REQ-SET-006](../../sdd/spec/settings.md#req-set-006-settings-incomplete-gate), [REQ-SET-007](../../sdd/spec/settings.md#req-set-007-timezone-change-detection), [REQ-AUTH-005](../../sdd/spec/authentication.md#req-auth-005-account-deletion), [REQ-DISC-004](../../sdd/spec/discovery.md#req-disc-004-manual-re-discover) |
+| `settings.astro` | `/settings` - hashtags, schedule, timezone, model, email toggle, account deletion, stuck-tag rediscovery | [REQ-SET-001](../../sdd/spec/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../../sdd/spec/settings.md#req-set-005-email-notification-preference), [REQ-SET-006](../../sdd/spec/settings.md#req-set-006-settings-incomplete-gate), [REQ-SET-007](../../sdd/spec/settings.md#req-set-007-timezone-change-detection), [REQ-AUTH-005](../../sdd/spec/authentication.md#req-auth-005-account-deletion), [REQ-DISC-004](../../sdd/spec/discovery.md#req-disc-004-manual-re-discover-ui-surface) |
 | `404.astro`, `500.astro` | Error pages (`noindex`) | [REQ-READ-006](../../sdd/spec/reading.md#req-read-006-empty-error-and-offline-pages) |
 | `sitemap.xml.ts` | Dynamic sitemap (public landing only) | [REQ-OPS-004](../../sdd/spec/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability) |
 
@@ -304,7 +304,7 @@ The operator-driven `pipeline-jobs` orchestrator wraps this scrape flow with `sc
 
 ### 5.2 Operator force-refresh
 
-Implements [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint). The endpoint reuses an in-progress run when one exists within the last two minutes; otherwise it starts a fresh coordinator dispatch - same data flow as the 4-hour cron. See [`api-reference.md - POST /api/admin/force-refresh`](api-reference.md#post-apiadminforce-refresh-also-get) for the full request/response contract.
+Implements [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint). The endpoint reuses an in-progress run when one exists within the last two minutes; otherwise it starts a fresh coordinator dispatch - same data flow as the 4-hour cron. See [`api-reference-admin.md - POST /api/admin/force-refresh`](api-reference-admin.md#post-apiadminforce-refresh) for the full request/response contract.
 
 ### 5.3 Daily retention (03:00 UTC)
 

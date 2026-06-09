@@ -8,8 +8,6 @@ Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are a
 
 ## 2026-06-09
 
-- SDD layout migrated from flat to nested. Single-commit mechanical move; cross-file backlinks rewritten.
-
 - REQ-SET-004 changed: the pipeline default now uses the Cloudflare AI Gateway Dynamic Routing route `dynamic/news_digest`, so operators can change the concrete model, fallback, or rollout in the AI Gateway dashboard without an application deploy.
 - REQ-PIPE-020 changed: chunk tag persistence now restricts tags to candidate-local source tags when available, and 10+ model-emitted tags reject the chunk for queue retry before persistence, so a model cannot make an unrelated article visible by copying the global allowlist.
 - REQ-PIPE-015 and REQ-PIPE-020 changed: invalid-JSON retry attempts that consume tokens and tag-fanout retries now advance token and cost totals before queue retry. REQ-PIPE-016 remains focused on once-per-completed-chunk article/dedupe counters and stuck-run cleanup.
