@@ -10,6 +10,7 @@ Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are a
 
 - REQ-SET-004 changed: the pipeline default now uses the Cloudflare AI Gateway Dynamic Routing route `dynamic/news_digest`, so operators can change the concrete model, fallback, or rollout in the AI Gateway dashboard without an application deploy.
 - REQ-PIPE-020 changed: chunk tag persistence now restricts tags to candidate-local source tags when available, and 10+ model-emitted tags reject the chunk for queue retry before persistence, so a model cannot make an unrelated article visible by copying the global allowlist.
+- REQ-PIPE-016 changed: token and cost totals now include completed LLM calls that retry before chunk completion, while article-ingestion and dedupe counters still advance only once per completed chunk.
 
 ## 2026-06-08
 

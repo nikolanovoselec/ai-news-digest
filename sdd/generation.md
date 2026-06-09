@@ -296,6 +296,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 4. If a run stalls before any chunks are queued, the pipeline makes one bounded coordinator recovery attempt. <!-- @impl: src/queue/pipeline-consumer.ts::runScrapeWait -->
 5. Duplicate initial coordinator deliveries cannot queue the same run's chunks more than once. <!-- @impl: src/queue/scrape-coordinator.ts::claimCoordinatorDispatch -->
 6. A coordinator retry after an interrupted fan-out can continue the same run instead of abandoning it as a duplicate. <!-- @impl: src/queue/scrape-coordinator.ts::claimCoordinatorDispatch -->
+7. Token and cost totals advance for each completed LLM call that is retried before chunk completion. <!-- @impl: src/queue/scrape-chunk-consumer.ts::processOneChunk --> <!-- @impl: src/lib/scrape-run.ts::addChunkStats -->
 
 **Constraints:** [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
 

@@ -481,15 +481,17 @@ async function fetchAndBuildPromptCandidates(
     const feedSnippet = c.body_snippet ?? '';
     const bestSnippet =
       fetched.length > feedSnippet.length ? fetched : feedSnippet;
+    const sourceTags = Array.from(new Set([
+      ...(c.source_tags ?? []),
+      ...((c.alternatives ?? []).flatMap((a) => a.source_tags ?? [])),
+    ]));
     const base = {
       index: idx,
       title: c.title,
       url: c.source_url,
       source_name: c.source_name,
       published_at: c.published_at,
-      ...(Array.isArray(c.source_tags) && c.source_tags.length > 0
-        ? { source_tags: c.source_tags }
-        : {}),
+      ...(sourceTags.length > 0 ? { source_tags: sourceTags } : {}),
     };
     if (bestSnippet !== '') return { ...base, body_snippet: bestSnippet };
     return base;

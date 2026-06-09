@@ -293,7 +293,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -H "cf-aig-authorization: Bearer ${AI_GATEWAY_API_TOKEN}" \
             -H 'cf-aig-skip-cache: true' \
-            --data '{"model":"dynamic/news_digest","messages":[{"role":"user","content":"ping"}],"max_tokens":1}') || {
+            --data '{"model":"dynamic/news_digest","messages":[{"role":"user","content":"Return JSON: {\"ok\":true}"}],"temperature":0.6,"response_format":{"type":"json_object"},"max_tokens":10}') || {
             echo "::error::AI Gateway preflight request failed. Verify AI_GATEWAY_NAME, dynamic route, provider key, and AI_GATEWAY_API_TOKEN."
             rm -f "$AI_GATEWAY_PREFLIGHT_BODY"
             exit 1

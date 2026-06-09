@@ -1581,7 +1581,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Decision:** Promote `google-ai-studio/gemini-2.5-flash-lite` as `DEFAULT_MODEL_ID` and route Gateway-backed models through Cloudflare AI Gateway's OpenAI-compatible chat-completions endpoint. The single-model architecture stays intact: chunk summarisation, source discovery, and borderline dedup rerank all use the same default model.
 
-**Context:** Workers AI canaries did not meet the release target: Gemma and GLM reproduced chunk cancellations, Granite failed alignment/quality, and 20B did not reach the required 70%+ savings. <!-- @impl: src/lib/models.ts::DEFAULT_MODEL_ID -->
+**Context:** Workers AI canaries did not meet the release target: Gemma and GLM reproduced chunk cancellations, Granite failed alignment/quality, and 20B did not reach the required 70%+ savings (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)).
 
 The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 rows, kept 38/44 summaries in the 100-150 word target, and reduced total chunk-plus-rerank cost to about $0.0209 versus GLM's about $0.0885 (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)). Audit IDs: pipeline `01KTHM7CHAK1S2E7R7PJX6NDJN`, scrape `01KTHM7FW2FT5EFZGBT9K9QGFF`, dedup `01KTHMDRAE935N76DSHZ27295A`.
 
@@ -1650,7 +1650,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 
 **Decision:** Set `DEFAULT_MODEL_ID` to the Cloudflare AI Gateway Dynamic Routing route `dynamic/news_digest`. The route, not application code, chooses the concrete provider/model and any fallback or rollout policy. The single-model application contract stays intact: chunk summarisation, source discovery, and borderline dedup rerank still make one `runJson` call using `DEFAULT_MODEL_ID`.
 
-**Context:** A production scrape on direct Gemini 2.5 Flash-Lite produced articles with nearly the entire tag allowlist attached, which made unrelated stories appear in users' filtered dashboards. Operators need a fast model-control knob that does not require a code deploy for every provider swap while stricter server-side validation is added. Cloudflare AI Gateway Dynamic Routing lets the dashboard publish a route version and use the route name in the OpenAI-compatible `model` field. <!-- @impl: src/lib/models.ts::DEFAULT_MODEL_ID --> <!-- @impl: src/lib/llm-json.ts::modelUsesAiGateway -->
+**Context:** A production scrape on direct Gemini 2.5 Flash-Lite produced articles with nearly the entire tag allowlist attached, which made unrelated stories appear in users' filtered dashboards. Operators need a fast model-control knob that does not require a code deploy for every provider swap. Cloudflare AI Gateway Dynamic Routing lets the dashboard publish a route version and use the route name in the OpenAI-compatible `model` field. <!-- @impl: src/lib/models.ts::DEFAULT_MODEL_ID --> <!-- @impl: src/lib/llm-json.ts::modelUsesAiGateway -->
 
 **Consequences:**
 
@@ -1659,7 +1659,8 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - `scrape_runs.model_id` records the dynamic route id. The concrete provider/model for a request must be read from AI Gateway logs.
 - Cost estimates for the dynamic route are approximate. The catalog currently mirrors the Flash-Lite baseline and must be updated if the deployed route target changes materially.
 - Any dynamic route target should keep at least the pipeline's 128K-token lower-bound context window, because chunk packing is sized around that minimum.
-- The route change is paired with stricter tag validation: coordinator-supplied candidate tags now narrow persisted tags, and 10+ model-emitted tags reject the chunk before D1 persistence so Queues retries the LLM call.
+- Candidate-local source tags now narrow persisted tags when present. <!-- @impl: src/queue/scrape-coordinator.ts::flattenToChunkCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::contextualTagSetForCluster -->
+- Model responses with at least 10 emitted tags for one article reject the chunk before D1 persistence so Queues retries the LLM call. <!-- @impl: src/queue/scrape-chunk-consumer.ts::rejectArticlesWithModelTagFanout -->
 
 **Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
 
