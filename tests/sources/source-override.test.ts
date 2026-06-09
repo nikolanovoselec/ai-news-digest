@@ -10,9 +10,13 @@
 import { describe, it, expect } from 'vitest';
 import { adaptersForDiscoveredFeeds } from '~/lib/sources';
 
-function extractorFor(name: string, url: string) {
+function extractorFor(
+  name: string,
+  url: string,
+  kind: 'rss' | 'json' = 'rss',
+) {
   const adapters = adaptersForDiscoveredFeeds(
-    [{ name, url, kind: 'rss' }],
+    [{ name, url, kind }],
     { trusted: true },
   );
   const a = adapters[0];
@@ -117,8 +121,56 @@ describe('RSS per-item <source> override', () => {
     expect(head).not.toHaveProperty('snippet');
   });
 
-  it('REQ-PIPE-010: keeps normal publisher RSS descriptions as source snippets', () => {
-    const extract = extractorFor('Example Publisher', 'https://example.com/rss.xml');
+  it('REQ-PIPE-010: ignores generic cross-site aggregator metadata, not just Hacker News', () => {
+    const extract = extractorFor(
+      'Example Aggregator',
+      'https://aggregator.example/rss',
+    );
+    const parsed = {
+      rss: {
+        channel: {
+          item: {
+            title: 'Startup launches a useful security scanner',
+            link: 'https://publisher.example/security-scanner',
+            pubDate: 'Mon, 09 Jun 2025 20:16:21 GMT',
+            description:
+              'A community member submitted this story. Discussion URL: https://aggregator.example/item/123 Score: 42 Comments: 17',
+          },
+        },
+      },
+    };
+    const [head] = extract(parsed);
+    expect(head?.url).toBe('https://publisher.example/security-scanner');
+    expect(head).not.toHaveProperty('snippet');
+  });
+
+  it('REQ-PIPE-010: ignores cross-site aggregator metadata in JSON Feed items too', () => {
+    const extract = extractorFor(
+      'JSON Aggregator',
+      'https://json-aggregator.example/feed.json',
+      'json',
+    );
+    const parsed = {
+      items: [
+        {
+          title: 'Research team publishes an AI benchmark',
+          url: 'https://publisher.example/ai-benchmark',
+          date_published: '2025-06-09T20:16:21Z',
+          summary:
+            'Posted by community-user. Discussion URL: https://json-aggregator.example/item/456 Score: 21 Comments: 9',
+        },
+      ],
+    };
+    const [head] = extract(parsed);
+    expect(head?.url).toBe('https://publisher.example/ai-benchmark');
+    expect(head).not.toHaveProperty('snippet');
+  });
+
+  it('REQ-PIPE-010: keeps cross-host publisher-feed-service summaries when they are article excerpts', () => {
+    const extract = extractorFor(
+      'Example Publisher',
+      'https://feeds.example-cdn.com/publisher.xml',
+    );
     const parsed = {
       rss: {
         channel: {
@@ -127,7 +179,7 @@ describe('RSS per-item <source> override', () => {
             link: 'https://example.com/story',
             pubDate: 'Mon, 09 Jun 2025 20:16:21 GMT',
             description:
-              'This publisher-owned feed description is a legitimate article excerpt that should remain available to the summarizer.',
+              'This publisher-owned feed description is a legitimate article excerpt that should remain available to the summarizer before any body fetch happens.',
           },
         },
       },

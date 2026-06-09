@@ -25,6 +25,7 @@ import { log } from '~/lib/log';
 import { stripHtmlToText } from '~/lib/html-text';
 import { FEED_FETCH_TIMEOUT_MS as FETCH_TIMEOUT_MS } from '~/lib/fetch-policy';
 import { definedProp } from '~/lib/optional-prop';
+import { etldPlusOne } from '~/lib/etld';
 
 /** 1 MB cap on the decoded body — NOT the same shape as
  *  `FEED_MAX_BODY_BYTES`: this caps the post-decode character count
@@ -236,10 +237,11 @@ export function adaptersForDiscoveredFeeds(
       kind: feed.kind,
       url: () => feedUrl,
       extract: (parsed) => {
+        const context = { sourceName, feedUrl };
         const all =
           feed.kind === 'json'
-            ? extractJsonFeed(parsed, sourceName)
-            : extractRssItems(parsed, sourceName);
+            ? extractJsonFeed(parsed, context)
+            : extractRssItems(parsed, context);
         // Per-feed cap of 20 items for tag-specific sources.
         return all.slice(0, DISCOVERED_FEED_ITEM_CAP);
       },
@@ -279,12 +281,20 @@ function asString(v: unknown): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
+interface FeedExtractionContext {
+  sourceName: string;
+  feedUrl: string;
+}
+
 /**
  * Pull RSS 2.0 / Atom items out of an fxp parse tree. Works for both
  * `<rss><channel><item>` and `<feed><entry>` shapes since both produce
  * either an object or an array under their parent depending on count.
  */
-function extractRssItems(parsed: unknown, sourceName: string): Headline[] {
+function extractRssItems(
+  parsed: unknown,
+  context: FeedExtractionContext,
+): Headline[] {
   if (!isRecord(parsed)) return [];
 
   // RSS: <rss><channel><item>...
@@ -294,7 +304,7 @@ function extractRssItems(parsed: unknown, sourceName: string): Headline[] {
     if (isRecord(channel)) {
       const items = toArray(channel['item']);
       return items
-        .map((item) => itemToHeadline(item, sourceName))
+        .map((item) => itemToHeadline(item, context))
         .filter((h): h is Headline => h !== null);
     }
   }
@@ -304,7 +314,7 @@ function extractRssItems(parsed: unknown, sourceName: string): Headline[] {
   if (isRecord(feed)) {
     const entries = toArray(feed['entry']);
     return entries
-      .map((entry) => entryToHeadline(entry, sourceName))
+      .map((entry) => entryToHeadline(entry, context))
       .filter((h): h is Headline => h !== null);
   }
 
@@ -316,7 +326,10 @@ function extractRssItems(parsed: unknown, sourceName: string): Headline[] {
  * support for discovered feeds. Minimal: we only care about items with
  * a `url` and a `title`.
  */
-function extractJsonFeed(parsed: unknown, sourceName: string): Headline[] {
+function extractJsonFeed(
+  parsed: unknown,
+  context: FeedExtractionContext,
+): Headline[] {
   if (!isRecord(parsed)) return [];
   const items = parsed['items'];
   if (!Array.isArray(items)) return [];
@@ -329,25 +342,15 @@ function extractJsonFeed(parsed: unknown, sourceName: string): Headline[] {
     const published_at = parseFeedDate(item['date_published']);
     // JSON Feed 1.1: prefer plaintext `content_text`, fall back to
     // HTML `content_html` stripped, then the `summary` blurb.
-    let snippet: string | null = null;
-    const ct = asString(item['content_text']);
-    if (ct !== null && ct.length >= 40) {
-      snippet = htmlSnippetToText(ct);
-    } else {
-      const ch = asString(item['content_html']);
-      if (ch !== null && ch.length >= 40) {
-        snippet = htmlSnippetToText(ch);
-      } else {
-        const sum = asString(item['summary']);
-        if (sum !== null && sum.length >= 40) {
-          snippet = htmlSnippetToText(sum);
-        }
-      }
-    }
+    const snippet = feedSnippetFromCandidates(
+      [item['content_text'], item['content_html'], item['summary']],
+      context,
+      url,
+    );
     out.push({
       title,
       url,
-      source_name: sourceName,
+      source_name: context.sourceName,
       ...definedProp('published_at', published_at),
       ...definedProp('snippet', snippet),
     });
@@ -415,45 +418,40 @@ function htmlSnippetToText(raw: string): string {
 }
 
 /**
- * Pull a usable body-snippet out of an RSS `<item>`. Checks
- * `content:encoded` (the full HTML body when the feed is
- * feature-complete), then `description` (usually a summary).
- * Returns the cleaned text or null if neither field was present.
+ * Pull a usable body-snippet out of feed text fields, while refusing
+ * cross-site outbound aggregator metadata. Host mismatch alone is not
+ * enough: publisher feeds may be served by FeedBurner/CDNs and still
+ * provide legitimate summaries. Suppression only happens when the feed
+ * item points to a different registrable domain AND the candidate text
+ * looks like a discussion/score/comment wrapper rather than an article
+ * excerpt.
  */
-function rssItemSnippet(item: Record<string, unknown>): string | null {
-  const candidates: Array<unknown> = [
-    item['content:encoded'],
-    item['content'],
-    item['description'],
-    item['summary'],
-  ];
+function feedSnippetFromCandidates(
+  candidates: Array<unknown>,
+  context: FeedExtractionContext,
+  articleUrl: string,
+): string | null {
   for (const c of candidates) {
     const text = extractNodeText(c);
     if (text !== null && text !== '') {
       const cleaned = htmlSnippetToText(text);
-      if (cleaned.length >= 40) return cleaned;
+      if (cleaned.length >= 40) {
+        if (
+          shouldSuppressFeedSnippet(context.feedUrl, articleUrl, text, cleaned)
+        ) {
+          return null;
+        }
+        return cleaned;
+      }
     }
   }
   return null;
 }
 
-/**
- * Atom `<entry>` equivalent: prefer `content` over `summary` (content
- * is the full body; summary is often a 1-line abstract).
- */
-function atomEntrySnippet(entry: Record<string, unknown>): string | null {
-  const candidates: Array<unknown> = [entry['content'], entry['summary']];
-  for (const c of candidates) {
-    const text = extractNodeText(c);
-    if (text !== null && text !== '') {
-      const cleaned = htmlSnippetToText(text);
-      if (cleaned.length >= 40) return cleaned;
-    }
-  }
-  return null;
-}
-
-function itemToHeadline(item: unknown, sourceName: string): Headline | null {
+function itemToHeadline(
+  item: unknown,
+  context: FeedExtractionContext,
+): Headline | null {
   if (!isRecord(item)) return null;
   const title = asString(item['title']);
   const link = asString(item['link']);
@@ -465,9 +463,6 @@ function itemToHeadline(item: unknown, sourceName: string): Headline | null {
     parseFeedDate(item['pubDate']) ??
     parseFeedDate(item['dc:date']) ??
     parseFeedDate(item['published']);
-  const snippet = isHackerNewsOutboundSource(sourceName)
-    ? null
-    : rssItemSnippet(item);
   // Per-item `<source>` override: Google News RSS includes
   // `<source url="...">Publisher Name</source>` identifying the
   // underlying publisher of each item. The TEXT (publisher name) was
@@ -487,10 +482,20 @@ function itemToHeadline(item: unknown, sourceName: string): Headline | null {
   const itemSourceUrl = extractItemSourceUrl(item['source']);
   const resolvedLink =
     itemSourceUrl !== null && isGoogleNewsLink(link) ? itemSourceUrl : link;
+  const snippet = feedSnippetFromCandidates(
+    [
+      item['content:encoded'],
+      item['content'],
+      item['description'],
+      item['summary'],
+    ],
+    context,
+    resolvedLink,
+  );
   return {
     title,
     url: resolvedLink,
-    source_name: itemSourceName ?? sourceName,
+    source_name: itemSourceName ?? context.sourceName,
     ...definedProp('published_at', published_at),
     ...definedProp('snippet', snippet),
   };
@@ -545,21 +550,51 @@ function extractItemSourceUrl(node: unknown): string | null {
   return raw;
 }
 
-/**
- * HN RSS feeds (`hnrss.org/frontpage`, `hnrss.org/show`) expose the
- * submitted external URL in `<link>`, while `<description>` is the HN
- * submission text plus comments/points metadata. Treating that
- * description as article body prevents the chunk consumer from fetching
- * the linked page and creates URL/body mismatches on the digest.
- *
- * Do not match "The Hacker News" — that is a publisher feed whose
- * description belongs to its own article URL.
- */
-function isHackerNewsOutboundSource(sourceName: string): boolean {
-  return sourceName === 'Hacker News' || sourceName.startsWith('Hacker News -');
+function shouldSuppressFeedSnippet(
+  feedUrl: string,
+  articleUrl: string,
+  rawText: string,
+  cleanedText: string,
+): boolean {
+  if (!isCrossSiteFeedItem(feedUrl, articleUrl)) return false;
+  return looksLikeAggregatorMetadata(`${rawText}\n${cleanedText}`);
 }
 
-function entryToHeadline(entry: unknown, sourceName: string): Headline | null {
+function isCrossSiteFeedItem(feedUrl: string, articleUrl: string): boolean {
+  const feedDomain = registrableDomain(feedUrl);
+  const articleDomain = registrableDomain(articleUrl);
+  if (feedDomain === null || articleDomain === null) return false;
+  return feedDomain !== articleDomain;
+}
+
+function registrableDomain(url: string): string | null {
+  try {
+    const host = new URL(url).hostname;
+    return host === '' ? null : etldPlusOne(host);
+  } catch {
+    return null;
+  }
+}
+
+function looksLikeAggregatorMetadata(text: string): boolean {
+  const lower = text.toLowerCase();
+  let score = 0;
+  if (/\bcomments?\s+url\s*:/.test(lower)) score += 3;
+  if (/\bdiscussion\s+url\s*:/.test(lower)) score += 3;
+  if (/#\s*comments?\s*:/.test(lower)) score += 2;
+  if (/\b\d+\s+comments?\b/.test(lower)) score += 1;
+  if (/\bcomments?\b/.test(lower)) score += 1;
+  if (/\b(points?|score)\s*:/.test(lower)) score += 1;
+  if (/\b\d+\s+(points?|score)\b/.test(lower)) score += 1;
+  if (/\b(submitted|posted)\s+by\b/.test(lower)) score += 1;
+  if (/\[(comments?|discussion)\]/.test(lower)) score += 2;
+  return score >= 3;
+}
+
+function entryToHeadline(
+  entry: unknown,
+  context: FeedExtractionContext,
+): Headline | null {
   if (!isRecord(entry)) return null;
   const title = asString(entry['title']);
   // Atom `<link>` can be a string, an object with `href`, or an array
@@ -572,11 +607,15 @@ function entryToHeadline(entry: unknown, sourceName: string): Headline | null {
   // Prefer published, fall back to updated.
   const published_at =
     parseFeedDate(entry['published']) ?? parseFeedDate(entry['updated']);
-  const snippet = atomEntrySnippet(entry);
+  const snippet = feedSnippetFromCandidates(
+    [entry['content'], entry['summary']],
+    context,
+    url,
+  );
   return {
     title,
     url,
-    source_name: sourceName,
+    source_name: context.sourceName,
     ...definedProp('published_at', published_at),
     ...definedProp('snippet', snippet),
   };
