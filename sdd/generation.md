@@ -141,7 +141,8 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 2. Articles with zero valid tags after filtering are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 3. Chunk messages carry candidate-local source tag hints when the source that surfaced the article has known tags. <!-- @impl: src/queue/scrape-coordinator.ts::fetchAllSources --> <!-- @impl: src/queue/scrape-coordinator.ts::flattenToChunkCandidates -->
 4. When candidate-local source tags are present, persisted tags are restricted to that candidate-local set rather than the global allowlist. <!-- @impl: src/queue/scrape-chunk-consumer.ts::contextualTagSetForCluster --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
-5. Any article with 10 or more model-emitted tags causes the chunk message to retry before any article from that response is persisted. <!-- @impl: src/queue/scrape-chunk-consumer.ts::TAG_FANOUT_RETRY_THRESHOLD --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::rejectArticlesWithModelTagFanout -->
+5. An article with at least 10 model-emitted tags causes the chunk message to retry. <!-- @impl: src/queue/scrape-chunk-consumer.ts::TAG_FANOUT_RETRY_THRESHOLD = 10 --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::rejectArticlesWithModelTagFanout -->
+6. A tag-fanout retry persists no article from that model response. <!-- @impl: src/queue/scrape-chunk-consumer.ts::processOneChunk -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
 
@@ -284,13 +285,13 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ### REQ-PIPE-016: scrape_runs idempotency and stuck-run cleanup
 
-**Intent:** Counter accuracy and operator unblock-paths around the scrape-run aggregation: queue redeliveries never inflate per-tick token, cost, or article counts; and a run whose state machine got stuck never blocks the operator from kicking a fresh pipeline.
+**Intent:** Counter accuracy and operator unblock-paths around the scrape-run aggregation: queue redeliveries never inflate per-tick article counts, token and cost totals include completed LLM calls that retry before chunk completion, and a run whose state machine got stuck never blocks the operator from kicking a fresh pipeline.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 1. A redelivered closing message leaves the run's original finish time intact. <!-- @impl: src/lib/scrape-run.ts::finishRun -->
-2. Per-tick token, cost, ingestion, and dedupe counters advance exactly once per completed chunk. <!-- @impl: src/lib/articles-repo.ts::recordChunkCompletion -->
+2. Per-tick article-ingestion and dedupe counters advance exactly once per completed chunk. <!-- @impl: src/lib/articles-repo.ts::recordChunkCompletion -->
 3. The daily cleanup pass force-fails in-progress runs that exceed the longest plausible tick duration. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
 4. If a run stalls before any chunks are queued, the pipeline makes one bounded coordinator recovery attempt. <!-- @impl: src/queue/pipeline-consumer.ts::runScrapeWait -->
 5. Duplicate initial coordinator deliveries cannot queue the same run's chunks more than once. <!-- @impl: src/queue/scrape-coordinator.ts::claimCoordinatorDispatch -->
