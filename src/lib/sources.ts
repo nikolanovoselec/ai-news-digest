@@ -447,7 +447,7 @@ function feedSnippetFromCandidates(
           forceBodyFetch &&
           looksLikeAggregatorMetadata(`${text}\n${cleaned}`)
         ) {
-          return { snippet: null, forceBodyFetch };
+          continue;
         }
         return { snippet: cleaned, forceBodyFetch };
       }

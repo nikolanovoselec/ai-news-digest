@@ -146,6 +146,32 @@ describe('RSS per-item <source> override', () => {
     expect(head).not.toHaveProperty('snippet');
   });
 
+  it('REQ-PIPE-010: falls back to later article excerpts after dropping aggregator metadata', () => {
+    const extract = extractorFor(
+      'Example Aggregator',
+      'https://aggregator.example/rss',
+    );
+    const parsed = {
+      rss: {
+        channel: {
+          item: {
+            title: 'Startup launches a useful security scanner',
+            link: 'https://publisher.example/security-scanner',
+            pubDate: 'Mon, 09 Jun 2025 20:16:21 GMT',
+            'content:encoded':
+              'Discussion URL: https://aggregator.example/item/123 Score: 42 Comments: 17',
+            description:
+              'The security scanner analyzes hosted model endpoints for exposed credentials and produces a concise remediation report for engineering teams.',
+          },
+        },
+      },
+    };
+    const [head] = extract(parsed);
+    expect(head?.url).toBe('https://publisher.example/security-scanner');
+    expect(head?.force_body_fetch).toBe(true);
+    expect(head?.snippet).toContain('security scanner analyzes');
+  });
+
   it('REQ-PIPE-010: ignores cross-site aggregator metadata in JSON Feed items too', () => {
     const extract = extractorFor(
       'JSON Aggregator',

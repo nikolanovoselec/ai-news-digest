@@ -420,10 +420,9 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 1. When a candidate's feed snippet is too thin to ground a faithful summary, the pipeline fetches the article body directly. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 2. Cross-site outbound feed snippets fetch the linked article body even when the feed snippet is long. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 3. Discussion or score metadata is not used as fallback article text. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates -->
-4. The body fetch is HTTPS-only, passes an SSRF filter, and is bounded by a network timeout and maximum download size. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBody -->
-5. Readable plaintext is extracted from a successful body fetch and attached to the candidate. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
-6. When body-fetch extraction yields too little text, the candidate falls back to whatever the feed itself provided. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
-7. A failed body-fetch never blocks a summary. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+4. Readable plaintext is extracted from a successful body fetch and attached to the candidate. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+5. When body-fetch extraction yields too little text, the candidate falls back to whatever the feed itself provided. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+6. A failed body-fetch never blocks a summary. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 

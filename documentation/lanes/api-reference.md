@@ -34,7 +34,7 @@ The conventions below apply to every endpoint in this document. They are stated 
   - `dev-bypass token` — Bearer `DEV_BYPASS_TOKEN` required.
 - **Origin check.** The `Origin check` field uses `applies` (Origin header must match `APP_URL`, mismatch returns `403 forbidden_origin`), `exempt` (intentionally not checked, justified per endpoint), or `n/a` (non-mutating GET). See [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints).
 - **Rate limit.** Present only on endpoints with a limiter; format is `{count}/{window} per {scope}` plus `fail-open` or `fail-closed`.
-- **Rate-limit failures.** Exhausted buckets return `429` with `Retry-After`; see [REQ-AUTH-001 AC 9](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) and [`security.md`](security.md#rate-limiting).
+- **Rate-limit failures.** Exhausted buckets return `429` with `Retry-After`; see [REQ-RATE-001 AC 1](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface) and [`security.md`](security.md#rate-limiting).
 - **Implements.** Every endpoint cites the REQ that owns its contract.
 - **Curl pattern.** For any `session`-auth endpoint, copy the cookie value from browser DevTools (Application > Cookies > `__Host-session`) and pass it verbatim. Example against `GET /api/digest/today`:
 
@@ -143,7 +143,7 @@ GET  /api/auth/{provider}/login
 
 **Rate limit:** 10/60s per IP (`auth_login`), fail-closed. See [AD23](../decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop).
 
-**Implements:** [REQ-AUTH-001 AC 9](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
+**Implements:** [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints), [REQ-RATE-001 AC 1](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface)
 
 ---
 
@@ -178,7 +178,7 @@ GET /api/auth/{provider}/callback
 
 **Rate limit:** 20/60s per IP (`auth_callback`), fail-closed. Sized at 2x the `auth_login` bucket because a single sign-in flow issues exactly one `/login` request but may retry `/callback` on provider-side hiccups (3xx error redirects, transient code-exchange failures).
 
-**Implements:** [REQ-AUTH-001 AC 9](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-004](../../sdd/spec/authentication.md#req-auth-004-oauth-error-surfacing), [REQ-AUTH-007](../../sdd/spec/authentication.md#req-auth-007-cross-provider-account-dedup)
+**Implements:** [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-004](../../sdd/spec/authentication.md#req-auth-004-oauth-error-surfacing), [REQ-AUTH-007](../../sdd/spec/authentication.md#req-auth-007-cross-provider-account-dedup), [REQ-RATE-001 AC 1](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface)
 
 **Notes**
 
