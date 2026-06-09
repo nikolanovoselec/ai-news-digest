@@ -40,7 +40,8 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Acceptance Criteria:**
 1. Every tag in the union of (default-seed hashtags ∪ curated source tags ∪ discovered KV tags) gets a per-tag Google News query-RSS source added to the tick's source list as a long-tail backstop.
 2. Tags already served by a bespoke hand-tuned Google News curated entry are skipped, so the same tag never gets two Google News queries in one tick.
-3. A Google News wrapper candidate whose title strongly matches an already-stored recent article is appended as another source/tag sighting for that article and is not sent to the LLM for a duplicate summary. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches -->
+3. A Google News wrapper candidate whose title strongly matches an already-stored recent article is appended as another source/tag sighting for that article. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches -->
+4. A title-matched Google News wrapper candidate is skipped before chunk fan-out so it does not produce a duplicate LLM summary. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
@@ -92,13 +93,34 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 5. `details` is plaintext body of 100 to 150 words split into 2 or 3 paragraphs, with no lists, HTML, or Markdown. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
 6. `tags` values come exclusively from the system-approved allowlist supplied to the chunk prompt. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
 7. Chunk-response parsing accepts common model JSON deviations, including fenced or prose-wrapped objects, trailing commas, and raw newline characters inside string values. <!-- @impl: src/lib/generate.ts::parseJsonWithRepairs -->
-8. Long article body snippets are compacted into an extractive prompt context that preserves the lead plus later high-signal factual passages before the chunk LLM call, so cost falls without shortening the user-facing summary contract. <!-- @impl: src/lib/prompts.ts::compactChunkBodySnippetForPrompt -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
 
 **Priority:** P0
 
 **Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
+
+**Verification:** Integration test
+
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-022: Chunk prompt input compaction
+
+**Intent:** Long candidate source text is reduced before summarisation so LLM input cost is bounded while the existing summary-quality contract remains grounded in source facts.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. Long candidate body snippets are compacted into extractive prompt context before the chunk LLM call. <!-- @impl: src/lib/prompts.ts::compactChunkBodySnippetForPrompt -->
+2. The compacted prompt context preserves the article lead and later high-signal factual passages. <!-- @impl: src/lib/prompts.ts::compactChunkBodySnippetForPrompt -->
+
+**Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](#req-pipe-002-chunked-llm-output-content-contract)
 
 **Verification:** Integration test
 

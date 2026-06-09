@@ -124,7 +124,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `google-jwks.ts` | RS256 signature verification for Google `id_token`s via JWKS (`https://www.googleapis.com/oauth2/v3/certs`); caches the key set for 1 hour in KV (`oidc:jwks:google`) to bound isolate-level fetch cost (CF-013) | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `oauth-providers.ts` | GitHub + Google adapters with id_token validation | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `oauth-errors.ts` | OAuth error code allowlist and sanitizer | [REQ-AUTH-004](../sdd/authentication.md#req-auth-004-oauth-error-surfacing) |
-| `prompts.ts` | LLM system prompts for chunk processing and source discovery; compacts long article bodies into extractive high-signal prompt context before summary calls | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-DISC-007](../sdd/discovery.md#req-disc-007-per-tag-feed-discovery-execution-and-persistence) |
+| `prompts.ts` | LLM system prompts for chunk processing and source discovery; compacts long article bodies into extractive high-signal prompt context before summary calls | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-022](../sdd/generation.md#req-pipe-022-chunk-prompt-input-compaction), [REQ-DISC-007](../sdd/discovery.md#req-disc-007-per-tag-feed-discovery-execution-and-persistence) |
 | `rate-limit.ts` | KV window-counter rate limiter for auth routes, mutation routes, and authenticated polling endpoints | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9 |
 | `session-jwt.ts` | HMAC-SHA256 sign/verify for the access-token JWT | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation) |
 | `refresh-tokens.ts` | 30-day opaque refresh-token storage in D1 with rotation and reuse detection | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout) |
@@ -261,13 +261,13 @@ Coordinator
   ├─ Re-seen URLs: INSERT OR IGNORE new sources into article_sources (multi-source aggregation);
   │  ingested_at and primary attribution are NOT re-stamped (first-ingestion preserved)
   ├─ Google News wrappers whose titles strongly match recent stored articles are source/tag-appended
-  │  and skipped before LLM fan-out
+  │  and skipped before LLM fan-out (REQ-PIPE-019 AC 3-4)
   └─ Chunk → enqueue one SCRAPE_CHUNK per chunk
        │
        ▼
 Chunk consumer (per chunk)
   ├─ Fetch article bodies for short-snippet candidates (concurrency 20)
-  ├─ Compact long body text to lead + high-signal factual passages for the prompt
+  ├─ Compact long body text to lead + high-signal factual passages for the prompt (REQ-PIPE-022 AC 1-2)
   ├─ Single DEFAULT_MODEL_ID call (`dynamic/news_digest` AI Gateway route); align output to inputs by echoed index
   ├─ If invalid JSON consumed tokens, add zero-article `scrape_runs` token/cost stats before queue retry
   ├─ Reject 10+ model-emitted tags for queue retry; count that completed LLM call as zero-article token/cost spend before throwing

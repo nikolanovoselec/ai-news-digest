@@ -1,5 +1,6 @@
 // Implements REQ-DISC-001
 // Implements REQ-DISC-005
+// Implements REQ-PIPE-022
 //
 // Centralised LLM prompts for the two calls the product makes:
 //   1. Global-feed chunk processing — summarise and tag a batch of scraped candidates.

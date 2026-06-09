@@ -1,5 +1,6 @@
 // Tests for src/lib/prompts.ts — REQ-DISC-001, REQ-DISC-005,
-// and REQ-PIPE-002 (chunk processing). DIGEST_SYSTEM + digestUserPrompt
+// REQ-PIPE-002 (chunk processing), and REQ-PIPE-022 (prompt compaction).
+// DIGEST_SYSTEM + digestUserPrompt
 // were retired in the global-feed rework; regression guards below confirm
 // they are no longer exported.
 import { describe, it, expect } from 'vitest';
@@ -290,7 +291,7 @@ describe('PROCESS_CHUNK_SYSTEM + processChunkUserPrompt — REQ-PIPE-002', () =>
     expect(fenceRuns.length).toBe(4);
   });
 
-  it('REQ-PIPE-002: body_snippet is compacted below the 6K prompt budget', () => {
+  it('REQ-PIPE-022: body_snippet is compacted below the 6K prompt budget', () => {
     // AD58 — long extracted bodies should not be sent wholesale to the
     // summariser. The ellipsis proves the body was compacted, and the
     // 6K cap protects the expensive LLM input budget.
@@ -311,7 +312,7 @@ describe('PROCESS_CHUNK_SYSTEM + processChunkUserPrompt — REQ-PIPE-002', () =>
     expect(prompt).not.toContain('A'.repeat(6_001));
   });
 
-  it('REQ-PIPE-002: a 5K-char body_snippet round-trips intact through the prompt builder', () => {
+  it('REQ-PIPE-022: a 5K-char body_snippet round-trips intact through the prompt builder', () => {
     const longBody = 'X'.repeat(5_000);
     const candidates = [
       {
@@ -329,7 +330,7 @@ describe('PROCESS_CHUNK_SYSTEM + processChunkUserPrompt — REQ-PIPE-002', () =>
     expect(ellipsisAfterBody).toBe(-1);
   });
 
-  it('REQ-PIPE-002: compactChunkBodySnippetForPrompt retains later high-signal facts', () => {
+  it('REQ-PIPE-022: compactChunkBodySnippetForPrompt retains later high-signal facts', () => {
     const lead = `${'introductory context '.repeat(220)}.`;
     const lowSignalMiddle = `${'background filler '.repeat(220)}.`;
     const highSignal =
