@@ -143,18 +143,20 @@ const PER_CANDIDATE_OVERHEAD_CHARS = 400;
 const ESTIMATED_BODY_FETCH_CHARS = 3_000;
 
 /** Estimate the per-candidate char cost the chunk's prompt will
- * incur. When a feed snippet is already attached and large enough
- * (≥ `SNIPPET_FLOOR`, imported from the chunk consumer), the
- * consumer skips its own body fetch and the snippet length is the
- * actual cost. Otherwise the consumer will fetch and the body could
- * be anywhere between 0 and SNIPPET_CAP (15K); we use
- * `ESTIMATED_BODY_FETCH_CHARS` as the median guess.
+ * incur. When a feed snippet is already attached, large enough
+ * (≥ `SNIPPET_FLOOR`, imported from the chunk consumer), and not
+ * marked `force_body_fetch`, the consumer skips its own body fetch
+ * and the snippet length is the actual cost. Otherwise the consumer
+ * will fetch and the body could be anywhere between 0 and SNIPPET_CAP
+ * (15K); we use `ESTIMATED_BODY_FETCH_CHARS` as the median guess.
  *
  * Exported for direct testing. */
 export function estimateCandidateChars(c: ChunkCandidate): number {
   const snippet = c.body_snippet ?? '';
   const bodyChars =
-    snippet.length >= SNIPPET_FLOOR ? snippet.length : ESTIMATED_BODY_FETCH_CHARS;
+    snippet.length >= SNIPPET_FLOOR && c.force_body_fetch !== true
+      ? snippet.length
+      : ESTIMATED_BODY_FETCH_CHARS;
   return bodyChars + PER_CANDIDATE_OVERHEAD_CHARS;
 }
 
@@ -277,6 +279,7 @@ export interface ChunkCandidate {
   title: string;
   published_at: number;
   body_snippet?: string;
+  force_body_fetch?: boolean;
   source_tags?: string[];
   alternatives: Array<{
     source_url: string;
@@ -631,6 +634,9 @@ function buildCandidates(
       ...(typeof row.headline.snippet === 'string' && row.headline.snippet !== ''
         ? { body_snippet: row.headline.snippet }
         : {}),
+      ...(row.headline.force_body_fetch === true
+        ? { force_body_fetch: true }
+        : {}),
       ...(sourceTags.length > 0 ? { source_tags: sourceTags } : {}),
     });
   }
@@ -973,6 +979,7 @@ function flattenToChunkCandidates(
       title: c.primary.title,
       published_at: c.primary.published_at,
       ...(existingSnippet !== '' ? { body_snippet: existingSnippet } : {}),
+      ...(c.primary.force_body_fetch === true ? { force_body_fetch: true } : {}),
       ...(Array.isArray(c.primary.source_tags) && c.primary.source_tags.length > 0
         ? { source_tags: c.primary.source_tags }
         : {}),

@@ -118,6 +118,7 @@ describe('RSS per-item <source> override', () => {
     const [head] = extract(parsed);
     expect(head?.url).toBe('https://aibriefs.news');
     expect(head?.source_name).toBe('Hacker News - Show HN');
+    expect(head?.force_body_fetch).toBe(true);
     expect(head).not.toHaveProperty('snippet');
   });
 
@@ -141,6 +142,7 @@ describe('RSS per-item <source> override', () => {
     };
     const [head] = extract(parsed);
     expect(head?.url).toBe('https://publisher.example/security-scanner');
+    expect(head?.force_body_fetch).toBe(true);
     expect(head).not.toHaveProperty('snippet');
   });
 
@@ -163,6 +165,7 @@ describe('RSS per-item <source> override', () => {
     };
     const [head] = extract(parsed);
     expect(head?.url).toBe('https://publisher.example/ai-benchmark');
+    expect(head?.force_body_fetch).toBe(true);
     expect(head).not.toHaveProperty('snippet');
   });
 
@@ -186,6 +189,7 @@ describe('RSS per-item <source> override', () => {
     };
     const [head] = extract(parsed);
     expect(head?.url).toBe('https://example.com/story');
+    expect(head?.force_body_fetch).toBe(true);
     expect(head?.snippet).toContain('publisher-owned feed description');
   });
 

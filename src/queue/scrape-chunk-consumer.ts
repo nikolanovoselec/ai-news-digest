@@ -83,6 +83,8 @@ export interface ChunkJobMessage {
      * together — earliest-published wins as the cluster primary. */
     published_at: number;
     body_snippet?: string;
+    /** Forces article-body fetch even when `body_snippet` is long. */
+    force_body_fetch?: boolean;
     /** Candidate-local tag hints from the source that surfaced this
      * article. Used as a contextual allowlist during tag validation. */
     source_tags?: string[];
@@ -458,7 +460,10 @@ async function fetchAndBuildPromptCandidates(
   const urlsToFetch: string[] = [];
   for (const c of body.candidates) {
     const existingSnippet = c.body_snippet ?? '';
-    if (existingSnippet.length < SNIPPET_FLOOR) {
+    if (
+      c.force_body_fetch === true ||
+      existingSnippet.length < SNIPPET_FLOOR
+    ) {
       urlsToFetch.push(c.source_url);
     }
   }

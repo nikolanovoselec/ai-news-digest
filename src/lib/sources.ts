@@ -352,7 +352,8 @@ function extractJsonFeed(
       url,
       source_name: context.sourceName,
       ...definedProp('published_at', published_at),
-      ...definedProp('snippet', snippet),
+      ...definedProp('snippet', snippet.snippet),
+      ...(snippet.forceBodyFetch ? { force_body_fetch: true } : {}),
     });
   }
   return out;
@@ -426,26 +427,33 @@ function htmlSnippetToText(raw: string): string {
  * looks like a discussion/score/comment wrapper rather than an article
  * excerpt.
  */
+interface FeedSnippetResult {
+  snippet: string | null;
+  forceBodyFetch: boolean;
+}
+
 function feedSnippetFromCandidates(
   candidates: Array<unknown>,
   context: FeedExtractionContext,
   articleUrl: string,
-): string | null {
+): FeedSnippetResult {
+  const forceBodyFetch = isCrossSiteFeedItem(context.feedUrl, articleUrl);
   for (const c of candidates) {
     const text = extractNodeText(c);
     if (text !== null && text !== '') {
       const cleaned = htmlSnippetToText(text);
       if (cleaned.length >= 40) {
         if (
-          shouldSuppressFeedSnippet(context.feedUrl, articleUrl, text, cleaned)
+          forceBodyFetch &&
+          looksLikeAggregatorMetadata(`${text}\n${cleaned}`)
         ) {
-          return null;
+          return { snippet: null, forceBodyFetch };
         }
-        return cleaned;
+        return { snippet: cleaned, forceBodyFetch };
       }
     }
   }
-  return null;
+  return { snippet: null, forceBodyFetch };
 }
 
 function itemToHeadline(
@@ -497,7 +505,8 @@ function itemToHeadline(
     url: resolvedLink,
     source_name: itemSourceName ?? context.sourceName,
     ...definedProp('published_at', published_at),
-    ...definedProp('snippet', snippet),
+    ...definedProp('snippet', snippet.snippet),
+    ...(snippet.forceBodyFetch ? { force_body_fetch: true } : {}),
   };
 }
 
@@ -548,16 +557,6 @@ function extractItemSourceUrl(node: unknown): string | null {
     return null;
   }
   return raw;
-}
-
-function shouldSuppressFeedSnippet(
-  feedUrl: string,
-  articleUrl: string,
-  rawText: string,
-  cleanedText: string,
-): boolean {
-  if (!isCrossSiteFeedItem(feedUrl, articleUrl)) return false;
-  return looksLikeAggregatorMetadata(`${rawText}\n${cleanedText}`);
 }
 
 function isCrossSiteFeedItem(feedUrl: string, articleUrl: string): boolean {
@@ -617,7 +616,8 @@ function entryToHeadline(
     url,
     source_name: context.sourceName,
     ...definedProp('published_at', published_at),
-    ...definedProp('snippet', snippet),
+    ...definedProp('snippet', snippet.snippet),
+    ...(snippet.forceBodyFetch ? { force_body_fetch: true } : {}),
   };
 }
 

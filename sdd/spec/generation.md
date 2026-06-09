@@ -418,7 +418,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Acceptance Criteria:**
 1. When a candidate's feed snippet is too thin to ground a faithful summary, the pipeline fetches the article body directly. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
-2. Outbound-link aggregator metadata is ignored as article body when it would otherwise stop the linked page from being fetched. <!-- @impl: src/lib/sources.ts::isHackerNewsOutboundSource -->
+2. Cross-site outbound feed snippets do not satisfy the already-fetched threshold; the linked page is still fetched, and discussion/score metadata is not used as fallback article text. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 3. The body fetch is HTTPS-only and passes an SSRF filter. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBody -->
 4. The body fetch is bounded by a network timeout and a maximum download size. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBody -->
 5. Readable plaintext is extracted from a successful body fetch and attached to the candidate. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->

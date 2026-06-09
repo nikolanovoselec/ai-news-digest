@@ -254,7 +254,7 @@ Coordinator
   │  (default-seed ∪ curated ∪ discovered KV); skip tags with a bespoke
   │  hand-tuned GN curated entry (REQ-PIPE-019)
   ├─ Fan out {tag × source} pairs (concurrency 10)
-  ├─ Ignore outbound-link aggregator metadata as article body so linked pages still qualify for body fetch (REQ-PIPE-010 AC 2)
+  ├─ Mark cross-site feed snippets for linked-page body fetch; discard discussion/score metadata fallback (REQ-PIPE-010 AC 2)
   ├─ Record per-URL fetch outcome → KV source_health:{url}
   ├─ Evict URLs at 30 consecutive failures; re-queue discovery if feed list empties
   ├─ Drop candidates older than 48 h; keep undated candidates
