@@ -1662,7 +1662,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - Candidate-local source tags now narrow persisted tags when present. <!-- @impl: src/queue/scrape-coordinator.ts::flattenToChunkCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::contextualTagSetForCluster -->
 - Model responses with at least 10 emitted tags for one article reject the chunk before D1 persistence so Queues retries the LLM call. <!-- @impl: src/queue/scrape-chunk-consumer.ts::rejectArticlesWithModelTagFanout -->
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-020](../../sdd/generation.md#req-pipe-020-chunk-tag-validation-guardrails), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
 
 ---
 
