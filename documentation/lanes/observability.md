@@ -30,7 +30,7 @@ Every event carries:
 
 Source: `src/lib/log.ts` defines the `LogEvent` union; the `log()` helper writes a single line per call.
 
-**Implements:** [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-logging)
+**Implements:** [REQ-OPS-001](../../sdd/spec/observability.md#req-ops-001-structured-json-logging)
 
 ---
 
@@ -79,7 +79,7 @@ Each event has fixed semantics and may carry additional event-specific fields; c
 
 Error-level records carry raw exception messages in a `detail` field. The `detail` value is never persisted to D1 and is never returned to clients - it exists for log-side post-mortem and is the only place the unredacted exception text lives.
 
-**Implements:** [REQ-OPS-002](../sdd/observability.md#req-ops-002-sanitized-error-surfaces)
+**Implements:** [REQ-OPS-002](../../sdd/spec/observability.md#req-ops-002-sanitized-error-surfaces)
 
 ---
 
@@ -91,7 +91,7 @@ For fail-open routes (every limiter rule except `AUTH_REFRESH_IP` and `AUTH_REFR
 
 For the two fail-closed rules (`AUTH_REFRESH_IP`, `AUTH_REFRESH_USER`) protecting refresh-token spray attacks, the in-Worker limiter is still defence-in-depth, not the primary gate. The primary gate for production deployments is Cloudflare zone-level Rate Limiting (WAF), which is atomic. Without WAF in front of `/api/auth/refresh`, a coordinated burst above approximately `2 × limit` can succeed during the propagation window. This is tracked as CF-034 and is the reason fail-closed alone is insufficient for refresh-token spray.
 
-**Implements:** [REQ-AUTH-001 AC 9](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-AUTH-001 AC 9](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
 ---
 
@@ -120,7 +120,7 @@ The reasoning is steady-state operational: UA strings change on every browser au
 
 The asymmetric exception is the 30-second concurrent-rotation grace window: a fingerprint mismatch inside the grace window IS treated as theft and emits `auth.refresh.grace_fingerprint_mismatch`. That asymmetry is intentional: a concurrent-rotation collision should come from the same client (same UA, same country) within seconds. A grace-window collision from a different fingerprint is the textbook stolen-cookie pattern.
 
-**Implements:** [REQ-AUTH-011](../sdd/authentication.md#req-auth-011-refresh-token-reuse-detection-and-device-fingerprint-policy)
+**Implements:** [REQ-AUTH-011](../../sdd/spec/authentication.md#req-auth-011-refresh-token-reuse-detection-and-device-fingerprint-policy)
 
 ---
 
@@ -130,4 +130,4 @@ The asymmetric exception is the 30-second concurrent-rotation grace window: a fi
 - [`security.md`](security.md) - Rate-limit threat model and admin auth gate; fingerprint reuse-detection threat
 - [`api-reference.md`](api-reference.md) - HTTP endpoint surface; which events fire on which routes
 - [`api-reference-admin.md`](api-reference-admin.md) - Admin endpoints; admin-gate failure events
-- [`../sdd/observability.md`](../sdd/observability.md) - REQ-OPS-001, REQ-OPS-002 acceptance criteria
+- [`../sdd/observability.md`](../../sdd/spec/observability.md) - REQ-OPS-001, REQ-OPS-002 acceptance criteria

@@ -32,8 +32,8 @@ The conventions below apply to every endpoint in this document. They are stated 
   - `state cookie` — OAuth `state` cookie required.
   - `session + admin email` — session cookie plus `ADMIN_EMAIL` match required.
   - `dev-bypass token` — Bearer `DEV_BYPASS_TOKEN` required.
-- **Origin check.** The `Origin check` field uses `applies` (Origin header must match `APP_URL`, mismatch returns `403 forbidden_origin`), `exempt` (intentionally not checked, justified per endpoint), or `n/a` (non-mutating GET). See [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints).
-- **Rate limit.** The `Rate limit` field appears on every endpoint that enforces a limit. It gives `{count}/{window} per {scope}` and a fail mode (`fail-open` or `fail-closed`). Exhausted buckets return `429` with a `Retry-After` header. See [REQ-AUTH-001 AC 9](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) and [`security.md`](security.md#rate-limiting-req-auth-001-ac-9) for the full matrix.
+- **Origin check.** The `Origin check` field uses `applies` (Origin header must match `APP_URL`, mismatch returns `403 forbidden_origin`), `exempt` (intentionally not checked, justified per endpoint), or `n/a` (non-mutating GET). See [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints).
+- **Rate limit.** The `Rate limit` field appears on every endpoint that enforces a limit. It gives `{count}/{window} per {scope}` and a fail mode (`fail-open` or `fail-closed`). Exhausted buckets return `429` with a `Retry-After` header. See [REQ-AUTH-001 AC 9](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) and [`security.md`](security.md#rate-limiting-req-auth-001-ac-9) for the full matrix.
 - **Implements.** Every endpoint cites the REQ that owns its contract.
 - **Curl pattern.** For any `session`-auth endpoint, copy the cookie value from browser DevTools (Application > Cookies > `__Host-session`) and pass it verbatim. Example against `GET /api/digest/today`:
 
@@ -66,7 +66,7 @@ GET /
 | `200` | Anonymous | Landing page HTML |
 | `303` | Authenticated | Redirect to `/digest` |
 
-**Implements:** [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
 ---
 
@@ -87,7 +87,7 @@ GET /404
 |---|---|---|
 | `200` | Always | Static error page (`noindex`) |
 
-**Implements:** [REQ-READ-006 AC 5](../sdd/reading.md#req-read-006-empty-error-and-offline-pages)
+**Implements:** [REQ-READ-006 AC 5](../../sdd/spec/reading.md#req-read-006-empty-error-and-offline-pages)
 
 ---
 
@@ -108,7 +108,7 @@ GET /500
 |---|---|---|
 | `200` | Always | Static error page (`noindex`) |
 
-**Implements:** [REQ-READ-006 AC 5](../sdd/reading.md#req-read-006-empty-error-and-offline-pages)
+**Implements:** [REQ-READ-006 AC 5](../../sdd/spec/reading.md#req-read-006-empty-error-and-offline-pages)
 
 ---
 
@@ -116,7 +116,7 @@ GET /500
 
 ### POST /api/auth/{provider}/login (Start OAuth flow)
 
-Initiates the OAuth 2.0 / OIDC authorization-code flow. Sets a 10-minute `state` cookie and redirects to the provider's authorize URL. `{provider}` must match the configured registry (`github`, `google`); unknown names return `404`. Both `POST` (preferred — blocks browser link-prefetch races that would otherwise consume the `state` cookie before the user clicks) and `GET` (browser fallback) are accepted. See [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider).
+Initiates the OAuth 2.0 / OIDC authorization-code flow. Sets a 10-minute `state` cookie and redirects to the provider's authorize URL. `{provider}` must match the configured registry (`github`, `google`); unknown names return `404`. Both `POST` (preferred — blocks browser link-prefetch races that would otherwise consume the `state` cookie before the user clicks) and `GET` (browser fallback) are accepted. See [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider).
 
 ```
 POST /api/auth/{provider}/login
@@ -140,15 +140,15 @@ GET  /api/auth/{provider}/login
 | `404` | Unknown provider | `{ error, code: "not_found" }` |
 | `429` | Rate limited | `{ error, code: "rate_limit_exceeded" }` |
 
-**Rate limit:** 10/60s per IP (`auth_login`), fail-closed. See [AD23](decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop).
+**Rate limit:** 10/60s per IP (`auth_login`), fail-closed. See [AD23](../decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop).
 
-**Implements:** [REQ-AUTH-001 AC 9](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
+**Implements:** [REQ-AUTH-001 AC 9](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
 ---
 
 ### GET /api/auth/{provider}/callback (OAuth callback)
 
-Validates the per-provider `state` cookie, exchanges the code for tokens, and resolves the session via the three-path `auth_links` lookup ([REQ-AUTH-007](../sdd/authentication.md#req-auth-007-cross-provider-account-dedup)). New accounts get default hashtags, `digest_hour=8`, and `email_enabled=1`. On success, both session cookies are set and the user is redirected to `/digest`.
+Validates the per-provider `state` cookie, exchanges the code for tokens, and resolves the session via the three-path `auth_links` lookup ([REQ-AUTH-007](../../sdd/spec/authentication.md#req-auth-007-cross-provider-account-dedup)). New accounts get default hashtags, `digest_hour=8`, and `email_enabled=1`. On success, both session cookies are set and the user is redirected to `/digest`.
 
 ```
 GET /api/auth/{provider}/callback
@@ -177,7 +177,7 @@ GET /api/auth/{provider}/callback
 
 **Rate limit:** 20/60s per IP (`auth_callback`), fail-closed. Sized at 2x the `auth_login` bucket because a single sign-in flow issues exactly one `/login` request but may retry `/callback` on provider-side hiccups (3xx error redirects, transient code-exchange failures).
 
-**Implements:** [REQ-AUTH-001 AC 9](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-004](../sdd/authentication.md#req-auth-004-oauth-error-surfacing), [REQ-AUTH-007](../sdd/authentication.md#req-auth-007-cross-provider-account-dedup)
+**Implements:** [REQ-AUTH-001 AC 9](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-004](../../sdd/spec/authentication.md#req-auth-004-oauth-error-surfacing), [REQ-AUTH-007](../../sdd/spec/authentication.md#req-auth-007-cross-provider-account-dedup)
 
 **Notes**
 
@@ -187,7 +187,7 @@ Account resolution follows three paths: (A) existing `(provider, provider_sub)` 
 
 ### POST /api/auth/refresh (Force token rotation)
 
-Force-rotates the refresh-token row and mints a new access JWT. Used by long-running tabs before issuing a state-changing XHR: the middleware's inline refresh path would race with the XHR body read, so callers force-rotate first ([REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout)).
+Force-rotates the refresh-token row and mints a new access JWT. Used by long-running tabs before issuing a state-changing XHR: the middleware's inline refresh path would race with the XHR body read, so callers force-rotate first ([REQ-AUTH-008](../../sdd/spec/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout)).
 
 ```
 POST /api/auth/refresh
@@ -208,11 +208,11 @@ POST /api/auth/refresh
 
 **Rate limit:** Two tiers (both fail-closed). Per-IP `auth_refresh_ip` 60/60s (pre-validation); per-user `auth_refresh_user` 30/60s (post-validation). Buckets shared with the inline middleware refresh path.
 
-**Implements:** [REQ-AUTH-002 AC 5](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout), [REQ-AUTH-011](../sdd/authentication.md#req-auth-011-refresh-token-reuse-detection-and-device-fingerprint-policy)
+**Implements:** [REQ-AUTH-002 AC 5](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../../sdd/spec/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout), [REQ-AUTH-011](../../sdd/spec/authentication.md#req-auth-011-refresh-token-reuse-detection-and-device-fingerprint-policy)
 
 **Notes**
 
-The 30-second concurrent-rotation grace window covers the case where two parallel requests from the same client both raced to refresh. The loser presenting the now-revoked cookie within the grace window receives a fresh access JWT off the surviving rotated row without re-rotating ([REQ-AUTH-011 AC 1](../sdd/authentication.md#req-auth-011-refresh-token-reuse-detection-and-device-fingerprint-policy)).
+The 30-second concurrent-rotation grace window covers the case where two parallel requests from the same client both raced to refresh. The loser presenting the now-revoked cookie within the grace window receives a fresh access JWT off the surviving rotated row without re-rotating ([REQ-AUTH-011 AC 1](../../sdd/spec/authentication.md#req-auth-011-refresh-token-reuse-detection-and-device-fingerprint-policy)).
 
 ---
 
@@ -238,7 +238,7 @@ POST /api/auth/logout
 
 **Rate limit:** 5/60s per IP (`auth_logout`).
 
-**Implements:** [REQ-AUTH-002 AC 3](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints), [REQ-AUTH-008 AC 2](../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout)
+**Implements:** [REQ-AUTH-002 AC 3](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints), [REQ-AUTH-008 AC 2](../../sdd/spec/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout)
 
 **Notes**
 
@@ -275,7 +275,7 @@ POST /api/auth/set-tz
 
 **Rate limit:** 30/60s per user (`set_tz`), fail-open. Sized at 30/60s so a user crossing timezones (≤6 saves per hour, even with DST edge cases) plus the dev/test loop never trips the limit.
 
-**Implements:** [REQ-SET-007](../sdd/settings.md#req-set-007-timezone-change-detection), [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
+**Implements:** [REQ-SET-007](../../sdd/spec/settings.md#req-set-007-timezone-change-detection), [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
 ---
 
@@ -306,7 +306,7 @@ DELETE /api/auth/account
 | `401` | No session | `{ error, code: "unauthorized" }` |
 | `403` | Origin mismatch | `{ error, code: "forbidden_origin" }` |
 
-**Implements:** [REQ-AUTH-005](../sdd/authentication.md#req-auth-005-account-deletion), [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
+**Implements:** [REQ-AUTH-005](../../sdd/spec/authentication.md#req-auth-005-account-deletion), [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
 ---
 
@@ -337,7 +337,7 @@ POST /api/auth/account
 | `401` | No session | `{ error, code: "unauthorized" }` |
 | `403` | Origin mismatch | `{ error, code: "forbidden_origin" }` |
 
-**Implements:** [REQ-AUTH-005](../sdd/authentication.md#req-auth-005-account-deletion), [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
+**Implements:** [REQ-AUTH-005](../../sdd/spec/authentication.md#req-auth-005-account-deletion), [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
 ---
 
@@ -361,7 +361,7 @@ GET /api/settings
 | `200` | Success | `{ hashtags: string[], digest_hour, digest_minute, tz, model_id, email_enabled, first_run }` |
 | `401` | No session | `{ error, code: "unauthorized" }` |
 
-**Implements:** [REQ-SET-001](../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow)
+**Implements:** [REQ-SET-001](../../sdd/spec/settings.md#req-set-001-unified-first-run-and-edit-flow)
 
 ---
 
@@ -397,7 +397,7 @@ PUT /api/settings
 
 **Error codes:** `invalid_hashtags`, `invalid_time`, `invalid_model_id`, `invalid_email_enabled`.
 
-**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation-strip-ux), [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection), [REQ-SET-005](../sdd/settings.md#req-set-005-email-notification-preference)
+**Implements:** [REQ-SET-002](../../sdd/spec/settings.md#req-set-002-hashtag-curation-strip-ux), [REQ-SET-003](../../sdd/spec/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection), [REQ-SET-005](../../sdd/spec/settings.md#req-set-005-email-notification-preference)
 
 **Notes**
 
@@ -436,7 +436,7 @@ POST /api/settings
 
 **Error codes (redirected):** `invalid_hashtags`, `invalid_time`, `invalid_email_enabled`.
 
-**Implements:** [REQ-SET-001](../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation-strip-ux), [REQ-SET-003](../sdd/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-SET-005](../sdd/settings.md#req-set-005-email-notification-preference)
+**Implements:** [REQ-SET-001](../../sdd/spec/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-002](../../sdd/spec/settings.md#req-set-002-hashtag-curation-strip-ux), [REQ-SET-003](../../sdd/spec/settings.md#req-set-003-scheduled-digest-time-with-timezone), [REQ-SET-005](../../sdd/spec/settings.md#req-set-005-email-notification-preference)
 
 ---
 
@@ -461,7 +461,7 @@ GET /api/discovery/status
 
 **Rate limit:** 120/60s per user (`discovery_status`), fail-open. Sized for a 2-second polling cadence with overhead.
 
-**Implements:** [REQ-DISC-002](../sdd/discovery.md#req-disc-002-discovery-progress-visibility), [REQ-SET-006](../sdd/settings.md#req-set-006-settings-incomplete-gate)
+**Implements:** [REQ-DISC-002](../../sdd/spec/discovery.md#req-disc-002-discovery-progress-visibility), [REQ-SET-006](../../sdd/spec/settings.md#req-set-006-settings-incomplete-gate)
 
 ---
 
@@ -501,7 +501,7 @@ GET /api/digest/today
 }
 ```
 
-**Implements:** [REQ-READ-001 AC 5, AC 7](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest), [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
+**Implements:** [REQ-READ-001 AC 5, AC 7](../../sdd/spec/reading.md#req-read-001-overview-grid-of-todays-digest), [REQ-PIPE-006](../../sdd/spec/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
 
 **Notes**
 
@@ -516,14 +516,14 @@ The `alt_source_count` field drives the `+N` suffix on source labels across all 
 ### GET /api/digest/:id (Tombstoned)
 
 **Status:** Tombstoned (returns `410 Gone`; removed when the `digests` table was dropped in migration 0003).
-**Replacement:** Per-user digests no longer exist; see [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) for the global pipeline.
+**Replacement:** Per-user digests no longer exist; see [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) for the global pipeline.
 
 ---
 
 ### POST /api/digest/refresh (Tombstoned)
 
 **Status:** Tombstoned (returns `410 Gone`; replaced by the every-4-hours global scrape pipeline).
-**Replacement:** Operators that want to force a refresh use `POST /api/admin/force-refresh` (see [REQ-OPS-005](../sdd/observability.md#req-ops-005-admin-force-refresh-endpoint)) instead.
+**Replacement:** Operators that want to force a refresh use `POST /api/admin/force-refresh` (see [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint)) instead.
 
 ---
 
@@ -565,7 +565,7 @@ GET /api/scrape-status
 }
 ```
 
-**Implements:** [REQ-PIPE-006](../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-AUTH-002 AC 4](../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout)
+**Implements:** [REQ-PIPE-006](../../sdd/spec/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-AUTH-002 AC 4](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../../sdd/spec/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout)
 
 **Notes**
 
@@ -608,7 +608,7 @@ POST /api/articles/:id/star
 
 **Rate limit:** 60/60s per user (`article_star`), fail-open.
 
-**Implements:** [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles)
+**Implements:** [REQ-STAR-001](../../sdd/spec/reading.md#req-star-001-star-and-unstar-articles)
 
 ---
 
@@ -641,7 +641,7 @@ DELETE /api/articles/:id/star
 
 **Rate limit:** 60/60s per user (`article_star`), fail-open. Shared bucket with POST.
 
-**Implements:** [REQ-STAR-001](../sdd/reading.md#req-star-001-star-and-unstar-articles)
+**Implements:** [REQ-STAR-001](../../sdd/spec/reading.md#req-star-001-star-and-unstar-articles)
 
 ---
 
@@ -663,7 +663,7 @@ GET /api/starred
 | `200` | Success | `{ articles: WireArticle[] }` (max 60, newest star first) |
 | `401` | No session | `{ error, code: "unauthorized" }` |
 
-**Implements:** [REQ-STAR-002](../sdd/reading.md#req-star-002-starred-articles-page)
+**Implements:** [REQ-STAR-002](../../sdd/spec/reading.md#req-star-002-starred-articles-page)
 
 ---
 
@@ -699,7 +699,7 @@ PUT /api/tags
 
 **Rate limit:** 30/60s per user (`tags_mutation`), fail-open. Shared bucket with `POST /api/tags/restore`.
 
-**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation-strip-ux)
+**Implements:** [REQ-SET-002](../../sdd/spec/settings.md#req-set-002-hashtag-curation-strip-ux)
 
 ---
 
@@ -724,7 +724,7 @@ POST /api/tags/restore
 
 **Rate limit:** 30/60s per user (`tags_mutation`), fail-open. Shared bucket with `PUT /api/tags`.
 
-**Implements:** [REQ-SET-008 AC 4](../sdd/settings.md#req-set-008-hashtag-persistence-validation-and-defaults)
+**Implements:** [REQ-SET-008 AC 4](../../sdd/spec/settings.md#req-set-008-hashtag-persistence-validation-and-defaults)
 
 ---
 
@@ -751,7 +751,7 @@ POST /api/tags/delete-initial
 
 **Rate limit:** 30/60s per user (`tags_mutation`), fail-open.
 
-**Implements:** [REQ-SET-002](../sdd/settings.md#req-set-002-hashtag-curation-strip-ux)
+**Implements:** [REQ-SET-002](../../sdd/spec/settings.md#req-set-002-hashtag-curation-strip-ux)
 
 ---
 
@@ -778,7 +778,7 @@ POST /api/dev/login
 | `401` | Missing Bearer header | `{ error, code: "unauthorized" }` |
 | `404` | Token unset, token mismatch, or `IS_PRODUCTION=true` | Empty |
 
-**Implements:** [REQ-AUTH-001 AC 10](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-AUTH-001 AC 10](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
 **Notes**
 
@@ -805,7 +805,7 @@ POST /api/dev/trigger-scrape
 | `404` | Token unset, token mismatch, or `IS_PRODUCTION=true` | Empty |
 | `500` | Run insert or enqueue failed | `{ ok: false, error: "start_run_failed" \| "enqueue_failed" }` |
 
-**Implements:** [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-AUTH-001 AC 10](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-AUTH-001 AC 10](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
 **Notes**
 
@@ -832,7 +832,7 @@ GET /sitemap.xml
 |---|---|---|
 | `200` | Success | XML sitemap (`Cache-Control: public, max-age=3600`) |
 
-**Implements:** [REQ-OPS-004 AC 4](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability), [REQ-OPS-007](../sdd/observability.md#req-ops-007-public-sitemap-for-crawler-discovery)
+**Implements:** [REQ-OPS-004 AC 4](../../sdd/spec/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability), [REQ-OPS-007](../../sdd/spec/observability.md#req-ops-007-public-sitemap-for-crawler-discovery)
 
 **Notes**
 
@@ -857,7 +857,7 @@ GET /robots.txt
 |---|---|---|
 | `200` | Success | Plain text robots policy |
 
-**Implements:** [REQ-OPS-004 AC 2](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability)
+**Implements:** [REQ-OPS-004 AC 2](../../sdd/spec/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability)
 
 ---
 
@@ -878,7 +878,7 @@ GET /llms.txt
 |---|---|---|
 | `200` | Success | Plain text agents policy |
 
-**Implements:** [REQ-OPS-004 AC 3](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability)
+**Implements:** [REQ-OPS-004 AC 3](../../sdd/spec/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability)
 
 ---
 
@@ -899,7 +899,7 @@ GET /llms-full.txt
 |---|---|---|
 | `200` | Success | Plain text extended agents policy |
 
-**Implements:** [REQ-OPS-004 AC 3](../sdd/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability)
+**Implements:** [REQ-OPS-004 AC 3](../../sdd/spec/observability.md#req-ops-004-crawler-policy-and-public-surface-discoverability)
 
 ---
 
@@ -945,7 +945,7 @@ GET /api/history
 }
 ```
 
-**Implements:** [REQ-HIST-003 AC 1, AC 2](../sdd/history.md#req-hist-003-search-tag-filter-and-deep-link-on-history), [REQ-STAR-001 AC 6](../sdd/reading.md#req-star-001-star-and-unstar-articles), [REQ-READ-001 AC 7](../sdd/reading.md#req-read-001-overview-grid-of-todays-digest)
+**Implements:** [REQ-HIST-003 AC 1, AC 2](../../sdd/spec/history.md#req-hist-003-search-tag-filter-and-deep-link-on-history), [REQ-STAR-001 AC 6](../../sdd/spec/reading.md#req-star-001-star-and-unstar-articles), [REQ-READ-001 AC 7](../../sdd/spec/reading.md#req-read-001-overview-grid-of-todays-digest)
 
 **Notes**
 
@@ -975,11 +975,11 @@ GET /api/stats
 | `200` | Success | `{ digests_generated, articles_read, articles_total, tokens_consumed, cost_usd }` |
 | `401` | No session | `{ error, code: "unauthorized" }` |
 
-**Implements:** [REQ-HIST-002](../sdd/history.md#req-hist-002-user-stats-widget)
+**Implements:** [REQ-HIST-002](../../sdd/spec/history.md#req-hist-002-user-stats-widget)
 
 **Notes**
 
-The ratio `articles_read / articles_total` always describes "of articles you can see now, how many have you read" because per-user counters scope to the active tag list ([REQ-HIST-002 AC 3](../sdd/history.md#req-hist-002-user-stats-widget)).
+The ratio `articles_read / articles_total` always describes "of articles you can see now, how many have you read" because per-user counters scope to the active tag list ([REQ-HIST-002 AC 3](../../sdd/spec/history.md#req-hist-002-user-stats-widget)).
 
 ---
 
@@ -990,4 +990,4 @@ The ratio `articles_read / articles_total` always describes "of articles you can
 - [configuration.md](configuration.md) - Env vars, secrets, KV namespace bindings
 - [observability.md](observability.md) - Structured log event shapes, rate-limiter atomicity, fingerprint-drift rationale
 - [security.md](security.md) - Rate-limit matrix, admin auth layers, threat model
-- [`../sdd/`](../sdd/) - REQ-AUTH-*, REQ-OPS-*, REQ-SET-*, REQ-READ-*, REQ-PIPE-*, REQ-HIST-*, REQ-STAR-*, REQ-DISC-*
+- [`../sdd/`](../../sdd/) - REQ-AUTH-*, REQ-OPS-*, REQ-SET-*, REQ-READ-*, REQ-PIPE-*, REQ-HIST-*, REQ-STAR-*, REQ-DISC-*

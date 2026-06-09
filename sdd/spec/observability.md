@@ -65,7 +65,7 @@ Structured JSON logging as the single operational surface — no external observ
 4. Every response includes `X-Frame-Options: DENY` as defense-in-depth alongside `frame-ancestors 'none'`.
 5. No inline script tags exist anywhere in the app; the CSP `script-src` is `'self'` only.
 
-**Notes:** Exact CSP directive value is documented at [`documentation/security.md`](../documentation/security.md).
+**Notes:** Exact CSP directive value is documented at [`documentation/security.md`](../../documentation/lanes/security.md).
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -179,7 +179,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Status:** Implemented
 
-**Notes:** Verification is the manual promotion checklist (develop -> integration smoke -> main). The deployment topology is exercised by [`.github/workflows/deploy-integration.yml`](../.github/workflows/deploy-integration.yml); the workflow's header comment carries the REQ-OPS-006 backlink for traceability.
+**Notes:** Verification is the manual promotion checklist (develop -> integration smoke -> main). The deployment topology is exercised by [`.github/workflows/deploy-integration.yml`](../../.github/workflows/deploy-integration.yml); the workflow's header comment carries the REQ-OPS-006 backlink for traceability.
 
 ---
 
