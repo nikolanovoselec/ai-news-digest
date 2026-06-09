@@ -4,6 +4,8 @@ Keeping up with tech news was a part-time job I didn't sign up for, didn't get p
 
 **Live at** [news.graymatter.ch](https://news.graymatter.ch). Sign in with GitHub or Google, edit your hashtags (or don't), done.
 
+Project notes, deployment details, and spec links live below.
+
 <p align="center">
   <img alt="Mobile dashboard"  src="docs/screenshots/dashboard-mobile.jpg"  height="260">
   <img alt="Desktop dashboard" src="docs/screenshots/dashboard-desktop.png" height="260">
