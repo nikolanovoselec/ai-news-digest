@@ -261,8 +261,8 @@ Coordinator
   ├─ Canonical-URL dedup across all candidates
   ├─ Re-seen URLs: INSERT OR IGNORE new sources into article_sources (multi-source aggregation);
   │  ingested_at and primary attribution are NOT re-stamped (first-ingestion preserved)
-  ├─ Google News wrappers whose titles strongly match recent stored articles are source/tag-appended
-  │  and skipped before LLM fan-out (REQ-PIPE-019 AC 3-4)
+  ├─ Google News wrappers whose titles high-confidence match recent stored articles are source/tag-appended
+  │  and skipped before LLM fan-out; same-topic partial overlaps still fan out (REQ-PIPE-019 AC 3-5)
   └─ Chunk → enqueue one SCRAPE_CHUNK per chunk
        │
        ▼

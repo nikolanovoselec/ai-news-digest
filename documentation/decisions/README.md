@@ -1677,7 +1677,8 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 
 **Consequences:**
 
-- Google News remains a long-tail source, but wrappers that strongly title-match recent stored articles are appended as source/tag sightings instead of re-summarised.
+- Google News remains a long-tail source, but wrappers that high-confidence title-match recent stored articles, including substantial coverage of the longer title, are appended as source/tag sightings instead of re-summarised.
+- Same-topic partial-overlap Google News wrappers still fan out to the LLM so short generic stored titles cannot suppress distinct stories.
 - Long fetched article text is still used as source material, but only the lead plus later high-signal factual sentences are sent to the LLM.
 - Summary quality gates stay where they were: the chunk prompt still requires 100-150 words, server validation still drops short bodies, and semantic dedup still runs after ingestion.
 - Future cost reductions should prefer pre-LLM candidate elimination or input compaction before changing the summary contract.
