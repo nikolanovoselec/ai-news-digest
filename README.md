@@ -4,6 +4,8 @@ Keeping up with tech news was a part-time job I didn't sign up for, didn't get p
 
 **Live at** [news.graymatter.ch](https://news.graymatter.ch). Sign in with GitHub or Google, edit your hashtags (or don't), done.
 
+Project notes, deployment details, and spec links live below.
+
 <p align="center">
   <img alt="Mobile dashboard"  src="docs/screenshots/dashboard-mobile.jpg"  height="260">
   <img alt="Desktop dashboard" src="docs/screenshots/dashboard-desktop.png" height="260">
@@ -41,9 +43,9 @@ The bar for "doesn't spy on you or sell you anything" is, in fairness, embarrass
 
 ## Built with Codeflare's spec-driven development framework
 
-This project was built end-to-end as a real-world test of [Codeflare](https://codeflare.ch) ([repo](https://github.com/nikolanovoselec/codeflare))'s **spec-driven development** (SDD) framework. Every feature follows the same loop: write the contract first in `sdd/{domain}.md`, write a failing test that names the requirement (`REQ-X-NNN`), write the minimal code to make it pass with an `// Implements REQ-X-NNN` annotation, then push. Three review agents (code, spec, docs) run automatically and the deploy fires on green. The agents disagree with me on a regular basis. They have been right on a regular basis.
+This project was built end-to-end as a real-world test of [Codeflare](https://codeflare.ch) ([repo](https://github.com/nikolanovoselec/codeflare))'s **spec-driven development** (SDD) framework. Every feature follows the same loop: write the contract first in `sdd/spec/{domain}.md`, write a failing test that names the requirement (`REQ-X-NNN`), write the minimal code to make it pass with an `// Implements REQ-X-NNN` annotation, then push. Three review agents (code, spec, docs) run automatically and the deploy fires on green. The agents disagree with me on a regular basis. They have been right on a regular basis.
 
-The result: 60+ written requirements across 10 product domains (authentication, generation, reading, history, email, settings, discovery, design, observability, PWA), each with a test that proves it works and a source file that points back to it. [Spec](sdd/README.md) · [Architecture](documentation/architecture.md) · [Changelog](sdd/changes.md)
+The result: 60+ written requirements across 10 product domains (authentication, generation, reading, history, email, settings, discovery, design, observability, PWA), each with a test that proves it works and a source file that points back to it. [Spec](sdd/README.md) · [Architecture](documentation/lanes/architecture.md) · [Changelog](sdd/spec/changes.md)
 
 ## Stack
 
@@ -135,7 +137,7 @@ Custom token via [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflar
 <details>
 <summary><strong>Custom domain only: gate the admin endpoints</strong></summary>
 
-Operator endpoints under `/api/admin/*` (force-refresh, pipeline-run, embed-backfill, historical-dedup, discovery retry) need an extra gate so other signed-in users can't trigger them. Cloudflare Access at the zone level: [setup walkthrough](documentation/deployment.md#admin-only-routes-cloudflare-access-gating).
+Operator endpoints under `/api/admin/*` (force-refresh, pipeline-run, embed-backfill, historical-dedup, discovery retry) need an extra gate so other signed-in users can't trigger them. Cloudflare Access at the zone level: [setup walkthrough](documentation/lanes/deployment.md#admin-only-routes-cloudflare-access-gating).
 
 </details>
 
@@ -153,7 +155,7 @@ Copy `.dev.vars.example` to `.dev.vars`, then add:
 - a random `OAUTH_JWT_SECRET` (≥32 bytes)
 - AI Gateway values: `AI_GATEWAY_API_TOKEN` and `AI_GATEWAY_URL`
 
-See [AI Gateway setup](documentation/configuration.md#ai-gateway-setup).
+See [AI Gateway setup](documentation/lanes/configuration.md#ai-gateway-setup).
 
 ## License
 

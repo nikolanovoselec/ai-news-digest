@@ -17,6 +17,7 @@ interface SqlRecord {
 
 function makeDb(opts: {
   existingCanonicals?: string[];
+  recentArticles?: Array<{ id: string; title: string }>;
   claimChanges?: number | number[];
   claimRow?: { status: string; chunk_count: number | null } | null;
   events?: string[];
@@ -71,6 +72,9 @@ function makeDb(opts: {
                 canonical_url: u,
               })),
             };
+          }
+          if (sql.includes('SELECT id, title') && sql.includes('FROM articles')) {
+            return { success: true, results: opts.recentArticles ?? [] };
           }
           return { success: true, results: [] };
         }),
@@ -161,6 +165,19 @@ function makeChunksQueue(events?: string[]): {
 }
 
 /** Stub global fetch to return a minimal RSS feed with N items per call. */
+function stubFetchWithGoogleNewsItem(title: string): void {
+  const rss = `<rss><channel><item><title>${title}</title><link>https://news.google.com/articles/duplicate</link></item></channel></rss>`;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(rss, {
+        status: 200,
+        headers: { 'content-type': 'application/rss+xml' },
+      }),
+    ),
+  );
+}
+
 function stubFetchWithItems(itemsPerFetch: number): void {
   const itemsXml: string[] = [];
   for (let i = 0; i < itemsPerFetch; i++) {
@@ -317,6 +334,64 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-
     // Everything in the pool already existed → no chunks enqueued + run
     // closed immediately.
     expect(sends.length).toBe(0);
+  });
+
+  it('REQ-PIPE-019: skips Google News wrappers whose title matches a recent stored article', async () => {
+    stubFetchWithGoogleNewsItem(
+      'Anthropic releases Claude Sonnet 4.6 with extended context window',
+    );
+    const { db, records } = makeDb({
+      recentArticles: [
+        {
+          id: 'article-existing',
+          title: 'Claude Sonnet 4.6 gets extended context in Anthropic release',
+        },
+      ],
+    });
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(env, { scrape_run_id: 'run-google-news-existing-title' });
+
+    expect(sends.length).toBe(0);
+    expect(
+      records.some((r) => r.sql.includes('INSERT OR IGNORE INTO article_sources')),
+    ).toBe(true);
+    expect(
+      records.some((r) => r.sql.includes('INSERT OR IGNORE INTO article_tags')),
+    ).toBe(true);
+  });
+
+  it('REQ-PIPE-019: keeps same-topic Google News items when a short generic stored title is contained in a distinct headline', async () => {
+    stubFetchWithGoogleNewsItem(
+      'Hades PyPI supply chain attack poisons Python packages with credential stealer',
+    );
+    const { db, records } = makeDb({
+      recentArticles: [
+        {
+          id: 'article-existing-topic',
+          title: 'PyPI packages hit in supply chain attack',
+        },
+      ],
+    });
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(env, { scrape_run_id: 'run-google-news-same-topic' });
+
+    expect(sends.length).toBeGreaterThan(0);
+    const sentCandidates = (sends as Array<{ candidates?: Array<{ title: string }> }>)
+      .flatMap((send) => send.candidates ?? []);
+    expect(
+      sentCandidates.some((candidate) =>
+        candidate.title.includes('Hades PyPI supply chain attack'),
+      ),
+    ).toBe(true);
+    expect(
+      records.some((r) => r.sql.includes('INSERT OR IGNORE INTO article_sources')),
+    ).toBe(false);
   });
 
   it('REQ-PIPE-001: chunks survivors into slices of ≤8 and enqueues SCRAPE_CHUNKS per chunk', async () => {

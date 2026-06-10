@@ -29,6 +29,10 @@ export interface Headline {
   title: string;
   url: string;
   snippet?: string;
+  /** True when the feed text must not be treated as already-fetched
+   * article body. The chunk consumer should fetch `url` even if the
+   * snippet is long enough to clear its normal thin-snippet floor. */
+  force_body_fetch?: boolean;
   source_name: string;
   /** Tags relevant to this headline. Populated by the coordinator via
    * the discovered-tag KV cache (`sources:{tag}` reverse-indexed) and

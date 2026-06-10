@@ -6,11 +6,17 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are archived in [`changes-archive-2026-04.md`](changes-archive-2026-04.md).
 
+## 2026-06-10
+
+- REQ-PIPE-019 changed: Google News wrapper suppression now requires a high-confidence title match with substantial coverage of the longer title, so same-topic partial-overlap stories continue to fan out for summarisation.
+
 ## 2026-06-09
 
 - REQ-SET-004 changed: the pipeline default now uses the Cloudflare AI Gateway Dynamic Routing route `dynamic/news_digest`, so operators can change the concrete model, fallback, or rollout in the AI Gateway dashboard without an application deploy.
 - REQ-PIPE-020 changed: chunk tag persistence now restricts tags to candidate-local source tags when available, and 10+ model-emitted tags reject the chunk for queue retry before persistence, so a model cannot make an unrelated article visible by copying the global allowlist.
 - REQ-PIPE-015 and REQ-PIPE-020 changed: invalid-JSON retry attempts that consume tokens and tag-fanout retries now advance token and cost totals before queue retry. REQ-PIPE-016 remains focused on once-per-completed-chunk article/dedupe counters and stuck-run cleanup.
+- REQ-PIPE-019 changed and REQ-PIPE-022 added: Google News wrappers that title-match recent stored articles are source-appended without another LLM summary, and long article bodies are compacted into extractive high-signal prompt context before summarisation.
+- REQ-PIPE-010 changed: outbound-link aggregator snippets no longer block fetching the linked article body, so summaries stay grounded in the page users open.
 
 ## 2026-06-08
 

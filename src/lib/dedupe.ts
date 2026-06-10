@@ -36,6 +36,11 @@ export interface Candidate {
   /** Optional body excerpt used downstream by the LLM prompt. Never
    * relied on for dedupe. */
   body_snippet?: string;
+  /** Forces the chunk consumer to fetch `source_url` even when
+   * `body_snippet` is already long enough to skip normal thin-snippet
+   * fetching. Used when feed text may describe an aggregator wrapper
+   * instead of the linked article. */
+  force_body_fetch?: boolean;
   /** Candidate-local tag hints from the source that surfaced this
    * article (curated-source tags, discovered-tag owner, or synthetic
    * Google News tag). The chunk consumer uses these as a contextual

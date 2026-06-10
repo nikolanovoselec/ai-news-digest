@@ -72,6 +72,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD55](#ad55-adr-ledger-escalation-threshold-after-model-canary-growth) | ADR ledger escalation threshold after model-canary growth | Documentation | 2026-06-07 |
 | [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired) | Scrape progress derives from D1; KV progress mirror retired | Storage | 2026-06-08 |
 | [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) | AI Gateway Dynamic Routing route controls the pipeline model | Architecture | 2026-06-09 |
+| [AD58](#ad58-preserve-summary-quality-by-reducing-paid-input-not-output-length) | Preserve summary quality by reducing paid input, not output length | Architecture | 2026-06-09 |
 
 ---
 
@@ -92,7 +93,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 **Consequences:** Any new OAuth provider requires one registry entry and a `fetchProfile` adapter. Session-management bugs are owned entirely by this codebase - no upstream library to patch. Reviewers must know the custom JWT shape (`src/lib/jwt.ts`) when auditing auth flows.
 
-**Related requirements:** [REQ-AUTH-001](../../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-002](../../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation)
+**Related requirements:** [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-002](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation)
 
 ---
 
@@ -113,7 +114,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 **Consequences:** At-least-once delivery requires all queue consumers to be idempotent. The scrape pipeline carries explicit dedup gates (AD7, AD10) specifically because queue redelivery is normal. Changing queue bindings or retry counts requires coordinated `wrangler.toml` and consumer-code updates.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence). Original framing was for a per-user generation pipeline that was retired in the 2026-04-23 global-feed rework; the queue mechanism survived the rework intact.
+**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence). Original framing was for a per-user generation pipeline that was retired in the 2026-04-23 global-feed rework; the queue mechanism survived the rework intact.
 
 ---
 
@@ -133,7 +134,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 **Consequences:** The SSRF denylist (`src/lib/ssrf-guard.ts`) must be kept current as RFC-1918 and link-local ranges evolve. Article-body fetches add latency to chunk processing; the 8 s timeout is the ceiling. New feed sources from publishers behind aggressive anti-scraping CDNs will silently fall back to snippet-only summaries.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) AC 8
+**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) AC 8
 
 ---
 
@@ -167,7 +168,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 **Consequences:** LLM prompts must explicitly forbid markdown and HTML in output. Any future feature that needs rich article rendering (bold headings, links) requires revisiting this decision and introducing a sanitizer. Template authors must use `set:text` (or `textContent`) - never `set:html` or `innerHTML` - when rendering article titles or summaries.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-READ-002](../../sdd/reading.md#req-read-002-article-detail-view-rendering)
+**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-READ-002](../../sdd/spec/reading.md#req-read-002-article-detail-view-rendering)
 
 ---
 
@@ -187,7 +188,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 **Consequences:** KV writers are centralised through `src/lib/kv/` helpers (AD27) to keep the byte-equal invariant load-bearing. Any new strongly-consistent state (counters requiring transactions, per-user locking) must go into D1, not KV. AD7 applied this directly to chunk-completion tracking.
 
-**Related requirements:** [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
+**Related requirements:** [REQ-DISC-001](../../sdd/spec/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
 ---
 
@@ -207,7 +208,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 **Consequences:** The 5-second poll cadence is the resolution floor for progress visibility. If scrape runs become significantly faster (sub-10 s), the polling interval should be revisited. Clients that close the browser tab during a run will miss intermediate progress but can rehydrate via `/api/scrape-status` on next open.
 
-**Related requirements:** [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
+**Related requirements:** [REQ-PIPE-006](../../sdd/spec/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
 
 ---
 
@@ -228,11 +229,11 @@ KV's eventual consistency made both races effectively undetectable via testing i
 - Durable Object for serialized counter updates - correct, but adds a DO dependency to a pipeline that runs without one today.
 - KV with Compare-And-Swap (`getWithMetadata` + `put` with `expirationTtl` as a CAS surrogate) - fragile; KV has no native CAS and the surrogate is not atomic.
 
-**Rationale:** AD5's own principle applies directly: completion counting needs transactional semantics. `INSERT OR IGNORE` into a table keyed by `(scrape_run_id, chunk_index)` is idempotent under redelivery and gives an exact count via `SELECT COUNT(*)` - no race. The finalize-enqueue gate is collapsed into a single atomic `UPDATE … WHERE finalize_enqueued = 0`; D1 returns `meta.changes` for exactly one consumer. At acceptance time, the KV counter (`scrape_run:{id}:chunks_remaining`) was retained as a derived mirror for the `/api/scrape-status` progress display but was no longer authoritative; AD56 later retired that mirror. Implements [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) and the same-story finalize gate now in [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) (the prior LLM-finalize-dedup REQ that owned this gate was retired in the 2026-05-13 same-story matching consolidation).
+**Rationale:** AD5's own principle applies directly: completion counting needs transactional semantics. `INSERT OR IGNORE` into a table keyed by `(scrape_run_id, chunk_index)` is idempotent under redelivery and gives an exact count via `SELECT COUNT(*)` - no race. The finalize-enqueue gate is collapsed into a single atomic `UPDATE … WHERE finalize_enqueued = 0`; D1 returns `meta.changes` for exactly one consumer. At acceptance time, the KV counter (`scrape_run:{id}:chunks_remaining`) was retained as a derived mirror for the `/api/scrape-status` progress display but was no longer authoritative; AD56 later retired that mirror. Implements [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract) and the same-story finalize gate now in [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) (the prior LLM-finalize-dedup REQ that owned this gate was retired in the 2026-05-13 same-story matching consolidation).
 
 **Consequences:** The `scrape_chunk_completions` table grows one row per chunk per run; the retention cron (03:00 UTC) must cover this table or it will grow unbounded. At acceptance time, the KV mirror was best-effort and could lag behind D1 by up to one propagation window - consumers could not rely on it for correctness, only for display. AD56 later removed that propagation window by deriving progress from D1 only.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)
 
 ---
 
@@ -260,7 +261,7 @@ KV's eventual consistency made both races effectively undetectable via testing i
 - Future cookie-policy changes update both the affected REQ AC and this ADR (and the corresponding security tests) in lockstep.
 - `documentation/security.md` is not required by this decision - when it is eventually written, it backlinks here, not the other way around.
 
-**Related requirements:** [REQ-AUTH-002](../../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-003](../../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
+**Related requirements:** [REQ-AUTH-002](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
 ---
 
@@ -289,7 +290,7 @@ KV's eventual consistency made both races effectively undetectable via testing i
 - Schema changes update both the affected REQ AC and this ADR (and the corresponding migration files) in lockstep.
 - `documentation/architecture.md` references the storage shapes in §4.2 (libraries) and §4.5 (Worker, queue, and migrations); `documentation/configuration.md` documents the KV bindings and naming conventions. This ADR explains why those high-level references coexist with the inline persistence names in the REQs.
 
-**Related requirements:** [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-002](../../sdd/discovery.md#req-disc-002-discovery-progress-visibility), [REQ-AUTH-002](../../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-SET-001](../../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../../sdd/settings.md#req-set-005-email-notification-preference)
+**Related requirements:** [REQ-DISC-001](../../sdd/spec/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-002](../../sdd/spec/discovery.md#req-disc-002-discovery-progress-visibility), [REQ-AUTH-002](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-SET-001](../../sdd/spec/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../../sdd/spec/settings.md#req-set-005-email-notification-preference)
 
 ---
 
@@ -315,7 +316,7 @@ KV's eventual consistency made both races effectively undetectable via testing i
 - The third gate that would warrant the keyed-table refactor is treated as the trigger; this ADR is the artifact future readers find when they look for "why isn't there an `acquireOnceLock` helper?".
 - New gate sites MUST copy the pattern verbatim and document the meta.changes semantics inline. When a fourth gate site lands, this ADR is reopened and the trigger refactor proposed in the Alternatives section becomes mandatory rather than deferred.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-018](../../sdd/generation.md#req-pipe-018-same-story-collapse-mechanics-survivor-selection-and-data-merge)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-018](../../sdd/spec/generation.md#req-pipe-018-same-story-collapse-mechanics-survivor-selection-and-data-merge)
 
 ---
 
@@ -361,7 +362,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - If Astro ever ships native CSP support that handles runtime style mutations (e.g., via per-element nonces resolved at runtime), revisit this decision.
 - `tests/e2e/csp-violation.spec.ts` continues to act as the merge gate for any CSP tightening - it subscribes to `securitypolicyviolation` events on a live `/digest` navigation and fails the build if any fire.
 
-**Related requirements:** [REQ-OPS-003](../../sdd/observability.md#req-ops-003-content-security-policy-on-every-response), [CON-SEC-001](../../sdd/constraints.md#con-sec-001-strict-content-security-policy)
+**Related requirements:** [REQ-OPS-003](../../sdd/spec/observability.md#req-ops-003-content-security-policy-on-every-response), [CON-SEC-001](../../sdd/spec/constraints.md#con-sec-001-strict-content-security-policy)
 
 ---
 
@@ -391,7 +392,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - Integration's `APP_URL` is a GitHub Environment **variable** (not a secret, not hardcoded). Forks set their own hostname under Settings → Environments → integration → Variables → APP_URL without touching code.
 - All Cloudflare resources are provisioned by inline `wrangler` lookup-or-create blocks in both deploy workflows. Resolved IDs are patched into a CI-only `wrangler.toml` copy at deploy time; forks need zero pre-deploy setup.
 
-**Related requirements:** [REQ-OPS-006](../../sdd/observability.md#req-ops-006-integration-deployment-target)
+**Related requirements:** [REQ-OPS-006](../../sdd/spec/observability.md#req-ops-006-integration-deployment-target)
 
 ---
 
@@ -431,7 +432,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - If a future refactor intentionally narrows the perf gap, restore the test and update or remove this ADR.
 - The skip line in `tests/e2e/view-transition.spec.ts` references this ADR rather than `sdd/.user-overrides.md` (which is being phased out per codeflare#266).
 
-**Related requirements:** [REQ-READ-002](../../sdd/reading.md#req-read-002-article-detail-view-rendering), [REQ-HIST-001](../../sdd/history.md#req-hist-001-day-grouped-article-history)
+**Related requirements:** [REQ-READ-002](../../sdd/spec/reading.md#req-read-002-article-detail-view-rendering), [REQ-HIST-001](../../sdd/spec/history.md#req-hist-001-day-grouped-article-history)
 
 ---
 
@@ -457,7 +458,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - The `src/worker.ts` `fetch` branch that exists for the test pool is dead code in production. Mark it with a comment so a future cleanup doesn't delete it on dead-code analysis grounds.
 - Astro upgrades that change the wrapper's middleware composition (Astro 6's session-driver factory is the active example) require a Playwright run before merge to confirm middleware still fires.
 
-**Related requirements:** [REQ-OPS-003](../../sdd/observability.md#req-ops-003-content-security-policy-on-every-response)
+**Related requirements:** [REQ-OPS-003](../../sdd/spec/observability.md#req-ops-003-content-security-policy-on-every-response)
 
 ---
 
@@ -485,7 +486,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - If the cache value shape ever needs to gain a field, both the helper's `serialize()` field order AND `sourcesCacheRawEqual`'s parse path update in lockstep. The structural recheck's reliance on `discovered_at` is documented inline.
 - Future `sources:{tag}` migration to D1 supersedes this ADR. Until then, this is the contract.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
+**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
 ---
 
@@ -509,7 +510,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - The chunk consumer's `normaliseDedupGroups` stays as-is, slightly looser than the finalize variant. This is documented in the chunk consumer's source comment.
 - If future canonical-URL dedup is loosened (e.g., a feature lets two canonical URLs survive within one cluster), revisit this decision and land the extraction.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)
 
 ---
 
@@ -533,7 +534,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - `coordinator.candidates_dropped` event continues to surface drops in `wrangler tail`. Operators monitor this signal; if drops become sustained, raise the cap or implement the persistence layer at that point.
 - This ADR documents WHY a `deferred-candidates.ts` module does not exist, so the next reviewer doesn't replay the proposal.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
+**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
 ---
 
@@ -558,7 +559,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - `src/lib/tag-railing-flip.ts` stays as-is; the `?raw`-source-grep tests it spawned are deleted in Phase F (CF-011) and replaced by the Playwright spec.
 - This ADR documents WHY a `tag-railing-flip-core.ts` module does not exist.
 
-**Related requirements:** [REQ-READ-007](../../sdd/reading.md#req-read-007-tag-railing-reorder-animation), [REQ-READ-008](../../sdd/reading.md#req-read-008-tag-railing-scroll-wrap-and-fallback)
+**Related requirements:** [REQ-READ-007](../../sdd/spec/reading.md#req-read-007-tag-railing-reorder-animation), [REQ-READ-008](../../sdd/spec/reading.md#req-read-008-tag-railing-scroll-wrap-and-fallback)
 
 ---
 
@@ -613,7 +614,7 @@ function getBindFlags() {
 - `scripts/check-no-page-pattern-b.mjs` is added as a CI gate: it scans Astro pages and components for static imports of top-level `src/scripts/*.ts` files. Any match fails the build with a pointer to this ADR. Scripts for page import must live under `src/scripts/bundled/`.
 - The `__resetForTests` helper in `card-interactions.ts` clears `window.__cardInteractionsBound` instead of closure variables.
 
-**Related requirements:** [REQ-STAR-001](../../sdd/reading.md#req-star-001), [REQ-READ-001](../../sdd/reading.md#req-read-001)
+**Related requirements:** [REQ-STAR-001](../../sdd/spec/reading.md#req-star-001), [REQ-READ-001](../../sdd/spec/reading.md#req-read-001)
 
 ---
 
@@ -638,7 +639,7 @@ PR #185 attempted to compensate with `margin-top: -0.3em`. The user reported thi
 - Drop-cap looks slightly low on Linux/Windows browsers; this is the accepted state.
 - The CSS comment block in `[slug].astro` notes the trap so the next reviewer doesn't try the same `margin-top` adjustment again.
 
-**Related requirements:** [REQ-READ-002](../../sdd/reading.md#req-read-002)
+**Related requirements:** [REQ-READ-002](../../sdd/spec/reading.md#req-read-002)
 
 ---
 
@@ -663,7 +664,7 @@ PR #185 attempted to compensate with `margin-top: -0.3em`. The user reported thi
 - Documented residual risk surfaces in `sdd/security.md` (or the equivalent threat-model doc when bootstrapped).
 - The `metadata` bareword and any future single-label hostnames that resolve to sensitive infrastructure should be added to the literal denial list as they surface.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) AC 8
+**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) AC 8
 
 ---
 
@@ -687,7 +688,7 @@ PR #185 attempted to compensate with `margin-top: -0.3em`. The user reported thi
 - No WAF rules are maintained, so the entire auth-throttle contract depends on the worker reaching KV. If a future incident shows this failure mode is operationally unacceptable, revisit by adding the WAF layer.
 - The fail-closed flag is set per-rate-limiter and is auditable in source - any new rate limit added to the auth path MUST inherit `failClosed: true` and reference this ADR. An auth-path limiter without `failClosed: true` is a security regression, not a style preference: a KV outage on a fail-open auth limit silently removes the brute-force gate.
 
-**Related requirements:** [REQ-AUTH-001](../../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-003](../../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
+**Related requirements:** [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
 ---
 
@@ -711,7 +712,7 @@ PR #185 attempted to compensate with `margin-top: -0.3em`. The user reported thi
 - If a partial-disclosure threat surfaces (e.g., a side-channel leaking the CSRF-state HMAC but not the JWT signing path), revisit this decision and introduce a HKDF-derived sub-key.
 - The `verifyHmacSignature` rename (from `timingSafeEqualHmac`, CF-014) adopts a `(expected, candidate, secret)` convention that removes the misleading "argument-order is load-bearing" framing. Orthogonal to the key-reuse decision recorded here.
 
-**Related requirements:** [REQ-AUTH-001](../../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-003](../../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
+**Related requirements:** [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
 ---
 
@@ -736,7 +737,7 @@ PR #185 attempted to compensate with `margin-top: -0.3em`. The user reported thi
 - `documentation/deployment.md` (or the equivalent runbook) MUST document the `workers_dev = false` + `CF_ACCESS_AUD` requirement as a hard precondition for production rollout.
 - Future hardening could add JWKS-based verification as defence in depth; revisit if the deployment-configuration boundary fails in practice — concretely, if any post-deploy audit finds `workers_dev = true` on production, or if `CF_ACCESS_AUD` is ever unset in a live `wrangler.toml`.
 
-**Related requirements:** [REQ-OPS-006](../../sdd/observability.md#req-ops-006-integration-deployment-target)
+**Related requirements:** [REQ-OPS-006](../../sdd/spec/observability.md#req-ops-006-integration-deployment-target)
 
 ---
 
@@ -788,7 +789,7 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 - Single-call-site reads may remain inline - the invariant is about multi-site writers, not all KV access. AD56 later retired the `chunks_remaining` read path specifically.
 - Existing files `src/lib/feed-health.ts`, `src/lib/headline-cache.ts`, `src/lib/sources-cache.ts`, and `src/lib/rate-limit.ts` are already compliant; they predate this ADR and serve the same pattern.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup)
+**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-DISC-001](../../sdd/spec/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup)
 
 ---
 
@@ -906,14 +907,14 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 
 **Consequences:**
 
-- The prior LLM finalize dedup contract was retired on 2026-05-06 and the REQ removed on 2026-05-13 under the no-tombstone rule; the finalize prompt and its parameters are removed from `src/lib/prompts.ts`. The same-story contract now lives in [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) + [REQ-PIPE-018](../../sdd/generation.md#req-pipe-018-same-story-collapse-mechanics-survivor-selection-and-data-merge).
+- The prior LLM finalize dedup contract was retired on 2026-05-06 and the REQ removed on 2026-05-13 under the no-tombstone rule; the finalize prompt and its parameters are removed from `src/lib/prompts.ts`. The same-story contract now lives in [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) + [REQ-PIPE-018](../../sdd/spec/generation.md#req-pipe-018-same-story-collapse-mechanics-survivor-selection-and-data-merge).
 - The retention sweep (REQ-PIPE-005) MUST dual-delete: D1 row drop plus `VECTORIZE.deleteByIds`. Single-side deletes leak vectors that future articles will match against, producing phantom merges into rows that no longer exist.
 - Forks must provision their own Vectorize index (`ai-news-embeddings` for production, `ai-news-embeddings-integration` for the integration env). Index creation is wired into both deploy workflows via `wrangler vectorize create`, idempotent on subsequent deploys.
 - The 0.85 threshold is validated against the current corpus and model. Re-validate before relying on it after a model bump or major corpus shift. Operators tune via `DEDUP_COSINE_THRESHOLD` without a code change.
 - Vectorize cold-start lag on the first query of a new index (≈30 s) means the first scrape tick after a fresh deploy may produce duplicates; the historical-dedup admin route resolves them on demand.
 - Embedding-model drift: bge-base-en-v1.5 is pinned by id in `src/lib/embeddings.ts`. A future Cloudflare catalogue upgrade does not silently change the vector space.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-005](../../sdd/generation.md#req-pipe-005-article-pool-retention-sweep)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-005](../../sdd/spec/generation.md#req-pipe-005-article-pool-retention-sweep)
 
 ---
 
@@ -943,7 +944,7 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 - The dedup-diag diagnostic now also reports `adjusted_score` (cosine minus penalty when same-vendor) and `same_vendor_penalty`, so an operator inspecting a pair sees the value the merge decision actually compares.
 - The eTLD+1 helper (`src/lib/etld.ts`) is the same-publisher decision; it intentionally avoids the Public Suffix List dependency. If the corpus ingests UK / AU / NZ regional press, swap to PSL.
 
-**Related requirements:** [REQ-PIPE-012](../../sdd/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 2 (same-vendor penalty), [REQ-PIPE-014](../../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 5 (re-embed backfill).
+**Related requirements:** [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 2 (same-vendor penalty), [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 5 (re-embed backfill).
 
 ---
 
@@ -982,7 +983,7 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 
 **Decision:** The operator-triggered historical-dedup sweep is driven by a self-chaining Cloudflare Queue (`DEDUP_SWEEP`) plus a `dedup_runs` audit table. The admin route is a kicker: it inserts the audit row, enqueues one starter message, and returns immediately with a `run_id`. The consumer processes one batch via `runHistoricalDedupBatch`, updates the audit row, and re-enqueues a continuation message until the corpus tail is reached. The operator surface polls `/api/admin/dedup-status?run_id=…` for progress; closing the browser tab does not interrupt the sweep.
 
-**Context:** [REQ-PIPE-014](../../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1 requires the operator to re-run same-story matching across the entire historical pool on demand. The previous shape ran a `while(true) fetch(/api/admin/historical-dedup, {cursor})` loop in the browser. On 2026-05-06 a production run produced 4 visible duplicates of one story (BTIG/Palo Alto, Anthropic financial-services AI agents) that subsequent dedup runs did not collapse. Even before root-causing the BTIG miss specifically, the architectural fragility was clear: the entire sweep depended on the operator's browser tab staying open for as long as the corpus took to scan. Tab close, network blip, or accidental navigation aborted the sweep mid-corpus and there was no audit trail of how far it got.
+**Context:** [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1 requires the operator to re-run same-story matching across the entire historical pool on demand. The previous shape ran a `while(true) fetch(/api/admin/historical-dedup, {cursor})` loop in the browser. On 2026-05-06 a production run produced 4 visible duplicates of one story (BTIG/Palo Alto, Anthropic financial-services AI agents) that subsequent dedup runs did not collapse. Even before root-causing the BTIG miss specifically, the architectural fragility was clear: the entire sweep depended on the operator's browser tab staying open for as long as the corpus took to scan. Tab close, network blip, or accidental navigation aborted the sweep mid-corpus and there was no audit trail of how far it got.
 
 **Alternatives considered:**
 
@@ -1001,7 +1002,7 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 - The browser-driven `while(true)` loop on `/settings` is replaced by a 5-second poll on `/api/admin/dedup-status`; the page can resume mid-sweep on tab reload by reading the persisted `runId` from pipeline state.
 - Future sweeps (e.g., re-embed + dedup) can be modelled the same way without re-litigating the shape.
 
-**Related requirements:** [REQ-PIPE-014](../../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1, [REQ-OPS-008](../../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-OPS-009](../../sdd/observability.md#req-ops-009-admin-pipeline-run-progress-surface)
+**Related requirements:** [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1, [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-OPS-009](../../sdd/spec/observability.md#req-ops-009-admin-pipeline-run-progress-surface)
 
 ---
 
@@ -1034,7 +1035,7 @@ Both clusters were entirely below the 0.85 auto-merge bar; the larger valuation 
 - If false-merges surface in the new band, the lever is the `DEDUP_COSINE_THRESHOLD` env var (no code change). The dedup-diag diagnostic and per-run rerank counters are the observation surfaces.
 - The rerank prompt loosening is the smaller knob: a future tightening (back toward "exact same announcement only") is a drop-in env-or-prompt change without revisiting the threshold.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) AC 1, AC 2, [REQ-PIPE-012](../../sdd/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 2 (same-vendor penalty), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates).
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) AC 1, AC 2, [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 2 (same-vendor penalty), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates).
 
 ---
 
@@ -1062,7 +1063,7 @@ Both clusters were entirely below the 0.85 auto-merge bar; the larger valuation 
 - The `settings.astro` "Full pipeline run" button collapses from ~200 lines of phase-loop JavaScript to a single POST + a poll loop.
 - The settings Administration surface was consolidated to a single "Refresh articles" action (2026-05-14): the previously-adjacent "Refresh feeds" scrape-only button was removed once it was confirmed to be billing-equivalent to the full pipeline run on `mode=full`. The `/api/admin/force-refresh` endpoint stays alive for cron paths and scripted callers.
 
-**Related requirements:** [REQ-OPS-009](../../sdd/observability.md#req-ops-009-admin-pipeline-run-progress-surface) AC 2 (the run continues irrespective of the operator's tab state), [REQ-PIPE-014](../../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1 (the dedup phase consumer is unchanged; pipeline-consumer just kicks it).
+**Related requirements:** [REQ-OPS-009](../../sdd/spec/observability.md#req-ops-009-admin-pipeline-run-progress-surface) AC 2 (the run continues irrespective of the operator's tab state), [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1 (the dedup phase consumer is unchanged; pipeline-consumer just kicks it).
 
 ---
 
@@ -1090,7 +1091,7 @@ Both clusters were entirely below the 0.85 auto-merge bar; the larger valuation 
 - `Sec-Fetch-Site` headers are unreliable as a defense-in-depth signal for any endpoint reachable via a CF Access redirect chain. Use the Worker admin-auth gate (`CF_ACCESS_AUD` + `ADMIN_EMAIL`) as the authoritative security boundary instead.
 - The settings page must handle the `?pipeline=` URL parameter on load and convert it to localStorage state before any polling logic runs.
 
-**Related requirements:** [REQ-OPS-009](../../sdd/observability.md#req-ops-009-admin-pipeline-run-progress-surface) AC 4 (terminal status persistence survives reload), [REQ-OPS-005](../../sdd/observability.md#req-ops-005-admin-force-refresh-endpoint)
+**Related requirements:** [REQ-OPS-009](../../sdd/spec/observability.md#req-ops-009-admin-pipeline-run-progress-surface) AC 4 (terminal status persistence survives reload), [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint)
 
 ---
 
@@ -1119,9 +1120,9 @@ The 0.78 threshold from AD36 was tuned against tightly-bounded news-cycle cluste
 - This fix is forward-only; existing false-merge clusters stay merged. To un-merge manually: list `article_sources` rows for the surviving article id, drop false-positive rows, re-scrape the dropped source URLs so the next ingestion embeds them as standalone articles.
 - `DEDUP_TIME_WINDOW_SECONDS` is the env-var lever for tuning the window; the `DEDUP_COSINE_THRESHOLD` lever is unchanged in shape (only the value moved). Both are runtime-tunable without redeploy.
 - Two new structured log lines: `finalize_match_skipped_time_window` and `historical_dedup_match_skipped_time_window`, each carrying `delta_seconds`, `self_id`, `match_id`. These let operators measure how often the time-window gate fires versus how often the cosine gate fires - useful for future calibration.
-- The `dedup-diag` admin endpoint already surfaces cosine + threshold + same-publisher flag ([REQ-PIPE-014](../../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 4); time-delta is observable from the diag's published_at fields without an explicit additional surface.
+- The `dedup-diag` admin endpoint already surfaces cosine + threshold + same-publisher flag ([REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 4); time-delta is observable from the diag's published_at fields without an explicit additional surface.
 
-**Related requirements:** [REQ-PIPE-012](../../sdd/generation.md#req-pipe-012-same-story-matching-policy-variants) (same-news-cycle window), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
+**Related requirements:** [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants) (same-news-cycle window), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
 
 ---
 
@@ -1166,7 +1167,7 @@ The AD39 threshold raise widened the rerank band from 8 cosine points (0.70-0.78
 - The rerank prompt lists four positive-example shapes (earnings calls, CVE advisories, workplace incidents, market follow-ons) without changing the conservative default. LLM behavior shifts slightly toward `true` on textbook same-event pairs while preserving dense-theme calibration.
 - This fix is forward-only; it does NOT un-merge the existing 13-source false-merge cluster from before AD39 (separate operation per AD39 consequences).
 
-**Related requirements:** [REQ-PIPE-012](../../sdd/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 2 (same-publisher stricter bar), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
+**Related requirements:** [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 2 (same-publisher stricter bar), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
 
 ---
 
@@ -1207,7 +1208,7 @@ The bidirectional merge is a 1-direction-to-2-direction generalisation of code a
 - Per-article diagnostic log volume in `wrangler tail` doubles for ticks where the sweep also matches a window-overlapping article - the same finalize_dedup_diag shape now appears for the sweep walk too.
 - Forward-only fix. The next auto-sweep after deploy catches existing visible duplicates from the 2026-05-09 corpus, which fall within the 48h lookback at deploy time.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) (threshold raise + rerank cap removal)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) (threshold raise + rerank cap removal)
 
 ---
 
@@ -1254,7 +1255,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - The auto-sweep's per-tick scan size grows from ~50-100 articles to ~80-150 articles (50% increase, matching cursor-width increase). Sub-minute wall-clock budget unchanged.
 - This fix is forward-only. The 2026-05-10 fragmented Cloudflare-layoffs cluster is collapsed by the operator-triggered full-corpus historical-dedup sweep that runs alongside this commit; future clusters of similar shape collapse on first finalize tick after the latest sibling lands.
 
-**Related requirements:** [REQ-PIPE-012](../../sdd/generation.md#req-pipe-012-same-story-matching-policy-variants), [REQ-PIPE-013](../../sdd/generation.md#req-pipe-013-same-story-cross-tick-automation-and-retention-coupling) AC 3 (cross-tick automatic sweep), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) (multi-rerank cap)
+**Related requirements:** [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants), [REQ-PIPE-013](../../sdd/spec/generation.md#req-pipe-013-same-story-cross-tick-automation-and-retention-coupling) AC 3 (cross-tick automatic sweep), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) (multi-rerank cap)
 
 ---
 
@@ -1279,7 +1280,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Future tuning of the scoring rules (e.g., adding a tertiary penalty) happens in one place.
 - CF-029 (cache the comparator secondary key) is satisfied naturally - each match is classified exactly once and reuses the result.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
 
 ---
 
@@ -1304,7 +1305,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Test fixtures that minted Access JWTs without `exp` need to add one (single fixture function change).
 - Signature trust still terminates at the Access perimeter. Worker code does not verify the RS256 signature, and AD29 + AD30 remain the governing decisions for the perimeter contract.
 
-**Related requirements:** [REQ-AUTH-001](../../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Related requirements:** [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
 ---
 
@@ -1330,7 +1331,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - The per-function size rule (`Functions are small (<50 lines)`) is unchanged. Functions inside these files remain subject to it; extraction is welcomed when a concrete bug, test gap, or review-velocity win motivates the change, and required when an individual function exceeds 50 lines.
 - If a future feature naturally splits one of these files (e.g., the coordinator's source-enumeration phase becomes queue-driven per CF-006's eventual fix), the extraction is welcomed. This AD does not block extractions - it blocks size-only refactors.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-coordinated-multi-tag-scrape-pipeline), [REQ-SET-001](../../sdd/settings.md#req-set-001-tag-management-ui)
+**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-coordinated-multi-tag-scrape-pipeline), [REQ-SET-001](../../sdd/spec/settings.md#req-set-001-tag-management-ui)
 
 ---
 
@@ -1403,7 +1404,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Decision:** Retire AD9 as a load-bearing override. `spec-discipline.md`'s forbidden-content allowlist now contains a first-class carveout for "Database column / KV key names when the storage shape IS the persistence contract" — the same rationale AD9 was created to apply on a per-REQ basis. The eight REQs listed in AD9's `Overrides:` line (`REQ-DISC-001`, `REQ-DISC-002`, `REQ-AUTH-002`, `REQ-AUTH-008`, `REQ-SET-001`, `REQ-SET-005`, `REQ-MAIL-001`, `REQ-MAIL-003`) pass the allowlist by default and no longer need an ADR-anchored override.
 
-**Context:** AD9 was added on 2026-05-03 to override the mechanism-leakage rule for storage-shape names that are the contract noun shared between UI controls, persisted rows, and dispatcher predicates. As the same pattern recurred across eight REQs in three domains, the override mechanism was promoted to a first-class allowlist rule on 2026-05-13. `sdd/config.yml`'s `forbidden_content_overrides:` field was already empty (`[]`); AD9's `Overrides:` line was documentation-only and not driving enforcement. With the allowlist in place, the override mechanism is fully redundant.
+**Context:** AD9 was added on 2026-05-03 to override the mechanism-leakage rule for storage-shape names that are the contract noun shared between UI controls, persisted rows, and dispatcher predicates. As the same pattern recurred across eight REQs in three domains, the override mechanism was promoted to a first-class allowlist rule on 2026-05-13. `sdd/spec/config.yml`'s `forbidden_content_overrides:` field was already empty (`[]`); AD9's `Overrides:` line was documentation-only and not driving enforcement. With the allowlist in place, the override mechanism is fully redundant.
 
 **Rationale:**
 
@@ -1418,7 +1419,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Future storage-shape REQs (D1 columns, KV key shapes) pass automatically; no new ADR required for the same pattern.
 - If a future audit ever wants to tighten the carveout — e.g., to only cover column names appearing in user-facing settings UIs — the allowlist is the place to scope, not a new ADR.
 
-**Related requirements:** [REQ-DISC-001](../../sdd/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-002](../../sdd/discovery.md#req-disc-002-discovery-progress-visibility), [REQ-AUTH-002](../../sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout), [REQ-SET-001](../../sdd/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../../sdd/settings.md#req-set-005-email-notification-preference), [REQ-MAIL-001](../../sdd/email.md#req-mail-001-digest-ready-email-content), [REQ-MAIL-003](../../sdd/email.md#req-mail-003-digest-ready-email-send-policy)
+**Related requirements:** [REQ-DISC-001](../../sdd/spec/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-002](../../sdd/spec/discovery.md#req-disc-002-discovery-progress-visibility), [REQ-AUTH-002](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../../sdd/spec/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout), [REQ-SET-001](../../sdd/spec/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../../sdd/spec/settings.md#req-set-005-email-notification-preference), [REQ-MAIL-001](../../sdd/spec/email.md#req-mail-001-digest-ready-email-content), [REQ-MAIL-003](../../sdd/spec/email.md#req-mail-003-digest-ready-email-send-policy)
 
 ---
 
@@ -1447,7 +1448,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Operator-triggered `/api/admin/historical-dedup` and `?reembed=1` invalidate the watermark (the latter via `clearWatermark`, the former via a `bypassWatermark: true` flag propagated through every continuation queue message) so a manual sweep after a threshold or prompt change re-judges everything.
 - Test fixtures that previously mocked single-pair `{"same_event": ...}` responses now mock the batched `{"verdicts":[{"i":N,"same_event":...}]}` shape; a no-verdicts response degrades to "all false" per pair, preserving the conservative default.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection)
 
 ---
 
@@ -1499,7 +1500,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Gemma is not a viable drop-in default under current chunking.
 - Cost projections should compare `scrape_runs.tokens_in`, `scrape_runs.tokens_out`, and `estimated_cost_usd` between each integration canary and the 120B production baseline.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/spec/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection)
 
 ---
 
@@ -1523,7 +1524,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Granite still failed the content contract: most candidates were dropped for missing index alignment, several chunks needed invalid-JSON retries, and the scrape ingested only three articles from 89 LLM survivors (audit trail: [PR #281 canary notes](https://github.com/nikolanovoselec/ai-news-digest/pull/281)).
 - Granite's very low price is not enough; a cheap run that misses most stories is not an acceptable production replacement.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/spec/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection)
 
 ---
 
@@ -1547,7 +1548,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - No articles were ingested and no chunk token cost was recorded because no chunk LLM call completed.
 - GLM is not a viable drop-in default under current chunking.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/spec/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection)
 
 ---
 
@@ -1571,7 +1572,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Even a successful 20B run does not meet the 70% reduction target by itself; it would need pipeline waste reductions to reach the target while preserving quality.
 - If 20B fails reliability or quality gates again, rollback is a one-line `DEFAULT_MODEL_ID` revert to `@cf/openai/gpt-oss-120b` plus matching test/doc updates.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/spec/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection)
 
 ---
 
@@ -1598,7 +1599,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - Gateway-backed calls must fail closed when the token or URL is missing or invalid.
 - The chunk prompt and JSON repair optimisations remain part of the cost-control envelope; source snippets are not shortened.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](../../sdd/spec/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection)
 
 ---
 
@@ -1638,7 +1639,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - The retired `scrape_run:{id}:chunks_remaining` key remains historical context in AD7/AD27, but new code must not reintroduce it without a new ADR.
 - AD27 still governs active multi-writer KV families such as `discovery_failures:{tag}`.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
+**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-006](../../sdd/spec/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
 
 ---
 
@@ -1662,13 +1663,33 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - Candidate-local source tags now narrow persisted tags when present. <!-- @impl: src/queue/scrape-coordinator.ts::flattenToChunkCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::contextualTagSetForCluster -->
 - Model responses with at least 10 emitted tags for one article reject the chunk before D1 persistence so Queues retries the LLM call. <!-- @impl: src/queue/scrape-chunk-consumer.ts::rejectArticlesWithModelTagFanout -->
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-020](../../sdd/generation.md#req-pipe-020-chunk-tag-validation-guardrails), [REQ-PIPE-006](../../sdd/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/settings.md#req-set-004-model-selection)
+**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-020](../../sdd/spec/generation.md#req-pipe-020-chunk-tag-validation-guardrails), [REQ-PIPE-006](../../sdd/spec/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection)
+
+---
+
+### AD58: Preserve summary quality by reducing paid input, not output length
+
+**Status:** Accepted (2026-06-09)
+
+**Decision:** Reduce scrape-refresh LLM cost by skipping duplicate Google News wrapper candidates before chunk fan-out and by compacting long article bodies into extractive prompt context. Keep the model, JSON contract, title rules, and 100-150 word summary requirement unchanged.
+
+**Context:** The integration refresh after the Dynamic Route timeout fix produced 101 articles from 142 paid candidates at about $0.032. Almost all spend was chunk summarisation; dedup rerank was negligible. Cutting output length or switching to an unproven cheaper model would directly risk reader quality, while duplicate wrappers and long low-signal body tails inflate paid input without improving summaries. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches --> <!-- @impl: src/lib/prompts.ts::compactChunkBodySnippetForPrompt -->
+
+**Consequences:**
+
+- Google News remains a long-tail source, but wrappers that high-confidence title-match recent stored articles, including substantial coverage of the longer title, are appended as source/tag sightings instead of re-summarised.
+- Same-topic partial-overlap Google News wrappers still fan out to the LLM so short generic stored titles cannot suppress distinct stories.
+- Long fetched article text is still used as source material, but only the lead plus later high-signal factual sentences are sent to the LLM.
+- Summary quality gates stay where they were: the chunk prompt still requires 100-150 words, server validation still drops short bodies, and semantic dedup still runs after ingestion.
+- Future cost reductions should prefer pre-LLM candidate elimination or input compaction before changing the summary contract.
+
+**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-019](../../sdd/spec/generation.md#req-pipe-019-google-news-query-rss-long-tail-backstop), [REQ-PIPE-022](../../sdd/spec/generation.md#req-pipe-022-chunk-prompt-input-compaction), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)
 
 ---
 
 ## Related Documentation
 
-- [Architecture](../architecture.md) - System overview and component map
-- [Configuration](../configuration.md) - Env vars, bindings, KV key conventions
+- [Architecture](../lanes/architecture.md) - System overview and component map
+- [Configuration](../lanes/configuration.md) - Env vars, bindings, KV key conventions
 
 ---

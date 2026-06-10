@@ -100,7 +100,7 @@ const USER_FACING_MESSAGES: Record<ErrorCode, string> = {
 
   // Account deletion. CF-039 — user-facing copy only; API contract
   // (the literal `{"confirm":"DELETE"}` body shape) is documented in
-  // documentation/api-reference.md, not surfaced to end-users.
+  // documentation/lanes/api-reference.md, not surfaced to end-users.
   confirmation_required: 'Account deletion was not confirmed. Use the delete button on the settings page and follow the prompt.',
 
   // Settings validation

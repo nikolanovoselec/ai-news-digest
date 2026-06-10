@@ -103,13 +103,13 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 
 **What it does NOT cover:**
 - The morph-pair structural contract lives in `tests/layouts/base.test.ts` — Playwright cannot observe Astro lifecycle timing from outside the browser, so a static source-grep is the right layer for that class.
-- The history-vs-digest perf-comparability test is permanently skipped (see [AD14](decisions/README.md#ad14-history-page-perf-comparability-test-permanently-skipped)).
+- The history-vs-digest perf-comparability test is permanently skipped (see [AD14](../decisions/README.md#ad14-history-page-perf-comparability-test-permanently-skipped)).
 
 **How to run:** Actions tab → `Playwright E2E (live)` → Run workflow. Optional `base_url` input targets a preview deploy.
 
 **Required secret:** `DEV_BYPASS_TOKEN` (must match the Worker secret on the target deployment).
 
-**Sandbox:** Mutations are scoped to the synthetic `__e2e__` user. Implements [REQ-READ-002](../sdd/reading.md#req-read-002-article-detail-view-rendering), [REQ-HIST-001](../sdd/history.md#req-hist-001-day-grouped-article-history).
+**Sandbox:** Mutations are scoped to the synthetic `__e2e__` user. Implements [REQ-READ-002](../../sdd/spec/reading.md#req-read-002-article-detail-view-rendering), [REQ-HIST-001](../../sdd/spec/history.md#req-hist-001-day-grouped-article-history).
 
 > **Fork-friendly:** set `APP_URL` to a custom-domain hostname whose apex is a zone in the same Cloudflare account. The deploy binds it automatically.
 
@@ -128,7 +128,7 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 **Verifies:** Open `APP_URL` (integration hostname) in a browser. CI smoke step is absent (GHA runner IPs return `403` from Cloudflare bot management); `wrangler deploy` exit code is the success signal.
 **Rollback:** Re-trigger the workflow from the previous `develop` commit. Integration has no production traffic; redeploying is safe.
 
-**Purpose:** Smoke-test risky changes (major dependency bumps, schema migrations, CSP tightening, animation rewrites) on the live Cloudflare edge before they reach production. Implements [REQ-OPS-006](../sdd/observability.md#req-ops-006-integration-deployment-target). Architectural decision: [AD12](decisions/README.md#ad12-integration-env-separate-cloudflare-resources-manual-trigger-from-develop-crons-disabled).
+**Purpose:** Smoke-test risky changes (major dependency bumps, schema migrations, CSP tightening, animation rewrites) on the live Cloudflare edge before they reach production. Implements [REQ-OPS-006](../../sdd/spec/observability.md#req-ops-006-integration-deployment-target). Architectural decision: [AD12](../decisions/README.md#ad12-integration-env-separate-cloudflare-resources-manual-trigger-from-develop-crons-disabled).
 
 **Workflow file:** `.github/workflows/deploy-integration.yml`
 
@@ -168,7 +168,7 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 
 **Triggering a scrape on integration** (since crons are off):
 
-Use the **Refresh articles** button on `/settings` (Administration section) — the button navigates the browser to `/api/admin/pipeline-run?mode=full` via `window.location.assign()` (top-level navigation is required because CF Access protects `/api/admin/*` and a `fetch()` in CORS mode cannot follow the cross-origin SSO redirect; see [AD38](decisions/README.md#ad38-cf-access-protected-admin-endpoints-must-be-invoked-via-top-level-navigation-not-fetch)), the endpoint enqueues a `pipeline-jobs` message and `303`s back to `/settings?pipeline=enqueued&pipeline_run_id=...`; the queue consumer then walks the seven phases server-side without depending on the operator's tab ([REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)). For scripted or headless runs:
+Use the **Refresh articles** button on `/settings` (Administration section) — the button navigates the browser to `/api/admin/pipeline-run?mode=full` via `window.location.assign()` (top-level navigation is required because CF Access protects `/api/admin/*` and a `fetch()` in CORS mode cannot follow the cross-origin SSO redirect; see [AD38](../decisions/README.md#ad38-cf-access-protected-admin-endpoints-must-be-invoked-via-top-level-navigation-not-fetch)), the endpoint enqueues a `pipeline-jobs` message and `303`s back to `/settings?pipeline=enqueued&pipeline_run_id=...`; the queue consumer then walks the seven phases server-side without depending on the operator's tab ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](../decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)). For scripted or headless runs:
 
 ```bash
 # Sign in at your APP_URL (or use the dev-bypass runbook below), then:
@@ -187,13 +187,13 @@ curl -i ${APP_URL}/api/admin/force-refresh
 | `KV` | KV namespace | `ai-news-digest-kv` (auto-created on first deploy by the deploy workflow's inline `wrangler kv namespace list / create` block; the resolved id is patched into wrangler.toml in CI) | Caches (headlines, sources, health) |
 | `SCRAPE_COORDINATOR` | Queue | `scrape-coordinator` | Every-4-hours coordinator dispatch (00/04/08/12/16/20 UTC) |
 | `SCRAPE_CHUNKS` | Queue | `scrape-chunks` | LLM chunk jobs |
-| `SCRAPE_FINALIZE` | Queue | `scrape-finalize` | Same-story dedup pass; one message enqueued by the last chunk consumer per scrape run ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
-| `DEDUP_SWEEP` | Queue | `dedup-sweep` | Self-chaining historical-dedup sweep; the kicker enqueues the first message and the consumer re-enqueues a continuation per batch until the corpus tail is reached ([REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1) |
-| `PIPELINE_JOBS` | Queue | `pipeline-jobs` (`pipeline-jobs-integration` on integration) | Backend-driven full pipeline orchestrator; one consumer walks the seven phases by self-chaining messages ([REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)) |
+| `SCRAPE_FINALIZE` | Queue | `scrape-finalize` | Same-story dedup pass; one message enqueued by the last chunk consumer per scrape run ([REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
+| `DEDUP_SWEEP` | Queue | `dedup-sweep` | Self-chaining historical-dedup sweep; the kicker enqueues the first message and the consumer re-enqueues a continuation per batch until the corpus tail is reached ([REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1) |
+| `PIPELINE_JOBS` | Queue | `pipeline-jobs` (`pipeline-jobs-integration` on integration) | Backend-driven full pipeline orchestrator; one consumer walks the seven phases by self-chaining messages ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](../decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)) |
 | — | Queue (DLQ) | `ai-news-dlq` (`ai-news-dlq-integration` on integration) | Dead-letter queue for the finalize and pipeline-jobs consumers. Terminal queue retry exhaustion lands messages here so they are inspectable rather than silently dropped (CF-001). Provisioned by the deploy workflow inline `wrangler queues create` block; no binding needed in `wrangler.toml`. |
 | AI Gateway | Cloudflare AI Gateway | configured by `AI_GATEWAY_URL` | Dynamic route `dynamic/news_digest` for summaries, discovery, and rerank; deploy preflight verifies the Gateway, route, runtime token, and route provider keys before publish |
 | `AI` | Workers AI | (account-level) | bge-base-en-v1.5 embedding generation; non-Gateway model fallback |
-| `VECTORIZE` | Vectorize index | `ai-news-embeddings` | 768-dim cosine index for same-story dedup; provisioned by the deploy workflow via `wrangler vectorize create` ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
+| `VECTORIZE` | Vectorize index | `ai-news-embeddings` | 768-dim cosine index for same-story dedup; provisioned by the deploy workflow via `wrangler vectorize create` ([REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
 
 ## Dependency Automation
 
@@ -227,7 +227,7 @@ A handful of operator endpoints drive LLM calls or queue work on demand — budg
 
 | Layer | Role | Implementation |
 |---|---|---|
-| **Worker-side gate** (`src/middleware/admin-auth.ts`) | **Security boundary.** Always enforced; sufficient on its own. | Baseline: session cookie + `ADMIN_EMAIL` match. Optional Layer 0 (AD29): `aud`-claim check when `CF_ACCESS_AUD` is set. Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8. |
+| **Worker-side gate** (`src/middleware/admin-auth.ts`) | **Security boundary.** Always enforced; sufficient on its own. | Baseline: session cookie + `ADMIN_EMAIL` match. Optional Layer 0 (AD29): `aud`-claim check when `CF_ACCESS_AUD` is set. Implements [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8. |
 | **Cloudflare Access** (zone-level) | **Optional UX + perimeter layer.** When bound, redirects unauthenticated browsers to the Access login page. | Not required for the Worker gate to function. Forks and integration deploys without Access bound use the baseline Worker gate alone (AD29). |
 
 The Worker gate enforces checks in order: when `CF_ACCESS_AUD` is set, the request must carry a Cloudflare Access assertion whose `aud` claim matches before the baseline session check runs; returns at the first failing layer with no observable side effect.
@@ -244,13 +244,13 @@ Every admin endpoint sits under `/api/admin/*` so a **single wildcard rule** cov
 
 | Path | What it does |
 |---|---|
-| `/api/admin/force-refresh` | Manually kicks the global-feed coordinator (every-4-hours cron). Implements [REQ-OPS-005](../sdd/observability.md#req-ops-005-admin-force-refresh-endpoint). Backs phase 1 of **Refresh articles** ([REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)) and is reachable directly for scripted callers. |
-| `/api/admin/embed-backfill` | Resumable embedding backfill. `POST ?reembed=1` re-embeds the entire corpus (backs the optional wipe phase); plain `POST` drains only `NULL`/`'failed'` rows. Backs phases 0 and 3 of **Refresh articles** ([REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)). Implements [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract). See [API Reference](api-reference.md#post-apiadminembed-backfill). |
-| `/api/admin/historical-dedup` | Kicks an oldest-first cross-article same-story sweep on the `DEDUP_SWEEP` queue. Empty-body POST is the kicker (returns `{run_id, enqueued}`); body with `{cursor, batch}` runs one batch synchronously (legacy/dev-bypass). Backs phase 4 of **Refresh articles** ([REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)). Implements [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) AC 3, [REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1, AC 4. See [API Reference](api-reference.md#post-apiadminhistorical-dedup). |
-| `/api/admin/dedup-status` | Polls the `dedup_runs` audit row for a queue-driven sweep. GET with `?run_id=<ULID>` returns running counters and terminal status. Backs the operator-surface progress banner. Implements [REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1, AC 2. See [API Reference](api-reference.md#get-apiadmindedup-status). |
-| `/api/admin/dedup-diag` | Returns cosine similarity, adjusted score, same-vendor penalty, and merge decision for a given article pair. Diagnostic only; no writes. Implements [REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 4. See [API Reference](api-reference.md#get-apiadmindedup-diag-req-pipe-014-ac-4). |
-| `/api/admin/pipeline-run` | Kicker for the backend-driven full pipeline run. POST (JSON body) for scripts; GET (`?mode=`) for browser navigation via CF Access (see [AD38](decisions/README.md#ad38-cf-access-protected-admin-endpoints-must-be-invoked-via-top-level-navigation-not-fetch)). Implements [REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface). See [API Reference](api-reference.md#post-apiadminpipeline-run). |
-| `/api/admin/pipeline-status` | Polling endpoint for a backend pipeline run. `?id=<ULID>` returns the `pipeline_runs` row plus nested scrape + dedup snapshots; omit `id` to recover the most recent run. See [API Reference](api-reference.md#get-apiadminpipeline-status). |
+| `/api/admin/force-refresh` | Manually kicks the global-feed coordinator (every-4-hours cron). Implements [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint). Backs phase 1 of **Refresh articles** ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)) and is reachable directly for scripted callers. |
+| `/api/admin/embed-backfill` | Resumable embedding backfill. `POST ?reembed=1` re-embeds the corpus; plain `POST` drains only `NULL`/`'failed'` rows. Backs phases 0 and 3 of **Refresh articles** ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)). Implements [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract). See [Admin API Reference](api-reference-admin.md#post-apiadminembed-backfill). |
+| `/api/admin/historical-dedup` | Starts the oldest-first same-story sweep on `DEDUP_SWEEP`; no-body `POST` enqueues a run, while JSON `{cursor, batch}` runs one legacy/dev-bypass batch. Implements [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) AC 3 and [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1/4. See [Admin API Reference](api-reference-admin.md#post-apiadminhistorical-dedup). |
+| `/api/admin/dedup-status` | Polls the `dedup_runs` audit row for a queue-driven sweep. GET with `?run_id=<ULID>` returns running counters and terminal status. Backs the operator-surface progress banner. Implements [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1/2. See [Admin API Reference](api-reference-admin.md#get-apiadmindedup-status). |
+| `/api/admin/dedup-diag` | Returns cosine similarity, adjusted score, same-vendor penalty, and merge decision for a given article pair. Diagnostic only; no writes. Implements [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 4. See [Admin API Reference](api-reference-admin.md#get-apiadmindedup-diag). |
+| `/api/admin/pipeline-run` | Kicker for the backend-driven full pipeline run. POST (JSON body) for scripts; GET (`?mode=`) for browser navigation via CF Access (see [AD38](../decisions/README.md#ad38-cf-access-protected-admin-endpoints-must-be-invoked-via-top-level-navigation-not-fetch)). Implements [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface). See [Admin API Reference](api-reference-admin.md#post-apiadminpipeline-run). |
+| `/api/admin/pipeline-status` | Polling endpoint for a backend pipeline run. `?id=<ULID>` returns the `pipeline_runs` row plus nested scrape + dedup snapshots; omit `id` to recover the most recent run. See [Admin API Reference](api-reference-admin.md#get-apiadminpipeline-status). |
 | `/api/admin/discovery/retry` | Re-queues a single tag for LLM-assisted source discovery. |
 | `/api/admin/discovery/retry-bulk` | Re-queues every "stuck" (empty-feeds) tag for the session user in one shot — backs the **Discover missing sources** button on `/settings`. |
 
@@ -260,7 +260,7 @@ CF Access protects `/api/admin/*` by intercepting unauthenticated requests and r
 
 **Rule:** every state-changing admin endpoint invoked from the browser must use `window.location.assign(url)` (top-level navigation) and respond with a `303 See Other` redirect. The redirect target should encode the outcome as URL parameters so the settings page can read them on load.
 
-This pattern is already used by `force-refresh.ts` and `pipeline-run.ts`. Do not use `fetch()` for new endpoints under `/api/admin/*`. See [AD38](decisions/README.md#ad38-cf-access-protected-admin-endpoints-must-be-invoked-via-top-level-navigation-not-fetch) for full rationale and the `Sec-Fetch-Site` constraint.
+This pattern is already used by `force-refresh.ts` and `pipeline-run.ts`. Do not use `fetch()` for new endpoints under `/api/admin/*`. See [AD38](../decisions/README.md#ad38-cf-access-protected-admin-endpoints-must-be-invoked-via-top-level-navigation-not-fetch) for full rationale and the `Sec-Fetch-Site` constraint.
 
 ### Setup (one-time, operator console)
 
@@ -384,4 +384,4 @@ The token in `/tmp/.bypass_token` is the canonical local source of truth; treat 
 
 - [Configuration](configuration.md) — Env vars and secrets
 - [Architecture](architecture.md) — System overview
-- [Security Policy](../SECURITY.md) — Vulnerability reporting scope and contact
+- [Security Policy](../../SECURITY.md) — Vulnerability reporting scope and contact

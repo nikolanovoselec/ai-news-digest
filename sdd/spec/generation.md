@@ -40,6 +40,9 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Acceptance Criteria:**
 1. Every tag in the union of (default-seed hashtags ∪ curated source tags ∪ discovered KV tags) gets a per-tag Google News query-RSS source added to the tick's source list as a long-tail backstop.
 2. Tags already served by a bespoke hand-tuned Google News curated entry are skipped, so the same tag never gets two Google News queries in one tick.
+3. A Google News wrapper candidate whose title strongly matches an already-stored recent article, including high coverage of the longer title, is appended as another source/tag sighting for that article. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches -->
+4. Only a high-confidence title-matched Google News wrapper candidate is skipped before chunk fan-out so it does not produce a duplicate LLM summary. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches -->
+5. Same-topic partial-overlap Google News wrapper candidates remain eligible for chunk fan-out. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
@@ -97,6 +100,28 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Priority:** P0
 
 **Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
+
+**Verification:** Integration test
+
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-022: Chunk prompt input compaction
+
+**Intent:** Long candidate source text is reduced before summarisation so LLM input cost is bounded while the existing summary-quality contract remains grounded in source facts.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. Long candidate body snippets are compacted into extractive prompt context before the chunk LLM call. <!-- @impl: src/lib/prompts.ts::compactChunkBodySnippetForPrompt -->
+2. The compacted prompt context preserves the article lead and later high-signal factual passages. <!-- @impl: src/lib/prompts.ts::compactChunkBodySnippetForPrompt -->
+
+**Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](#req-pipe-002-chunked-llm-output-content-contract)
 
 **Verification:** Integration test
 
@@ -393,12 +418,12 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. When a candidate's feed snippet is too thin to ground a faithful summary, the pipeline fetches the article body directly.
-2. The body fetch is HTTPS-only and passes an SSRF filter.
-3. The body fetch is bounded by a network timeout and a maximum download size.
-4. Readable plaintext is extracted from a successful body fetch and attached to the candidate.
-5. When body-fetch extraction yields too little text, the candidate falls back to whatever the feed itself provided.
-6. A failed body-fetch never blocks a summary.
+1. When a candidate's feed snippet is too thin to ground a faithful summary, the pipeline fetches the article body directly. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+2. Cross-site outbound feed snippets fetch the linked article body even when the feed snippet is long. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+3. Discussion or score metadata is not used as fallback article text. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates -->
+4. Readable plaintext is extracted from a successful body fetch and attached to the candidate. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+5. When body-fetch extraction yields too little text, the candidate falls back to whatever the feed itself provided. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+6. A failed body-fetch never blocks a summary. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 

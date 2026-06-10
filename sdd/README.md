@@ -27,16 +27,16 @@ A personalized daily tech news digest. Users sign in with a federated identity p
 
 | # | Domain | File | Priority | Description |
 |---|--------|------|----------|-------------|
-| 1 | Authentication | [authentication.md](authentication.md) | P0 | Federated OAuth/OIDC (GitHub or Google), HMAC-JWT sessions, revocation, CSRF, account deletion |
-| 2 | Onboarding & Settings | [settings.md](settings.md) | P0 | First-run flow, hashtag curation, schedule (HH:MM + tz), email toggle |
-| 3 | Source Discovery | [discovery.md](discovery.md) | P0 | LLM-assisted per-tag feed discovery, SSRF-filtered validation, manual re-discover, prompt injection protection |
-| 4 | Digest Generation | [generation.md](generation.md) | P0 | Cron dispatcher, Queue consumer, source fan-out, LLM summarization, rate limits, stuck-sweeper |
-| 5 | Reading Experience | [reading.md](reading.md) | P0 | Overview grid, article detail with bullets, loading/error states, polling, read tracking |
-| 6 | Email Notifications | [email.md](email.md) | P0 | Resend integration, digest-ready template, per-user email_enabled toggle |
-| 7 | History & Stats | [history.md](history.md) | P1 | Past digests paginated, stats widget (digests, articles read, tokens, cost) |
-| 8 | Design System | [design.md](design.md) | P0 | Typography, palette, light/dark toggle, motion, prefers-reduced-motion |
-| 9 | PWA & Mobile | [pwa.md](pwa.md) | P1 | Manifest, install prompt, mobile layout, safe-area insets |
-| 10 | Observability | [observability.md](observability.md) | P1 | Structured JSON logs, sanitized error surfaces, security headers |
+| 1 | Authentication | [authentication.md](spec/authentication.md) | P0 | Federated OAuth/OIDC (GitHub or Google), HMAC-JWT sessions, revocation, CSRF, account deletion |
+| 2 | Onboarding & Settings | [settings.md](spec/settings.md) | P0 | First-run flow, hashtag curation, schedule (HH:MM + tz), email toggle |
+| 3 | Source Discovery | [discovery.md](spec/discovery.md) | P0 | LLM-assisted per-tag feed discovery, SSRF-filtered validation, manual re-discover, prompt injection protection |
+| 4 | Digest Generation | [generation.md](spec/generation.md) | P0 | Cron dispatcher, Queue consumer, source fan-out, LLM summarization, rate limits, stuck-sweeper |
+| 5 | Reading Experience | [reading.md](spec/reading.md) | P0 | Overview grid, article detail with bullets, loading/error states, polling, read tracking |
+| 6 | Email Notifications | [email.md](spec/email.md) | P0 | Resend integration, digest-ready template, per-user email_enabled toggle |
+| 7 | History & Stats | [history.md](spec/history.md) | P1 | Past digests paginated, stats widget (digests, articles read, tokens, cost) |
+| 8 | Design System | [design.md](spec/design.md) | P0 | Typography, palette, light/dark toggle, motion, prefers-reduced-motion |
+| 9 | PWA & Mobile | [pwa.md](spec/pwa.md) | P1 | Manifest, install prompt, mobile layout, safe-area insets |
+| 10 | Observability | [observability.md](spec/observability.md) | P1 | Structured JSON logs, sanitized error surfaces, security headers |
 
 ## Out of Scope
 
@@ -54,21 +54,21 @@ The following were considered and intentionally excluded from the MVP:
 
 ## Constraints
 
-See [constraints.md](constraints.md) for the cross-cutting technology stack and CON-* guardrails.
+See [constraints.md](spec/constraints.md) for the cross-cutting technology stack and CON-* guardrails.
 
 ## Glossary
 
-See [glossary.md](glossary.md) for canonical term definitions.
+See [glossary.md](spec/glossary.md) for canonical term definitions.
 
 ## Documentation
 
 Implementation documentation lives in `documentation/`:
-- [`architecture.md`](../documentation/architecture.md) — System overview, components, data flow
-- [`api-reference.md`](../documentation/api-reference.md) — All API endpoints
-- [`configuration.md`](../documentation/configuration.md) — Env vars, secrets, bindings
-- [`deployment.md`](../documentation/deployment.md) — Dev setup and deployment steps
+- [`architecture.md`](../documentation/lanes/architecture.md) — System overview, components, data flow
+- [`api-reference.md`](../documentation/lanes/api-reference.md) — All API endpoints
+- [`configuration.md`](../documentation/lanes/configuration.md) — Env vars, secrets, bindings
+- [`deployment.md`](../documentation/lanes/deployment.md) — Dev setup and deployment steps
 - [`decisions/README.md`](../documentation/decisions/README.md) — Architecture Decision Records
 
 ## Changelog
 
-See [changes.md](changes.md) for specification history.
+See [changes.md](spec/changes.md) for specification history.

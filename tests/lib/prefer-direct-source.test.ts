@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isGoogleNewsUrl,
   preferDirectOverGoogleNews,
+  sharedTitleTokenCount,
 } from '~/lib/prefer-direct-source';
 import type { Headline } from '~/lib/types';
 
@@ -51,6 +52,26 @@ describe('isGoogleNewsUrl — REQ-PIPE-003', () => {
   it('returns false on unparseable input rather than throwing', () => {
     expect(isGoogleNewsUrl('not-a-url')).toBe(false);
     expect(isGoogleNewsUrl('')).toBe(false);
+  });
+});
+
+describe('sharedTitleTokenCount — REQ-PIPE-003', () => {
+  it('counts meaningful title overlap for coordinator-side Google News duplicate skips', () => {
+    expect(
+      sharedTitleTokenCount(
+        'Anthropic releases Claude Sonnet 4.6 with extended context window',
+        'Claude Sonnet 4.6 gets extended context in Anthropic release',
+      ),
+    ).toBeGreaterThanOrEqual(4);
+  });
+
+  it('ignores stopword-only overlap between unrelated titles', () => {
+    expect(
+      sharedTitleTokenCount(
+        'The future of AI is about the cloud',
+        'The state of databases in the cloud',
+      ),
+    ).toBeLessThan(4);
   });
 });
 

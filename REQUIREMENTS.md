@@ -1,6 +1,6 @@
 # news-digest — requirements (historical)
 
-> **This file is historical context only. Current spec lives at [`sdd/README.md`](sdd/README.md). Current architecture lives at [`documentation/architecture.md`](documentation/architecture.md). Requirements drift on this page is expected and not tracked — every product change should land in `sdd/` and `documentation/`, not here.**
+> **This file is historical context only. Current spec lives at [`sdd/README.md`](sdd/README.md). Current architecture lives at [`documentation/lanes/architecture.md`](documentation/lanes/architecture.md). Requirements drift on this page is expected and not tracked — every product change should land in `sdd/` and `documentation/`, not here.**
 
 A personalized daily tech news digest. Sign in with GitHub, pick your interests as hashtags, and get an AI-curated digest once per day at a time you choose. No feeds to manage — hashtags drive what gets scraped.
 

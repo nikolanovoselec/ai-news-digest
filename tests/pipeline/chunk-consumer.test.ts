@@ -1,4 +1,4 @@
-// Tests for src/queue/scrape-chunk-consumer.ts - REQ-PIPE-002.
+// Tests for src/queue/scrape-chunk-consumer.ts - REQ-PIPE-002 / REQ-PIPE-010.
 //
 // The chunk consumer calls AI Gateway once per chunk, parses the JSON
 // response, collapses LLM-provided dedup_groups, validates tags against
@@ -7,7 +7,11 @@
 // embeddings, D1, KV, and assert on the observable behaviour contracts.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { processOneChunk, handleChunkBatch } from '~/queue/scrape-chunk-consumer';
+import {
+  processOneChunk,
+  handleChunkBatch,
+  SNIPPET_FLOOR,
+} from '~/queue/scrape-chunk-consumer';
 import type { ChunkJobMessage } from '~/queue/scrape-chunk-consumer';
 import { PROCESS_CHUNK_SYSTEM } from '~/lib/prompts';
 
@@ -300,6 +304,85 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
     expect(messages[1]?.role).toBe('user');
     expect(messages[1]?.content).toContain('Headline A');
     expect(params.response_format).toEqual({ type: 'json_object' });
+  });
+
+  it('REQ-PIPE-010: force_body_fetch fetches linked page even when the feed snippet is long', async () => {
+    const aiResponse = {
+      response: JSON.stringify({
+        articles: [
+          { title: 'Fetched Story', details: LONG_BODY, tags: ['cloudflare'] },
+        ],
+        dedup_groups: [],
+      }),
+      usage: { input_tokens: 100, output_tokens: 200 },
+    };
+    const { db } = makeDb();
+    const { kv } = makeKv({ chunksRemaining: '1' });
+    const env = makeEnv(db, kv, aiResponse);
+    const feedSnippet = 'Feed-side wrapper text. '.repeat(
+      Math.ceil(SNIPPET_FLOOR / 24) + 1,
+    );
+    const fetchedText = 'Fetched linked page body with real article facts. '.repeat(
+      20,
+    );
+    const fetchMock = vi.fn().mockImplementation(
+      async (input: string | URL | Request) => {
+        const url = typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+        if (url === 'https://publisher.example/story') {
+          return new Response(
+            `<html><body><article>${fetchedText}</article></body></html>`,
+            {
+              status: 200,
+              headers: { 'Content-Type': 'text/html' },
+            },
+          );
+        }
+        if (url !== TEST_AI_GATEWAY_URL) {
+          throw new Error(`unexpected fetch: ${url}`);
+        }
+        return new Response(JSON.stringify(aiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await processOneChunk(
+      env,
+      makeChunk({
+        candidates: [
+          {
+            canonical_url: 'https://publisher.example/story',
+            source_url: 'https://publisher.example/story',
+            source_name: 'Example Aggregator',
+            title: 'Aggregator-linked Story',
+            published_at: 1_713_900_000,
+            body_snippet: feedSnippet,
+            force_body_fetch: true,
+          },
+        ],
+      }),
+    );
+
+    expect(
+      fetchMock.mock.calls.some(
+        ([input]) => String(input) === 'https://publisher.example/story',
+      ),
+    ).toBe(true);
+    const gatewayCall = fetchMock.mock.calls.find(
+      ([input]) => String(input) === TEST_AI_GATEWAY_URL,
+    );
+    expect(gatewayCall).toBeDefined();
+    const params = JSON.parse(
+      String((gatewayCall![1] as RequestInit).body),
+    ) as Record<string, unknown>;
+    const messages = params.messages as Array<{ role: string; content: string }>;
+    expect(messages[1]?.content).toContain('Fetched linked page body');
   });
 
   it('REQ-PIPE-002: parses OpenAI envelope + plain {response} via extractResponsePayload', async () => {

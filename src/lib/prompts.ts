@@ -1,5 +1,6 @@
 // Implements REQ-DISC-001
 // Implements REQ-DISC-005
+// Implements REQ-PIPE-022
 //
 // Centralised LLM prompts for the two calls the product makes:
 //   1. Global-feed chunk processing — summarise and tag a batch of scraped candidates.
@@ -136,17 +137,78 @@ Shape:
 const TITLE_MAX_CHARS = 300;
 const SOURCE_NAME_MAX_CHARS = 100;
 const URL_MAX_CHARS = 1000;
-// Sized strictly above the upstream `SNIPPET_CAP` (15000 in
-// article-fetch.ts) so this layered cap remains meaningful — an
-// upstream regression that produced a 30K-char snippet would still
-// be clamped here. Defense-in-depth, per CF-013.
-const BODY_SNIPPET_MAX_CHARS = 16000;
+// REQ-PIPE-022 / AD58: send compact source context to the LLM instead
+// of full extracted article bodies. The full fetched text is still used
+// to choose the context; this prompt-facing cap keeps the expensive
+// summarisation call focused on the lead plus high-signal factual
+// passages. Six thousand characters leaves enough room for mechanism,
+// numbers, and impact while cutting long-form prompt input sharply.
+const BODY_SNIPPET_MAX_CHARS = 6_000;
+const BODY_SNIPPET_LEAD_CHARS = 3_200;
+const BODY_SNIPPET_MIN_SENTENCE_CHARS = 40;
+
+const BODY_SNIPPET_SIGNAL_RE = /\b(?:AI|API|SDK|LLM|GPU|CPU|CVE-\d{4}-\d+|MCP|RAG|SQL|TLS|HTTP|Kubernetes|Postgres|database|benchmark|latency|throughput|token|model|agent|security|vulnerability|exploit|zero-day|patch|migration|architecture|protocol|runtime|inference|training|cloud|open-source)\b/i;
+const BODY_SNIPPET_NUMBER_RE = /(?:\d|%|\$|€|£|ms\b|sec\b|seconds\b|minutes\b|hours\b)/i;
+const BODY_SNIPPET_ACRONYM_RE = /\b[A-Z]{2,}\b/;
+const BODY_SNIPPET_SENTENCE_RE = /[^.!?]+[.!?]+|[^.!?]+$/g;
 
 function sanitizePromptField(value: string, maxChars: number): string {
   const stripped = value.replace(/`{3,}/g, '[code-block]');
   return stripped.length > maxChars
     ? `${stripped.slice(0, maxChars)}…`
     : stripped;
+}
+
+function scoreBodySnippetSentence(sentence: string): number {
+  let score = 0;
+  if (BODY_SNIPPET_SIGNAL_RE.test(sentence)) score += 3;
+  if (BODY_SNIPPET_NUMBER_RE.test(sentence)) score += 2;
+  if (BODY_SNIPPET_ACRONYM_RE.test(sentence)) score += 1;
+  // Product / organisation names and concrete component names often
+  // appear as multi-word title-case spans. Keep them as weak signal.
+  if (/\b[A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+)+\b/.test(sentence)) score += 1;
+  return score;
+}
+
+/** Build the source-text excerpt sent to the chunk summariser.
+ *
+ * Long articles are often front-loaded with a useful lead and then bury
+ * the technical mechanism, numbers, migration notes, or security detail
+ * much later. Blind truncation either wastes tokens or clips those facts.
+ * This helper keeps the lead, then fills the remaining prompt budget with
+ * later high-signal sentences in original order. It is deterministic and
+ * extractive: every retained claim is still copied from the source text.
+ */
+export function compactChunkBodySnippetForPrompt(value: string): string {
+  const normalised = value.replace(/\s+/g, ' ').trim();
+  if (normalised.length <= BODY_SNIPPET_MAX_CHARS) return normalised;
+
+  const lead = normalised.slice(0, BODY_SNIPPET_LEAD_CHARS).trimEnd();
+  const rest = normalised.slice(BODY_SNIPPET_LEAD_CHARS);
+  const ranked = [...rest.matchAll(BODY_SNIPPET_SENTENCE_RE)]
+    .map((match, index) => {
+      const text = (match[0] ?? '').trim();
+      return { text, index, score: scoreBodySnippetSentence(text) };
+    })
+    .filter((sentence) =>
+      sentence.text.length >= BODY_SNIPPET_MIN_SENTENCE_CHARS && sentence.score > 0,
+    )
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+
+  const selected: typeof ranked = [];
+  let used = lead.length + 2; // space + ellipsis separator
+  for (const sentence of ranked) {
+    const nextUsed = used + sentence.text.length + 1;
+    if (nextUsed > BODY_SNIPPET_MAX_CHARS) continue;
+    selected.push(sentence);
+    used = nextUsed;
+  }
+
+  selected.sort((a, b) => a.index - b.index);
+  const extra = selected.map((sentence) => sentence.text).join(' ');
+  const compacted = extra === '' ? `${lead}…` : `${lead} … ${extra}`;
+  if (compacted.length <= BODY_SNIPPET_MAX_CHARS) return compacted;
+  return `${compacted.slice(0, BODY_SNIPPET_MAX_CHARS - 1).trimEnd()}…`;
 }
 
 /**
@@ -180,7 +242,8 @@ export function processChunkUserPrompt(
     lines.push(`    url: ${sanitizePromptField(c.url, URL_MAX_CHARS)}`);
     lines.push(`    published_at: ${c.published_at}`);
     if (typeof c.body_snippet === 'string' && c.body_snippet !== '') {
-      lines.push(`    snippet: ${sanitizePromptField(c.body_snippet, BODY_SNIPPET_MAX_CHARS)}`);
+      const snippet = compactChunkBodySnippetForPrompt(c.body_snippet);
+      lines.push(`    snippet: ${sanitizePromptField(snippet, BODY_SNIPPET_MAX_CHARS)}`);
     }
   }
 

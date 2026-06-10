@@ -3,7 +3,7 @@
 This file is the project's GitHub-facing vulnerability disclosure
 policy. For the application-layer security controls (CSP, cookie
 attributes, rate limits, auth flow), see
-[`documentation/security.md`](documentation/security.md).
+[`documentation/lanes/security.md`](documentation/lanes/security.md).
 
 ## Supported Versions
 
@@ -31,24 +31,24 @@ listed on [graymatter.ch](https://graymatter.ch).
 ## What's in scope
 
 - Authentication and session cookies
-  ([REQ-AUTH-001](sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider),
-  [REQ-AUTH-002](sdd/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation),
-  [REQ-AUTH-007](sdd/authentication.md#req-auth-007-cross-provider-account-dedup))
+  ([REQ-AUTH-001](sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider),
+  [REQ-AUTH-002](sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation),
+  [REQ-AUTH-007](sdd/spec/authentication.md#req-auth-007-cross-provider-account-dedup))
 - Origin / CSRF defense on state-changing endpoints
-  ([REQ-AUTH-003](sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints))
+  ([REQ-AUTH-003](sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints))
 - Admin endpoints (Cloudflare Access + session + ADMIN_EMAIL match,
-  [REQ-AUTH-001 AC 8](sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider))
+  [REQ-AUTH-001 AC 8](sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider))
 - Rate-limit bypass paths
-  ([REQ-AUTH-001 AC 9](sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider))
+  ([REQ-AUTH-001 AC 9](sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider))
 - LLM prompt injection that produces fabricated source attributions
-  ([REQ-PIPE-002](sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-015](sdd/generation.md#req-pipe-015-chunk-processing-robustness))
+  ([REQ-PIPE-002](sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-015](sdd/spec/generation.md#req-pipe-015-chunk-processing-robustness))
 - Anything that bypasses the per-user data scope
 
 ## What's out of scope
 
 - Reports based purely on automated scanner output (Scorecard, npm
   audit) without a concrete exploit. The `documentation/decisions/`
-  ADRs and `sdd/.review-needed.md` track the project's stance on those.
+  ADRs and `sdd/spec/.review-queue.md` track the project's stance on those.
 - DoS via legitimate traffic shapes. Cloudflare's edge handles those.
 - Third-party scanners flagging "GitHub-owned action not pinned by
   hash" — see ADR / scorecard policy in repo for rationale.

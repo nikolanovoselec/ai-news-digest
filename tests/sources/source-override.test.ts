@@ -10,14 +10,22 @@
 import { describe, it, expect } from 'vitest';
 import { adaptersForDiscoveredFeeds } from '~/lib/sources';
 
-function gnExtractor() {
+function extractorFor(
+  name: string,
+  url: string,
+  kind: 'rss' | 'json' = 'rss',
+) {
   const adapters = adaptersForDiscoveredFeeds(
-    [{ name: 'Google News: mcp', url: 'https://news.google.com/rss/search?q=mcp', kind: 'rss' }],
+    [{ name, url, kind }],
     { trusted: true },
   );
   const a = adapters[0];
-  if (a === undefined) throw new Error('synthetic GN adapter not built');
+  if (a === undefined) throw new Error(`adapter not built for ${name}`);
   return a.extract;
+}
+
+function gnExtractor() {
+  return extractorFor('Google News: mcp', 'https://news.google.com/rss/search?q=mcp');
 }
 
 describe('RSS per-item <source> override', () => {
@@ -90,6 +98,126 @@ describe('RSS per-item <source> override', () => {
     };
     const [head] = extract(parsed);
     expect(head?.source_name).toBe('Google News: mcp');
+  });
+
+  it('REQ-PIPE-010: ignores Hacker News outbound-feed descriptions so linked pages are fetched before summarization', () => {
+    const extract = extractorFor('Hacker News - Show HN', 'https://hnrss.org/show');
+    const parsed = {
+      rss: {
+        channel: {
+          item: {
+            title: 'Show HN: AI Briefs',
+            link: 'https://aibriefs.news',
+            pubDate: 'Mon, 09 Jun 2025 20:16:21 GMT',
+            description:
+              'I decided to build my own AI feeds reader since I wanted features I could not find. Comments URL: https://news.ycombinator.com/item?id=48466773 Points: 2 # Comments: 0',
+          },
+        },
+      },
+    };
+    const [head] = extract(parsed);
+    expect(head?.url).toBe('https://aibriefs.news');
+    expect(head?.source_name).toBe('Hacker News - Show HN');
+    expect(head?.force_body_fetch).toBe(true);
+    expect(head).not.toHaveProperty('snippet');
+  });
+
+  it('REQ-PIPE-010: ignores generic cross-site aggregator metadata, not just Hacker News', () => {
+    const extract = extractorFor(
+      'Example Aggregator',
+      'https://aggregator.example/rss',
+    );
+    const parsed = {
+      rss: {
+        channel: {
+          item: {
+            title: 'Startup launches a useful security scanner',
+            link: 'https://publisher.example/security-scanner',
+            pubDate: 'Mon, 09 Jun 2025 20:16:21 GMT',
+            description:
+              'A community member submitted this story. Discussion URL: https://aggregator.example/item/123 Score: 42 Comments: 17',
+          },
+        },
+      },
+    };
+    const [head] = extract(parsed);
+    expect(head?.url).toBe('https://publisher.example/security-scanner');
+    expect(head?.force_body_fetch).toBe(true);
+    expect(head).not.toHaveProperty('snippet');
+  });
+
+  it('REQ-PIPE-010: falls back to later article excerpts after dropping aggregator metadata', () => {
+    const extract = extractorFor(
+      'Example Aggregator',
+      'https://aggregator.example/rss',
+    );
+    const parsed = {
+      rss: {
+        channel: {
+          item: {
+            title: 'Startup launches a useful security scanner',
+            link: 'https://publisher.example/security-scanner',
+            pubDate: 'Mon, 09 Jun 2025 20:16:21 GMT',
+            'content:encoded':
+              'Discussion URL: https://aggregator.example/item/123 Score: 42 Comments: 17',
+            description:
+              'The security scanner analyzes hosted model endpoints for exposed credentials and produces a concise remediation report for engineering teams.',
+          },
+        },
+      },
+    };
+    const [head] = extract(parsed);
+    expect(head?.url).toBe('https://publisher.example/security-scanner');
+    expect(head?.force_body_fetch).toBe(true);
+    expect(head?.snippet).toContain('security scanner analyzes');
+  });
+
+  it('REQ-PIPE-010: ignores cross-site aggregator metadata in JSON Feed items too', () => {
+    const extract = extractorFor(
+      'JSON Aggregator',
+      'https://json-aggregator.example/feed.json',
+      'json',
+    );
+    const parsed = {
+      items: [
+        {
+          title: 'Research team publishes an AI benchmark',
+          url: 'https://json-aggregator.example/item/456',
+          external_url: 'https://publisher.example/ai-benchmark',
+          date_published: '2025-06-09T20:16:21Z',
+          summary:
+            'Posted by community-user. Discussion URL: https://json-aggregator.example/item/456 Score: 21 Comments: 9',
+        },
+      ],
+    };
+    const [head] = extract(parsed);
+    expect(head?.url).toBe('https://publisher.example/ai-benchmark');
+    expect(head?.force_body_fetch).toBe(true);
+    expect(head).not.toHaveProperty('snippet');
+  });
+
+  it('REQ-PIPE-010: keeps cross-host publisher-feed-service summaries when they are article excerpts', () => {
+    const extract = extractorFor(
+      'Example Publisher',
+      'https://feeds.example-cdn.com/publisher.xml',
+    );
+    const parsed = {
+      rss: {
+        channel: {
+          item: {
+            title: 'Publisher story',
+            link: 'https://example.com/story',
+            pubDate: 'Mon, 09 Jun 2025 20:16:21 GMT',
+            description:
+              'This publisher-owned feed description is a legitimate article excerpt that should remain available to the summarizer before any body fetch happens.',
+          },
+        },
+      },
+    };
+    const [head] = extract(parsed);
+    expect(head?.url).toBe('https://example.com/story');
+    expect(head?.force_body_fetch).toBe(true);
+    expect(head?.snippet).toContain('publisher-owned feed description');
   });
 
   it('two GN-feed items with different <source> values yield two distinct source_names (the bug fix)', () => {

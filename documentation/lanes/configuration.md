@@ -26,20 +26,20 @@ Stored via `wrangler secret put <name>`. Never committed to git.
 
 | Variable | Required | Default | Consumed by | Implements |
 |---|---|---|---|---|
-| `GH_OAUTH_CLIENT_ID` | Conditional (one OAuth pair required) | none | `src/pages/api/auth/[provider]/login.ts`, `callback.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
-| `GH_OAUTH_CLIENT_SECRET` | Conditional (when `GH_OAUTH_CLIENT_ID` set) | none | `src/pages/api/auth/[provider]/callback.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
-| `GOOGLE_OAUTH_CLIENT_ID` | Conditional (one OAuth pair required) | none | `src/pages/api/auth/[provider]/login.ts`, `callback.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
-| `GOOGLE_OAUTH_CLIENT_SECRET` | Conditional (when `GOOGLE_OAUTH_CLIENT_ID` set) | none | `src/pages/api/auth/[provider]/callback.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
-| `OAUTH_JWT_SECRET` | Yes | none | `src/pages/api/auth/refresh.ts`, `logout.ts`, `account.ts`, middleware | [REQ-AUTH-002](../sdd/authentication.md#req-auth-002-session-lifecycle) |
-| `RESEND_API_KEY` | Conditional (email dispatch) | none — email silently skipped when unset | `src/lib/email.ts` | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email-content), [REQ-MAIL-003](../sdd/email.md#req-mail-003-digest-ready-email-send-policy) |
-| `RESEND_FROM` | Conditional (when `RESEND_API_KEY` set) | none | `src/lib/email.ts` | [REQ-MAIL-001](../sdd/email.md#req-mail-001-digest-ready-email-content) |
-| `APP_URL` | Yes | none | `src/pages/api/auth/account.ts`, `src/pages/api/tags.ts`, all Origin-check routes | [REQ-AUTH-003](../sdd/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints) |
-| `AI_GATEWAY_API_TOKEN` | Yes | none | `src/lib/llm-json.ts` | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection) |
-| `AI_GATEWAY_URL` | Yes | none | `src/lib/llm-json.ts` | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-SET-004](../sdd/settings.md#req-set-004-model-selection) |
-| `ADMIN_EMAIL` | Conditional (admin routes) | none — every `/api/admin/*` returns 403 when unset | `src/middleware/admin-auth.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8 |
-| `CF_ACCESS_AUD` | Optional | none (Layer 0 perimeter skipped when unset) | `src/middleware/admin-auth.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8a |
-| `DEV_BYPASS_TOKEN` | Optional | none — `/api/dev/*` returns 404 when unset | `src/pages/api/dev/login.ts`, `src/pages/api/dev/trigger-scrape.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
-| `DEV_BYPASS_USER_ID` | Optional | `__e2e__` (synthetic row) | `src/pages/api/dev/login.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
+| `GH_OAUTH_CLIENT_ID` | Conditional (one OAuth pair required) | none | `src/pages/api/auth/[provider]/login.ts`, `callback.ts` | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
+| `GH_OAUTH_CLIENT_SECRET` | Conditional (when `GH_OAUTH_CLIENT_ID` set) | none | `src/pages/api/auth/[provider]/callback.ts` | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
+| `GOOGLE_OAUTH_CLIENT_ID` | Conditional (one OAuth pair required) | none | `src/pages/api/auth/[provider]/login.ts`, `callback.ts` | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | Conditional (when `GOOGLE_OAUTH_CLIENT_ID` set) | none | `src/pages/api/auth/[provider]/callback.ts` | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
+| `OAUTH_JWT_SECRET` | Yes | none | `src/pages/api/auth/refresh.ts`, `logout.ts`, `account.ts`, middleware | [REQ-AUTH-002](../../sdd/spec/authentication.md#req-auth-002-session-lifecycle) |
+| `RESEND_API_KEY` | Conditional (email dispatch) | none — email silently skipped when unset | `src/lib/email.ts` | [REQ-MAIL-001](../../sdd/spec/email.md#req-mail-001-digest-ready-email-content), [REQ-MAIL-003](../../sdd/spec/email.md#req-mail-003-digest-ready-email-send-policy) |
+| `RESEND_FROM` | Conditional (when `RESEND_API_KEY` set) | none | `src/lib/email.ts` | [REQ-MAIL-001](../../sdd/spec/email.md#req-mail-001-digest-ready-email-content) |
+| `APP_URL` | Yes | none | `src/pages/api/auth/account.ts`, `src/pages/api/tags.ts`, all Origin-check routes | [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints) |
+| `AI_GATEWAY_API_TOKEN` | Yes | none | `src/lib/llm-json.ts` | [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection) |
+| `AI_GATEWAY_URL` | Yes | none | `src/lib/llm-json.ts` | [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection) |
+| `ADMIN_EMAIL` | Conditional (admin routes) | none — every `/api/admin/*` returns 403 when unset | `src/middleware/admin-auth.ts` | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8 |
+| `CF_ACCESS_AUD` | Optional | none (Layer 0 perimeter skipped when unset) | `src/middleware/admin-auth.ts` | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8a |
+| `DEV_BYPASS_TOKEN` | Optional | none — `/api/dev/*` returns 404 when unset | `src/pages/api/dev/login.ts`, `src/pages/api/dev/trigger-scrape.ts` | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
+| `DEV_BYPASS_USER_ID` | Optional | `__e2e__` (synthetic row) | `src/pages/api/dev/login.ts` | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
 
 Notes: The deploy workflow derives `AI_GATEWAY_URL` from `CLOUDFLARE_ACCOUNT_ID` and optional repository variable `AI_GATEWAY_NAME` (default `ai-news-digest`), then stores it with `wrangler secret put`. `AI_GATEWAY_API_TOKEN` must be a dedicated runtime Gateway token, not the broader deploy token. The default pipeline model is the AI Gateway Dynamic Routing route `dynamic/news_digest`; operators change the concrete provider/model by publishing a new route version in the AI Gateway dashboard.
 
@@ -71,8 +71,8 @@ The deploy job reads these secrets from GitHub Actions. `CLOUDFLARE_API_TOKEN` a
 | `RESEND_FROM` | Conditional | Sender address for emails; required when `RESEND_API_KEY` is set |
 | `APP_URL` | Yes | Canonical origin (e.g., `https://digest.example.com`); used in emails, OAuth redirect URIs, and CSRF checks |
 | `DEV_BYPASS_TOKEN` | Conditional | Bearer token that enables `/api/dev/login` and `/api/dev/trigger-scrape`; omit in production |
-| `ADMIN_EMAIL` | Conditional | Operator email that gates `/api/admin/*`; when unset every admin endpoint returns HTTP 403 ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8) |
-| `CF_ACCESS_AUD` | Optional | Cloudflare Access audience tag; when set, enables Layer 0 perimeter check (assertion presence + `aud`-claim match) on `/api/admin/*`; when unset, Layer 0 is skipped and admin is gated by session + `ADMIN_EMAIL` alone ([REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8, AD29). See [Setting `CF_ACCESS_AUD`](#setting-cf_access_aud-production-when-binding-cloudflare-access) for setup. |
+| `ADMIN_EMAIL` | Conditional | Operator email that gates `/api/admin/*`; when unset every admin endpoint returns HTTP 403 ([REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8) |
+| `CF_ACCESS_AUD` | Optional | Cloudflare Access audience tag; when set, enables Layer 0 perimeter check (assertion presence + `aud`-claim match) on `/api/admin/*`; when unset, Layer 0 is skipped and admin is gated by session + `ADMIN_EMAIL` alone ([REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8, AD29). See [Setting `CF_ACCESS_AUD`](#setting-cf_access_aud-production-when-binding-cloudflare-access) for setup. |
 
 Optional repository variable: `AI_GATEWAY_NAME` overrides the default Gateway name (`ai-news-digest`) used to build `AI_GATEWAY_URL`. Set it under Settings → Secrets and variables → Actions → Variables when your Cloudflare Gateway uses a different name. The deploy workflows preflight `dynamic/news_digest` through this URL before Worker publish.
 
@@ -110,11 +110,11 @@ Declared in `wrangler.toml`:
 | `KV` | KV namespace | Edge cache for discovered sources, headlines, source health |
 | `SCRAPE_COORDINATOR` | Queue producer | Producer binding — one message per every-4-hours cron tick kicks the coordinator |
 | `SCRAPE_CHUNKS` | Queue producer | Producer binding — one message per ≤8-candidate LLM chunk |
-| `SCRAPE_FINALIZE` | Queue producer | Producer binding — one message per scrape run, enqueued by the last chunk consumer after the run is stamped `ready`; triggers the same-story dedup pass ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
-| `DEDUP_SWEEP` | Queue producer + consumer | Self-chaining queue carrying operator-triggered historical-dedup sweep messages. The kicker (admin route) sends the first message; the consumer processes one batch then re-enqueues a continuation until the corpus tail is reached, decoupling the sweep from the operator's browser tab ([REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1) |
-| `PIPELINE_JOBS` | Queue producer + consumer | Self-chaining queue for the backend-driven full pipeline orchestrator. One consumer walks seven phases by chaining messages; the producer binding is used by the kicker routes. No browser tab dependency ([REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)) |
+| `SCRAPE_FINALIZE` | Queue producer | Producer binding — one message per scrape run, enqueued by the last chunk consumer after the run is stamped `ready`; triggers the same-story dedup pass ([REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
+| `DEDUP_SWEEP` | Queue producer + consumer | Self-chaining queue carrying operator-triggered historical-dedup sweep messages. The kicker (admin route) sends the first message; the consumer processes one batch then re-enqueues a continuation until the corpus tail is reached, decoupling the sweep from the operator's browser tab ([REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1) |
+| `PIPELINE_JOBS` | Queue producer + consumer | Self-chaining queue for the backend-driven full pipeline orchestrator. One consumer walks seven phases by chaining messages; the producer binding is used by the kicker routes. No browser tab dependency ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](../decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)) |
 | `AI` | Workers AI | bge-base-en-v1.5 embedding generation for same-story dedup; non-Gateway model fallback |
-| `VECTORIZE` | Vectorize index | 768-dim cosine index over every surviving article's embedding; queried in the finalize pass and by the historical re-run sweep ([REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
+| `VECTORIZE` | Vectorize index | 768-dim cosine index over every surviving article's embedding; queried in the finalize pass and by the historical re-run sweep ([REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
 | `ASSETS` | Fetcher (static assets) | Cloudflare static-asset binding for serving the Astro-built output; falls back to `new Response('news-digest')` in tests |
 
 All five queue consumers (`SCRAPE_COORDINATOR`, `SCRAPE_CHUNKS`, `SCRAPE_FINALIZE`, `DEDUP_SWEEP`, `PIPELINE_JOBS`) run with `max_batch_size = 1` (one isolate per message) and `max_retries = 3`. The `SCRAPE_FINALIZE` and `PIPELINE_JOBS` consumers have a DLQ (`ai-news-dlq`) configured so terminal retry exhaustion is inspectable rather than silently dropped (CF-001); the DLQ queue is provisioned by the deploy workflow, not bound in the Worker code.
@@ -125,15 +125,15 @@ Declared in `wrangler.toml` under `[vars]`. Forks may override per-environment v
 
 | Variable | Default | Required | Consumed by | Implements |
 |---|---|---|---|---|
-| `QUEUE_MAX_RETRIES` | `"3"` | Yes | `src/queue/*.ts` consumer batch handlers | [REQ-PIPE-002](../sdd/generation.md#req-pipe-002-chunked-llm-output-content-contract) |
-| `DEDUP_COSINE_THRESHOLD` | `"0.88"` | Yes | `src/lib/embeddings.ts` (`readCosineThreshold`), `src/queue/scrape-finalize-consumer.ts`, `src/pages/api/admin/dedup-diag.ts` | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) |
-| `DEDUP_TIME_WINDOW_SECONDS` | `"604800"` (7d) | Yes | `src/lib/embeddings.ts`, `src/queue/dedup-sweep-consumer.ts` | [REQ-PIPE-012](../sdd/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 3 (same-news-cycle window), [REQ-PIPE-013](../sdd/generation.md#req-pipe-013-same-story-cross-tick-automation-and-retention-coupling) AC 3 |
-| `DEDUP_SAME_VENDOR_PENALTY` | `"0.05"` | Yes | `src/lib/embeddings.ts` | [REQ-PIPE-012](../sdd/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 2 |
-| `DEDUP_RERANK_FLOOR` | `"0.70"` | Yes | `src/lib/dedup-rerank.ts` | [REQ-PIPE-009](../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) |
-| `DEDUP_HIGH_CONFIDENCE_COSINE` | `"0.92"` | Yes | `src/lib/embeddings.ts` | [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) AC 3 (deterministic collapse) |
-| `IS_PRODUCTION` | `"true"` (prod), `"false"` (integration) | Yes | `src/pages/api/dev/login.ts`, `src/pages/api/dev/trigger-scrape.ts`, `src/pages/api/auth/[provider]/callback.ts` | [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
+| `QUEUE_MAX_RETRIES` | `"3"` | Yes | `src/queue/*.ts` consumer batch handlers | [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract) |
+| `DEDUP_COSINE_THRESHOLD` | `"0.88"` | Yes | `src/lib/embeddings.ts` (`readCosineThreshold`), `src/queue/scrape-finalize-consumer.ts`, `src/pages/api/admin/dedup-diag.ts` | [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) |
+| `DEDUP_TIME_WINDOW_SECONDS` | `"604800"` (7d) | Yes | `src/lib/embeddings.ts`, `src/queue/dedup-sweep-consumer.ts` | [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 3 (same-news-cycle window), [REQ-PIPE-013](../../sdd/spec/generation.md#req-pipe-013-same-story-cross-tick-automation-and-retention-coupling) AC 3 |
+| `DEDUP_SAME_VENDOR_PENALTY` | `"0.05"` | Yes | `src/lib/embeddings.ts` | [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 2 |
+| `DEDUP_RERANK_FLOOR` | `"0.70"` | Yes | `src/lib/dedup-rerank.ts` | [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) |
+| `DEDUP_HIGH_CONFIDENCE_COSINE` | `"0.92"` | Yes | `src/lib/embeddings.ts` | [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) AC 3 (deterministic collapse) |
+| `IS_PRODUCTION` | `"true"` (prod), `"false"` (integration) | Yes | `src/pages/api/dev/login.ts`, `src/pages/api/dev/trigger-scrape.ts`, `src/pages/api/auth/[provider]/callback.ts` | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
 
-The 0.88 default is the post-2026-05-08 calibration ([AD39](decisions/README.md#ad39-raise-dedup-auto-merge-threshold-to-088-and-gate-merges-to-a-72h-news-cycle-window)). The prior 0.78 missed the dense-theme failure mode: independent articles on a broad topic routinely cosine-match in the 0.78-0.86 band on topical overlap alone, producing a 13-source false-merge cluster spanning 9 days. 0.88 pushes auto-merge above that band; the 0.70-0.88 stripe goes to LLM rerank.
+The 0.88 default is the post-2026-05-08 calibration ([AD39](../decisions/README.md#ad39-raise-dedup-auto-merge-threshold-to-088-and-gate-merges-to-a-72h-news-cycle-window)). The prior 0.78 missed the dense-theme failure mode: independent articles on a broad topic routinely cosine-match in the 0.78-0.86 band on topical overlap alone, producing a 13-source false-merge cluster spanning 9 days. 0.88 pushes auto-merge above that band; the 0.70-0.88 stripe goes to LLM rerank.
 
 The 7d time window (bumped 2026-05-11 from 72h) covers valuation-week and long-weekend reverberation clusters while keeping the auto-sweep Vectorize cost bounded; it also governs the auto-sweep lookback cursor so the cursor scope and the per-pair gate always match. The 0.92 high-confidence bar above the threshold catches near-duplicate-headline pairs (wire syndication) deterministically without re-litigating the threshold calibration; 0.92 was picked because wire-syndication near-duplicates dominate the band at or above that cosine, while the 0.88-0.92 stripe still benefits from the LLM rerank pass for borderline cases.
 
@@ -145,12 +145,12 @@ Four triggers are declared in `wrangler.toml`:
 
 | Schedule | Purpose | REQ |
 |---|---|---|
-| `0 */4 * * *` | Global-feed coordinator (00/04/08/12/16/20 UTC) | [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
-| `0 3 * * *` | Daily retention + refresh-token purge | [REQ-PIPE-005](../sdd/generation.md#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-AUTH-012](../sdd/authentication.md#req-auth-012-refresh-token-retention-floor-for-reuse-detection) |
-| `*/5 * * * *` | Email dispatcher | [REQ-MAIL-003](../sdd/email.md#req-mail-003-digest-ready-email-send-policy) |
-| `2,12,22,32,42,52 * * * *` | Pending-discovery drain every 10 minutes | [REQ-DISC-001](../sdd/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup) |
+| `0 */4 * * *` | Global-feed coordinator (00/04/08/12/16/20 UTC) | [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
+| `0 3 * * *` | Daily retention + refresh-token purge | [REQ-PIPE-005](../../sdd/spec/generation.md#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-AUTH-012](../../sdd/spec/authentication.md#req-auth-012-refresh-token-retention-floor-for-reuse-detection) |
+| `*/5 * * * *` | Email dispatcher | [REQ-MAIL-003](../../sdd/spec/email.md#req-mail-003-digest-ready-email-send-policy) |
+| `2,12,22,32,42,52 * * * *` | Pending-discovery drain every 10 minutes | [REQ-DISC-001](../../sdd/spec/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup) |
 
-**Daily 03:00 UTC tick:** removes articles older than 14 days (starred articles are exempt). Also purges expired and old-revoked rows from the `refresh_tokens` table; the 7-day grace on revoked rows preserves reuse-detection history per [REQ-AUTH-012 AC 1](../sdd/authentication.md#req-auth-012-refresh-token-retention-floor-for-reuse-detection).
+**Daily 03:00 UTC tick:** removes articles older than 14 days (starred articles are exempt). Also purges expired and old-revoked rows from the `refresh_tokens` table; the 7-day grace on revoked rows preserves reuse-detection history per [REQ-AUTH-012 AC 1](../../sdd/spec/authentication.md#req-auth-012-refresh-token-retention-floor-for-reuse-detection).
 
 **Every-5-minute tick:** per-user email dispatcher fan-out sends digests to users in their local-day window.
 
@@ -162,12 +162,12 @@ The `KV` namespace uses a structured key scheme. All keys are shared across all 
 
 | Key pattern | Value shape | TTL | Purpose |
 |---|---|---|---|
-| `sources:{tag}` | `{ feeds: [{ name, url, kind }], discovered_at }` | None (permanent until evicted) | LLM-discovered feed list for a tag — globally shared; written by the discovery cron, cleared by `POST /api/admin/discovery/retry` and by the coordinator's eviction pass when all feeds for a tag are removed; the daily cron also sweeps entries whose tag is no longer owned by any user ([REQ-PIPE-007](../sdd/generation.md#req-pipe-007-orphan-tag-source-cleanup)) |
-| `discovery_failures:{tag}` | per-tag failure counter (string integer) | — | Per-tag failure bookkeeping; cleared by `POST /api/admin/discovery/retry`; also swept by the daily orphan-tag cleanup when the tag is no longer owned by any user ([REQ-PIPE-007](../sdd/generation.md#req-pipe-007-orphan-tag-source-cleanup)) |
-| `source_health:{url}` | Consecutive failure count (UTF-8 integer string) | 7 days | Per-URL fetch-health counter; incremented on each failed fetch, deleted on success. When the count reaches 30 (`CONSECUTIVE_FETCH_FAILURE_LIMIT`) the coordinator evicts the URL from its `sources:{tag}` entry. Implements [REQ-DISC-003](../sdd/discovery.md#req-disc-003-self-healing-feed-health-tracking). |
-| `headlines:{source}:{tag}` | Array of headline objects | 10 min (600 s) | Per-source/per-tag headline cache shared across all chunk invocations within a single scrape run. Implements [REQ-PIPE-001](../sdd/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence). |
-| `dedup:auto_sweep_watermark` | Unix seconds as UTF-8 integer string | None (permanent until invalidated) | Last successful auto-sweep completion; older borderline pairs skip deterministic rerank per [AD48](decisions/README.md#ad48-dedup-cost-reduction-borderline-rerank-watermark-batched-rerank-call-pipeline-wide-gpt-oss-20b). |
-| `ratelimit:{routeClass}:{identity}:{windowIndex}` | Integer string | Window size | Rate-limit counters; see [Rate-limit rules](#rate-limit-rules) below. Implements [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9. |
+| `sources:{tag}` | `{ feeds: [{ name, url, kind }], discovered_at }` | None (permanent until evicted) | LLM-discovered feed list for a tag — globally shared; written by the discovery cron, cleared by `POST /api/admin/discovery/retry` and by the coordinator's eviction pass when all feeds for a tag are removed; the daily cron also sweeps entries whose tag is no longer owned by any user ([REQ-PIPE-007](../../sdd/spec/generation.md#req-pipe-007-orphan-tag-source-cleanup)) |
+| `discovery_failures:{tag}` | per-tag failure counter (string integer) | — | Per-tag failure bookkeeping; cleared by `POST /api/admin/discovery/retry`; also swept by the daily orphan-tag cleanup when the tag is no longer owned by any user ([REQ-PIPE-007](../../sdd/spec/generation.md#req-pipe-007-orphan-tag-source-cleanup)) |
+| `source_health:{url}` | Consecutive failure count (UTF-8 integer string) | 7 days | Per-URL fetch-health counter; incremented on each failed fetch, deleted on success. When the count reaches 30 (`CONSECUTIVE_FETCH_FAILURE_LIMIT`) the coordinator evicts the URL from its `sources:{tag}` entry. Implements [REQ-DISC-003](../../sdd/spec/discovery.md#req-disc-003-self-healing-feed-health-tracking). |
+| `headlines:{source}:{tag}` | Array of headline objects | 10 min (600 s) | Per-source/per-tag headline cache shared across all chunk invocations within a single scrape run. Implements [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence). |
+| `dedup:auto_sweep_watermark` | Unix seconds as UTF-8 integer string | None (permanent until invalidated) | Last successful auto-sweep completion; older borderline pairs skip deterministic rerank per [AD48](../decisions/README.md#ad48-dedup-cost-reduction-borderline-rerank-watermark-batched-rerank-call-pipeline-wide-gpt-oss-20b). |
+| `ratelimit:{routeClass}:{identity}:{windowIndex}` | Integer string | Window size | Rate-limit counters; see [Rate-limit rules](#rate-limit-rules) below. Implements [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9. |
 
 `writeWatermark` writes `dedup:auto_sweep_watermark` when the sweep finishes. `clearWatermark` deletes it on `embed-backfill?reembed=1` because new embeddings change cosine geometry; a missing key means always rerank. Source anchors: `src/lib/dedup-watermark.ts`, `src/pages/api/admin/embed-backfill.ts`.
 
@@ -175,8 +175,8 @@ The `KV` namespace uses a structured key scheme. All keys are shared across all 
 
 | Rule | Limit | Scope | Fail mode |
 |---|---|---|---|
-| `auth_login` | 10 / 60s | IP | Fail closed ([AD23](decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop)) |
-| `auth_callback` | 20 / 60s | IP | Fail closed ([AD23](decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop)) |
+| `auth_login` | 10 / 60s | IP | Fail closed ([AD23](../decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop)) |
+| `auth_callback` | 20 / 60s | IP | Fail closed ([AD23](../decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop)) |
 | `auth_refresh_ip` | 60 / 60s | IP | Fail closed |
 | `auth_refresh_user` | 30 / 60s | User | Fail closed |
 | `auth_logout` | 5 / 60s | IP | Fail open |
@@ -187,7 +187,7 @@ The `KV` namespace uses a structured key scheme. All keys are shared across all 
 | `admin_force_refresh` | Per-operator hourly bucket | User | Fail open (surfaced as 429 with Retry-After) |
 | `admin_pipeline_run` | Per-operator hourly bucket | User | Fail open (surfaced as 429 with Retry-After) |
 
-The `auth_refresh_*` buckets are shared between `POST /api/auth/refresh` (`src/pages/api/auth/refresh.ts`) and the inline middleware refresh path (`src/middleware/auth.ts`) so an attacker cannot pivot to authenticated GET routes to bypass the explicit endpoint's limit ([REQ-AUTH-008](../sdd/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout)).
+The `auth_refresh_*` buckets are shared between `POST /api/auth/refresh` (`src/pages/api/auth/refresh.ts`) and the inline middleware refresh path (`src/middleware/auth.ts`) so an attacker cannot pivot to authenticated GET routes to bypass the explicit endpoint's limit ([REQ-AUTH-008](../../sdd/spec/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout)).
 
 `set_tz` and `discovery_status` cover authenticated endpoints that legitimate clients poll on a sub-minute cadence. They key by user id and fail open so a KV outage does not degrade the settings UX.
 
@@ -199,11 +199,11 @@ The fail-mode split exists because sign-in must remain reachable during a KV out
 
 ## Observability
 
-`[observability] enabled = true` — enables Cloudflare Workers Observability (structured log ingestion from `console.log`). See [REQ-OPS-001](../sdd/observability.md#req-ops-001-structured-json-logging) for the log envelope format.
+`[observability] enabled = true` — enables Cloudflare Workers Observability (structured log ingestion from `console.log`). See [REQ-OPS-001](../../sdd/spec/observability.md#req-ops-001-structured-json-logging) for the log envelope format.
 
 ## Security Headers
 
-Security headers (CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`) are applied by `src/middleware/security-headers.ts` on every response. No configuration is required — the policy is hardcoded and tested byte-for-byte. See [REQ-OPS-003](../sdd/observability.md#req-ops-003-content-security-policy-on-every-response) for the exact header values.
+Security headers (CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`) are applied by `src/middleware/security-headers.ts` on every response. No configuration is required — the policy is hardcoded and tested byte-for-byte. See [REQ-OPS-003](../../sdd/spec/observability.md#req-ops-003-content-security-policy-on-every-response) for the exact header values.
 
 ## Configuration Files
 
@@ -211,7 +211,7 @@ Security headers (CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `Permi
 |---|---|
 | `wrangler.toml` | Cloudflare Worker config: name, compatibility date, D1/KV/Queue/AI bindings, cron triggers |
 | `astro.config.mjs` | Astro adapter (`@astrojs/cloudflare`), integrations (`@vite-pwa/astro`, `@tailwindcss/vite`) |
-| `sdd/config.yml` | SDD workflow config: mode, `enforce_tdd`, test globs, allowlists |
+| `sdd/spec/config.yml` | SDD workflow config: mode, `enforce_tdd`, test globs, allowlists |
 
 ---
 

@@ -53,8 +53,14 @@ import {
   writeSourcesCache,
   sourcesCacheRawEqual,
 } from '~/lib/sources-cache';
-import { preferDirectOverGoogleNews } from '~/lib/prefer-direct-source';
+import {
+  isGoogleNewsUrl,
+  preferDirectOverGoogleNews,
+  sharedTitleTokenCount,
+} from '~/lib/prefer-direct-source';
 import { isBlockedPublisher } from '~/lib/blocked-publishers';
+import { tokenizeTitle } from '~/lib/title-overlap';
+import { readTimeWindowSeconds } from '~/lib/embeddings';
 import { SNIPPET_FLOOR } from '~/queue/scrape-chunk-consumer';
 
 /** Adapter for CF-019: prefer-direct-source operates on Headline[], but
@@ -138,18 +144,23 @@ const PER_CANDIDATE_OVERHEAD_CHARS = 400;
 const ESTIMATED_BODY_FETCH_CHARS = 3_000;
 
 /** Estimate the per-candidate char cost the chunk's prompt will
- * incur. When a feed snippet is already attached and large enough
- * (≥ `SNIPPET_FLOOR`, imported from the chunk consumer), the
- * consumer skips its own body fetch and the snippet length is the
- * actual cost. Otherwise the consumer will fetch and the body could
- * be anywhere between 0 and SNIPPET_CAP (15K); we use
- * `ESTIMATED_BODY_FETCH_CHARS` as the median guess.
+ * incur. When a feed snippet is already attached, large enough
+ * (≥ `SNIPPET_FLOOR`, imported from the chunk consumer), and not
+ * marked `force_body_fetch`, the consumer skips its own body fetch
+ * and the snippet length is the actual cost. Otherwise the consumer
+ * will fetch and the body could be anywhere between 0 and SNIPPET_CAP
+ * (15K). For forced fetches with retained fallback snippets, budget the
+ * larger of the snippet and median body estimate because the consumer
+ * prompts with whichever text is longer.
  *
  * Exported for direct testing. */
 export function estimateCandidateChars(c: ChunkCandidate): number {
   const snippet = c.body_snippet ?? '';
-  const bodyChars =
-    snippet.length >= SNIPPET_FLOOR ? snippet.length : ESTIMATED_BODY_FETCH_CHARS;
+  const bodyChars = c.force_body_fetch === true
+    ? Math.max(snippet.length, ESTIMATED_BODY_FETCH_CHARS)
+    : snippet.length >= SNIPPET_FLOOR
+      ? snippet.length
+      : ESTIMATED_BODY_FETCH_CHARS;
   return bodyChars + PER_CANDIDATE_OVERHEAD_CHARS;
 }
 
@@ -272,6 +283,7 @@ export interface ChunkCandidate {
   title: string;
   published_at: number;
   body_snippet?: string;
+  force_body_fetch?: boolean;
   source_tags?: string[];
   alternatives: Array<{
     source_url: string;
@@ -352,7 +364,20 @@ export async function runCoordinator(
   const clusters = clusterByCanonical(candidates);
 
   // Step 5 - filter already-known URLs; aggregate alt-sources for re-seen ones.
-  const { survivors } = await filterAndAggregateReSeenClusters(env, clusters, scrape_run_id);
+  const { survivors: canonicalSurvivors } = await filterAndAggregateReSeenClusters(
+    env,
+    clusters,
+    scrape_run_id,
+  );
+
+  // Step 5b - Google News wrappers often point at a fresh aggregator URL
+  // for a story already stored under the direct publisher URL. Attach those
+  // as extra sightings and skip the LLM summary before chunk fan-out.
+  const { survivors } = await filterAndAggregateGoogleNewsTitleMatches(
+    env,
+    canonicalSurvivors,
+    scrape_run_id,
+  );
 
   // Step 6 - empty-pool guard.
   if (survivors.length === 0) {
@@ -613,6 +638,9 @@ function buildCandidates(
       ...(typeof row.headline.snippet === 'string' && row.headline.snippet !== ''
         ? { body_snippet: row.headline.snippet }
         : {}),
+      ...(row.headline.force_body_fetch === true
+        ? { force_body_fetch: true }
+        : {}),
       ...(sourceTags.length > 0 ? { source_tags: sourceTags } : {}),
     });
   }
@@ -740,6 +768,231 @@ async function filterAndAggregateReSeenClusters(
   return { survivors };
 }
 
+const GOOGLE_NEWS_EXISTING_TITLE_THRESHOLD = 4;
+const GOOGLE_NEWS_EXISTING_TITLE_MIN_LONGER_RATIO = 0.7;
+const GOOGLE_NEWS_EXISTING_TITLE_LIMIT = 1_000;
+
+interface RecentArticleTitle {
+  id: string;
+  title: string;
+}
+
+interface ExistingTitleMatch extends RecentArticleTitle {
+  sharedTokens: number;
+  longerTitleRatio: number;
+}
+
+function googleNewsExistingTitleScore(
+  title: string,
+  existingTitle: string,
+): { sharedTokens: number; longerTitleRatio: number } {
+  const sharedTokens = sharedTitleTokenCount(title, existingTitle);
+  const titleTokenCount = tokenizeTitle(title).size;
+  const existingTitleTokenCount = tokenizeTitle(existingTitle).size;
+  const longerTokenCount = Math.max(titleTokenCount, existingTitleTokenCount);
+  return {
+    sharedTokens,
+    longerTitleRatio:
+      longerTokenCount > 0 ? sharedTokens / longerTokenCount : 0,
+  };
+}
+
+async function loadRecentArticleTitles(
+  db: D1Database,
+  cutoffSeconds: number,
+): Promise<RecentArticleTitle[]> {
+  const result = await db
+    .prepare(
+      `SELECT id, title
+         FROM articles
+        WHERE published_at >= ?1
+        ORDER BY published_at DESC
+        LIMIT ?2`,
+    )
+    .bind(cutoffSeconds, GOOGLE_NEWS_EXISTING_TITLE_LIMIT)
+    .all<RecentArticleTitle>();
+  return (result.results ?? []).filter(
+    (row): row is RecentArticleTitle =>
+      typeof row.id === 'string' && typeof row.title === 'string' && row.title !== '',
+  );
+}
+
+function findExistingGoogleNewsTitleMatch(
+  title: string,
+  existingTitles: readonly RecentArticleTitle[],
+): ExistingTitleMatch | null {
+  let best: ExistingTitleMatch | null = null;
+  for (const existing of existingTitles) {
+    const score = googleNewsExistingTitleScore(title, existing.title);
+    if (score.sharedTokens < GOOGLE_NEWS_EXISTING_TITLE_THRESHOLD) continue;
+    if (score.longerTitleRatio < GOOGLE_NEWS_EXISTING_TITLE_MIN_LONGER_RATIO) {
+      continue;
+    }
+    if (
+      best === null ||
+      score.longerTitleRatio > best.longerTitleRatio ||
+      (score.longerTitleRatio === best.longerTitleRatio &&
+        score.sharedTokens > best.sharedTokens)
+    ) {
+      best = { ...existing, ...score };
+    }
+  }
+  return best;
+}
+
+/**
+ * Step 5b - Filter Google News aggregator wrappers against the already-
+ * stored recent article pool by high-precision title overlap.
+ *
+ * Canonical-URL re-seen filtering cannot catch these because Google News
+ * wrapper URLs canonicalise to `news.google.com/...`, while the article
+ * pool usually stores the direct publisher URL. When the title strongly
+ * matches an existing recent article, append the Google News source/tag
+ * sighting to that existing article and skip chunk fan-out. This preserves
+ * coverage and tag-of-discovery while avoiding a duplicate LLM summary.
+ */
+async function filterAndAggregateGoogleNewsTitleMatches(
+  env: Env,
+  clusters: ReturnType<typeof clusterByCanonical>,
+  scrape_run_id: string,
+): Promise<{ survivors: ReturnType<typeof clusterByCanonical> }> {
+  if (!clusters.some((cluster) => isGoogleNewsUrl(cluster.primary.source_url))) {
+    return { survivors: clusters };
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const cutoffSeconds = nowSec - readTimeWindowSeconds(env);
+  let existingTitles: RecentArticleTitle[] = [];
+  try {
+    existingTitles = await loadRecentArticleTitles(env.DB, cutoffSeconds);
+  } catch (err) {
+    log('warn', 'digest.generation', {
+      status: 'coordinator_google_news_existing_title_lookup_failed',
+      scrape_run_id,
+      detail: String(err).slice(0, 500),
+    });
+    return { survivors: clusters };
+  }
+  if (existingTitles.length === 0) return { survivors: clusters };
+
+  interface SourceInsert {
+    articleId: string;
+    sourceName: string;
+    sourceUrl: string;
+    publishedAt: number;
+  }
+  interface TagInsert {
+    articleId: string;
+    tag: string;
+  }
+
+  const sourceInserts = new Map<string, SourceInsert>();
+  const tagInserts = new Map<string, TagInsert>();
+  const survivors: ReturnType<typeof clusterByCanonical> = [];
+  let skipped = 0;
+  let bestSharedTokens = 0;
+  let bestLongerTitleRatio = 0;
+
+  for (const cluster of clusters) {
+    if (!isGoogleNewsUrl(cluster.primary.source_url)) {
+      survivors.push(cluster);
+      continue;
+    }
+
+    const match = findExistingGoogleNewsTitleMatch(cluster.primary.title, existingTitles);
+    if (match === null) {
+      survivors.push(cluster);
+      continue;
+    }
+
+    skipped += 1;
+    bestSharedTokens = Math.max(bestSharedTokens, match.sharedTokens);
+    bestLongerTitleRatio = Math.max(
+      bestLongerTitleRatio,
+      match.longerTitleRatio,
+    );
+    const sources = [cluster.primary, ...cluster.alternatives];
+    for (const source of sources) {
+      const sourceKey = `${match.id} ${source.source_url}`;
+      if (!sourceInserts.has(sourceKey)) {
+        sourceInserts.set(sourceKey, {
+          articleId: match.id,
+          sourceName: source.source_name,
+          sourceUrl: source.source_url,
+          publishedAt: source.published_at,
+        });
+      }
+      for (const rawTag of source.source_tags ?? []) {
+        const tag = normalizeHashtag(rawTag.trim());
+        if (tag === '') continue;
+        const tagKey = `${match.id} ${tag}`;
+        if (!tagInserts.has(tagKey)) {
+          tagInserts.set(tagKey, { articleId: match.id, tag });
+        }
+      }
+    }
+  }
+
+  const statements: D1PreparedStatement[] = [];
+  for (const row of sourceInserts.values()) {
+    statements.push(
+      env.DB
+        .prepare(
+          `INSERT OR IGNORE INTO article_sources
+             (article_id, source_name, source_url, published_at)
+           VALUES (?1, ?2, ?3, ?4)`,
+        )
+        .bind(row.articleId, row.sourceName, row.sourceUrl, row.publishedAt),
+    );
+  }
+  for (const row of tagInserts.values()) {
+    statements.push(
+      env.DB
+        .prepare(
+          `INSERT OR IGNORE INTO article_tags (article_id, tag)
+           VALUES (?1, ?2)`,
+        )
+        .bind(row.articleId, row.tag),
+    );
+  }
+  if (statements.length > 0) {
+    const STATEMENTS_PER_BATCH = 50;
+    try {
+      for (let i = 0; i < statements.length; i += STATEMENTS_PER_BATCH) {
+        await env.DB.batch(statements.slice(i, i + STATEMENTS_PER_BATCH));
+      }
+    } catch (err) {
+      log('warn', 'digest.generation', {
+        status: 'coordinator_google_news_existing_title_append_failed',
+        scrape_run_id,
+        skipped,
+        detail: String(err).slice(0, 500),
+      });
+      // Fail open: if the source append cannot be recorded, keep the
+      // candidate so the normal chunk summarisation path still preserves
+      // coverage rather than silently dropping a possible story.
+      return { survivors: clusters };
+    }
+  }
+
+  if (skipped > 0) {
+    log('info', 'digest.generation', {
+      status: 'coordinator_skipped_google_news_existing_title',
+      scrape_run_id,
+      skipped,
+      sources_appended: sourceInserts.size,
+      tags_appended: tagInserts.size,
+      title_threshold: GOOGLE_NEWS_EXISTING_TITLE_THRESHOLD,
+      title_min_longer_ratio: GOOGLE_NEWS_EXISTING_TITLE_MIN_LONGER_RATIO,
+      best_shared_tokens: bestSharedTokens,
+      best_longer_title_ratio: Number(bestLongerTitleRatio.toFixed(3)),
+      recent_title_rows: existingTitles.length,
+    });
+  }
+
+  return { survivors };
+}
+
 /**
  * Step 7 - Flatten dedupe clusters to chunk-ready candidates.
  *
@@ -762,6 +1015,7 @@ function flattenToChunkCandidates(
       title: c.primary.title,
       published_at: c.primary.published_at,
       ...(existingSnippet !== '' ? { body_snippet: existingSnippet } : {}),
+      ...(c.primary.force_body_fetch === true ? { force_body_fetch: true } : {}),
       ...(Array.isArray(c.primary.source_tags) && c.primary.source_tags.length > 0
         ? { source_tags: c.primary.source_tags }
         : {}),

@@ -84,7 +84,7 @@ POST /api/admin/force-refresh
 
 **Rate limit:** per-operator hourly bucket `admin_force_refresh`; exhausted returns `429` with `Retry-After`.
 
-**Implements:** [REQ-OPS-005](../sdd/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 1), [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
+**Implements:** [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 1), [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
 
 **Notes**
 
@@ -119,7 +119,7 @@ GET /api/admin/force-refresh
 
 **Rate limit:** per-operator hourly bucket `admin_force_refresh`; exhausted returns `429` with `Retry-After`.
 
-**Implements:** [REQ-OPS-005](../sdd/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 1), [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
+**Implements:** [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 1), [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
 
 ---
 
@@ -151,7 +151,7 @@ POST /api/admin/discovery/retry
 | `401` | Not signed in | `{ error, code: "unauthorized" }` |
 | `403` | Not admin, or Origin mismatch | `{ error, code: "forbidden" }` or `{ error, code: "forbidden_origin" }` |
 
-**Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)
+**Implements:** [REQ-DISC-004](../../sdd/spec/discovery.md#req-disc-004-manual-re-discover-ui-surface)
 
 **Notes**
 
@@ -184,7 +184,7 @@ POST /api/admin/discovery/retry-bulk
 | `403` | Not admin, or Origin mismatch | `{ error, code: "forbidden" }` or `{ error, code: "forbidden_origin" }` |
 | `500` | D1 batch failed | `{ error, code: "internal_error" }` |
 
-**Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)
+**Implements:** [REQ-DISC-004](../../sdd/spec/discovery.md#req-disc-004-manual-re-discover-ui-surface)
 
 **Notes**
 
@@ -211,7 +211,7 @@ GET /api/admin/discovery/retry-bulk
 | `303` | Browser redirect | Redirect to `/settings?rediscover={ok\|denied\|error}` |
 | `500` | D1 batch failed (JSON path) | `{ ok: false, error: <slug> }` |
 
-**Implements:** [REQ-DISC-004](../sdd/discovery.md#req-disc-004-manual-re-discover)
+**Implements:** [REQ-DISC-004](../../sdd/spec/discovery.md#req-disc-004-manual-re-discover-ui-surface)
 
 **Notes**
 
@@ -247,7 +247,7 @@ POST /api/admin/embed-backfill
 | `403` | Not admin or cross-origin browser POST without Bearer | `{ error, code: "forbidden" }` or `{ error, code: "forbidden_origin" }` |
 | `500` | Backfill threw | `{ error: "Backfill failed" }` |
 
-**Implements:** [REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 5 (for `?reembed=1`), [REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phases 0 and 3)
+**Implements:** [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 5 (for `?reembed=1`), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phases 0 and 3)
 
 **Notes**
 
@@ -278,7 +278,7 @@ GET /api/admin/embed-backfill
 | `405` | `?reembed=1` on GET | `{ error: "reembed requires POST" }` |
 | `500` | Backfill threw | `{ error: "Backfill failed" }` |
 
-**Implements:** [REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phases 0 and 3)
+**Implements:** [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phases 0 and 3)
 
 ---
 
@@ -314,7 +314,7 @@ Sending no body invokes the kicker path; sending any of the fields above invokes
 | `500` | Kicker insert failed | `{ error: "historical_dedup_kick_failed" }` |
 | `500` | Sync batch threw | `{ error: "historical_dedup_failed" }` |
 
-**Implements:** [REQ-PIPE-003](../sdd/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) AC 3, [REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1 + AC 4, [REQ-PIPE-009](../sdd/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 4)
+**Implements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) AC 3, [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1 + AC 4, [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 4)
 
 **Notes**
 
@@ -353,7 +353,7 @@ GET /api/admin/dedup-status
 | `500` | Select failed | `{ error: "dedup_status_select_failed" }` |
 | `500` | Stored status invalid | `{ error: "invalid_stored_status" }` |
 
-**Implements:** [REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1 + AC 2, [REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)
+**Implements:** [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1 + AC 2, [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)
 
 **Notes**
 
@@ -391,7 +391,7 @@ POST /api/admin/pipeline-run
 
 **Rate limit:** per-operator hourly bucket `admin_pipeline_run`; exhausted returns `429` with `Retry-After`.
 
-**Implements:** [REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
+**Implements:** [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
 
 **Notes**
 
@@ -401,7 +401,7 @@ Creates a `pipeline_runs` audit row and enqueues exactly one `pipeline-jobs` que
 
 ### GET /api/admin/pipeline-run
 
-Browser-navigation variant of the pipeline kicker. Used by `settings.astro` via `window.location.assign()` because Cloudflare Access cannot be traversed by `fetch()` in CORS mode (see [AD38](decisions/README.md#ad38-cf-access-protected-admin-endpoints-must-be-invoked-via-top-level-navigation-not-fetch)).
+Browser-navigation variant of the pipeline kicker. Used by `settings.astro` via `window.location.assign()` because Cloudflare Access cannot be traversed by `fetch()` in CORS mode (see [AD38](../decisions/README.md#ad38-cf-access-protected-admin-endpoints-must-be-invoked-via-top-level-navigation-not-fetch)).
 
 ```
 GET /api/admin/pipeline-run
@@ -425,7 +425,7 @@ GET /api/admin/pipeline-run
 | `405` | `mode=wipe` via GET | body `Use POST for mode=wipe`, header `Allow: POST` |
 | `500` | Configuration error | plain text |
 
-**Implements:** [REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-AUTH-001](../sdd/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8d
+**Implements:** [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8d
 
 **Notes**
 
@@ -461,7 +461,7 @@ GET /api/admin/pipeline-status
 | `500` | Select failed | `{ error: "pipeline_status_select_failed" }` |
 | `500` | Stored status or mode invalid | `{ error: "invalid_stored_status" }` or `{ error: "invalid_stored_mode" }` |
 
-**Implements:** [REQ-OPS-008](../sdd/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)
+**Implements:** [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)
 
 **Notes**
 
@@ -524,7 +524,7 @@ GET /api/admin/dedup-diag
 }
 ```
 
-**Implements:** [REQ-PIPE-014](../sdd/generation.md#req-pipe-014-same-story-operator-surfaces) AC 4
+**Implements:** [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 4
 
 **Notes**
 
@@ -536,4 +536,4 @@ GET /api/admin/dedup-diag
 
 - [api-reference.md](api-reference.md) — public + non-admin internal API surface
 - [security.md](security.md) — admin auth model, rate limits, dev-route guard
-- [decisions/README.md](decisions/README.md) — ADRs for admin-gate decisions (AD29, AD38, AD44)
+- [decisions/README.md](../decisions/README.md) — ADRs for admin-gate decisions (AD29, AD38, AD44)

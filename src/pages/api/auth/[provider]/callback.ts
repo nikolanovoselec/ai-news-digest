@@ -562,7 +562,7 @@ async function step6UpsertUserRow(
       // name (e.g., GitHub login or Google account name). Renaming the
       // column would be a larger migration; semantic re-use is the
       // pragmatic choice for now and is documented in
-      // documentation/architecture.md.
+      // documentation/lanes/architecture.md.
       const defaultHashtagsJson = JSON.stringify(Array.from(DEFAULT_HASHTAGS));
       // REQ-SET-007 - seed `tz` as empty so the silent auto-correct can
       // distinguish "never explicitly set" (silent path may overwrite)
