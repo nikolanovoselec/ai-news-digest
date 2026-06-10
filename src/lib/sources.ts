@@ -473,23 +473,24 @@ function itemToHeadline(
     parseFeedDate(item['published']);
   // Per-item `<source>` override: Google News RSS includes
   // `<source url="...">Publisher Name</source>` identifying the
-  // underlying publisher of each item. The TEXT (publisher name) was
-  // already promoted to source_name. The URL ATTRIBUTE is the real
-  // publisher article URL — without it, every Google-News-routed item
-  // lands with `primary_source_url = news.google.com/rss/articles/CBMi…`,
-  // which (a) breaks canonical-URL dedup (each Google News redirect
-  // token is unique even when the underlying article isn't), (b)
-  // collapses the same-vendor cosine penalty (every Google News item
-  // has host `news.google.com` regardless of actual publisher), and
-  // (c) defeats publisher blocklists. Promote the `<source url>` to
-  // headline.url when the item's link is a Google News redirect.
+  // underlying publisher of each item. The TEXT (publisher name) is
+  // safe to promote to source_name. The URL ATTRIBUTE is inconsistent:
+  // some feeds expose a concrete article URL, while others expose only
+  // the publisher homepage (for example `https://www.darkreading.com`).
+  // Promoting a homepage makes the detail page's source picker link to
+  // an overview page with no article in sight. Only promote source URLs
+  // that look article-specific; otherwise keep the Google News item link.
   // For non-Google-News feeds with a `<source>` element (some podcast
   // feeds do this for re-syndication), we keep the original link to
   // avoid changing behavior on those feeds.
   const itemSourceName = extractItemSourceName(item['source']);
   const itemSourceUrl = extractItemSourceUrl(item['source']);
   const resolvedLink =
-    itemSourceUrl !== null && isGoogleNewsLink(link) ? itemSourceUrl : link;
+    itemSourceUrl !== null &&
+    isGoogleNewsLink(link) &&
+    isLikelyArticleUrl(itemSourceUrl)
+      ? itemSourceUrl
+      : link;
   const snippet = feedSnippetFromCandidates(
     [
       item['content:encoded'],
@@ -516,6 +517,22 @@ function itemToHeadline(
 function isGoogleNewsLink(url: string): boolean {
   try {
     return new URL(url).hostname === 'news.google.com';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Heuristic guard for Google News `<source url>` promotion. Google News
+ * may publish only a publisher homepage/category URL in that attribute;
+ * storing that as the source link sends readers to an overview page, not
+ * the article. Require at least one non-empty path segment so bare hosts
+ * like `https://www.rescana.com` stay as the Google News item link.
+ */
+function isLikelyArticleUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname.split('/').some((segment) => segment !== '');
   } catch {
     return false;
   }

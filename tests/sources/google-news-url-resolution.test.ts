@@ -3,11 +3,10 @@
 // Pins the Google News `<source url="...">` URL-extraction behaviour.
 // The RSS items Google News serves wrap every link in a redirect
 // envelope: `<link>https://news.google.com/rss/articles/CBMi…</link>`.
-// The actual publisher's article URL is in `<source url="...">Publisher
-// Name</source>`. Before this fix the URL attribute was discarded and
-// every Google-News-routed article landed with primary_source_url
-// pointing at the news.google.com redirect — breaking canonical-URL
-// dedup, the same-vendor cosine penalty, and the publisher blocklist.
+// The publisher name is in `<source>`, while the `url` attribute may be
+// either a concrete article URL or only the publisher homepage. Homepage
+// promotion breaks source links on merged articles, so only article-shaped
+// source URLs are promoted.
 
 import { describe, it, expect } from 'vitest';
 import { adaptersForDiscoveredFeeds } from '~/lib/sources';
@@ -22,10 +21,10 @@ function rssExtractor() {
   return a.extract;
 }
 
-describe('Google News URL resolution — <source url> wins over <link>', () => {
+describe('Google News URL resolution — article-shaped <source url> wins over <link>', () => {
   const extract = rssExtractor();
 
-  it('promotes the publisher URL when link is a Google News redirect', () => {
+  it('promotes the publisher URL when link is a Google News redirect and source URL is article-shaped', () => {
     const parsed = {
       rss: {
         channel: {
@@ -43,6 +42,26 @@ describe('Google News URL resolution — <source url> wins over <link>', () => {
     const [head] = extract(parsed);
     expect(head?.url).toBe('https://www.tradingview.com/news/some-article');
     expect(head?.source_name).toBe('TradingView');
+  });
+
+  it('keeps the Google News link when <source url> is only a publisher homepage', () => {
+    const parsed = {
+      rss: {
+        channel: {
+          item: {
+            title: "'Hades' Campaign Against PyPI Puts New Spin on Shai-Hulud",
+            link: 'https://news.google.com/rss/articles/CBMiX_redirectToken',
+            source: {
+              url: 'https://www.darkreading.com',
+              '#text': 'Dark Reading',
+            },
+          },
+        },
+      },
+    };
+    const [head] = extract(parsed);
+    expect(head?.url).toBe('https://news.google.com/rss/articles/CBMiX_redirectToken');
+    expect(head?.source_name).toBe('Dark Reading');
   });
 
   it('keeps original link when <source> has no url attribute', () => {
@@ -133,7 +152,8 @@ describe('Google News URL resolution — <source url> wins over <link>', () => {
   it('handles real-world Google News RSS shape end-to-end', () => {
     // Mirrors the live Google News RSS payload that produced
     // 01KRB0ZXFM5MZREWBY5DX0EBYG in prod on 2026-05-10. Confirms
-    // canonical-URL dedup will see msn.com instead of news.google.com.
+    // canonical-URL dedup will see article-shaped publisher URLs
+    // instead of news.google.com.
     const parsed = {
       rss: {
         channel: {
