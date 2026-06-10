@@ -53,6 +53,38 @@ describe('blocked-publishers - REQ-PIPE-011 direct URL host match', () => {
     ).toBe(true);
   });
 
+  it('blocks prnewswire.com', () => {
+    expect(
+      isBlockedPublisher(
+        mkHeadline({ url: 'https://www.prnewswire.com/press-release/x' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('blocks globenewswire.com', () => {
+    expect(
+      isBlockedPublisher(
+        mkHeadline({ url: 'https://www.globenewswire.com/releases/xyz' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('blocks housingwire.com', () => {
+    expect(
+      isBlockedPublisher(
+        mkHeadline({ url: 'https://www.housingwire.com/whatever' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('blocks businesswire.com', () => {
+    expect(
+      isBlockedPublisher(
+        mkHeadline({ url: 'https://www.businesswire.com/press-releases/x' }),
+      ),
+    ).toBe(true);
+  });
+
   it('does not block a curated tech source', () => {
     expect(
       isBlockedPublisher(
@@ -110,6 +142,30 @@ describe('blocked-publishers — RSS source-name match (Google News redirect cas
     expect(
       isBlockedPublisher(
         mkHeadline({ url: GN, source_name: 'MSN' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('blocks Google-News-routed Show HN source', () => {
+    expect(
+      isBlockedPublisher(
+        mkHeadline({ url: GN, source_name: 'Hacker News - Show HN' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('blocks Google-News-routed Business Wire source', () => {
+    expect(
+      isBlockedPublisher(
+        mkHeadline({ url: GN, source_name: 'Business Wire' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('blocks Google-News-routed GlobeNewswire source', () => {
+    expect(
+      isBlockedPublisher(
+        mkHeadline({ url: GN, source_name: 'GlobeNewswire' }),
       ),
     ).toBe(true);
   });
@@ -229,9 +285,18 @@ describe('blocked-publishers — registry sanity', () => {
     expect(BLOCKED_HOSTS.has('tradingview.com')).toBe(true);
     expect(BLOCKED_HOSTS.has('finance.yahoo.com')).toBe(true);
     expect(BLOCKED_HOSTS.has('msn.com')).toBe(true);
+    expect(BLOCKED_HOSTS.has('prnewswire.com')).toBe(true);
+    expect(BLOCKED_HOSTS.has('globenewswire.com')).toBe(true);
+    expect(BLOCKED_HOSTS.has('housingwire.com')).toBe(true);
+    expect(BLOCKED_HOSTS.has('businesswire.com')).toBe(true);
     expect(BLOCKED_NAME_TOKENS.includes('tradingview')).toBe(true);
     expect(BLOCKED_NAME_TOKENS.includes('yahoo finance')).toBe(true);
     expect(BLOCKED_NAME_TOKENS.includes('msn')).toBe(true);
+    expect(BLOCKED_NAME_TOKENS.includes('show hn')).toBe(true);
+    expect(BLOCKED_NAME_TOKENS.includes('business wire')).toBe(true);
+    expect(BLOCKED_NAME_TOKENS.includes('pr newswire')).toBe(true);
+    expect(BLOCKED_NAME_TOKENS.includes('globenewswire')).toBe(true);
+    expect(BLOCKED_NAME_TOKENS.includes('housing wire')).toBe(true);
   });
 
   it('every host entry is lowercase (suffix-match correctness)', () => {

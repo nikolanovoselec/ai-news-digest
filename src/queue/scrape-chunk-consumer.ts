@@ -52,7 +52,10 @@ import {
   type Candidate,
   type Cluster,
 } from '~/lib/dedupe';
-import { fetchArticleBodies } from '~/lib/article-fetch';
+import {
+  fetchArticleBodiesWithQuality,
+  isLikelyLandingOrPortalUrl,
+} from '~/lib/article-fetch';
 import { DEFAULT_HASHTAGS } from '~/lib/default-hashtags';
 import { normalizeHashtag } from '~/lib/hashtags';
 import { splitIntoParagraphs } from '~/lib/paragraph-split';
@@ -425,7 +428,8 @@ export async function processOneChunk(
 // ---------- step helpers (colocated; not re-exported) ---------------------
 
 /**
- * Fetch article bodies for thin-snippet candidates, then build the
+ * Fetch article bodies for candidates that either already look thin
+ * or whose URL is portal-like/landing-like, then build the
  * prompt-ready candidate array.
  *
  * Happens inside the chunk consumer (not the coordinator) so the
@@ -457,35 +461,55 @@ async function fetchAndBuildPromptCandidates(
   env: Env,
   body: ChunkJobMessage,
 ): Promise<{ promptCandidates: PromptCandidate[] }> {
-  const urlsToFetch: string[] = [];
+  const urlsToFetch = new Set<string>();
   for (const c of body.candidates) {
     const existingSnippet = c.body_snippet ?? '';
+    const likelyLanding = isLikelyLandingOrPortalUrl(c.source_url);
     if (
       c.force_body_fetch === true ||
-      existingSnippet.length < SNIPPET_FLOOR
+      existingSnippet.length < SNIPPET_FLOOR ||
+      likelyLanding
     ) {
-      urlsToFetch.push(c.source_url);
+      urlsToFetch.add(c.source_url);
     }
   }
-  let fetchedBodies = new Map<string, string>();
-  if (urlsToFetch.length > 0) {
+
+  let fetchedBodies = new Map<string, { text: string; isLikelyArticle: boolean; reasonCodes: string[] }>();
+  if (urlsToFetch.size > 0) {
     const fetchStart = Date.now();
-    fetchedBodies = await fetchArticleBodies(urlsToFetch, 20, env.APP_URL);
+    fetchedBodies = await fetchArticleBodiesWithQuality(
+      Array.from(urlsToFetch),
+      20,
+      env.APP_URL,
+    );
     log('info', 'digest.generation', {
       status: 'chunk_article_bodies_fetched',
       scrape_run_id: body.scrape_run_id,
       chunk_index: body.chunk_index,
-      urls_requested: urlsToFetch.length,
+      urls_requested: urlsToFetch.size,
       urls_fetched: fetchedBodies.size,
       duration_ms: Date.now() - fetchStart,
     });
   }
 
-  const promptCandidates = body.candidates.map((c, idx) => {
-    const fetched = fetchedBodies.get(c.source_url) ?? '';
+  let landingNoiseDrops = 0;
+  const promptCandidates = body.candidates.flatMap((c, idx) => {
+    const fetched = fetchedBodies.get(c.source_url);
     const feedSnippet = c.body_snippet ?? '';
+    const fetchedText = fetched?.text ?? '';
+    const likelyLanding = isLikelyLandingOrPortalUrl(c.source_url);
+    const isLandingNoise =
+      likelyLanding &&
+      fetched !== undefined &&
+      fetched.isLikelyArticle === false;
+
+    if (isLandingNoise) {
+      landingNoiseDrops += 1;
+      return [];
+    }
+
     const bestSnippet =
-      fetched.length > feedSnippet.length ? fetched : feedSnippet;
+      fetchedText.length > feedSnippet.length ? fetchedText : feedSnippet;
     const sourceTags = Array.from(new Set([
       ...(c.source_tags ?? []),
       ...((c.alternatives ?? []).flatMap((a) => a.source_tags ?? [])),
@@ -498,12 +522,15 @@ async function fetchAndBuildPromptCandidates(
       published_at: c.published_at,
       ...(sourceTags.length > 0 ? { source_tags: sourceTags } : {}),
     };
-    if (bestSnippet !== '') return { ...base, body_snippet: bestSnippet };
-    return base;
+    if (bestSnippet !== '') return [{ ...base, body_snippet: bestSnippet }];
+    return [base];
   });
 
   const noSnippetCount = promptCandidates.filter(
-    (p) => !('body_snippet' in p) || (p as { body_snippet?: string }).body_snippet === undefined || (p as { body_snippet?: string }).body_snippet === '',
+    (p) =>
+      !('body_snippet' in p) ||
+      (p as { body_snippet?: string }).body_snippet === undefined ||
+      (p as { body_snippet?: string }).body_snippet === '',
   ).length;
   if (noSnippetCount > 0) {
     log('warn', 'digest.generation', {
@@ -512,6 +539,15 @@ async function fetchAndBuildPromptCandidates(
       chunk_index: body.chunk_index,
       no_snippet: noSnippetCount,
       total: promptCandidates.length,
+    });
+  }
+  if (landingNoiseDrops > 0) {
+    log('warn', 'digest.generation', {
+      status: 'chunk_landing_noise_candidates_dropped',
+      scrape_run_id: body.scrape_run_id,
+      chunk_index: body.chunk_index,
+      dropped: landingNoiseDrops,
+      total: body.candidates.length,
     });
   }
 

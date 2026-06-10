@@ -19,7 +19,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   extractArticleText,
   fetchArticleBody,
+  fetchArticleBodyWithQuality,
   fetchArticleBodies,
+  isLikelyLandingOrPortalUrl,
 } from '~/lib/article-fetch';
 
 describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
@@ -152,6 +154,102 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
     expect(text).toContain('\u2014');
     expect(text).toContain('\u201chello\u201d');
     expect(text).not.toMatch(/\s{2,}/);
+  });
+});
+
+describe('landing-page heuristics — REQ-PIPE-001 AC 8', () => {
+  it('flags obvious portal URLs as landing-like', () => {
+    expect(isLikelyLandingOrPortalUrl('https://example.com/')).toBe(true);
+    expect(isLikelyLandingOrPortalUrl('https://example.com/news')).toBe(true);
+    expect(isLikelyLandingOrPortalUrl('https://example.com/topics')).toBe(true);
+    expect(isLikelyLandingOrPortalUrl('https://example.com/tag/ai')).toBe(true);
+    expect(isLikelyLandingOrPortalUrl('https://example.com/a')).toBe(false);
+  });
+
+  it('allows clearly article-ish URL paths', () => {
+    expect(
+      isLikelyLandingOrPortalUrl('https://example.com/2024/06/01/ai-platform-updates-and-new-features'),
+    ).toBe(false);
+    expect(
+      isLikelyLandingOrPortalUrl('https://example.com/2024/06/01/how-we-built-the-new-news-workflow'),
+    ).toBe(false);
+  });
+});
+
+describe('fetchArticleBodyWithQuality — REQ-PIPE-001 AC 8', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns article-like quality true for canonical article markup', async () => {
+    const articleBody = `
+      <article>
+        <h1>Deep-dive: why this change matters</h1>
+        <p>We ship this change to reduce noise from landing pages across feeds.</p>
+        <p>This section contains enough prose, examples, and structure that the
+        pipeline can safely treat it as an article source.</p>
+      </article>
+    `;
+    const html = `<html><body>${articleBody}</body></html>`;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(html, {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+    );
+
+    const out = await fetchArticleBodyWithQuality(
+      'https://example.com/2024/06/01/deep-article',
+    );
+    expect(out).not.toBeNull();
+    expect(out?.isLikelyArticle).toBe(true);
+    expect(out?.reasonCodes).toContain('article_tag');
+  });
+
+  it('keeps strongly structured landing-path pages as article-like', async () => {
+    const articleBody = `
+      <article>
+        <h1>News flash: model launch and rollout details</h1>
+        ${Array.from({ length: 12 }, () =>
+          '<p>We publish an explanation of rollout mechanics and migration plans.</p>'
+        ).join('\n')}
+      </article>
+    `;
+    const html = `<html><body>${articleBody}</body></html>`;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(html, {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+    );
+
+    const out = await fetchArticleBodyWithQuality(
+      'https://example.com/news/launch-update',
+    );
+
+    expect(out).not.toBeNull();
+    expect(out?.isLikelyArticle).toBe(true);
+    expect(out?.reasonCodes).toContain('portal_url_path');
+    expect(out?.reasonCodes).toContain('article_tag');
+  });
+
+  it('flags homepage-like fetches as non-article without blocking text extraction', async () => {
+    const links = '<a href="/page1">Read more about our products and releases today</a>'.repeat(20);
+    const html = `<html><body>${links}<p>${'filler '.repeat(80)}</p></body></html>`;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(html, {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+    );
+
+    const out = await fetchArticleBodyWithQuality('https://example.com/');
+    expect(out).not.toBeNull();
+    expect(out?.isLikelyArticle).toBe(false);
+    expect(out?.reasonCodes).toContain('portal_url_path');
   });
 });
 

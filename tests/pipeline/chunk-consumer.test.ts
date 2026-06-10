@@ -385,6 +385,87 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
     expect(messages[1]?.content).toContain('Fetched linked page body');
   });
 
+  it('REQ-PIPE-001: drops landing-page-like candidates classified as non-article', async () => {
+    const aiResponse = {
+      response: JSON.stringify({
+        articles: [
+          {
+            index: 0,
+            title: 'Landing Page Story',
+            details: LONG_BODY,
+            tags: ['cloudflare'],
+          },
+        ],
+        dedup_groups: [],
+      }),
+      usage: { input_tokens: 100, output_tokens: 200 },
+    };
+    const { db, records } = makeDb();
+    const { kv } = makeKv({ chunksRemaining: '1' });
+    const env = makeEnv(db, kv, aiResponse);
+    const landingSnippet = 'News page teaser text. '.repeat(Math.ceil(SNIPPET_FLOOR / 24));
+    const homepageHtml = `<html><body>${'<a href="/a">Latest item</a>'.repeat(20)}</body></html>`;
+
+    const fetchMock = vi.fn().mockImplementation(
+      async (input: string | URL | Request) => {
+        const url = typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+        if (url === 'https://publisher.example/noise') {
+          return new Response(homepageHtml, {
+            status: 200,
+            headers: { 'Content-Type': 'text/html' },
+          });
+        }
+        if (url !== TEST_AI_GATEWAY_URL) {
+          throw new Error(`unexpected fetch: ${url}`);
+        }
+        return new Response(JSON.stringify(aiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await processOneChunk(
+      env,
+      makeChunk({
+        candidates: [
+          {
+            canonical_url: 'https://publisher.example/noise',
+            source_url: 'https://publisher.example/noise',
+            source_name: 'Noisy Source',
+            title: 'Landing Page Story',
+            published_at: 1_713_900_000,
+            body_snippet: landingSnippet,
+          },
+        ],
+      }),
+    );
+
+    const articleInsert = records.filter(
+      (r) => r.via === 'batch' && r.sql.startsWith('INSERT OR IGNORE INTO articles'),
+    );
+    expect(articleInsert).toHaveLength(0);
+    const gatewayCall = fetchMock.mock.calls.find(
+      ([input]) => String(input) === TEST_AI_GATEWAY_URL,
+    );
+    expect(gatewayCall).toBeDefined();
+    const params = JSON.parse(
+      String((gatewayCall![1] as RequestInit).body),
+    ) as Record<string, unknown>;
+    const prompt = (params.messages as Array<{ role: string; content: string }>)[1]?.content ?? '';
+    expect(prompt).not.toContain('Landing Page Story');
+    expect(
+      fetchMock.mock.calls.some(
+        ([input]) => String(input) === 'https://publisher.example/noise',
+      ),
+    ).toBe(true);
+  });
+
   it('REQ-PIPE-002: parses OpenAI envelope + plain {response} via extractResponsePayload', async () => {
     const openAIEnvelope = {
       choices: [

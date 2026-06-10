@@ -568,13 +568,6 @@ export const CURATED_SOURCES: readonly CuratedSource[] = [
     kind: 'rss',
     tags: ['generative-ai', 'ai-agents'],
   },
-  {
-    slug: 'hn-show',
-    name: 'Hacker News - Show HN',
-    feed_url: 'https://hnrss.org/show',
-    kind: 'rss',
-    tags: ['ai-agents', 'coding-agents', 'devsecops'],
-  },
 
   // ---- Brand sources -----------------------------------------------------
   {

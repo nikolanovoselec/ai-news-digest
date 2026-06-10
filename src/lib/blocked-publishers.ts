@@ -44,6 +44,10 @@ export const BLOCKED_HOSTS: ReadonlySet<string> = new Set([
   'finance.com',
   'morningstar.com',
   'investing.com',
+  'businesswire.com',
+  'prnewswire.com',
+  'globenewswire.com',
+  'housingwire.com',
 ]);
 
 /** Lowercased substring tokens checked against `headline.source_name`.
@@ -69,6 +73,12 @@ export const BLOCKED_NAME_TOKENS: readonly string[] = [
   "investor's business daily",
   'morningstar',
   'investing.com',
+  'business wire',
+  'pr newswire',
+  'prnewswire',
+  'globenewswire',
+  'housing wire',
+  'show hn',
 ];
 
 /** Return true when the headline's host matches any entry in
