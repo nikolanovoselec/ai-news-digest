@@ -363,6 +363,37 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-
     ).toBe(true);
   });
 
+  it('REQ-PIPE-019: keeps same-topic Google News items when overlap is not a high-confidence title match', async () => {
+    stubFetchWithGoogleNewsItem(
+      'Hades PyPI supply chain attack poisons Python packages with credential stealer',
+    );
+    const { db, records } = makeDb({
+      recentArticles: [
+        {
+          id: 'article-existing-topic',
+          title: 'Over 100 NPM PyPI packages hit in new Shai-Hulud supply chain attacks',
+        },
+      ],
+    });
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(env, { scrape_run_id: 'run-google-news-same-topic' });
+
+    expect(sends.length).toBeGreaterThan(0);
+    const sentCandidates = (sends as Array<{ candidates?: Array<{ title: string }> }>)
+      .flatMap((send) => send.candidates ?? []);
+    expect(
+      sentCandidates.some((candidate) =>
+        candidate.title.includes('Hades PyPI supply chain attack'),
+      ),
+    ).toBe(true);
+    expect(
+      records.some((r) => r.sql.includes('INSERT OR IGNORE INTO article_sources')),
+    ).toBe(false);
+  });
+
   it('REQ-PIPE-001: chunks survivors into slices of ≤8 and enqueues SCRAPE_CHUNKS per chunk', async () => {
     // Stub fetch to return many items per call. Per-source cap is 10 in
     // the coordinator, so we'll see ~10 × (curated sources) items. With

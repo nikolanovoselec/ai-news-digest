@@ -59,6 +59,7 @@ import {
   sharedTitleTokenCount,
 } from '~/lib/prefer-direct-source';
 import { isBlockedPublisher } from '~/lib/blocked-publishers';
+import { tokenizeTitle } from '~/lib/title-overlap';
 import { readTimeWindowSeconds } from '~/lib/embeddings';
 import { SNIPPET_FLOOR } from '~/queue/scrape-chunk-consumer';
 
@@ -768,6 +769,7 @@ async function filterAndAggregateReSeenClusters(
 }
 
 const GOOGLE_NEWS_EXISTING_TITLE_THRESHOLD = 4;
+const GOOGLE_NEWS_EXISTING_TITLE_MIN_SHORTER_RATIO = 0.7;
 const GOOGLE_NEWS_EXISTING_TITLE_LIMIT = 1_000;
 
 interface RecentArticleTitle {
@@ -777,6 +779,22 @@ interface RecentArticleTitle {
 
 interface ExistingTitleMatch extends RecentArticleTitle {
   sharedTokens: number;
+  shorterTitleRatio: number;
+}
+
+function googleNewsExistingTitleScore(
+  title: string,
+  existingTitle: string,
+): { sharedTokens: number; shorterTitleRatio: number } {
+  const sharedTokens = sharedTitleTokenCount(title, existingTitle);
+  const titleTokenCount = tokenizeTitle(title).size;
+  const existingTitleTokenCount = tokenizeTitle(existingTitle).size;
+  const shorterTokenCount = Math.min(titleTokenCount, existingTitleTokenCount);
+  return {
+    sharedTokens,
+    shorterTitleRatio:
+      shorterTokenCount > 0 ? sharedTokens / shorterTokenCount : 0,
+  };
 }
 
 async function loadRecentArticleTitles(
@@ -805,10 +823,18 @@ function findExistingGoogleNewsTitleMatch(
 ): ExistingTitleMatch | null {
   let best: ExistingTitleMatch | null = null;
   for (const existing of existingTitles) {
-    const sharedTokens = sharedTitleTokenCount(title, existing.title);
-    if (sharedTokens < GOOGLE_NEWS_EXISTING_TITLE_THRESHOLD) continue;
-    if (best === null || sharedTokens > best.sharedTokens) {
-      best = { ...existing, sharedTokens };
+    const score = googleNewsExistingTitleScore(title, existing.title);
+    if (score.sharedTokens < GOOGLE_NEWS_EXISTING_TITLE_THRESHOLD) continue;
+    if (score.shorterTitleRatio < GOOGLE_NEWS_EXISTING_TITLE_MIN_SHORTER_RATIO) {
+      continue;
+    }
+    if (
+      best === null ||
+      score.shorterTitleRatio > best.shorterTitleRatio ||
+      (score.shorterTitleRatio === best.shorterTitleRatio &&
+        score.sharedTokens > best.sharedTokens)
+    ) {
+      best = { ...existing, ...score };
     }
   }
   return best;
@@ -865,6 +891,7 @@ async function filterAndAggregateGoogleNewsTitleMatches(
   const survivors: ReturnType<typeof clusterByCanonical> = [];
   let skipped = 0;
   let bestSharedTokens = 0;
+  let bestShorterTitleRatio = 0;
 
   for (const cluster of clusters) {
     if (!isGoogleNewsUrl(cluster.primary.source_url)) {
@@ -880,6 +907,10 @@ async function filterAndAggregateGoogleNewsTitleMatches(
 
     skipped += 1;
     bestSharedTokens = Math.max(bestSharedTokens, match.sharedTokens);
+    bestShorterTitleRatio = Math.max(
+      bestShorterTitleRatio,
+      match.shorterTitleRatio,
+    );
     const sources = [cluster.primary, ...cluster.alternatives];
     for (const source of sources) {
       const sourceKey = `${match.id} ${source.source_url}`;
@@ -952,7 +983,9 @@ async function filterAndAggregateGoogleNewsTitleMatches(
       sources_appended: sourceInserts.size,
       tags_appended: tagInserts.size,
       title_threshold: GOOGLE_NEWS_EXISTING_TITLE_THRESHOLD,
+      title_min_shorter_ratio: GOOGLE_NEWS_EXISTING_TITLE_MIN_SHORTER_RATIO,
       best_shared_tokens: bestSharedTokens,
+      best_shorter_title_ratio: Number(bestShorterTitleRatio.toFixed(3)),
       recent_title_rows: existingTitles.length,
     });
   }
