@@ -363,7 +363,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-
     ).toBe(true);
   });
 
-  it('REQ-PIPE-019: keeps same-topic Google News items when overlap is not a high-confidence title match', async () => {
+  it('REQ-PIPE-019: keeps same-topic Google News items when a short generic stored title is contained in a distinct headline', async () => {
     stubFetchWithGoogleNewsItem(
       'Hades PyPI supply chain attack poisons Python packages with credential stealer',
     );
@@ -371,7 +371,7 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-
       recentArticles: [
         {
           id: 'article-existing-topic',
-          title: 'Over 100 NPM PyPI packages hit in new Shai-Hulud supply chain attacks',
+          title: 'PyPI packages hit in supply chain attack',
         },
       ],
     });

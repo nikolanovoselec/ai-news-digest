@@ -40,8 +40,8 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Acceptance Criteria:**
 1. Every tag in the union of (default-seed hashtags ∪ curated source tags ∪ discovered KV tags) gets a per-tag Google News query-RSS source added to the tick's source list as a long-tail backstop.
 2. Tags already served by a bespoke hand-tuned Google News curated entry are skipped, so the same tag never gets two Google News queries in one tick.
-3. A Google News wrapper candidate whose title strongly matches an already-stored recent article is appended as another source/tag sighting for that article. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches -->
-4. A title-matched Google News wrapper candidate is skipped before chunk fan-out so it does not produce a duplicate LLM summary. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches -->
+3. A Google News wrapper candidate whose title strongly matches an already-stored recent article, including high coverage of the longer title, is appended as another source/tag sighting for that article. Same-topic partial-overlap candidates remain eligible for chunk fan-out. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches -->
+4. Only a high-confidence title-matched Google News wrapper candidate is skipped before chunk fan-out so it does not produce a duplicate LLM summary. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 

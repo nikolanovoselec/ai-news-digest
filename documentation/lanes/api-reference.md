@@ -516,47 +516,15 @@ The `alt_source_count` field drives the `+N` suffix on source labels across all 
 
 ### GET /api/digest/:id (Tombstoned)
 
-Retired per-digest retrieval endpoint. Stale clients receive `410 Gone` because per-user digests no longer exist after the global article-pool migration.
-
-```
-GET /api/digest/:id
-```
-
-**Authentication:** none
-**Origin check:** n/a
-**Status:** Tombstoned (removed when the `digests` table was dropped in migration 0003).
+**Status:** Tombstoned (returns `410 Gone`; removed when the `digests` table was dropped in migration 0003).
 **Replacement:** Per-user digests no longer exist; see [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) for the global pipeline.
-
-**Response**
-
-| Status | Outcome | Body |
-|---|---|---|
-| `410` | Endpoint retired | empty |
-
-**Implements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
 ---
 
 ### POST /api/digest/refresh (Tombstoned)
 
-Retired manual-refresh endpoint. Stale clients receive `410 Gone` because refreshes now run through the global fixed-cadence pipeline.
-
-```
-POST /api/digest/refresh
-```
-
-**Authentication:** none
-**Origin check:** n/a
-**Status:** Tombstoned (replaced by the every-4-hours global scrape pipeline).
+**Status:** Tombstoned (returns `410 Gone`; replaced by the every-4-hours global scrape pipeline).
 **Replacement:** Operators that want to force a refresh use `POST /api/admin/force-refresh` (see [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint)) instead.
-
-**Response**
-
-| Status | Outcome | Body |
-|---|---|---|
-| `410` | Endpoint retired | empty |
-
-**Implements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
 ---
 
