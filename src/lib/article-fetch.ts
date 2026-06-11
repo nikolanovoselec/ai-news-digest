@@ -177,7 +177,7 @@ function scoreArticleHeuristics(
     reasons.push('article_meta');
   }
 
-  if (/<script[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?@type[\s\S]*?(?:\"|'|\{)?(?:Article|NewsArticle|BlogPosting|TechArticle|Analysis|Report|Opinion)(?:\"|'|\})/i.test(html)) {
+  if (/<script[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?@type[\s\S]*?(?:"|'|\{)?(?:Article|NewsArticle|BlogPosting|TechArticle|Analysis|Report|Opinion)(?:"|'|\})/i.test(html)) {
     score += 3;
     reasons.push('jsonld_article_schema');
   }
