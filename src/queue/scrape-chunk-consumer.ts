@@ -284,6 +284,7 @@ export async function processOneChunk(
 
   // Fetch article bodies; build prompt-ready candidates.
   const { promptCandidates } = await fetchAndBuildPromptCandidates(env, body);
+  const promptedInputIndexes = new Set(promptCandidates.map((c) => c.index));
 
   // LLM call (single-model; throws on parse failure for queue retry).
   const { llmRun, rawArticles, dedupGroups } = await runChunkLLM(
@@ -337,7 +338,10 @@ export async function processOneChunk(
     }));
     return { primary, alternatives };
   });
-  const mergedClusters = mergeClustersByLlmHints(perInputClusters, dedupGroups);
+  const promptedDedupGroups = dedupGroups
+    .map((group) => group.filter((idx) => promptedInputIndexes.has(idx)))
+    .filter((group) => group.length >= 2);
+  const mergedClusters = mergeClustersByLlmHints(perInputClusters, promptedDedupGroups);
 
   // Align LLM output to input candidates by echoed index (with positional fallback).
   const {
@@ -347,7 +351,14 @@ export async function processOneChunk(
     droppedForMissingAlignment,
     droppedForTitleMismatch,
     useEchoedIndex,
-  } = alignLlmArticlesToInputs(rawArticles, perInputClusters, mergedClusters, dedupGroups, body);
+  } = alignLlmArticlesToInputs(
+    rawArticles,
+    perInputClusters,
+    mergedClusters,
+    promptedDedupGroups,
+    body,
+    promptCandidates,
+  );
 
   // Validate + sanitize each survivor; drop articles that fail any gate.
   let prepared: PreparedArticle[] = [];
@@ -650,6 +661,7 @@ function alignLlmArticlesToInputs(
   mergedClusters: Cluster[],
   dedupGroups: number[][],
   body: ChunkJobMessage,
+  promptCandidates: PromptCandidate[],
 ): {
   survivors: Survivor[];
   articlesWithEchoedIndex: number;
@@ -660,12 +672,14 @@ function alignLlmArticlesToInputs(
 } {
   // Build the echoed-index map first.
   // CF-047: track articles that carry an EXPLICIT but invalid index
-  // (out-of-bounds or null). Those are excluded from positional fallback —
-  // the model deliberately emitted a bad index, which is a different
-  // signal from "the model emitted no index at all". Positional fallback
-  // is only for articles with index === undefined (model omitted the field).
+  // (out-of-bounds, non-prompted, or null). Those are excluded from
+  // positional fallback — the model deliberately emitted a bad index,
+  // which is a different signal from "the model emitted no index at all".
+  // Positional fallback is only for articles with index === undefined
+  // (model omitted the field).
   const articleByIndex = new Map<number, LLMChunkArticle>();
   const explicitlyInvalid = new Set<number>(); // raw-article positions
+  const promptedInputIndexes = new Set(promptCandidates.map((c) => c.index));
   let articlesWithEchoedIndex = 0;
   let duplicateEchoedIndex = 0;
   for (let i = 0; i < rawArticles.length; i += 1) {
@@ -676,7 +690,8 @@ function alignLlmArticlesToInputs(
       typeof echoed === 'number' &&
       Number.isInteger(echoed) &&
       echoed >= 0 &&
-      echoed < perInputClusters.length
+      echoed < perInputClusters.length &&
+      promptedInputIndexes.has(echoed)
     ) {
       articlesWithEchoedIndex += 1;
       if (articleByIndex.has(echoed)) {
@@ -685,8 +700,8 @@ function alignLlmArticlesToInputs(
         articleByIndex.set(echoed, art);
       }
     } else if (echoed !== undefined) {
-      // Explicit but invalid index (null, out-of-bounds integer, string,
-      // non-integer): mark position so positional fallback skips it.
+      // Explicit but invalid index (null, out-of-bounds, non-prompted,
+      // string, non-integer): mark position so positional fallback skips it.
       explicitlyInvalid.add(i);
     }
   }
@@ -702,13 +717,20 @@ function alignLlmArticlesToInputs(
   // CF-026: for positional fallback, populate the SAME map from rawArticles
   // so the merge pass always reads from articleByIndex regardless of mode.
   // CF-047: skip articles with explicitly invalid indices — they had a bad
-  // index value (null / out-of-bounds), not a missing one.
+  // index value (null / out-of-bounds / non-prompted), not a missing one.
   if (!useEchoedIndex) {
     for (let i = 0; i < rawArticles.length; i++) {
       if (explicitlyInvalid.has(i)) continue;
       const art = rawArticles[i];
-      if (art !== undefined && !articleByIndex.has(i)) {
-        articleByIndex.set(i, art);
+      const promptCandidate = promptCandidates[i];
+      const promptedIndex = promptCandidate?.index;
+      if (
+        art !== undefined &&
+        promptedIndex !== undefined &&
+        promptedInputIndexes.has(promptedIndex) &&
+        !articleByIndex.has(promptedIndex)
+      ) {
+        articleByIndex.set(promptedIndex, art);
       }
     }
   }

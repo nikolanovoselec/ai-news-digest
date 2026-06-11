@@ -1,16 +1,18 @@
-// Implements REQ-PIPE-001
+// Implements REQ-PIPE-010
+// Implements REQ-PIPE-011
+// Implements CON-SEC-002
 //
 // Article-body fetcher. When a feed's snippet is thin (or absent),
-// the LLM has nothing to summarize and falls back to boilerplate
-// hallucination. This module fetches the article URL directly,
-// extracts readable text from the HTML, and returns it capped at a
-// reasonable size so the chunk prompt stays budget-safe.
+// a wrapper URL needs direct-page grounding, or a URL looks portal-like,
+// this module fetches the page directly, extracts readable text from the
+// HTML, scores whether the page looks article-like, and returns capped
+// text so the chunk prompt stays budget-safe.
 //
 // Security + cost controls:
 //   - `isUrlSafe` SSRF guard on every target URL (HTTPS-only, no
 //     private/loopback/link-local ranges).
-//   - 5-second timeout per fetch.
-//   - 1 MB response cap.
+//   - 8-second timeout per fetch.
+//   - 1.5 MB response cap.
 //   - 20-worker concurrency bucket when called in bulk so 500
 //     candidates don't stampede the network.
 //   - Plaintext output capped at 15000 characters - long-form

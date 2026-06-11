@@ -122,7 +122,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 **Status:** Accepted (2026-04-27, supersedes AD3-original)
 
-**Decision:** When a feed snippet is too thin to ground a useful summary, the chunk consumer fetches the article body directly. Each fetch is SSRF-guarded, time-bounded (8 s), and size-capped (1.5 MB); a failed fetch falls back to the snippet, never blocking a summary.
+**Decision:** When a feed snippet is too thin to ground a useful summary, a source adapter marks a wrapper for linked-page fetch, or a candidate URL looks portal-like, the chunk consumer fetches the page body directly. Each fetch is SSRF-guarded, time-bounded (8 s), and size-capped (1.5 MB); ordinary fetch failures fall back to the feed snippet, while portal-like pages classified as non-article are dropped before LLM summarisation.
 
 **Context:** Many RSS sources publish only the headline plus a one-sentence lede in the feed (Reuters, AP, syndicated mirrors), leaving the LLM nothing concrete to summarise. An SSRF denylist plus 8 s timeout and 1.5 MB cap reduce the fetch surface to publisher-hosted article HTML only (no private IPs, no metadata services, no oversized payloads). Fetching the article body and concatenating it into the chunk prompt produced summaries that no longer hallucinated facts not present in the headline; without the body fetch, the chunk consumer's only signal was the lede.
 
@@ -132,9 +132,9 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 **Rationale:** An SSRF denylist, 8 s timeout, and 1.5 MB size cap bring the risk to negligible. Fan-out is bounded-concurrency at 20 workers. The quality improvement on short-snippet feeds justifies the added complexity.
 
-**Consequences:** The SSRF denylist (`src/lib/ssrf-guard.ts`) must be kept current as RFC-1918 and link-local ranges evolve. Article-body fetches add latency to chunk processing; the 8 s timeout is the ceiling. New feed sources from publishers behind aggressive anti-scraping CDNs will silently fall back to snippet-only summaries.
+**Consequences:** The SSRF denylist (`src/lib/ssrf.ts`) must be kept current as RFC-1918 and link-local ranges evolve. Article-body fetches add latency to chunk processing; the 8 s timeout is the ceiling. New feed sources from publishers behind aggressive anti-scraping CDNs will silently fall back to snippet-only summaries unless the candidate was portal-like and the fetched page was classified as non-article, which is logged as `chunk_landing_noise_candidates_dropped`.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) AC 8
+**Related requirements:** [REQ-PIPE-010](../../sdd/spec/generation.md#req-pipe-010-body-fetch-for-thin-forced-and-portal-like-candidates), [REQ-PIPE-011](../../sdd/spec/generation.md#req-pipe-011-candidate-filtering-rules), [CON-SEC-002](../../sdd/spec/constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
 ---
 
@@ -664,7 +664,7 @@ PR #185 attempted to compensate with `margin-top: -0.3em`. The user reported thi
 - Documented residual risk surfaces in `sdd/security.md` (or the equivalent threat-model doc when bootstrapped).
 - The `metadata` bareword and any future single-label hostnames that resolve to sensitive infrastructure should be added to the literal denial list as they surface.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) AC 8
+**Related requirements:** [REQ-PIPE-010](../../sdd/spec/generation.md#req-pipe-010-body-fetch-for-thin-forced-and-portal-like-candidates), [CON-SEC-002](../../sdd/spec/constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
 ---
 

@@ -15,7 +15,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 2. The coordinator partitions candidates across one or more chunk jobs whose size is capped to fit the model's context window so LLM calls stay within budget and partial failures only lose one chunk. <!-- @impl: src/queue/scrape-coordinator.ts::packCandidatesIntoChunks -->
 3. Each run is tracked by a `scrape_runs` row that transitions `running` → `ready` on success (or `failed` on abort), with progress derived from `scrape_runs.chunk_count` and D1 chunk-completion rows. <!-- @impl: src/queue/scrape-chunk-consumer.ts::recordChunkCompletionAndCheckFinalize -->
 4. Article-pool ingestion (URL deduplication, source-list aggregation, first-ingestion timestamp preservation, and per-item publisher resolution) is governed by [REQ-PIPE-017](#req-pipe-017-article-pool-ingestion-contract). <!-- @impl: src/queue/scrape-chunk-consumer.ts::buildArticleBatchStatements -->
-5. Body-fetch behaviour for candidates with thin feed snippets is governed by [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-feed-snippets). <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+5. Body-fetch behaviour for thin, forced, and portal-like candidates is governed by [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-forced-and-portal-like-candidates). <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 6. Google News query-RSS long-tail backstop coverage is governed by [REQ-PIPE-019](#req-pipe-019-google-news-query-rss-long-tail-backstop). <!-- @impl: src/queue/scrape-coordinator.ts::assembleAllSources -->
 7. A run waiting too long for scrape completion exits failed rather than looping silently. <!-- @impl: src/queue/pipeline-consumer.ts::runScrapeWait -->
 
@@ -23,7 +23,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags), [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-feed-snippets), [REQ-PIPE-011](#req-pipe-011-candidate-filtering-rules), [REQ-PIPE-017](#req-pipe-017-article-pool-ingestion-contract), [REQ-PIPE-019](#req-pipe-019-google-news-query-rss-long-tail-backstop)
+**Dependencies:** [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags), [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-forced-and-portal-like-candidates), [REQ-PIPE-011](#req-pipe-011-candidate-filtering-rules), [REQ-PIPE-017](#req-pipe-017-article-pool-ingestion-contract), [REQ-PIPE-019](#req-pipe-019-google-news-query-rss-long-tail-backstop)
 
 **Verification:** Integration test
 
@@ -411,19 +411,20 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Status:** Implemented
 
 ---
-### REQ-PIPE-010: Body-fetch for thin feed snippets
+### REQ-PIPE-010: Body-fetch for thin, forced, and portal-like candidates
 
-**Intent:** When a feed entry's summary is too short to ground a faithful LLM summary, the pipeline fetches the article body directly so summarisation has real content to work with. Body-fetch is a sub-feature of the coordinator pipeline (REQ-PIPE-001) carved out per the AC count cap.
+**Intent:** When a feed entry's summary is too short to ground a faithful LLM summary, a source adapter marks a wrapper URL for linked-page fetch, or a candidate URL looks like a portal/landing page, the pipeline fetches the page body directly so summarisation has real article content to work with. Body-fetch is a sub-feature of the coordinator pipeline (REQ-PIPE-001) carved out per the AC count cap.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 1. When a candidate's feed snippet is too thin to ground a faithful summary, the pipeline fetches the article body directly. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 2. Cross-site outbound feed snippets fetch the linked article body even when the feed snippet is long. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
-3. Discussion or score metadata is not used as fallback article text. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates -->
-4. Readable plaintext is extracted from a successful body fetch and attached to the candidate. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
-5. When body-fetch extraction yields too little text, the candidate falls back to whatever the feed itself provided. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
-6. A failed body-fetch never blocks a summary. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+3. Portal-like or landing-like candidate URLs fetch the page body even when the feed snippet is long enough to skip thin-snippet fetching. <!-- @impl: src/lib/article-fetch.ts::isLikelyLandingOrPortalUrl --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+4. Discussion or score metadata is not used as fallback article text. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates -->
+5. Readable plaintext is extracted from a successful body fetch and attached to the candidate. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+6. When body-fetch extraction yields too little text, the candidate falls back to whatever the feed itself provided. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+7. A failed body-fetch never blocks a summary. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
@@ -450,6 +451,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 4. The blocklist is matched against both the article URL's host and the per-item publisher name reported by the feed entry, so an aggregator-wrapped item (whose URL points at a redirect envelope rather than the publisher's site) is still recognised by the publisher name the feed exposes.
 5. The blocklist applies uniformly across every tag and every user — a user with a tag that matches a tech vendor's ticker never sees those stock-pump articles in their digest.
 6. The blocklist is operator-maintained at the source level rather than configurable per user; the contract is a single project-wide list, not a personal mute list.
+7. Portal-like or landing-like candidates whose fetched page is classified as non-article are dropped before LLM summarisation, and their original candidate indexes are not eligible for echoed-index alignment or positional fallback. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
 
 **Constraints:** [CON-PERF-001](constraints.md#con-perf-001-100-user-thundering-herd-target)
 

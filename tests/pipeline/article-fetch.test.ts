@@ -1,4 +1,4 @@
-// Tests for src/lib/article-fetch.ts — REQ-PIPE-001 AC 8.
+// Tests for src/lib/article-fetch.ts — REQ-PIPE-010 / REQ-PIPE-011 / CON-SEC-002.
 //
 // The fetcher is the "grounding" layer: when a feed snippet is too
 // thin for the LLM to write a faithful summary, the coordinator
@@ -24,8 +24,8 @@ import {
   isLikelyLandingOrPortalUrl,
 } from '~/lib/article-fetch';
 
-describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
-  it('REQ-PIPE-001: prefers <article> content over surrounding chrome', () => {
+describe('extractArticleText — REQ-PIPE-010', () => {
+  it('REQ-PIPE-010: prefers <article> content over surrounding chrome', () => {
     const html = `
       <html>
         <body>
@@ -49,7 +49,7 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
     expect(text).not.toContain('Terms Privacy');
   });
 
-  it('REQ-PIPE-001: picks the longest candidate when multiple containers match', () => {
+  it('REQ-PIPE-010: picks the longest candidate when multiple containers match', () => {
     const html = `
       <html>
         <body>
@@ -69,7 +69,7 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
     expect(text).not.toBe('Short main blurb.');
   });
 
-  it('REQ-PIPE-001: strips <script>, <style>, <noscript>, <svg> contents', () => {
+  it('REQ-PIPE-010: strips <script>, <style>, <noscript>, <svg> contents', () => {
     const html = `
       <html>
         <body>
@@ -96,7 +96,7 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
   // (attribute-shaped junk). HTML parsers tolerate ALL these forms,
   // so attacker-controlled feed bodies could smuggle script content
   // into the LLM-prompt body. The fix uses `</script\b[^>]*>`.
-  it('REQ-PIPE-001: strips script/style with whitespace and junk before the closing >', () => {
+  it('REQ-PIPE-010: strips script/style with whitespace and junk before the closing >', () => {
     const html = `
       <article>
         Clean body text we do want.
@@ -120,7 +120,7 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
   // earlier composite test had a trailing `</article>` that masked
   // this branch — a stricter `</script\s*>` regex looked correct
   // against the composite input but still let this fixture leak.
-  it('REQ-PIPE-001: strips a script when its attribute-shaped close is the ONLY closing variant', () => {
+  it('REQ-PIPE-010: strips a script when its attribute-shaped close is the ONLY closing variant', () => {
     const html =
       '<html><body>Article body that is plenty long to ground a summary across the threshold. ' +
       '<script>window.__smuggle = 42;</script attr-only>' +
@@ -132,7 +132,7 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
     expect(text).not.toMatch(/= 42/);
   });
 
-  it('REQ-PIPE-001: falls back to <body> when no known container matches', () => {
+  it('REQ-PIPE-010: falls back to <body> when no known container matches', () => {
     const html = `
       <html>
         <body>
@@ -146,7 +146,7 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
     expect(text).toContain('paragraph two');
   });
 
-  it('REQ-PIPE-001: decodes HTML entities and collapses whitespace', () => {
+  it('REQ-PIPE-010: decodes HTML entities and collapses whitespace', () => {
     const html =
       '<article>A &amp; B &mdash; say &#8220;hello&#8221;.\n\n\nDone.</article>';
     const text = extractArticleText(html);
@@ -157,7 +157,7 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
   });
 });
 
-describe('landing-page heuristics — REQ-PIPE-001 AC 8', () => {
+describe('landing-page heuristics — REQ-PIPE-011', () => {
   it('flags obvious portal URLs as landing-like', () => {
     expect(isLikelyLandingOrPortalUrl('https://example.com/')).toBe(true);
     expect(isLikelyLandingOrPortalUrl('https://example.com/news')).toBe(true);
@@ -176,7 +176,7 @@ describe('landing-page heuristics — REQ-PIPE-001 AC 8', () => {
   });
 });
 
-describe('fetchArticleBodyWithQuality — REQ-PIPE-001 AC 8', () => {
+describe('fetchArticleBodyWithQuality — REQ-PIPE-010 / REQ-PIPE-011', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -253,7 +253,7 @@ describe('fetchArticleBodyWithQuality — REQ-PIPE-001 AC 8', () => {
   });
 });
 
-describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
+describe('fetchArticleBody — REQ-PIPE-010 / CON-SEC-002', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -261,7 +261,7 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     vi.restoreAllMocks();
   });
 
-  it('REQ-PIPE-001: rejects non-HTTPS URLs via the SSRF filter (returns null, no network call)', async () => {
+  it('CON-SEC-002: rejects non-HTTPS URLs via the SSRF filter (returns null, no network call)', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('should not be called', { status: 200 }),
     );
@@ -270,7 +270,7 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('REQ-PIPE-001: rejects private-range IPs via the SSRF filter', async () => {
+  it('CON-SEC-002: rejects private-range IPs via the SSRF filter', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('ignored', { status: 200 }),
     );
@@ -279,7 +279,7 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('REQ-PIPE-001: returns null on non-2xx HTTP response', async () => {
+  it('REQ-PIPE-010: returns null on non-2xx HTTP response', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('Forbidden', { status: 403 }),
     );
@@ -287,7 +287,7 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     expect(out).toBeNull();
   });
 
-  it('REQ-PIPE-001: returns null when the content-type is declared as non-HTML/plain/xml', async () => {
+  it('REQ-PIPE-010: returns null when the content-type is declared as non-HTML/plain/xml', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('binary garbage', {
         status: 200,
@@ -298,7 +298,7 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     expect(out).toBeNull();
   });
 
-  it('REQ-PIPE-001: returns null when the extracted text is under the grounding threshold', async () => {
+  it('REQ-PIPE-010: returns null when the extracted text is under the grounding threshold', async () => {
     // 100-character threshold is the contract — anything shorter
     // isn't enough for the LLM to produce a non-hallucinated summary.
     const thinHtml = '<html><body><article>Too short.</article></body></html>';
@@ -312,7 +312,7 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     expect(out).toBeNull();
   });
 
-  it('REQ-PIPE-001: returns the extracted text on a well-formed HTML response', async () => {
+  it('REQ-PIPE-010: returns the extracted text on a well-formed HTML response', async () => {
     const body = 'This is a real article body with enough substance to count as genuine content for grounding. '.repeat(3);
     const html = `<html><body><article>${body}</article></body></html>`;
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -326,13 +326,13 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     expect(out).toContain('real article body');
   });
 
-  it('REQ-PIPE-001: swallows network errors and returns null rather than throwing', async () => {
+  it('REQ-PIPE-010: swallows network errors and returns null rather than throwing', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('offline'));
     const out = await fetchArticleBody('https://example.com/dead');
     expect(out).toBeNull();
   });
 
-  it('REQ-PIPE-001: swallows AbortError from the timeout path and returns null', async () => {
+  it('REQ-PIPE-010: swallows AbortError from the timeout path and returns null', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
       // Simulate a signal firing by mirroring the AbortError shape.
       const signal = (init as RequestInit | undefined)?.signal;
@@ -346,7 +346,7 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
   });
 });
 
-describe('fetchArticleBodies — REQ-PIPE-001 AC 8', () => {
+describe('fetchArticleBodies — REQ-PIPE-010', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -354,7 +354,7 @@ describe('fetchArticleBodies — REQ-PIPE-001 AC 8', () => {
     vi.restoreAllMocks();
   });
 
-  it('REQ-PIPE-001: populates the result map with one entry per URL that fetched cleanly', async () => {
+  it('REQ-PIPE-010: populates the result map with one entry per URL that fetched cleanly', async () => {
     const longBody = 'Ground-truth article content for three distinct URLs. '.repeat(4);
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = typeof input === 'string' ? input : input.toString();

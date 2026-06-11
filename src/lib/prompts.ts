@@ -252,7 +252,7 @@ export function processChunkUserPrompt(
 ${tagList}
 \`\`\`
 
-Candidates (${candidates.length} entries, 0-indexed). Output exactly ${candidates.length} entries in the "articles" array — one record for every bracketed candidate index, including drop records. Each entry MUST carry an "index" field that matches the bracketed [N] of the candidate it summarises — the server aligns your output to the input BY THAT FIELD, not by position, so an entry without a correct "index" is silently dropped:
+Candidates (${candidates.length} entries, bracketed by original candidate index). Output exactly ${candidates.length} entries in the "articles" array — one record for every bracketed candidate index, including drop records. Each entry MUST carry an "index" field that matches the bracketed [N] of the candidate it summarises — the server aligns your output to the input BY THAT FIELD, not by position, so an entry without a correct "index" is silently dropped:
 \`\`\`
 ${lines.join('\n')}
 \`\`\`
