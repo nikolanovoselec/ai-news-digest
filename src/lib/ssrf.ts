@@ -9,7 +9,8 @@
 //   - IPv4 hostname may not fall inside loopback (127/8), private (10/8,
 //     172.16/12, 192.168/16), link-local (169.254/16), or CGNAT /
 //     Cloudflare internal (100.64.0.0/10) ranges
-//   - IPv6 hostname may not be loopback (::1) or link-local (fe80::/10)
+//   - IPv6 hostname may not be loopback (::1), link-local (fe80::/10),
+//     unique-local (fc00::/7), or IPv4-mapped (::ffff:0:0/96)
 //   - Unparseable URLs are unsafe by default
 //
 // This runs BEFORE any fetch — a malicious LLM suggestion cannot bypass it.
@@ -138,11 +139,11 @@ function isPrivateIpv6(host: string): boolean {
   // Unique local fc00::/7 (fc00..fdff) — treat as private for defence in depth.
   if (/^f[cd][0-9a-f]{2}:/.test(normalized)) return true;
 
-  // IPv4-mapped ::ffff:10.0.0.1 style — reject if mapped to a private IPv4.
-  const mapped = normalized.match(/^::ffff:([0-9.]+)$/);
-  if (mapped && mapped[1] !== undefined && isIpv4Literal(mapped[1])) {
-    return isPrivateIpv4(mapped[1]);
-  }
+  // IPv4-mapped ::ffff:0:0/96 can be written as dotted decimal or
+  // hex hextets (`::ffff:a9fe:a9fe` == 169.254.169.254). Reject the
+  // whole mapped range so parser-normalized private IPv4 targets cannot
+  // bypass the literal IPv4 checks.
+  if (normalized.startsWith('::ffff:')) return true;
 
   return false;
 }

@@ -297,6 +297,53 @@ describe('fetchArticleBody — REQ-PIPE-010 / CON-SEC-002', () => {
     );
   });
 
+  it('CON-SEC-002: rejects redirects to IPv4-mapped IPv6 metadata targets', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('', {
+        status: 302,
+        headers: { location: 'https://[::ffff:a9fe:a9fe]/latest/meta-data' },
+      }),
+    );
+
+    const out = await fetchArticleBody('https://example.com/redirect');
+
+    expect(out).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://example.com/redirect',
+      expect.objectContaining({ redirect: 'manual' }),
+    );
+  });
+
+  it('CON-SEC-002: one timeout covers the full redirect chain', async () => {
+    const firstHopController = new AbortController();
+    vi.spyOn(AbortSignal, 'timeout')
+      .mockReturnValueOnce(firstHopController.signal)
+      .mockReturnValueOnce(new AbortController().signal);
+    const body = 'This redirected article body has enough substance to count as genuine content for grounding. '.repeat(3);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      const signal = (init as RequestInit | undefined)?.signal;
+      if (signal?.aborted === true) {
+        throw new DOMException('aborted', 'AbortError');
+      }
+      if (firstHopController.signal.aborted === false) {
+        firstHopController.abort();
+        return new Response('', {
+          status: 302,
+          headers: { location: '/articles/final' },
+        });
+      }
+      return new Response(`<html><body><article>${body}</article></body></html>`, {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      });
+    });
+
+    const out = await fetchArticleBody('https://example.com/redirect');
+
+    expect(out).toBeNull();
+  });
+
   it('CON-SEC-002: revalidates and follows safe redirects manually', async () => {
     const body = 'This redirected article body has enough substance to count as genuine content for grounding. '.repeat(3);
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {

@@ -73,6 +73,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired) | Scrape progress derives from D1; KV progress mirror retired | Storage | 2026-06-08 |
 | [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) | AI Gateway Dynamic Routing route controls the pipeline model | Architecture | 2026-06-09 |
 | [AD58](#ad58-preserve-summary-quality-by-reducing-paid-input-not-output-length) | Preserve summary quality by reducing paid input, not output length | Architecture | 2026-06-09 |
+| [AD59](#ad59-forced-and-portal-like-candidate-fetch-with-deterministic-non-article-drop) | Forced and portal-like candidate fetch with deterministic non-article drop | Architecture | 2026-06-12 |
 
 ---
 
@@ -132,9 +133,9 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 
 **Rationale:** An SSRF denylist, 8 s timeout, and 1.5 MB size cap bring the risk to negligible. Fan-out is bounded-concurrency at 20 workers. The quality improvement on short-snippet feeds justifies the added complexity.
 
-**Consequences:** The SSRF denylist (`src/lib/ssrf-guard.ts`) must be kept current as RFC-1918 and link-local ranges evolve. Article-body fetches add latency to chunk processing; the 8 s timeout is the ceiling. New feed sources from publishers behind aggressive anti-scraping CDNs will silently fall back to snippet-only summaries.
+**Consequences:** The SSRF denylist (`src/lib/ssrf.ts`) must be kept current as RFC-1918 and link-local ranges evolve. Article-body fetches add latency to chunk processing; the 8 s timeout is the ceiling. New feed sources from publishers behind aggressive anti-scraping CDNs will silently fall back to snippet-only summaries.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) AC 8
+**Related requirements:** [REQ-PIPE-010](../../sdd/spec/generation.md#req-pipe-010-body-fetch-for-thin-forced-and-portal-like-candidates), [CON-SEC-002](../../sdd/spec/constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
 ---
 
@@ -1691,9 +1692,9 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 
 **Status:** Accepted (2026-06-12)
 
-**Decision:** Extend AD3's article-body fetch path to source-adapter-forced wrapper URLs and portal-like or landing-like candidate URLs. The chunk consumer fetches those pages even when the feed snippet is long, scores portal-like fetched pages for article-likelihood, drops pages classified as non-articles before LLM summarisation, and records the chunk as complete without an LLM call when every candidate is dropped before prompting. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::processOneChunk -->
+**Decision:** Extend AD3's article-body fetch path to source-adapter-forced wrapper URLs and portal-like or landing-like candidate URLs. The chunk consumer fetches those pages even when the feed snippet is long, scores portal-like fetched pages for article-likelihood, drops pages classified as non-articles before LLM summarisation, and records the chunk as complete without an LLM call when every candidate is dropped before prompting.
 
-**Context:** Broad feeds and aggregator envelopes sometimes surface publisher homepages, tag pages, Show HN listings, or press-wire index pages as if they were individual stories. Feeding those pages to the summariser wastes model budget and can create plausible summaries for pages that are not articles. The existing AD3 SSRF, timeout, and body-size controls already bound the network surface; the new risk was quality and spend, not permission to fetch arbitrary raw URLs.
+**Context:** Broad feeds and aggregator envelopes sometimes surface publisher homepages, tag pages, Show HN listings, or press-wire index pages as if they were individual stories. Feeding those pages to the summariser wastes model budget and can create plausible summaries for pages that are not articles. The existing AD3 SSRF, timeout, and body-size controls already bound the network surface; the new risk was quality and spend, not permission to fetch arbitrary raw URLs. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::processOneChunk -->
 
 **Consequences:** Portal-like page fetches increase chunk work only for candidates that already look risky. Non-article fetched pages cannot enter the prompt or article pool. All candidates dropped before prompting become a zero-token, zero-article completed chunk so the scrape run can still reach finalize without retrying a prompt that contains no candidates.
 

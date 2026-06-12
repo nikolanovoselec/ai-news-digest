@@ -11,7 +11,7 @@
 // Security + cost controls:
 //   - `isUrlSafe` SSRF guard on every target URL and followed redirect
 //     target (HTTPS-only, no private/loopback/link-local ranges).
-//   - 8-second timeout per fetch.
+//   - 8-second timeout per article fetch, including redirects.
 //   - 1.5 MB response cap.
 //   - 20-worker concurrency bucket when called in bulk so 500
 //     candidates don't stampede the network.
@@ -302,12 +302,13 @@ export async function fetchArticleBodyWithQuality(
       ? `Mozilla/5.0 (compatible; news-digest/1.0; +${contactUrl})`
       : 'Mozilla/5.0 (compatible; news-digest/1.0)';
   try {
+    const fetchSignal = AbortSignal.timeout(ARTICLE_FETCH_TIMEOUT_MS);
     let currentUrl = url;
     let response: Response | null = null;
     for (let redirectHops = 0; redirectHops <= MAX_ARTICLE_FETCH_REDIRECTS; redirectHops += 1) {
       if (!isUrlSafe(currentUrl)) return null;
       response = await fetch(currentUrl, {
-        signal: AbortSignal.timeout(ARTICLE_FETCH_TIMEOUT_MS),
+        signal: fetchSignal,
         redirect: 'manual',
         headers: {
           'User-Agent': ua,
