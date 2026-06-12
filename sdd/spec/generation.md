@@ -451,7 +451,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 4. The blocklist is matched against both the article URL's host and the per-item publisher name reported by the feed entry, so an aggregator-wrapped item (whose URL points at a redirect envelope rather than the publisher's site) is still recognised by the publisher name the feed exposes.
 5. The blocklist applies uniformly across every tag and every user — a user with a tag that matches a tech vendor's ticker never sees those stock-pump articles in their digest.
 6. The blocklist is operator-maintained at the source level rather than configurable per user; the contract is a single project-wide list, not a personal mute list.
-7. Portal-like or landing-like candidates whose fetched page is classified as non-article cannot be summarised or persisted in the article pool. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+7. Portal-like or landing-like candidates whose fetched page is classified as non-article cannot be summarised or persisted in the article pool. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
 
 **Constraints:** [CON-PERF-001](constraints.md#con-perf-001-100-user-thundering-herd-target)
 
