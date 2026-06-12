@@ -469,6 +469,74 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
     expect(statsUpdate?.params).toEqual(['test-run', 0, 0, 0, 0, 1]);
   });
 
+  it('REQ-PIPE-011: drops high-confidence portal candidates when body fetch fails', async () => {
+    const aiResponse = {
+      response: JSON.stringify({
+        articles: [
+          {
+            index: 0,
+            title: 'Tag Page Story',
+            details: LONG_BODY,
+            tags: ['cloudflare'],
+          },
+        ],
+        dedup_groups: [],
+      }),
+      usage: { input_tokens: 100, output_tokens: 200 },
+    };
+    const { db, records } = makeDb();
+    const { kv } = makeKv({ chunksRemaining: '1' });
+    const env = makeEnv(db, kv, aiResponse);
+    const fetchMock = vi.fn().mockImplementation(
+      async (input: string | URL | Request) => {
+        const url = typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+        if (url === 'https://publisher.example/tag/cloudflare') {
+          return new Response('blocked', { status: 503 });
+        }
+        if (url !== TEST_AI_GATEWAY_URL) {
+          throw new Error(`unexpected fetch: ${url}`);
+        }
+        return new Response(JSON.stringify(aiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await processOneChunk(
+      env,
+      makeChunk({
+        candidates: [
+          {
+            canonical_url: 'https://publisher.example/tag/cloudflare',
+            source_url: 'https://publisher.example/tag/cloudflare',
+            source_name: 'Tag Page',
+            title: 'Tag Page Story',
+            published_at: 1_713_900_000,
+            body_snippet: 'Tag page teaser text. '.repeat(Math.ceil(SNIPPET_FLOOR / 22)),
+          },
+        ],
+      }),
+    );
+
+    const articleInsert = records.filter(
+      (r) => r.via === 'batch' && r.sql.startsWith('INSERT OR IGNORE INTO articles'),
+    );
+    expect(articleInsert).toHaveLength(0);
+    expect(
+      fetchMock.mock.calls.find(([input]) => String(input) === TEST_AI_GATEWAY_URL),
+    ).toBeUndefined();
+    const statsUpdate = records.find((r) =>
+      r.sql.includes('tokens_in = tokens_in + ?2'),
+    );
+    expect(statsUpdate?.params).toEqual(['test-run', 0, 0, 0, 0, 1]);
+  });
+
   it('REQ-PIPE-011: rejects echoed indexes for candidates dropped before prompting', async () => {
     const survivingUrl = 'https://publisher.example/2024/06/surviving-research-breakthrough';
     const aiResponse = {
@@ -736,6 +804,82 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
         r.sql.startsWith('INSERT OR IGNORE INTO articles'),
     );
     expect(articleInserts.length).toBe(1);
+  });
+
+  it('REQ-PIPE-020: drops broad-source tags with no article-level evidence', async () => {
+    const aiResponse = {
+      response: JSON.stringify({
+        articles: [
+          {
+            index: 0,
+            title: 'Croatia football squad update highlights Gvardiol return',
+            details: LONG_BODY,
+            tags: ['cloudflare'],
+          },
+        ],
+        dedup_groups: [],
+      }),
+      usage: { input_tokens: 10, output_tokens: 10 },
+    };
+    const { db, records } = makeDb();
+    const { kv } = makeKv({ chunksRemaining: '1' });
+    const env = makeEnv(db, kv, aiResponse);
+    await processOneChunk(env, makeChunk({
+      candidates: [
+        {
+          canonical_url: 'https://news.ycombinator.com/item?id=1',
+          source_url: 'https://news.ycombinator.com/item?id=1',
+          source_name: 'Hacker News',
+          title: 'Croatia football squad update highlights Gvardiol return',
+          published_at: 100,
+          body_snippet: 'A sports story about the national football squad and player selection. '.repeat(8),
+          requires_tag_evidence: true,
+        },
+      ],
+    }));
+
+    const articleInserts = records.filter(
+      (r) => r.via === 'batch' && r.sql.startsWith('INSERT OR IGNORE INTO articles'),
+    );
+    expect(articleInserts).toHaveLength(0);
+  });
+
+  it('REQ-PIPE-020: keeps broad-source tags when article text supports them', async () => {
+    const aiResponse = {
+      response: JSON.stringify({
+        articles: [
+          {
+            index: 0,
+            title: 'Cloudflare Workers AI agents gain new routing controls',
+            details: LONG_BODY,
+            tags: ['cloudflare', 'ai-agents'],
+          },
+        ],
+        dedup_groups: [],
+      }),
+      usage: { input_tokens: 10, output_tokens: 10 },
+    };
+    const { db, records } = makeDb();
+    const { kv } = makeKv({ chunksRemaining: '1' });
+    const env = makeEnv(db, kv, aiResponse);
+    await processOneChunk(env, makeChunk({
+      candidates: [
+        {
+          canonical_url: 'https://news.ycombinator.com/item?id=2',
+          source_url: 'https://news.ycombinator.com/item?id=2',
+          source_name: 'Hacker News',
+          title: 'Cloudflare Workers AI agents gain new routing controls',
+          published_at: 100,
+          body_snippet: 'Cloudflare Workers AI adds controls for AI agents and agentic application routing. '.repeat(8),
+          requires_tag_evidence: true,
+        },
+      ],
+    }));
+
+    const tagInserts = records.filter(
+      (r) => r.via === 'batch' && r.sql.startsWith('INSERT OR IGNORE INTO article_tags'),
+    );
+    expect(tagInserts.map((r) => r.params[1])).toEqual(['cloudflare', 'ai-agents']);
   });
 
   it('REQ-PIPE-020: filters model tags through candidate-local source_tags before persistence', async () => {

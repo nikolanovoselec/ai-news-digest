@@ -62,38 +62,38 @@ export interface ArticleBodyResult {
   reasonCodes: string[];
 }
 
-/**
- * Return true when a URL looks like a portal/home page and not an
- * article permalink.
- *
- * The rule is intentionally conservative: it only marks obviously
- * portal-like paths, short one-segment slugs, and category/search
- * entry points. False positives are tolerated because this gate is
- * followed by HTML-content scoring in {@link scoreArticleHeuristics}.
- */
-export function isLikelyLandingOrPortalUrl(rawUrl: string): boolean {
+/** Parse a URL path into lowercase segments for portal heuristics. */
+function urlPathParts(rawUrl: string): string[] | null {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
   } catch {
-    return false;
+    return null;
   }
 
   const path = parsed.pathname.toLowerCase().replace(/\/+$/, '');
-  if (path === '' || path === '/') return true;
-
-  const parts = path
+  if (path === '' || path === '/') return [];
+  return path
     .split('/')
     .map((segment) => segment.toLowerCase())
     .filter((segment) => segment !== '');
+}
+
+/**
+ * Return true when a URL is definitely a listing/search/home path rather
+ * than an article permalink. Fetch failures for these paths are treated as
+ * drop-worthy because the fallback feed text is usually page chrome.
+ */
+export function isHighConfidenceLandingOrPortalUrl(rawUrl: string): boolean {
+  const parts = urlPathParts(rawUrl);
+  if (parts === null) return false;
   if (parts.length === 0) return true;
 
   const [first, second] = parts;
   if (first === undefined) return true;
 
   const firstIsPortal =
-    first === 'news'
-    || first === 'top'
+    first === 'top'
     || first === 'tag'
     || first === 'tags'
     || first === 'topic'
@@ -115,7 +115,26 @@ export function isLikelyLandingOrPortalUrl(rawUrl: string): boolean {
     || second === 'categories'
     || second === 'tagged';
 
-  if (firstIsPortal || secondIsPortal) return true;
+  return firstIsPortal || secondIsPortal || (first === 'news' && parts.length === 1);
+}
+
+/**
+ * Return true when a URL looks like a portal/home page and not an
+ * article permalink.
+ *
+ * The rule is intentionally conservative: it marks obvious listing paths
+ * and short one-segment slugs, but it no longer treats every `/news/...`
+ * permalink as portal-like. False positives are followed by HTML-content
+ * scoring in {@link scoreArticleHeuristics}.
+ */
+export function isLikelyLandingOrPortalUrl(rawUrl: string): boolean {
+  const parts = urlPathParts(rawUrl);
+  if (parts === null) return false;
+  if (parts.length === 0) return true;
+  if (isHighConfidenceLandingOrPortalUrl(rawUrl)) return true;
+
+  const [first] = parts;
+  if (first === undefined) return true;
 
   if (parts.length === 1) {
     const slugLooksArticle =

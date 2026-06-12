@@ -230,6 +230,18 @@ describe('blocked-publishers — RSS source-name match (Google News redirect cas
       ),
     ).toBe(true);
   });
+
+  it('blocks Show HN when the signal is in the headline title', () => {
+    expect(
+      isBlockedPublisher(
+        mkHeadline({
+          url: 'https://news.ycombinator.com/item?id=123',
+          source_name: 'Hacker News',
+          title: 'Show HN: My unrelated weekend project',
+        }),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('blocked-publishers — filterBlockedPublishers', () => {

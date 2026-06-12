@@ -285,10 +285,12 @@ export interface ChunkCandidate {
   body_snippet?: string;
   force_body_fetch?: boolean;
   source_tags?: string[];
+  requires_tag_evidence?: boolean;
   alternatives: Array<{
     source_url: string;
     source_name: string;
     source_tags?: string[];
+    requires_tag_evidence?: boolean;
   }>;
 }
 
@@ -542,6 +544,7 @@ async function assembleAllSources(env: Env): Promise<SourceForFetch[]> {
       sourceName: synth.name,
       feedUrl: synth.feed_url,
       sourceTags: synth.tags,
+      requiresTagEvidence: true,
       discoveredTag: null,
     });
   }
@@ -550,7 +553,11 @@ async function assembleAllSources(env: Env): Promise<SourceForFetch[]> {
       adapter: curatedToAdapter(s),
       sourceName: s.name,
       feedUrl: s.feed_url,
-      sourceTags: s.tags,
+      sourceTags:
+        s.tags_apply_to_items === false && !s.slug.startsWith('google-news-')
+          ? []
+          : s.tags,
+      requiresTagEvidence: s.tags_apply_to_items === false,
       discoveredTag: null as string | null,
     })),
     ...discoveredSources,
@@ -642,6 +649,9 @@ function buildCandidates(
         ? { force_body_fetch: true }
         : {}),
       ...(sourceTags.length > 0 ? { source_tags: sourceTags } : {}),
+      ...(row.headline.requires_tag_evidence === true
+        ? { requires_tag_evidence: true }
+        : {}),
     });
   }
 
@@ -1019,11 +1029,17 @@ function flattenToChunkCandidates(
       ...(Array.isArray(c.primary.source_tags) && c.primary.source_tags.length > 0
         ? { source_tags: c.primary.source_tags }
         : {}),
+      ...(c.primary.requires_tag_evidence === true
+        ? { requires_tag_evidence: true }
+        : {}),
       alternatives: c.alternatives.map((alt) => ({
         source_url: alt.source_url,
         source_name: alt.source_name,
         ...(Array.isArray(alt.source_tags) && alt.source_tags.length > 0
           ? { source_tags: alt.source_tags }
+          : {}),
+        ...(alt.requires_tag_evidence === true
+          ? { requires_tag_evidence: true }
           : {}),
       })),
     };
@@ -1119,6 +1135,9 @@ interface SourceForFetch {
   feedUrl: string;
   /** Candidate-local tag hints stamped onto each fetched headline. */
   sourceTags: string[];
+  /** True when this source is too broad for registry tags to be trusted
+   * as item-level relevance evidence. */
+  requiresTagEvidence: boolean;
   /** Non-null only for URLs that originated from a `sources:{tag}` KV
    * entry - the coordinator can remove the URL from that entry if its
    * fetch-failure counter crosses the eviction threshold. */
@@ -1277,6 +1296,7 @@ export async function loadDiscoveredSources(
           sourceName: feed.name,
           feedUrl: feed.url,
           sourceTags: [tag],
+          requiresTagEvidence: isGoogleNewsUrl(feed.url),
           discoveredTag: tag,
         });
       }
@@ -1385,6 +1405,9 @@ async function fetchAllSources(
             headline: {
               ...h,
               source_tags: mergeSourceTags(h.source_tags, job.sourceTags),
+              ...(job.requiresTagEvidence || h.requires_tag_evidence === true
+                ? { requires_tag_evidence: true }
+                : {}),
             },
           }));
         let eviction: FeedEviction | null = null;

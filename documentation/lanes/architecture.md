@@ -268,12 +268,12 @@ Coordinator
        ▼
 Chunk consumer (per chunk)
   ├─ Fetch article bodies for thin, forced, and portal-like candidates (concurrency 20; REQ-PIPE-010)
-  ├─ Drop portal-like fetched pages classified as non-article before LLM prompt construction/alignment (REQ-PIPE-011 AC 7)
-  ├─ Compact long body text to lead + high-signal factual passages for the prompt (REQ-PIPE-022 AC 1-2)
+  ├─ Drop portal-like fetched pages classified as non-article, plus high-confidence listing URLs that fail fetch, before LLM prompt construction/alignment (REQ-PIPE-011 AC 7)
+  ├─ Compact long body text to lead + high-signal factual passages for the prompt and log candidate/body character totals (REQ-PIPE-022 AC 1-3)
   ├─ Single DEFAULT_MODEL_ID call (`dynamic/news_digest` AI Gateway route); align output to inputs by echoed index
   ├─ If invalid JSON consumed tokens, add zero-article `scrape_runs` token/cost stats before queue retry
   ├─ Reject 10+ model-emitted tags for queue retry; count that completed LLM call as zero-article token/cost spend before throwing
-  ├─ Filter accepted tags against the system-approved allowlist + candidate-local source tags
+  ├─ Filter accepted tags against the system-approved allowlist + candidate-local source tags; broad aggregators require article-level tag evidence before persistence
   ├─ Canonical-URL dedup within chunk (first-source-wins)
   ├─ Build embedding inputs (title + body, length-capped)
   ├─ Single Workers AI embedding call to bge-base-en-v1.5 → vectors
@@ -301,7 +301,7 @@ Finalize consumer (semantic same-story dedupe - REQ-PIPE-003, REQ-PIPE-009)
   └─ Enqueue one DEDUP_SWEEP message scoped to last 7d (derived from DEDUP_TIME_WINDOW_SECONDS at runtime - REQ-PIPE-013 AC 3)
 ```
 
-Body-fetch and landing-page handling ([REQ-PIPE-010 AC 2-5](../../sdd/spec/generation.md#req-pipe-010-body-fetch-for-thin-forced-and-portal-like-candidates), [REQ-PIPE-011 AC 7](../../sdd/spec/generation.md#req-pipe-011-candidate-filtering-rules)) are implemented by `feedSnippetFromCandidates`, which flags cross-site article URLs and removes discussion/score wrappers; `isLikelyLandingOrPortalUrl` and `fetchArticleBodyWithQuality`, which classify portal-like pages; and `fetchAndBuildPromptCandidates`, which fetches forced/portal-like candidates and drops fetched non-article landing noise before prompt construction. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates --> <!-- @impl: src/lib/article-fetch.ts::isLikelyLandingOrPortalUrl --> <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+Body-fetch and landing-page handling ([REQ-PIPE-010 AC 2-5](../../sdd/spec/generation.md#req-pipe-010-body-fetch-for-thin-forced-and-portal-like-candidates), [REQ-PIPE-011 AC 7](../../sdd/spec/generation.md#req-pipe-011-candidate-filtering-rules)) are implemented by `feedSnippetFromCandidates`, which flags cross-site article URLs and removes discussion/score wrappers; `isLikelyLandingOrPortalUrl`, `isHighConfidenceLandingOrPortalUrl`, and `fetchArticleBodyWithQuality`, which classify portal-like pages; and `fetchAndBuildPromptCandidates`, which fetches forced/portal-like candidates and drops fetched non-article landing noise or high-confidence listing fetch failures before prompt construction. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates --> <!-- @impl: src/lib/article-fetch.ts::isLikelyLandingOrPortalUrl --> <!-- @impl: src/lib/article-fetch.ts::isHighConfidenceLandingOrPortalUrl --> <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 
 The operator-driven `pipeline-jobs` orchestrator wraps this scrape flow with `scrape_kick` and `scrape_wait` phases ([REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-016](../../sdd/spec/generation.md#req-pipe-016-scrape_runs-idempotency-and-stuck-run-cleanup); source: `src/queue/pipeline-consumer.ts::runScrapeWait`). During `scrape_wait`, it polls the linked `scrape_runs` row on a bounded 10-second cadence. If the coordinator has claimed dispatch but the internal `chunk_count = -1` marker remains past the shorter coordinator budget, the orchestrator resets that marker and sends one replacement coordinator message. After that one recovery attempt, the longer scrape-wait cap applies; a still-running scrape is marked failed rather than re-enqueued forever.
 

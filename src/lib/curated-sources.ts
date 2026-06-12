@@ -34,6 +34,9 @@ export interface CuratedSource {
   kind: CuratedSourceKind;
   /** One or more tag slugs from the default registry. ≥1 required. */
   tags: string[];
+  /** False for broad aggregators whose tags identify why the feed is in
+   * the registry but are not reliable per-item tag evidence. */
+  tags_apply_to_items?: boolean;
 }
 
 /**
@@ -201,6 +204,7 @@ export const CURATED_SOURCES: readonly CuratedSource[] = [
     feed_url: 'https://news.google.com/rss/search?q=anthropic+OR+claude+ai&hl=en-US&gl=US&ceid=US:en',
     kind: 'rss',
     tags: ['ai-agents', 'generative-ai'],
+    tags_apply_to_items: false,
   },
 
   // ---- MCP / agentic / coding-agents ------------------------------------
@@ -238,6 +242,7 @@ export const CURATED_SOURCES: readonly CuratedSource[] = [
     feed_url: 'https://news.google.com/rss/search?q=%22Cursor+IDE%22+OR+%22GitHub+Copilot%22+OR+%22Claude+Code%22+coding&hl=en-US&gl=US&ceid=US:en',
     kind: 'rss',
     tags: ['coding-agents'],
+    tags_apply_to_items: false,
   },
 
   // ---- Security ----------------------------------------------------------
@@ -352,6 +357,7 @@ export const CURATED_SOURCES: readonly CuratedSource[] = [
     feed_url: 'https://news.google.com/rss/search?q=%22post-quantum+cryptography%22&hl=en-US&gl=US&ceid=US:en',
     kind: 'rss',
     tags: ['pqc'],
+    tags_apply_to_items: false,
   },
   {
     slug: 'sigstore-blog',
@@ -401,6 +407,7 @@ export const CURATED_SOURCES: readonly CuratedSource[] = [
     feed_url: 'https://news.google.com/rss/search?q=openziti+OR+%22zero+trust+networking%22&hl=en-US&gl=US&ceid=US:en',
     kind: 'rss',
     tags: ['openziti'],
+    tags_apply_to_items: false,
   },
 
   // ---- DevOps / platforms ------------------------------------------------
@@ -461,6 +468,7 @@ export const CURATED_SOURCES: readonly CuratedSource[] = [
     feed_url: 'https://hnrss.org/frontpage',
     kind: 'rss',
     tags: ['ai-agents', 'generative-ai', 'cloudflare'],
+    tags_apply_to_items: false,
   },
   {
     slug: 'lobsters',
@@ -468,6 +476,7 @@ export const CURATED_SOURCES: readonly CuratedSource[] = [
     feed_url: 'https://lobste.rs/rss',
     kind: 'rss',
     tags: ['devsecops', 'kubernetes'],
+    tags_apply_to_items: false,
   },
   {
     slug: 'the-register',

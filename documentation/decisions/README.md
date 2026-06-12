@@ -74,6 +74,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) | AI Gateway Dynamic Routing route controls the pipeline model | Architecture | 2026-06-09 |
 | [AD58](#ad58-preserve-summary-quality-by-reducing-paid-input-not-output-length) | Preserve summary quality by reducing paid input, not output length | Architecture | 2026-06-09 |
 | [AD59](#ad59-forced-and-portal-like-candidate-fetch-with-deterministic-non-article-drop) | Forced and portal-like candidate fetch with deterministic non-article drop | Architecture | 2026-06-12 |
+| [AD60](#ad60-broad-source-tags-require-article-level-evidence) | Broad source tags require article-level evidence | Architecture | 2026-06-12 |
 
 ---
 
@@ -1699,6 +1700,20 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 **Consequences:** Portal-like page fetches increase chunk work only for candidates that already look risky. Non-article fetched pages cannot enter the prompt or article pool. All candidates dropped before prompting become a zero-token, zero-article completed chunk so the scrape run can still reach finalize without retrying a prompt that contains no candidates.
 
 **Related requirements:** [REQ-PIPE-010](../../sdd/spec/generation.md#req-pipe-010-body-fetch-for-thin-forced-and-portal-like-candidates), [REQ-PIPE-011](../../sdd/spec/generation.md#req-pipe-011-candidate-filtering-rules), [CON-SEC-002](../../sdd/spec/constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
+
+---
+
+### AD60: Broad source tags require article-level evidence
+
+**Status:** Accepted (2026-06-12)
+
+**Decision:** Curated sources may declare that their registry tags do not apply to every feed item. For broad community feeds, the coordinator stops stamping source-level tags as candidate-local evidence; for Google News query feeds, tags still constrain the allowed output but are marked as requiring article evidence. The chunk consumer then persists only model-selected tags that are supported by deterministic title/body/source-text aliases.
+
+**Context:** Broad aggregators such as Hacker News and Lobsters are useful discovery surfaces but their feed-level tags describe why the feed is in the registry, not what every item covers. Treating those tags as candidate-local evidence let unrelated articles pass server-side validation whenever the model copied a plausible allowed tag. The new split keeps broad feeds available while moving final tag relevance from prompt compliance to deterministic persistence checks. <!-- @impl: src/lib/curated-sources.ts::CURATED_SOURCES --> <!-- @impl: src/queue/scrape-coordinator.ts::fetchAllSources --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
+
+**Consequences:** Broad-source articles can still surface when their title or body actually supports a selected tag, but unsupported tags are discarded and zero-tag articles are dropped. Precise first-party or tag-specific sources keep the existing candidate-local source-tag fast path, so this guardrail does not add LLM calls.
+
+**Related requirements:** [REQ-PIPE-011](../../sdd/spec/generation.md#req-pipe-011-candidate-filtering-rules), [REQ-PIPE-020](../../sdd/spec/generation.md#req-pipe-020-chunk-tag-validation-guardrails), [REQ-PIPE-022](../../sdd/spec/generation.md#req-pipe-022-chunk-prompt-input-compaction)
 
 ---
 

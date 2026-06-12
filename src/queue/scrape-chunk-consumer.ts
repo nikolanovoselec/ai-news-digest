@@ -54,6 +54,7 @@ import {
 } from '~/lib/dedupe';
 import {
   fetchArticleBodiesWithQuality,
+  isHighConfidenceLandingOrPortalUrl,
   isLikelyLandingOrPortalUrl,
 } from '~/lib/article-fetch';
 import { DEFAULT_HASHTAGS } from '~/lib/default-hashtags';
@@ -91,6 +92,9 @@ export interface ChunkJobMessage {
     /** Candidate-local tag hints from the source that surfaced this
      * article. Used as a contextual allowlist during tag validation. */
     source_tags?: string[];
+    /** True when source tags are not item-level evidence and selected
+     * tags must be supported by the article title/body text. */
+    requires_tag_evidence?: boolean;
     /** Optional alternative sources discovered by the coordinator for
      * the same canonical URL (multi-feed cluster). These land in
      * `article_sources` under the primary article. */
@@ -98,6 +102,7 @@ export interface ChunkJobMessage {
       source_url: string;
       source_name: string;
       source_tags?: string[];
+      requires_tag_evidence?: boolean;
     }>;
   }>;
 }
@@ -355,6 +360,9 @@ export async function processOneChunk(
       ...(Array.isArray(c.source_tags) && c.source_tags.length > 0
         ? { source_tags: c.source_tags }
         : {}),
+      ...(c.requires_tag_evidence === true
+        ? { requires_tag_evidence: true }
+        : {}),
     };
     const alternatives: Candidate[] = (c.alternatives ?? []).map((alt) => ({
       canonical_url: c.canonical_url,
@@ -364,6 +372,9 @@ export async function processOneChunk(
       published_at: c.published_at,
       ...(Array.isArray(alt.source_tags) && alt.source_tags.length > 0
         ? { source_tags: alt.source_tags }
+        : {}),
+      ...(alt.requires_tag_evidence === true
+        ? { requires_tag_evidence: true }
         : {}),
     }));
     return { primary, alternatives };
@@ -534,23 +545,43 @@ async function fetchAndBuildPromptCandidates(
   }
 
   let landingNoiseDrops = 0;
+  let landingFetchFailureDrops = 0;
+  let promptBodyChars = 0;
+  let feedBodyChars = 0;
+  let fetchedBodyChars = 0;
+  let fetchedBodyPromotions = 0;
   const promptCandidates = body.candidates.flatMap((c, idx) => {
     const fetched = fetchedBodies.get(c.source_url);
     const feedSnippet = c.body_snippet ?? '';
     const fetchedText = fetched?.text ?? '';
     const likelyLanding = isLikelyLandingOrPortalUrl(c.source_url);
+    const highConfidenceLanding = isHighConfidenceLandingOrPortalUrl(c.source_url);
     const isLandingNoise =
       likelyLanding &&
       fetched !== undefined &&
       fetched.isLikelyArticle === false;
+    const isLandingFetchFailure =
+      highConfidenceLanding &&
+      urlsToFetch.has(c.source_url) &&
+      fetched === undefined;
 
     if (isLandingNoise) {
       landingNoiseDrops += 1;
       return [];
     }
+    if (isLandingFetchFailure) {
+      landingFetchFailureDrops += 1;
+      return [];
+    }
 
     const bestSnippet =
       fetchedText.length > feedSnippet.length ? fetchedText : feedSnippet;
+    if (fetchedText.length > feedSnippet.length) {
+      fetchedBodyPromotions += 1;
+      fetchedBodyChars += fetchedText.length;
+    }
+    promptBodyChars += bestSnippet.length;
+    feedBodyChars += feedSnippet.length;
     const sourceTags = Array.from(new Set([
       ...(c.source_tags ?? []),
       ...((c.alternatives ?? []).flatMap((a) => a.source_tags ?? [])),
@@ -582,15 +613,29 @@ async function fetchAndBuildPromptCandidates(
       total: promptCandidates.length,
     });
   }
-  if (landingNoiseDrops > 0) {
+  if (landingNoiseDrops > 0 || landingFetchFailureDrops > 0) {
     log('warn', 'digest.generation', {
       status: 'chunk_landing_noise_candidates_dropped',
       scrape_run_id: body.scrape_run_id,
       chunk_index: body.chunk_index,
-      dropped: landingNoiseDrops,
+      dropped: landingNoiseDrops + landingFetchFailureDrops,
+      non_article_dropped: landingNoiseDrops,
+      fetch_failure_dropped: landingFetchFailureDrops,
       total: body.candidates.length,
     });
   }
+  log('info', 'digest.generation', {
+    status: 'chunk_prompt_candidates_built',
+    scrape_run_id: body.scrape_run_id,
+    chunk_index: body.chunk_index,
+    prompt_candidates: promptCandidates.length,
+    original_candidates: body.candidates.length,
+    prompt_body_chars: promptBodyChars,
+    feed_body_chars: feedBodyChars,
+    fetched_body_chars: fetchedBodyChars,
+    fetched_body_promotions: fetchedBodyPromotions,
+    dropped_before_llm: body.candidates.length - promptCandidates.length,
+  });
 
   return { promptCandidates };
 }
@@ -819,6 +864,71 @@ function contextualTagSetForCluster(cluster: Cluster): Set<string> {
   return set;
 }
 
+const TAG_RELEVANCE_ALIASES: Record<string, readonly string[]> = {
+  cloudflare: ['cloudflare', 'workers', 'durable objects', 'wrangler'],
+  mcp: ['mcp', 'model context protocol'],
+  'ai-agents': ['ai agent', 'ai agents', 'agentic', 'autonomous agent'],
+  'generative-ai': ['generative ai', 'genai', 'gen ai', 'llm', 'large language model', 'openai', 'anthropic', 'gemini', 'claude', 'mistral'],
+  aws: ['aws', 'amazon web services', 'bedrock', 'lambda', 'ec2', 's3'],
+  serverless: ['serverless', 'lambda', 'cloud functions', 'cloudflare workers', 'functions as a service'],
+  azure: ['azure', 'microsoft azure'],
+  'zero-trust': ['zero trust', 'ztna', 'sase'],
+  kubernetes: ['kubernetes', 'k8s', 'kube'],
+  devsecops: ['devsecops', 'dev sec ops', 'ci cd', 'ci/cd', 'secure pipeline', 'security pipeline', 'container security'],
+  'threat-intel': ['threat intel', 'threat intelligence', 'ioc', 'iocs', 'malware', 'ransomware', 'apt'],
+  appsec: ['appsec', 'application security', 'owasp', 'sast', 'dast', 'secure coding'],
+  'coding-agents': ['coding agent', 'coding agents', 'code assistant', 'ai coding', 'copilot', 'cursor', 'claude code'],
+  docker: ['docker', 'container', 'containers', 'containerd'],
+  iam: ['iam', 'identity and access', 'identity access', 'oauth', 'oidc', 'sso', 'authentication', 'authorization'],
+  siem: ['siem', 'security information and event management', 'splunk', 'sentinel'],
+  pqc: ['pqc', 'post quantum', 'post-quantum', 'quantum safe', 'quantum-safe'],
+  openziti: ['openziti', 'open ziti', 'netfoundry'],
+  'supply-chain-security': ['supply chain security', 'software supply chain', 'sbom', 'provenance', 'sigstore', 'dependency confusion', 'typosquat'],
+  gcp: ['gcp', 'google cloud', 'cloud run', 'bigquery', 'vertex ai'],
+  graymatter: ['graymatter', 'gray matter'],
+};
+
+function clusterRequiresTagEvidence(cluster: Cluster): boolean {
+  const candidates = [cluster.primary, ...cluster.alternatives];
+  return candidates.some((candidate) => candidate.requires_tag_evidence === true);
+}
+
+function normaliseEvidenceText(value: string): string {
+  return ` ${value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+}
+
+function phraseMatchesEvidence(haystack: string, phrase: string): boolean {
+  const needle = normaliseEvidenceText(phrase).trim();
+  return needle !== '' && haystack.includes(` ${needle} `);
+}
+
+function fallbackTagTokensMatch(haystack: string, tag: string): boolean {
+  const tokens = tag
+    .split('-')
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 2);
+  if (tokens.length === 0) return false;
+  return tokens.every((token) => haystack.includes(` ${token} `));
+}
+
+function tagHasArticleEvidence(tag: string, cluster: Cluster): boolean {
+  const candidates = [cluster.primary, ...cluster.alternatives];
+  const evidence = candidates
+    .flatMap((candidate) => [
+      candidate.title,
+      candidate.source_name,
+      candidate.source_url,
+      candidate.body_snippet ?? '',
+    ])
+    .join(' ');
+  const haystack = normaliseEvidenceText(evidence);
+  const aliases = TAG_RELEVANCE_ALIASES[tag] ?? [];
+  for (const alias of aliases) {
+    if (phraseMatchesEvidence(haystack, alias)) return true;
+  }
+  return fallbackTagTokensMatch(haystack, tag);
+}
+
 function countModelEmittedTags(tags: readonly unknown[]): {
   tagCount: number;
   uniqueTagCount: number;
@@ -923,18 +1033,36 @@ function validateAndSanitizeArticle(
   }
 
   const contextualTagSet = contextualTagSetForCluster(s.cluster);
+  const requiresTagEvidence = clusterRequiresTagEvidence(s.cluster);
   const tags: string[] = [];
   const seen = new Set<string>();
+  const unsupportedEvidenceTags: string[] = [];
   for (const t of llmTags) {
     if (typeof t !== 'string') continue;
     const normalised = normalizeHashtag(t.trim());
     if (normalised === '' || seen.has(normalised)) continue;
     if (!allowedTagSet.has(normalised)) continue;
     if (contextualTagSet.size > 0 && !contextualTagSet.has(normalised)) continue;
+    if (requiresTagEvidence && !tagHasArticleEvidence(normalised, s.cluster)) {
+      unsupportedEvidenceTags.push(normalised);
+      continue;
+    }
     seen.add(normalised);
     tags.push(normalised);
   }
-  if (tags.length === 0) return null;
+  if (tags.length === 0) {
+    if (unsupportedEvidenceTags.length > 0) {
+      log('warn', 'digest.generation', {
+        status: 'chunk_article_dropped_tag_relevance',
+        scrape_run_id: body.scrape_run_id,
+        chunk_index: body.chunk_index,
+        article_index: s.articleIdx,
+        unsupported_tags: unsupportedEvidenceTags,
+        llm_title: title.slice(0, 120),
+      });
+    }
+    return null;
+  }
 
   const primary = s.cluster.primary;
   // Concat primary + alt body snippets so the embedding sees the

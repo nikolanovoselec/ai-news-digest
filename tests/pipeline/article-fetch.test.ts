@@ -21,6 +21,7 @@ import {
   fetchArticleBody,
   fetchArticleBodyWithQuality,
   fetchArticleBodies,
+  isHighConfidenceLandingOrPortalUrl,
   isLikelyLandingOrPortalUrl,
 } from '~/lib/article-fetch';
 
@@ -163,6 +164,7 @@ describe('landing-page heuristics — REQ-PIPE-011', () => {
     expect(isLikelyLandingOrPortalUrl('https://example.com/news')).toBe(true);
     expect(isLikelyLandingOrPortalUrl('https://example.com/topics')).toBe(true);
     expect(isLikelyLandingOrPortalUrl('https://example.com/tag/ai')).toBe(true);
+    expect(isHighConfidenceLandingOrPortalUrl('https://example.com/tag/ai')).toBe(true);
     expect(isLikelyLandingOrPortalUrl('https://example.com/a')).toBe(false);
   });
 
@@ -172,6 +174,9 @@ describe('landing-page heuristics — REQ-PIPE-011', () => {
     ).toBe(false);
     expect(
       isLikelyLandingOrPortalUrl('https://example.com/2024/06/01/how-we-built-the-new-news-workflow'),
+    ).toBe(false);
+    expect(
+      isLikelyLandingOrPortalUrl('https://example.com/news/security-vulnerability-analysis'),
     ).toBe(false);
   });
 });
@@ -227,7 +232,7 @@ describe('fetchArticleBodyWithQuality — REQ-PIPE-010 / REQ-PIPE-011', () => {
     );
 
     const out = await fetchArticleBodyWithQuality(
-      'https://example.com/news/launch-update',
+      'https://example.com/topics/launch-update',
     );
 
     expect(out).not.toBeNull();

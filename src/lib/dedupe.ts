@@ -47,6 +47,9 @@ export interface Candidate {
    * tag allowlist so a model cannot attach the global allowlist to an
    * unrelated article and make it visible to every user. */
   source_tags?: string[];
+  /** True for broad aggregators whose registry tags are source-level
+   * coverage hints, not item-level relevance evidence. */
+  requires_tag_evidence?: boolean;
 }
 
 /**
