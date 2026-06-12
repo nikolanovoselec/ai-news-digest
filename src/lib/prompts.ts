@@ -247,6 +247,22 @@ export function processChunkUserPrompt(
     }
   }
 
+  const firstCandidateIndex = candidates[0]?.index;
+  const jsonExample = firstCandidateIndex === undefined
+    ? `{
+  "articles": []
+}`
+    : `{
+  "articles": [
+    {
+      "index": ${firstCandidateIndex},
+      "title": "punchy NYT-style headline, 45-80 characters, about candidate [${firstCandidateIndex}] specifically",
+      "details": "2 paragraphs of 2-4 sentences each, 100-150 words total, ideally 120-135 words, separated by \\n (WHAT happened / HOW it works / optional IMPACT for the reader) — grounded in candidate [${firstCandidateIndex}]'s snippet only, every claim traceable to a single passage, distinctive mechanism named; for dropped candidates use an empty string",
+      "tags": ["only tags from the allowlist above"]
+    }
+  ]
+}`;
+
   return `Tag allowlist (output tags MUST be a subset of this list — never invent tags outside it):
 \`\`\`
 ${tagList}
@@ -258,16 +274,7 @@ ${lines.join('\n')}
 \`\`\`
 
 Return JSON:
-{
-  "articles": [
-    {
-      "index": 0,
-      "title": "punchy NYT-style headline, 45-80 characters, about candidate [0] specifically",
-      "details": "2 paragraphs of 2-4 sentences each, 100-150 words total, ideally 120-135 words, separated by \\n (WHAT happened / HOW it works / optional IMPACT for the reader) — grounded in candidate [0]'s snippet only, every claim traceable to a single passage, distinctive mechanism named; for dropped candidates use an empty string",
-      "tags": ["only tags from the allowlist above"]
-    }
-  ]
-}`;
+${jsonExample}`;
 }
 
 // REQ-PIPE-003: cross-tick semantic dedup runs against Cloudflare

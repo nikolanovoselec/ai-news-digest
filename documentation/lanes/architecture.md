@@ -132,7 +132,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `slug.ts` | Deterministic ASCII slug generation | [REQ-READ-001](../../sdd/spec/reading.md#req-read-001-overview-grid-of-todays-digest) |
 | `sources.ts` | Source adapters (RSS/Atom/JSON) and fan-out coordinator; `itemToHeadline` applies a per-item `<source>` element override so Google News items carry the underlying publisher name (e.g. "Help Net Security") and only promotes `<source url>` when it is article-shaped, keeping homepage/category URLs as Google News item links | [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
 | `prefer-direct-source.ts` | Resolve aggregator URLs (e.g., Google News) to underlying publisher and merge tag-of-discovery state | [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) |
-| `blocked-publishers.ts` | Hard publisher blocklist. Drops off-topic headlines (financial / stock-pump aggregators surfaced by ticker-matching tags) at the coordinator before clustering, embedding, or LLM processing. Two signals: host suffix match (`BLOCKED_HOSTS`) and RSS source-name token match (`BLOCKED_NAME_TOKENS`), the latter needed because Google News redirect envelopes hide the real host. | [REQ-PIPE-011](../../sdd/spec/generation.md#req-pipe-011-candidate-filtering-rules) AC 3 |
+| `blocked-publishers.ts` | Hard publisher blocklist. Drops off-topic headlines (financial / stock-pump aggregators, press-wire releases, Show HN posts, and housing-wire items surfaced by broad tags) at the coordinator before clustering, embedding, or LLM processing. Two signals: host suffix match (`BLOCKED_HOSTS`) and RSS source-name token match (`BLOCKED_NAME_TOKENS`), the latter needed because Google News redirect envelopes hide the real host. | [REQ-PIPE-011](../../sdd/spec/generation.md#req-pipe-011-candidate-filtering-rules) AC 3 |
 | `paragraph-split.ts` | Normalise LLM-produced prose into a paragraph array for the article-detail view | [REQ-READ-002](../../sdd/spec/reading.md#req-read-002-article-detail-view-rendering) |
 | `curated-sources.ts` | Static registry of curated feeds; exports `googleNewsSourceForTag` (per-tag GN query-RSS synthesis) and `hasCuratedGoogleNews` (skip-guard for the coordinator baseline pass) | [REQ-PIPE-004](../../sdd/spec/generation.md#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags), [REQ-PIPE-019](../../sdd/spec/generation.md#req-pipe-019-google-news-query-rss-long-tail-backstop) |
 | `dedupe.ts` | Canonical-URL clustering (first pass over a chunk's candidates) | [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) |
@@ -254,7 +254,7 @@ Coordinator
   │  (default-seed ∪ curated ∪ discovered KV); skip tags with a bespoke
   │  hand-tuned GN curated entry (REQ-PIPE-019)
   ├─ Fan out {tag × source} pairs (concurrency 10)
-  ├─ Mark cross-site feed snippets for linked-page body fetch; discard discussion/score metadata fallback (REQ-PIPE-010 AC 2-3)
+  ├─ Mark cross-site feed snippets for linked-page body fetch; discard discussion/score metadata fallback (REQ-PIPE-010 AC 2, AC 4)
   ├─ Record per-URL fetch outcome → KV source_health:{url}
   ├─ Evict URLs at 30 consecutive failures; re-queue discovery if feed list empties
   ├─ Drop candidates older than 48 h; keep undated candidates

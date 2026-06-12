@@ -279,6 +279,55 @@ describe('fetchArticleBody — REQ-PIPE-010 / CON-SEC-002', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it('CON-SEC-002: rejects redirects to unsafe destinations before following them', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('', {
+        status: 302,
+        headers: { location: 'https://169.254.169.254/latest/meta-data' },
+      }),
+    );
+
+    const out = await fetchArticleBody('https://example.com/redirect');
+
+    expect(out).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://example.com/redirect',
+      expect.objectContaining({ redirect: 'manual' }),
+    );
+  });
+
+  it('CON-SEC-002: revalidates and follows safe redirects manually', async () => {
+    const body = 'This redirected article body has enough substance to count as genuine content for grounding. '.repeat(3);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === 'https://example.com/redirect') {
+        return new Response('', {
+          status: 302,
+          headers: { location: '/articles/final' },
+        });
+      }
+      if (url === 'https://example.com/articles/final') {
+        return new Response(`<html><body><article>${body}</article></body></html>`, {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const out = await fetchArticleBody('https://example.com/redirect');
+
+    expect(out).not.toBeNull();
+    expect(out).toContain('redirected article body');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://example.com/articles/final',
+      expect.objectContaining({ redirect: 'manual' }),
+    );
+  });
+
   it('REQ-PIPE-010: returns null on non-2xx HTTP response', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('Forbidden', { status: 403 }),

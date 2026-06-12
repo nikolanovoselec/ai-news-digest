@@ -284,6 +284,36 @@ export async function processOneChunk(
 
   // Fetch article bodies; build prompt-ready candidates.
   const { promptCandidates } = await fetchAndBuildPromptCandidates(env, body);
+  if (body.candidates.length > 0 && promptCandidates.length === 0) {
+    const {
+      isFirstCompletion,
+      completedCount,
+    } = await recordChunkCompletionAndCheckFinalize(env, body);
+    if (isFirstCompletion) {
+      await addChunkStats(env.DB, body.scrape_run_id, {
+        tokens_in: 0,
+        tokens_out: 0,
+        estimated_cost_usd: 0,
+        articles_ingested: 0,
+        articles_deduped: body.candidates.length,
+      });
+    }
+    log('info', 'digest.generation', {
+      status: 'chunk_ready',
+      scrape_run_id: body.scrape_run_id,
+      chunk_index: body.chunk_index,
+      total_chunks: body.total_chunks,
+      completed_chunks: completedCount,
+      first_completion: isFirstCompletion,
+      articles_ingested: 0,
+      articles_deduped: body.candidates.length,
+      tokens_in: 0,
+      tokens_out: 0,
+      estimated_cost_usd: 0,
+      skip_reason: 'no_prompt_candidates',
+    });
+    return;
+  }
   const promptedInputIndexes = new Set(promptCandidates.map((c) => c.index));
 
   // LLM call (single-model; throws on parse failure for queue retry).

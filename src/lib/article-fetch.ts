@@ -9,8 +9,8 @@
 // text so the chunk prompt stays budget-safe.
 //
 // Security + cost controls:
-//   - `isUrlSafe` SSRF guard on every target URL (HTTPS-only, no
-//     private/loopback/link-local ranges).
+//   - `isUrlSafe` SSRF guard on every target URL and followed redirect
+//     target (HTTPS-only, no private/loopback/link-local ranges).
 //   - 8-second timeout per fetch.
 //   - 1.5 MB response cap.
 //   - 20-worker concurrency bucket when called in bulk so 500
@@ -41,6 +41,7 @@ const ARTICLE_MIN_WORDS_FOR_ARTICLE = 100;
  *  because article HTML pages are smaller, faster, and tolerate
  *  higher origin pressure than feed re-fetches. */
 const ARTICLE_BODY_FETCH_CONCURRENCY = 20;
+const MAX_ARTICLE_FETCH_REDIRECTS = 5;
 
 // CF-056: use the imported names directly instead of local re-aliases.
 const SNIPPET_CAP = 15000;
@@ -301,16 +302,36 @@ export async function fetchArticleBodyWithQuality(
       ? `Mozilla/5.0 (compatible; news-digest/1.0; +${contactUrl})`
       : 'Mozilla/5.0 (compatible; news-digest/1.0)';
   try {
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(ARTICLE_FETCH_TIMEOUT_MS),
-      redirect: 'follow',
-      headers: {
-        'User-Agent': ua,
-        Accept: 'text/html,application/xhtml+xml,text/plain,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
-    if (!response.ok) return null;
+    let currentUrl = url;
+    let response: Response | null = null;
+    for (let redirectHops = 0; redirectHops <= MAX_ARTICLE_FETCH_REDIRECTS; redirectHops += 1) {
+      if (!isUrlSafe(currentUrl)) return null;
+      response = await fetch(currentUrl, {
+        signal: AbortSignal.timeout(ARTICLE_FETCH_TIMEOUT_MS),
+        redirect: 'manual',
+        headers: {
+          'User-Agent': ua,
+          Accept: 'text/html,application/xhtml+xml,text/plain,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      });
+
+      if (response.status < 300 || response.status >= 400) break;
+      if (redirectHops === MAX_ARTICLE_FETCH_REDIRECTS) return null;
+
+      const location = response.headers.get('location');
+      if (location === null || location.trim() === '') return null;
+
+      let nextUrl: string;
+      try {
+        nextUrl = new URL(location, currentUrl).toString();
+      } catch {
+        return null;
+      }
+      if (!isUrlSafe(nextUrl)) return null;
+      currentUrl = nextUrl;
+    }
+    if (response === null || !response.ok) return null;
 
     const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
     if (contentType !== '' &&
@@ -349,7 +370,7 @@ export async function fetchArticleBodyWithQuality(
     const text = extractArticleText(html);
     if (text.length < 100) return null;
 
-    const quality = scoreArticleHeuristics(html, text, url);
+    const quality = scoreArticleHeuristics(html, text, currentUrl);
     return {
       text,
       isLikelyArticle: quality.isLikelyArticle,

@@ -453,17 +453,20 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
     const gatewayCall = fetchMock.mock.calls.find(
       ([input]) => String(input) === TEST_AI_GATEWAY_URL,
     );
-    expect(gatewayCall).toBeDefined();
-    const params = JSON.parse(
-      String((gatewayCall![1] as RequestInit).body),
-    ) as Record<string, unknown>;
-    const prompt = (params.messages as Array<{ role: string; content: string }>)[1]?.content ?? '';
-    expect(prompt).not.toContain('Landing Page Story');
+    expect(gatewayCall).toBeUndefined();
     expect(
       fetchMock.mock.calls.some(
         ([input]) => String(input) === 'https://publisher.example/noise',
       ),
     ).toBe(true);
+    const completionInsert = records.find((r) =>
+      r.sql.startsWith('INSERT OR IGNORE INTO scrape_chunk_completions'),
+    );
+    expect(completionInsert).toBeDefined();
+    const statsUpdate = records.find((r) =>
+      r.sql.includes('tokens_in = tokens_in + ?2'),
+    );
+    expect(statsUpdate?.params).toEqual(['test-run', 0, 0, 0, 0, 1]);
   });
 
   it('REQ-PIPE-011: rejects echoed indexes for candidates dropped before prompting', async () => {
