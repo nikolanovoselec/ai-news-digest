@@ -882,6 +882,73 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
     expect(tagInserts.map((r) => r.params[1])).toEqual(['cloudflare', 'ai-agents']);
   });
 
+  it('REQ-PIPE-020: uses fetched article text for broad-source tag evidence', async () => {
+    const aiResponse = {
+      response: JSON.stringify({
+        articles: [
+          {
+            index: 0,
+            title: 'Developer routing controls launch for platform teams',
+            details: LONG_BODY,
+            tags: ['cloudflare'],
+          },
+        ],
+        dedup_groups: [],
+      }),
+      usage: { input_tokens: 10, output_tokens: 10 },
+    };
+    const { db, records } = makeDb();
+    const { kv } = makeKv({ chunksRemaining: '1' });
+    const env = makeEnv(db, kv, aiResponse);
+    const fetchedText = 'Cloudflare Workers adds routing controls for production deployments. '.repeat(16);
+    const fetchMock = vi.fn().mockImplementation(
+      async (input: string | URL | Request) => {
+        const url = typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+        if (url === 'https://publisher.example/platform-routing') {
+          return new Response(
+            `<html><body><article>${fetchedText}</article></body></html>`,
+            {
+              status: 200,
+              headers: { 'Content-Type': 'text/html' },
+            },
+          );
+        }
+        if (url !== TEST_AI_GATEWAY_URL) {
+          throw new Error(`unexpected fetch: ${url}`);
+        }
+        return new Response(JSON.stringify(aiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await processOneChunk(env, makeChunk({
+      candidates: [
+        {
+          canonical_url: 'https://publisher.example/platform-routing',
+          source_url: 'https://publisher.example/platform-routing',
+          source_name: 'Hacker News',
+          title: 'Developer routing controls launch for platform teams',
+          published_at: 100,
+          body_snippet: 'A short community teaser about deployment workflows.',
+          force_body_fetch: true,
+          requires_tag_evidence: true,
+        },
+      ],
+    }));
+
+    const tagInserts = records.filter(
+      (r) => r.via === 'batch' && r.sql.startsWith('INSERT OR IGNORE INTO article_tags'),
+    );
+    expect(tagInserts.map((r) => r.params[1])).toEqual(['cloudflare']);
+  });
+
   it('REQ-PIPE-020: filters model tags through candidate-local source_tags before persistence', async () => {
     const aiResponse = {
       response: JSON.stringify({

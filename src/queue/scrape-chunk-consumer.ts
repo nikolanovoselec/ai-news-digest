@@ -347,15 +347,24 @@ export async function processOneChunk(
   }
 
   // Build per-input singleton clusters, then merge by LLM dedup hints.
-  const perInputClusters: Cluster[] = body.candidates.map((c) => {
+  // Use the prompt-ready body snippet when the fetch pass promoted a
+  // fetched article body. Validation and persistence must judge tag
+  // evidence against the same article text the LLM saw, not only the
+  // original feed snippet.
+  const promptCandidateByIndex = new Map(
+    promptCandidates.map((candidate) => [candidate.index, candidate]),
+  );
+  const perInputClusters: Cluster[] = body.candidates.map((c, idx) => {
+    const promptCandidate = promptCandidateByIndex.get(idx);
+    const bodySnippet = promptCandidate?.body_snippet ?? c.body_snippet;
     const primary: Candidate = {
       canonical_url: c.canonical_url,
       source_url: c.source_url,
       source_name: c.source_name,
       title: c.title,
       published_at: c.published_at,
-      ...(typeof c.body_snippet === 'string' && c.body_snippet !== ''
-        ? { body_snippet: c.body_snippet }
+      ...(typeof bodySnippet === 'string' && bodySnippet !== ''
+        ? { body_snippet: bodySnippet }
         : {}),
       ...(Array.isArray(c.source_tags) && c.source_tags.length > 0
         ? { source_tags: c.source_tags }
