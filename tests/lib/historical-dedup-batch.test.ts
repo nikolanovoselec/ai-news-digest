@@ -998,7 +998,7 @@ describe('runHistoricalDedupBatch — REQ-PIPE-003', () => {
   });
 
   // ---------------------------------------------------------------
-  // REQ-PIPE-009 AD48 — watermark skip on the borderline rerank path.
+  // REQ-PIPE-024 AD48 — watermark skip on the borderline rerank path.
   // Both pair members predate the prior auto-sweep watermark ⇒ skip the
   // LLM. Either is newer ⇒ call the LLM as usual. `bypassWatermark: true`
   // ⇒ always call regardless of timestamps.
@@ -1014,7 +1014,7 @@ describe('runHistoricalDedupBatch — REQ-PIPE-003', () => {
   const NEW_ULID_A = '01Q9GD6E00AAAAAAAAAAAAAAAA';
   const WATERMARK_SECONDS = 1_700_000_000;
 
-  it('REQ-PIPE-009 AD48: both pair members predate watermark — LLM skipped', async () => {
+  it('REQ-PIPE-024 AD48: both pair members predate watermark — LLM skipped', async () => {
     const aiRun = vi.fn();
     const { result } = await callBatch({
       kvWatermarkSeconds: WATERMARK_SECONDS,
@@ -1044,7 +1044,7 @@ describe('runHistoricalDedupBatch — REQ-PIPE-003', () => {
     expect(result.merged).toBe(0);
   });
 
-  it('REQ-PIPE-009 AD48: one pair member newer than watermark — LLM called', async () => {
+  it('REQ-PIPE-024 AD48: one pair member newer than watermark — LLM called', async () => {
     // Self is OLD, match is NEW → not both predate → must rerank.
     const aiRun = vi.fn().mockResolvedValue({
       response: '{"verdicts":[{"i":0,"same_event":false}]}',
@@ -1077,7 +1077,7 @@ describe('runHistoricalDedupBatch — REQ-PIPE-003', () => {
     expect(result.merged).toBe(0);
   });
 
-  it('REQ-PIPE-009 AD48: bypassWatermark=true always calls LLM regardless of timestamps', async () => {
+  it('REQ-PIPE-024 AD48: bypassWatermark=true always calls LLM regardless of timestamps', async () => {
     const aiRun = vi.fn().mockResolvedValue({
       response: '{"verdicts":[{"i":0,"same_event":true}]}',
     });

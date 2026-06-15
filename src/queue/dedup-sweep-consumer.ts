@@ -1,5 +1,6 @@
 // Implements REQ-PIPE-003 AC 9
 // Implements REQ-PIPE-009
+// Implements REQ-PIPE-024
 //
 // Self-chaining queue consumer that drives the historical same-story
 // sweep across the entire embedded article pool without requiring a

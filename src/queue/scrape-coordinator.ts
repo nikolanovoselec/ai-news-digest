@@ -58,6 +58,7 @@ import {
   preferDirectOverGoogleNews,
   sharedTitleTokenCount,
 } from '~/lib/prefer-direct-source';
+import { isLikelyLandingOrPortalUrl } from '~/lib/article-fetch';
 import { isBlockedPublisher } from '~/lib/blocked-publishers';
 import { tokenizeTitle } from '~/lib/title-overlap';
 import { readTimeWindowSeconds } from '~/lib/embeddings';
@@ -145,22 +146,25 @@ const ESTIMATED_BODY_FETCH_CHARS = 3_000;
 
 /** Estimate the per-candidate char cost the chunk's prompt will
  * incur. When a feed snippet is already attached, large enough
- * (≥ `SNIPPET_FLOOR`, imported from the chunk consumer), and not
- * marked `force_body_fetch`, the consumer skips its own body fetch
- * and the snippet length is the actual cost. Otherwise the consumer
- * will fetch and the body could be anywhere between 0 and SNIPPET_CAP
- * (15K). For forced fetches with retained fallback snippets, budget the
- * larger of the snippet and median body estimate because the consumer
- * prompts with whichever text is longer.
+ * (≥ `SNIPPET_FLOOR`, imported from the chunk consumer), not
+ * marked `force_body_fetch`, and not portal-like, the consumer skips
+ * its own body fetch and the snippet length is the actual cost.
+ * Otherwise the consumer will fetch and the body could be anywhere
+ * between 0 and SNIPPET_CAP (15K). For forced or portal-like fetches
+ * with retained fallback snippets, budget the larger of the snippet
+ * and median body estimate because the consumer prompts with whichever
+ * text is longer.
  *
  * Exported for direct testing. */
 export function estimateCandidateChars(c: ChunkCandidate): number {
   const snippet = c.body_snippet ?? '';
-  const bodyChars = c.force_body_fetch === true
+  const willFetchBody =
+    c.force_body_fetch === true ||
+    snippet.length < SNIPPET_FLOOR ||
+    isLikelyLandingOrPortalUrl(c.source_url);
+  const bodyChars = willFetchBody
     ? Math.max(snippet.length, ESTIMATED_BODY_FETCH_CHARS)
-    : snippet.length >= SNIPPET_FLOOR
-      ? snippet.length
-      : ESTIMATED_BODY_FETCH_CHARS;
+    : snippet.length;
   return bodyChars + PER_CANDIDATE_OVERHEAD_CHARS;
 }
 
@@ -285,10 +289,14 @@ export interface ChunkCandidate {
   body_snippet?: string;
   force_body_fetch?: boolean;
   source_tags?: string[];
+  source_tags_requiring_evidence?: string[];
+  requires_tag_evidence?: boolean;
   alternatives: Array<{
     source_url: string;
     source_name: string;
     source_tags?: string[];
+    source_tags_requiring_evidence?: string[];
+    requires_tag_evidence?: boolean;
   }>;
 }
 
@@ -542,6 +550,7 @@ async function assembleAllSources(env: Env): Promise<SourceForFetch[]> {
       sourceName: synth.name,
       feedUrl: synth.feed_url,
       sourceTags: synth.tags,
+      requiresTagEvidence: true,
       discoveredTag: null,
     });
   }
@@ -550,7 +559,11 @@ async function assembleAllSources(env: Env): Promise<SourceForFetch[]> {
       adapter: curatedToAdapter(s),
       sourceName: s.name,
       feedUrl: s.feed_url,
-      sourceTags: s.tags,
+      sourceTags:
+        s.tags_apply_to_items === false && !s.slug.startsWith('google-news-')
+          ? []
+          : s.tags,
+      requiresTagEvidence: s.tags_apply_to_items === false,
       discoveredTag: null as string | null,
     })),
     ...discoveredSources,
@@ -629,6 +642,9 @@ function buildCandidates(
     if (!hasParsedPub) missingPubdateKept += 1;
 
     const sourceTags = normaliseSourceTags(row.headline.source_tags ?? []);
+    const evidenceTags = normaliseSourceTags(
+      row.headline.source_tags_requiring_evidence ?? [],
+    );
     candidates.push({
       canonical_url: canonical,
       source_url: row.headline.url,
@@ -642,6 +658,12 @@ function buildCandidates(
         ? { force_body_fetch: true }
         : {}),
       ...(sourceTags.length > 0 ? { source_tags: sourceTags } : {}),
+      ...(evidenceTags.length > 0
+        ? { source_tags_requiring_evidence: evidenceTags }
+        : {}),
+      ...(row.headline.requires_tag_evidence === true
+        ? { requires_tag_evidence: true }
+        : {}),
     });
   }
 
@@ -851,6 +873,13 @@ function findExistingGoogleNewsTitleMatch(
  * sighting to that existing article and skip chunk fan-out. This preserves
  * coverage and tag-of-discovery while avoiding a duplicate LLM summary.
  */
+function evidenceRequiredTagsForSource(source: Candidate): Set<string> {
+  const tags =
+    source.source_tags_requiring_evidence ??
+    (source.requires_tag_evidence === true ? source.source_tags ?? [] : []);
+  return new Set(normaliseSourceTags(tags));
+}
+
 async function filterAndAggregateGoogleNewsTitleMatches(
   env: Env,
   clusters: ReturnType<typeof clusterByCanonical>,
@@ -922,9 +951,11 @@ async function filterAndAggregateGoogleNewsTitleMatches(
           publishedAt: source.published_at,
         });
       }
+      const evidenceRequiredTags = evidenceRequiredTagsForSource(source);
       for (const rawTag of source.source_tags ?? []) {
         const tag = normalizeHashtag(rawTag.trim());
         if (tag === '') continue;
+        if (evidenceRequiredTags.has(tag)) continue;
         const tagKey = `${match.id} ${tag}`;
         if (!tagInserts.has(tagKey)) {
           tagInserts.set(tagKey, { articleId: match.id, tag });
@@ -1019,11 +1050,25 @@ function flattenToChunkCandidates(
       ...(Array.isArray(c.primary.source_tags) && c.primary.source_tags.length > 0
         ? { source_tags: c.primary.source_tags }
         : {}),
+      ...(Array.isArray(c.primary.source_tags_requiring_evidence) &&
+        c.primary.source_tags_requiring_evidence.length > 0
+        ? { source_tags_requiring_evidence: c.primary.source_tags_requiring_evidence }
+        : {}),
+      ...(c.primary.requires_tag_evidence === true
+        ? { requires_tag_evidence: true }
+        : {}),
       alternatives: c.alternatives.map((alt) => ({
         source_url: alt.source_url,
         source_name: alt.source_name,
         ...(Array.isArray(alt.source_tags) && alt.source_tags.length > 0
           ? { source_tags: alt.source_tags }
+          : {}),
+        ...(Array.isArray(alt.source_tags_requiring_evidence) &&
+          alt.source_tags_requiring_evidence.length > 0
+          ? { source_tags_requiring_evidence: alt.source_tags_requiring_evidence }
+          : {}),
+        ...(alt.requires_tag_evidence === true
+          ? { requires_tag_evidence: true }
           : {}),
       })),
     };
@@ -1119,6 +1164,9 @@ interface SourceForFetch {
   feedUrl: string;
   /** Candidate-local tag hints stamped onto each fetched headline. */
   sourceTags: string[];
+  /** True when this source is too broad for registry tags to be trusted
+   * as item-level relevance evidence. */
+  requiresTagEvidence: boolean;
   /** Non-null only for URLs that originated from a `sources:{tag}` KV
    * entry - the coordinator can remove the URL from that entry if its
    * fetch-failure counter crosses the eviction threshold. */
@@ -1277,6 +1325,7 @@ export async function loadDiscoveredSources(
           sourceName: feed.name,
           feedUrl: feed.url,
           sourceTags: [tag],
+          requiresTagEvidence: isGoogleNewsUrl(feed.url),
           discoveredTag: tag,
         });
       }
@@ -1381,12 +1430,28 @@ async function fetchAllSources(
         // publisher and undid the 289656d fix in production.
         const capped = headlines
           .slice(0, PER_SOURCE_ITEM_CAP)
-          .map((h) => ({
-            headline: {
-              ...h,
-              source_tags: mergeSourceTags(h.source_tags, job.sourceTags),
-            },
-          }));
+          .map((h) => {
+            const sourceTags = mergeSourceTags(h.source_tags, job.sourceTags);
+            const evidenceTags = mergeSourceTags(
+              h.source_tags_requiring_evidence,
+              [
+                ...(job.requiresTagEvidence ? job.sourceTags : []),
+                ...(h.requires_tag_evidence === true ? h.source_tags ?? [] : []),
+              ],
+            );
+            return {
+              headline: {
+                ...h,
+                source_tags: sourceTags,
+                ...(evidenceTags.length > 0
+                  ? { source_tags_requiring_evidence: evidenceTags }
+                  : {}),
+                ...(job.requiresTagEvidence || h.requires_tag_evidence === true
+                  ? { requires_tag_evidence: true }
+                  : {}),
+              },
+            };
+          });
         let eviction: FeedEviction | null = null;
         // Only record health for live fetches on discovered feeds -
         // cache hits are neither a liveness signal nor a failure.

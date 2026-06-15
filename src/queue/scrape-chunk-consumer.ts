@@ -52,7 +52,11 @@ import {
   type Candidate,
   type Cluster,
 } from '~/lib/dedupe';
-import { fetchArticleBodies } from '~/lib/article-fetch';
+import {
+  fetchArticleBodiesWithQuality,
+  isHighConfidenceLandingOrPortalUrl,
+  isLikelyLandingOrPortalUrl,
+} from '~/lib/article-fetch';
 import { DEFAULT_HASHTAGS } from '~/lib/default-hashtags';
 import { normalizeHashtag } from '~/lib/hashtags';
 import { splitIntoParagraphs } from '~/lib/paragraph-split';
@@ -88,6 +92,12 @@ export interface ChunkJobMessage {
     /** Candidate-local tag hints from the source that surfaced this
      * article. Used as a contextual allowlist during tag validation. */
     source_tags?: string[];
+    /** Subset of `source_tags` from broad sources. These constrain
+     * model output but still require article title/body evidence. */
+    source_tags_requiring_evidence?: string[];
+    /** True when source tags are not item-level evidence and selected
+     * tags must be supported by the article title/body text. */
+    requires_tag_evidence?: boolean;
     /** Optional alternative sources discovered by the coordinator for
      * the same canonical URL (multi-feed cluster). These land in
      * `article_sources` under the primary article. */
@@ -95,6 +105,8 @@ export interface ChunkJobMessage {
       source_url: string;
       source_name: string;
       source_tags?: string[];
+      source_tags_requiring_evidence?: string[];
+      requires_tag_evidence?: boolean;
     }>;
   }>;
 }
@@ -281,6 +293,37 @@ export async function processOneChunk(
 
   // Fetch article bodies; build prompt-ready candidates.
   const { promptCandidates } = await fetchAndBuildPromptCandidates(env, body);
+  if (body.candidates.length > 0 && promptCandidates.length === 0) {
+    const {
+      isFirstCompletion,
+      completedCount,
+    } = await recordChunkCompletionAndCheckFinalize(env, body);
+    if (isFirstCompletion) {
+      await addChunkStats(env.DB, body.scrape_run_id, {
+        tokens_in: 0,
+        tokens_out: 0,
+        estimated_cost_usd: 0,
+        articles_ingested: 0,
+        articles_deduped: body.candidates.length,
+      });
+    }
+    log('info', 'digest.generation', {
+      status: 'chunk_ready',
+      scrape_run_id: body.scrape_run_id,
+      chunk_index: body.chunk_index,
+      total_chunks: body.total_chunks,
+      completed_chunks: completedCount,
+      first_completion: isFirstCompletion,
+      articles_ingested: 0,
+      articles_deduped: body.candidates.length,
+      tokens_in: 0,
+      tokens_out: 0,
+      estimated_cost_usd: 0,
+      skip_reason: 'no_prompt_candidates',
+    });
+    return;
+  }
+  const promptedInputIndexes = new Set(promptCandidates.map((c) => c.index));
 
   // LLM call (single-model; throws on parse failure for queue retry).
   const { llmRun, rawArticles, dedupGroups } = await runChunkLLM(
@@ -308,18 +351,34 @@ export async function processOneChunk(
   }
 
   // Build per-input singleton clusters, then merge by LLM dedup hints.
-  const perInputClusters: Cluster[] = body.candidates.map((c) => {
+  // Use the prompt-ready body snippet when the fetch pass promoted a
+  // fetched article body. Validation and persistence must judge tag
+  // evidence against the same article text the LLM saw, not only the
+  // original feed snippet.
+  const promptCandidateByIndex = new Map(
+    promptCandidates.map((candidate) => [candidate.index, candidate]),
+  );
+  const perInputClusters: Cluster[] = body.candidates.map((c, idx) => {
+    const promptCandidate = promptCandidateByIndex.get(idx);
+    const bodySnippet = promptCandidate?.body_snippet ?? c.body_snippet;
     const primary: Candidate = {
       canonical_url: c.canonical_url,
       source_url: c.source_url,
       source_name: c.source_name,
       title: c.title,
       published_at: c.published_at,
-      ...(typeof c.body_snippet === 'string' && c.body_snippet !== ''
-        ? { body_snippet: c.body_snippet }
+      ...(typeof bodySnippet === 'string' && bodySnippet !== ''
+        ? { body_snippet: bodySnippet }
         : {}),
       ...(Array.isArray(c.source_tags) && c.source_tags.length > 0
         ? { source_tags: c.source_tags }
+        : {}),
+      ...(Array.isArray(c.source_tags_requiring_evidence) &&
+        c.source_tags_requiring_evidence.length > 0
+        ? { source_tags_requiring_evidence: c.source_tags_requiring_evidence }
+        : {}),
+      ...(c.requires_tag_evidence === true
+        ? { requires_tag_evidence: true }
         : {}),
     };
     const alternatives: Candidate[] = (c.alternatives ?? []).map((alt) => ({
@@ -331,10 +390,20 @@ export async function processOneChunk(
       ...(Array.isArray(alt.source_tags) && alt.source_tags.length > 0
         ? { source_tags: alt.source_tags }
         : {}),
+      ...(Array.isArray(alt.source_tags_requiring_evidence) &&
+        alt.source_tags_requiring_evidence.length > 0
+        ? { source_tags_requiring_evidence: alt.source_tags_requiring_evidence }
+        : {}),
+      ...(alt.requires_tag_evidence === true
+        ? { requires_tag_evidence: true }
+        : {}),
     }));
     return { primary, alternatives };
   });
-  const mergedClusters = mergeClustersByLlmHints(perInputClusters, dedupGroups);
+  const promptedDedupGroups = dedupGroups
+    .map((group) => group.filter((idx) => promptedInputIndexes.has(idx)))
+    .filter((group) => group.length >= 2);
+  const mergedClusters = mergeClustersByLlmHints(perInputClusters, promptedDedupGroups);
 
   // Align LLM output to input candidates by echoed index (with positional fallback).
   const {
@@ -344,7 +413,14 @@ export async function processOneChunk(
     droppedForMissingAlignment,
     droppedForTitleMismatch,
     useEchoedIndex,
-  } = alignLlmArticlesToInputs(rawArticles, perInputClusters, mergedClusters, dedupGroups, body);
+  } = alignLlmArticlesToInputs(
+    rawArticles,
+    perInputClusters,
+    mergedClusters,
+    promptedDedupGroups,
+    body,
+    promptCandidates,
+  );
 
   // Validate + sanitize each survivor; drop articles that fail any gate.
   let prepared: PreparedArticle[] = [];
@@ -425,7 +501,8 @@ export async function processOneChunk(
 // ---------- step helpers (colocated; not re-exported) ---------------------
 
 /**
- * Fetch article bodies for thin-snippet candidates, then build the
+ * Fetch article bodies for candidates that either already look thin
+ * or whose URL is portal-like/landing-like, then build the
  * prompt-ready candidate array.
  *
  * Happens inside the chunk consumer (not the coordinator) so the
@@ -457,35 +534,75 @@ async function fetchAndBuildPromptCandidates(
   env: Env,
   body: ChunkJobMessage,
 ): Promise<{ promptCandidates: PromptCandidate[] }> {
-  const urlsToFetch: string[] = [];
+  const urlsToFetch = new Set<string>();
   for (const c of body.candidates) {
     const existingSnippet = c.body_snippet ?? '';
+    const likelyLanding = isLikelyLandingOrPortalUrl(c.source_url);
     if (
       c.force_body_fetch === true ||
-      existingSnippet.length < SNIPPET_FLOOR
+      existingSnippet.length < SNIPPET_FLOOR ||
+      likelyLanding
     ) {
-      urlsToFetch.push(c.source_url);
+      urlsToFetch.add(c.source_url);
     }
   }
-  let fetchedBodies = new Map<string, string>();
-  if (urlsToFetch.length > 0) {
+
+  let fetchedBodies = new Map<string, { text: string; isLikelyArticle: boolean; reasonCodes: string[] }>();
+  if (urlsToFetch.size > 0) {
     const fetchStart = Date.now();
-    fetchedBodies = await fetchArticleBodies(urlsToFetch, 20, env.APP_URL);
+    fetchedBodies = await fetchArticleBodiesWithQuality(
+      Array.from(urlsToFetch),
+      20,
+      env.APP_URL,
+    );
     log('info', 'digest.generation', {
       status: 'chunk_article_bodies_fetched',
       scrape_run_id: body.scrape_run_id,
       chunk_index: body.chunk_index,
-      urls_requested: urlsToFetch.length,
+      urls_requested: urlsToFetch.size,
       urls_fetched: fetchedBodies.size,
       duration_ms: Date.now() - fetchStart,
     });
   }
 
-  const promptCandidates = body.candidates.map((c, idx) => {
-    const fetched = fetchedBodies.get(c.source_url) ?? '';
+  let landingNoiseDrops = 0;
+  let landingFetchFailureDrops = 0;
+  let promptBodyChars = 0;
+  let feedBodyChars = 0;
+  let fetchedBodyChars = 0;
+  let fetchedBodyPromotions = 0;
+  const promptCandidates = body.candidates.flatMap((c, idx) => {
+    const fetched = fetchedBodies.get(c.source_url);
     const feedSnippet = c.body_snippet ?? '';
+    const fetchedText = fetched?.text ?? '';
+    const likelyLanding = isLikelyLandingOrPortalUrl(c.source_url);
+    const highConfidenceLanding = isHighConfidenceLandingOrPortalUrl(c.source_url);
+    const isLandingNoise =
+      likelyLanding &&
+      fetched !== undefined &&
+      fetched.isLikelyArticle === false;
+    const isLandingFetchFailure =
+      highConfidenceLanding &&
+      urlsToFetch.has(c.source_url) &&
+      fetched === undefined;
+
+    if (isLandingNoise) {
+      landingNoiseDrops += 1;
+      return [];
+    }
+    if (isLandingFetchFailure) {
+      landingFetchFailureDrops += 1;
+      return [];
+    }
+
     const bestSnippet =
-      fetched.length > feedSnippet.length ? fetched : feedSnippet;
+      fetchedText.length > feedSnippet.length ? fetchedText : feedSnippet;
+    if (fetchedText.length > feedSnippet.length) {
+      fetchedBodyPromotions += 1;
+      fetchedBodyChars += fetchedText.length;
+    }
+    promptBodyChars += bestSnippet.length;
+    feedBodyChars += feedSnippet.length;
     const sourceTags = Array.from(new Set([
       ...(c.source_tags ?? []),
       ...((c.alternatives ?? []).flatMap((a) => a.source_tags ?? [])),
@@ -498,12 +615,15 @@ async function fetchAndBuildPromptCandidates(
       published_at: c.published_at,
       ...(sourceTags.length > 0 ? { source_tags: sourceTags } : {}),
     };
-    if (bestSnippet !== '') return { ...base, body_snippet: bestSnippet };
-    return base;
+    if (bestSnippet !== '') return [{ ...base, body_snippet: bestSnippet }];
+    return [base];
   });
 
   const noSnippetCount = promptCandidates.filter(
-    (p) => !('body_snippet' in p) || (p as { body_snippet?: string }).body_snippet === undefined || (p as { body_snippet?: string }).body_snippet === '',
+    (p) =>
+      !('body_snippet' in p) ||
+      (p as { body_snippet?: string }).body_snippet === undefined ||
+      (p as { body_snippet?: string }).body_snippet === '',
   ).length;
   if (noSnippetCount > 0) {
     log('warn', 'digest.generation', {
@@ -514,6 +634,29 @@ async function fetchAndBuildPromptCandidates(
       total: promptCandidates.length,
     });
   }
+  if (landingNoiseDrops > 0 || landingFetchFailureDrops > 0) {
+    log('warn', 'digest.generation', {
+      status: 'chunk_landing_noise_candidates_dropped',
+      scrape_run_id: body.scrape_run_id,
+      chunk_index: body.chunk_index,
+      dropped: landingNoiseDrops + landingFetchFailureDrops,
+      non_article_dropped: landingNoiseDrops,
+      fetch_failure_dropped: landingFetchFailureDrops,
+      total: body.candidates.length,
+    });
+  }
+  log('info', 'digest.generation', {
+    status: 'chunk_prompt_candidates_built',
+    scrape_run_id: body.scrape_run_id,
+    chunk_index: body.chunk_index,
+    prompt_candidates: promptCandidates.length,
+    original_candidates: body.candidates.length,
+    prompt_body_chars: promptBodyChars,
+    feed_body_chars: feedBodyChars,
+    fetched_body_chars: fetchedBodyChars,
+    fetched_body_promotions: fetchedBodyPromotions,
+    dropped_before_llm: body.candidates.length - promptCandidates.length,
+  });
 
   return { promptCandidates };
 }
@@ -614,6 +757,7 @@ function alignLlmArticlesToInputs(
   mergedClusters: Cluster[],
   dedupGroups: number[][],
   body: ChunkJobMessage,
+  promptCandidates: PromptCandidate[],
 ): {
   survivors: Survivor[];
   articlesWithEchoedIndex: number;
@@ -624,12 +768,14 @@ function alignLlmArticlesToInputs(
 } {
   // Build the echoed-index map first.
   // CF-047: track articles that carry an EXPLICIT but invalid index
-  // (out-of-bounds or null). Those are excluded from positional fallback —
-  // the model deliberately emitted a bad index, which is a different
-  // signal from "the model emitted no index at all". Positional fallback
-  // is only for articles with index === undefined (model omitted the field).
+  // (out-of-bounds, non-prompted, or null). Those are excluded from
+  // positional fallback — the model deliberately emitted a bad index,
+  // which is a different signal from "the model emitted no index at all".
+  // Positional fallback is only for articles with index === undefined
+  // (model omitted the field).
   const articleByIndex = new Map<number, LLMChunkArticle>();
   const explicitlyInvalid = new Set<number>(); // raw-article positions
+  const promptedInputIndexes = new Set(promptCandidates.map((c) => c.index));
   let articlesWithEchoedIndex = 0;
   let duplicateEchoedIndex = 0;
   for (let i = 0; i < rawArticles.length; i += 1) {
@@ -640,7 +786,8 @@ function alignLlmArticlesToInputs(
       typeof echoed === 'number' &&
       Number.isInteger(echoed) &&
       echoed >= 0 &&
-      echoed < perInputClusters.length
+      echoed < perInputClusters.length &&
+      promptedInputIndexes.has(echoed)
     ) {
       articlesWithEchoedIndex += 1;
       if (articleByIndex.has(echoed)) {
@@ -649,8 +796,8 @@ function alignLlmArticlesToInputs(
         articleByIndex.set(echoed, art);
       }
     } else if (echoed !== undefined) {
-      // Explicit but invalid index (null, out-of-bounds integer, string,
-      // non-integer): mark position so positional fallback skips it.
+      // Explicit but invalid index (null, out-of-bounds, non-prompted,
+      // string, non-integer): mark position so positional fallback skips it.
       explicitlyInvalid.add(i);
     }
   }
@@ -666,13 +813,20 @@ function alignLlmArticlesToInputs(
   // CF-026: for positional fallback, populate the SAME map from rawArticles
   // so the merge pass always reads from articleByIndex regardless of mode.
   // CF-047: skip articles with explicitly invalid indices — they had a bad
-  // index value (null / out-of-bounds), not a missing one.
+  // index value (null / out-of-bounds / non-prompted), not a missing one.
   if (!useEchoedIndex) {
     for (let i = 0; i < rawArticles.length; i++) {
       if (explicitlyInvalid.has(i)) continue;
       const art = rawArticles[i];
-      if (art !== undefined && !articleByIndex.has(i)) {
-        articleByIndex.set(i, art);
+      const promptCandidate = promptCandidates[i];
+      const promptedIndex = promptCandidate?.index;
+      if (
+        art !== undefined &&
+        promptedIndex !== undefined &&
+        promptedInputIndexes.has(promptedIndex) &&
+        !articleByIndex.has(promptedIndex)
+      ) {
+        articleByIndex.set(promptedIndex, art);
       }
     }
   }
@@ -729,6 +883,105 @@ function contextualTagSetForCluster(cluster: Cluster): Set<string> {
     }
   }
   return set;
+}
+
+const TAG_RELEVANCE_ALIASES: Record<string, readonly string[]> = {
+  cloudflare: ['cloudflare', 'workers', 'durable objects', 'wrangler'],
+  mcp: ['mcp', 'model context protocol'],
+  'ai-agents': ['ai agent', 'ai agents', 'agentic', 'autonomous agent'],
+  'generative-ai': ['generative ai', 'genai', 'gen ai', 'llm', 'large language model', 'openai', 'anthropic', 'gemini', 'claude', 'mistral'],
+  aws: ['aws', 'amazon web services', 'bedrock', 'lambda', 'ec2', 's3'],
+  serverless: ['serverless', 'lambda', 'cloud functions', 'cloudflare workers', 'functions as a service'],
+  azure: ['azure', 'microsoft azure'],
+  'zero-trust': ['zero trust', 'ztna', 'sase'],
+  kubernetes: ['kubernetes', 'k8s', 'kube'],
+  devsecops: ['devsecops', 'dev sec ops', 'ci cd', 'ci/cd', 'secure pipeline', 'security pipeline', 'container security'],
+  'threat-intel': ['threat intel', 'threat intelligence', 'ioc', 'iocs', 'malware', 'ransomware', 'apt'],
+  appsec: ['appsec', 'application security', 'owasp', 'sast', 'dast', 'secure coding'],
+  'coding-agents': ['coding agent', 'coding agents', 'code assistant', 'ai coding', 'copilot', 'cursor', 'claude code'],
+  docker: ['docker', 'container', 'containers', 'containerd'],
+  iam: ['iam', 'identity and access', 'identity access', 'oauth', 'oidc', 'sso', 'authentication', 'authorization'],
+  siem: ['siem', 'security information and event management', 'splunk', 'sentinel'],
+  pqc: ['pqc', 'post quantum', 'post-quantum', 'quantum safe', 'quantum-safe'],
+  openziti: ['openziti', 'open ziti', 'netfoundry'],
+  'supply-chain-security': ['supply chain security', 'software supply chain', 'sbom', 'provenance', 'sigstore', 'dependency confusion', 'typosquat'],
+  gcp: ['gcp', 'google cloud', 'cloud run', 'bigquery', 'vertex ai'],
+  graymatter: ['graymatter', 'gray matter'],
+};
+
+function normalisedTagSet(tags: readonly string[] | undefined): Set<string> {
+  const out = new Set<string>();
+  for (const tag of tags ?? []) {
+    const normalised = normalizeHashtag(tag.trim());
+    if (normalised !== '') out.add(normalised);
+  }
+  return out;
+}
+
+function tagRequiresArticleEvidence(tag: string, cluster: Cluster): boolean {
+  // Evidence is per tag, not per cluster: a precise first-party or
+  // tag-specific source can still provide candidate-local evidence for
+  // its own tag even when another alternative came from a broad source.
+  const candidates = [cluster.primary, ...cluster.alternatives];
+  let hasContextualTags = false;
+  let hasItemLevelProvenanceForTag = false;
+  let hasEvidenceRequiredProvenanceForTag = false;
+
+  for (const candidate of candidates) {
+    const sourceTags = normalisedTagSet(candidate.source_tags);
+    if (sourceTags.size > 0) hasContextualTags = true;
+    if (!sourceTags.has(tag)) continue;
+
+    const evidenceTags = normalisedTagSet(
+      candidate.source_tags_requiring_evidence,
+    );
+    if (evidenceTags.has(tag) || candidate.requires_tag_evidence === true) {
+      hasEvidenceRequiredProvenanceForTag = true;
+    } else {
+      hasItemLevelProvenanceForTag = true;
+    }
+  }
+
+  if (hasItemLevelProvenanceForTag) return false;
+  if (hasEvidenceRequiredProvenanceForTag) return true;
+  if (hasContextualTags) return false;
+  return candidates.some((candidate) => candidate.requires_tag_evidence === true);
+}
+
+function normaliseEvidenceText(value: string): string {
+  return ` ${value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+}
+
+function phraseMatchesEvidence(haystack: string, phrase: string): boolean {
+  const needle = normaliseEvidenceText(phrase).trim();
+  return needle !== '' && haystack.includes(` ${needle} `);
+}
+
+function fallbackTagTokensMatch(haystack: string, tag: string): boolean {
+  const tokens = tag
+    .split('-')
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 2);
+  if (tokens.length === 0) return false;
+  return tokens.every((token) => haystack.includes(` ${token} `));
+}
+
+function tagHasArticleEvidence(tag: string, cluster: Cluster): boolean {
+  const candidates = [cluster.primary, ...cluster.alternatives];
+  const evidence = candidates
+    .flatMap((candidate) => [
+      candidate.title,
+      candidate.source_name,
+      candidate.source_url,
+      candidate.body_snippet ?? '',
+    ])
+    .join(' ');
+  const haystack = normaliseEvidenceText(evidence);
+  const aliases = TAG_RELEVANCE_ALIASES[tag] ?? [];
+  for (const alias of aliases) {
+    if (phraseMatchesEvidence(haystack, alias)) return true;
+  }
+  return fallbackTagTokensMatch(haystack, tag);
 }
 
 function countModelEmittedTags(tags: readonly unknown[]): {
@@ -837,16 +1090,36 @@ function validateAndSanitizeArticle(
   const contextualTagSet = contextualTagSetForCluster(s.cluster);
   const tags: string[] = [];
   const seen = new Set<string>();
+  const unsupportedEvidenceTags: string[] = [];
   for (const t of llmTags) {
     if (typeof t !== 'string') continue;
     const normalised = normalizeHashtag(t.trim());
     if (normalised === '' || seen.has(normalised)) continue;
     if (!allowedTagSet.has(normalised)) continue;
     if (contextualTagSet.size > 0 && !contextualTagSet.has(normalised)) continue;
+    if (
+      tagRequiresArticleEvidence(normalised, s.cluster) &&
+      !tagHasArticleEvidence(normalised, s.cluster)
+    ) {
+      unsupportedEvidenceTags.push(normalised);
+      continue;
+    }
     seen.add(normalised);
     tags.push(normalised);
   }
-  if (tags.length === 0) return null;
+  if (tags.length === 0) {
+    if (unsupportedEvidenceTags.length > 0) {
+      log('warn', 'digest.generation', {
+        status: 'chunk_article_dropped_tag_relevance',
+        scrape_run_id: body.scrape_run_id,
+        chunk_index: body.chunk_index,
+        article_index: s.articleIdx,
+        unsupported_tags: unsupportedEvidenceTags,
+        llm_title: title.slice(0, 120),
+      });
+    }
+    return null;
+  }
 
   const primary = s.cluster.primary;
   // Concat primary + alt body snippets so the embedding sees the

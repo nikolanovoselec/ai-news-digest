@@ -363,6 +363,55 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-
     ).toBe(true);
   });
 
+  it('REQ-PIPE-020: existing-title Google News append skips evidence-required tags', async () => {
+    const title = 'Anthropic releases Claude Sonnet 4.6 with extended context window';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string | URL | Request) => {
+        const url = typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+        const hostname = (() => {
+          try {
+            return new URL(url).hostname;
+          } catch {
+            return '';
+          }
+        })();
+        const body = hostname === 'news.google.com'
+          ? `<rss><channel><item><title>${title}</title><link>https://news.google.com/articles/duplicate</link></item></channel></rss>`
+          : '<rss><channel></channel></rss>';
+        return Promise.resolve(new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'application/rss+xml' },
+        }));
+      }),
+    );
+    const { db, records } = makeDb({
+      recentArticles: [
+        {
+          id: 'article-existing',
+          title: 'Claude Sonnet 4.6 gets extended context in Anthropic release',
+        },
+      ],
+    });
+    const { kv } = makeKv();
+    const { queue, sends } = makeChunksQueue();
+    const env = makeEnv(db, kv, queue);
+
+    await runCoordinator(env, { scrape_run_id: 'run-google-news-evidence-tags' });
+
+    expect(sends.length).toBe(0);
+    expect(
+      records.some((r) => r.sql.includes('INSERT OR IGNORE INTO article_sources')),
+    ).toBe(true);
+    expect(
+      records.some((r) => r.sql.includes('INSERT OR IGNORE INTO article_tags')),
+    ).toBe(false);
+  });
+
   it('REQ-PIPE-019: keeps same-topic Google News items when a short generic stored title is contained in a distinct headline', async () => {
     stubFetchWithGoogleNewsItem(
       'Hades PyPI supply chain attack poisons Python packages with credential stealer',

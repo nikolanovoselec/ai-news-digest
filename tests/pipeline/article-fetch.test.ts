@@ -1,4 +1,4 @@
-// Tests for src/lib/article-fetch.ts — REQ-PIPE-001 AC 8.
+// Tests for src/lib/article-fetch.ts — REQ-PIPE-010 / REQ-PIPE-011 / CON-SEC-002.
 //
 // The fetcher is the "grounding" layer: when a feed snippet is too
 // thin for the LLM to write a faithful summary, the coordinator
@@ -19,11 +19,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   extractArticleText,
   fetchArticleBody,
+  fetchArticleBodyWithQuality,
   fetchArticleBodies,
+  isHighConfidenceLandingOrPortalUrl,
+  isLikelyLandingOrPortalUrl,
 } from '~/lib/article-fetch';
 
-describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
-  it('REQ-PIPE-001: prefers <article> content over surrounding chrome', () => {
+describe('extractArticleText — REQ-PIPE-010', () => {
+  it('REQ-PIPE-010: prefers <article> content over surrounding chrome', () => {
     const html = `
       <html>
         <body>
@@ -47,7 +50,7 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
     expect(text).not.toContain('Terms Privacy');
   });
 
-  it('REQ-PIPE-001: picks the longest candidate when multiple containers match', () => {
+  it('REQ-PIPE-010: picks the longest candidate when multiple containers match', () => {
     const html = `
       <html>
         <body>
@@ -67,7 +70,7 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
     expect(text).not.toBe('Short main blurb.');
   });
 
-  it('REQ-PIPE-001: strips <script>, <style>, <noscript>, <svg> contents', () => {
+  it('REQ-PIPE-010: strips <script>, <style>, <noscript>, <svg> contents', () => {
     const html = `
       <html>
         <body>
@@ -94,7 +97,7 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
   // (attribute-shaped junk). HTML parsers tolerate ALL these forms,
   // so attacker-controlled feed bodies could smuggle script content
   // into the LLM-prompt body. The fix uses `</script\b[^>]*>`.
-  it('REQ-PIPE-001: strips script/style with whitespace and junk before the closing >', () => {
+  it('REQ-PIPE-010: strips script/style with whitespace and junk before the closing >', () => {
     const html = `
       <article>
         Clean body text we do want.
@@ -118,7 +121,7 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
   // earlier composite test had a trailing `</article>` that masked
   // this branch — a stricter `</script\s*>` regex looked correct
   // against the composite input but still let this fixture leak.
-  it('REQ-PIPE-001: strips a script when its attribute-shaped close is the ONLY closing variant', () => {
+  it('REQ-PIPE-010: strips a script when its attribute-shaped close is the ONLY closing variant', () => {
     const html =
       '<html><body>Article body that is plenty long to ground a summary across the threshold. ' +
       '<script>window.__smuggle = 42;</script attr-only>' +
@@ -130,7 +133,7 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
     expect(text).not.toMatch(/= 42/);
   });
 
-  it('REQ-PIPE-001: falls back to <body> when no known container matches', () => {
+  it('REQ-PIPE-010: falls back to <body> when no known container matches', () => {
     const html = `
       <html>
         <body>
@@ -144,7 +147,7 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
     expect(text).toContain('paragraph two');
   });
 
-  it('REQ-PIPE-001: decodes HTML entities and collapses whitespace', () => {
+  it('REQ-PIPE-010: decodes HTML entities and collapses whitespace', () => {
     const html =
       '<article>A &amp; B &mdash; say &#8220;hello&#8221;.\n\n\nDone.</article>';
     const text = extractArticleText(html);
@@ -155,7 +158,30 @@ describe('extractArticleText — REQ-PIPE-001 AC 8', () => {
   });
 });
 
-describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
+describe('landing-page heuristics — REQ-PIPE-011', () => {
+  it('flags obvious portal URLs as landing-like', () => {
+    expect(isLikelyLandingOrPortalUrl('https://example.com/')).toBe(true);
+    expect(isLikelyLandingOrPortalUrl('https://example.com/news')).toBe(true);
+    expect(isLikelyLandingOrPortalUrl('https://example.com/topics')).toBe(true);
+    expect(isLikelyLandingOrPortalUrl('https://example.com/tag/ai')).toBe(true);
+    expect(isHighConfidenceLandingOrPortalUrl('https://example.com/tag/ai')).toBe(true);
+    expect(isLikelyLandingOrPortalUrl('https://example.com/a')).toBe(false);
+  });
+
+  it('allows clearly article-ish URL paths', () => {
+    expect(
+      isLikelyLandingOrPortalUrl('https://example.com/2024/06/01/ai-platform-updates-and-new-features'),
+    ).toBe(false);
+    expect(
+      isLikelyLandingOrPortalUrl('https://example.com/2024/06/01/how-we-built-the-new-news-workflow'),
+    ).toBe(false);
+    expect(
+      isLikelyLandingOrPortalUrl('https://example.com/news/security-vulnerability-analysis'),
+    ).toBe(false);
+  });
+});
+
+describe('fetchArticleBodyWithQuality — REQ-PIPE-010 / REQ-PIPE-011', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -163,7 +189,84 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     vi.restoreAllMocks();
   });
 
-  it('REQ-PIPE-001: rejects non-HTTPS URLs via the SSRF filter (returns null, no network call)', async () => {
+  it('returns article-like quality true for canonical article markup', async () => {
+    const articleBody = `
+      <article>
+        <h1>Deep-dive: why this change matters</h1>
+        <p>We ship this change to reduce noise from landing pages across feeds.</p>
+        <p>This section contains enough prose, examples, and structure that the
+        pipeline can safely treat it as an article source.</p>
+      </article>
+    `;
+    const html = `<html><body>${articleBody}</body></html>`;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(html, {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+    );
+
+    const out = await fetchArticleBodyWithQuality(
+      'https://example.com/2024/06/01/deep-article',
+    );
+    expect(out).not.toBeNull();
+    expect(out?.isLikelyArticle).toBe(true);
+    expect(out?.reasonCodes).toContain('article_tag');
+  });
+
+  it('keeps strongly structured landing-path pages as article-like', async () => {
+    const articleBody = `
+      <article>
+        <h1>News flash: model launch and rollout details</h1>
+        ${Array.from({ length: 12 }, () =>
+          '<p>We publish an explanation of rollout mechanics and migration plans.</p>'
+        ).join('\n')}
+      </article>
+    `;
+    const html = `<html><body>${articleBody}</body></html>`;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(html, {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+    );
+
+    const out = await fetchArticleBodyWithQuality(
+      'https://example.com/topics/launch-update',
+    );
+
+    expect(out).not.toBeNull();
+    expect(out?.isLikelyArticle).toBe(true);
+    expect(out?.reasonCodes).toContain('portal_url_path');
+    expect(out?.reasonCodes).toContain('article_tag');
+  });
+
+  it('flags homepage-like fetches as non-article without blocking text extraction', async () => {
+    const links = '<a href="/page1">Read more about our products and releases today</a>'.repeat(20);
+    const html = `<html><body>${links}<p>${'filler '.repeat(80)}</p></body></html>`;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(html, {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+    );
+
+    const out = await fetchArticleBodyWithQuality('https://example.com/');
+    expect(out).not.toBeNull();
+    expect(out?.isLikelyArticle).toBe(false);
+    expect(out?.reasonCodes).toContain('portal_url_path');
+  });
+});
+
+describe('fetchArticleBody — REQ-PIPE-010 / CON-SEC-002', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('CON-SEC-002: rejects non-HTTPS URLs via the SSRF filter (returns null, no network call)', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('should not be called', { status: 200 }),
     );
@@ -172,7 +275,7 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('REQ-PIPE-001: rejects private-range IPs via the SSRF filter', async () => {
+  it('CON-SEC-002: rejects private-range IPs via the SSRF filter', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('ignored', { status: 200 }),
     );
@@ -181,7 +284,103 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('REQ-PIPE-001: returns null on non-2xx HTTP response', async () => {
+  it('CON-SEC-002: rejects redirects to unsafe destinations before following them', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('', {
+        status: 302,
+        headers: { location: 'https://169.254.169.254/latest/meta-data' },
+      }),
+    );
+
+    const out = await fetchArticleBody('https://example.com/redirect');
+
+    expect(out).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://example.com/redirect',
+      expect.objectContaining({ redirect: 'manual' }),
+    );
+  });
+
+  it('CON-SEC-002: rejects redirects to IPv4-mapped IPv6 metadata targets', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('', {
+        status: 302,
+        headers: { location: 'https://[::ffff:a9fe:a9fe]/latest/meta-data' },
+      }),
+    );
+
+    const out = await fetchArticleBody('https://example.com/redirect');
+
+    expect(out).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://example.com/redirect',
+      expect.objectContaining({ redirect: 'manual' }),
+    );
+  });
+
+  it('CON-SEC-002: one timeout covers the full redirect chain', async () => {
+    const firstHopController = new AbortController();
+    vi.spyOn(AbortSignal, 'timeout')
+      .mockReturnValueOnce(firstHopController.signal)
+      .mockReturnValueOnce(new AbortController().signal);
+    const body = 'This redirected article body has enough substance to count as genuine content for grounding. '.repeat(3);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      const signal = (init as RequestInit | undefined)?.signal;
+      if (signal?.aborted === true) {
+        throw new DOMException('aborted', 'AbortError');
+      }
+      if (firstHopController.signal.aborted === false) {
+        firstHopController.abort();
+        return new Response('', {
+          status: 302,
+          headers: { location: '/articles/final' },
+        });
+      }
+      return new Response(`<html><body><article>${body}</article></body></html>`, {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      });
+    });
+
+    const out = await fetchArticleBody('https://example.com/redirect');
+
+    expect(out).toBeNull();
+  });
+
+  it('CON-SEC-002: revalidates and follows safe redirects manually', async () => {
+    const body = 'This redirected article body has enough substance to count as genuine content for grounding. '.repeat(3);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === 'https://example.com/redirect') {
+        return new Response('', {
+          status: 302,
+          headers: { location: '/articles/final' },
+        });
+      }
+      if (url === 'https://example.com/articles/final') {
+        return new Response(`<html><body><article>${body}</article></body></html>`, {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const out = await fetchArticleBody('https://example.com/redirect');
+
+    expect(out).not.toBeNull();
+    expect(out).toContain('redirected article body');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://example.com/articles/final',
+      expect.objectContaining({ redirect: 'manual' }),
+    );
+  });
+
+  it('REQ-PIPE-010: returns null on non-2xx HTTP response', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('Forbidden', { status: 403 }),
     );
@@ -189,7 +388,7 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     expect(out).toBeNull();
   });
 
-  it('REQ-PIPE-001: returns null when the content-type is declared as non-HTML/plain/xml', async () => {
+  it('REQ-PIPE-010: returns null when the content-type is declared as non-HTML/plain/xml', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('binary garbage', {
         status: 200,
@@ -200,7 +399,7 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     expect(out).toBeNull();
   });
 
-  it('REQ-PIPE-001: returns null when the extracted text is under the grounding threshold', async () => {
+  it('REQ-PIPE-010: returns null when the extracted text is under the grounding threshold', async () => {
     // 100-character threshold is the contract — anything shorter
     // isn't enough for the LLM to produce a non-hallucinated summary.
     const thinHtml = '<html><body><article>Too short.</article></body></html>';
@@ -214,7 +413,7 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     expect(out).toBeNull();
   });
 
-  it('REQ-PIPE-001: returns the extracted text on a well-formed HTML response', async () => {
+  it('REQ-PIPE-010: returns the extracted text on a well-formed HTML response', async () => {
     const body = 'This is a real article body with enough substance to count as genuine content for grounding. '.repeat(3);
     const html = `<html><body><article>${body}</article></body></html>`;
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -228,13 +427,13 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
     expect(out).toContain('real article body');
   });
 
-  it('REQ-PIPE-001: swallows network errors and returns null rather than throwing', async () => {
+  it('REQ-PIPE-010: swallows network errors and returns null rather than throwing', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('offline'));
     const out = await fetchArticleBody('https://example.com/dead');
     expect(out).toBeNull();
   });
 
-  it('REQ-PIPE-001: swallows AbortError from the timeout path and returns null', async () => {
+  it('REQ-PIPE-010: swallows AbortError from the timeout path and returns null', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
       // Simulate a signal firing by mirroring the AbortError shape.
       const signal = (init as RequestInit | undefined)?.signal;
@@ -248,7 +447,7 @@ describe('fetchArticleBody — REQ-PIPE-001 AC 8', () => {
   });
 });
 
-describe('fetchArticleBodies — REQ-PIPE-001 AC 8', () => {
+describe('fetchArticleBodies — REQ-PIPE-010', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -256,7 +455,7 @@ describe('fetchArticleBodies — REQ-PIPE-001 AC 8', () => {
     vi.restoreAllMocks();
   });
 
-  it('REQ-PIPE-001: populates the result map with one entry per URL that fetched cleanly', async () => {
+  it('REQ-PIPE-010: populates the result map with one entry per URL that fetched cleanly', async () => {
     const longBody = 'Ground-truth article content for three distinct URLs. '.repeat(4);
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = typeof input === 'string' ? input : input.toString();

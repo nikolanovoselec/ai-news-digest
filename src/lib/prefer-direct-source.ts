@@ -20,8 +20,8 @@
 //      a non-Google headline that shares ≥3 meaningful tokens with the
 //      Google News title.
 //   3. If a match is found, drop the Google News headline and merge its
-//      `source_tags` into the surviving direct headline so the user's
-//      tag-of-discovery is preserved.
+//      `source_tags` plus per-tag evidence provenance into the surviving
+//      direct headline so the user's tag-of-discovery is preserved.
 //
 // The token threshold is ≥3 (not ≥1 like `titlesShareAnyToken` in
 // title-overlap.ts, and not ≥2 as in the first cut of this module):
@@ -77,7 +77,9 @@ const DROP_THRESHOLD = 3;
 /** Drop Google News headlines whose title shares ≥{@link DROP_THRESHOLD}
  *  meaningful tokens with a non-Google-News headline already in the
  *  list. Surviving direct headlines absorb the dropped Google News
- *  entry's `source_tags` so multi-tag discovery state is preserved.
+ *  entry's `source_tags` and `source_tags_requiring_evidence` so
+ *  multi-tag discovery state is preserved without turning broad tags
+ *  into item-level evidence.
  *
  *  Input order is preserved for the survivors. The function is pure;
  *  it returns a new array and does not mutate inputs (immutability
@@ -90,6 +92,7 @@ export function preferDirectOverGoogleNews(
   // direct headlines in place — keep the rebuild-don't-mutate
   // discipline consistent with the rest of the pipeline.
   const absorbedTagsByDirectIdx = new Map<number, Set<string>>();
+  const absorbedEvidenceTagsByDirectIdx = new Map<number, Set<string>>();
   const droppedGoogleIdxs = new Set<number>();
 
   // Partition once so the inner loop only walks direct headlines.
@@ -111,6 +114,25 @@ export function preferDirectOverGoogleNews(
           new Set<string>(d.h.source_tags ?? []);
         for (const t of g.h.source_tags ?? []) existing.add(t);
         absorbedTagsByDirectIdx.set(d.idx, existing);
+
+        const directEvidenceTags = new Set<string>(
+          d.h.source_tags_requiring_evidence ??
+          (d.h.requires_tag_evidence === true ? d.h.source_tags ?? [] : []),
+        );
+        const directItemLevelTags = new Set(
+          (d.h.source_tags ?? []).filter((tag) => !directEvidenceTags.has(tag)),
+        );
+        const existingEvidence =
+          absorbedEvidenceTagsByDirectIdx.get(d.idx) ??
+          new Set<string>(directEvidenceTags);
+        const googleEvidenceTags =
+          g.h.source_tags_requiring_evidence ??
+          (g.h.requires_tag_evidence === true ? g.h.source_tags ?? [] : []);
+        for (const t of googleEvidenceTags) {
+          if (!directItemLevelTags.has(t)) existingEvidence.add(t);
+        }
+        for (const t of directItemLevelTags) existingEvidence.delete(t);
+        absorbedEvidenceTagsByDirectIdx.set(d.idx, existingEvidence);
         droppedGoogleIdxs.add(g.idx);
         break;
       }
@@ -123,8 +145,15 @@ export function preferDirectOverGoogleNews(
   headlines.forEach((h, idx) => {
     if (droppedGoogleIdxs.has(idx)) return;
     const absorbed = absorbedTagsByDirectIdx.get(idx);
-    if (absorbed !== undefined) {
-      out.push({ ...h, source_tags: Array.from(absorbed) });
+    const absorbedEvidence = absorbedEvidenceTagsByDirectIdx.get(idx);
+    if (absorbed !== undefined || absorbedEvidence !== undefined) {
+      out.push({
+        ...h,
+        ...(absorbed !== undefined ? { source_tags: Array.from(absorbed) } : {}),
+        ...(absorbedEvidence !== undefined && absorbedEvidence.size > 0
+          ? { source_tags_requiring_evidence: Array.from(absorbedEvidence) }
+          : {}),
+      });
     } else {
       out.push(h);
     }

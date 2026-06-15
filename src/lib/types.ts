@@ -40,6 +40,13 @@ export interface Headline {
    * topic for the item. Extract() implementations don't need to set
    * it — the coordinator stamps the field after fetch. */
   source_tags?: string[];
+  /** Subset of `source_tags` that came from broad sources and must be
+   * supported by article title/body text before persistence. */
+  source_tags_requiring_evidence?: string[];
+  /** True when the source is broad enough that registry tags are not
+   * item-level evidence. The chunk consumer must require title/body
+   * support before any model-selected tag can be persisted. */
+  requires_tag_evidence?: boolean;
   /** Unix-seconds publication timestamp parsed from the feed entry
    * (RSS `<pubDate>`, Atom `<published>`/`<updated>`, JSON Feed
    * `date_published`). Omitted when the feed did not supply a date

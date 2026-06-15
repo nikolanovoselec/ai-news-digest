@@ -44,6 +44,10 @@ export const BLOCKED_HOSTS: ReadonlySet<string> = new Set([
   'finance.com',
   'morningstar.com',
   'investing.com',
+  'businesswire.com',
+  'prnewswire.com',
+  'globenewswire.com',
+  'housingwire.com',
 ]);
 
 /** Lowercased substring tokens checked against `headline.source_name`.
@@ -69,6 +73,12 @@ export const BLOCKED_NAME_TOKENS: readonly string[] = [
   "investor's business daily",
   'morningstar',
   'investing.com',
+  'business wire',
+  'pr newswire',
+  'prnewswire',
+  'globenewswire',
+  'housing wire',
+  'show hn',
 ];
 
 /** Return true when the headline's host matches any entry in
@@ -89,7 +99,7 @@ function hostIsBlocked(url: string): boolean {
   return false;
 }
 
-/** Return true when the headline's source_name contains any token from
+/** Return true when a text field contains any token from
  *  {@link BLOCKED_NAME_TOKENS} as a whole-word match. Word boundaries
  *  are needed because short tokens (e.g. "msn", "cnbc") would otherwise
  *  substring-match unrelated publisher names ("Comsnet News",
@@ -98,14 +108,14 @@ function hostIsBlocked(url: string): boolean {
  *  "yahoo finance" matches "Yahoo Finance" and "Yahoo! Finance" alike
  *  (the bang is a separator between two word-runs). Case-insensitive.
  *  Returns false on null/empty input. */
-function nameIsBlocked(sourceName: string | null | undefined): boolean {
-  if (sourceName === null || sourceName === undefined || sourceName === '') {
+function textHasBlockedToken(value: string | null | undefined): boolean {
+  if (value === null || value === undefined || value === '') {
     return false;
   }
   // Normalise the haystack: lowercase + collapse any non-alphanumeric
   // run to a single space, then pad with spaces so all word boundaries
   // become " token " runs detectable by simple substring.
-  const haystack = ' ' + sourceName.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+  const haystack = ' ' + value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
   for (const token of BLOCKED_NAME_TOKENS) {
     const needle = ' ' + token.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
     if (haystack.includes(needle)) return true;
@@ -114,10 +124,14 @@ function nameIsBlocked(sourceName: string | null | undefined): boolean {
 }
 
 /** Predicate: should this headline be discarded as off-topic for an
- *  AI-curated tech news product? True if EITHER the URL host or the
- *  RSS-supplied publisher name matches the blocklist. */
+ *  AI-curated tech news product? True if the URL host, RSS-supplied
+ *  publisher name, or headline title matches the blocklist. Title
+ *  matching catches Hacker News posts whose source is "Hacker News" but
+ *  whose off-topic wrapper signal is the "Show HN" title prefix. */
 export function isBlockedPublisher(headline: Headline): boolean {
-  return hostIsBlocked(headline.url) || nameIsBlocked(headline.source_name);
+  return hostIsBlocked(headline.url)
+    || textHasBlockedToken(headline.source_name)
+    || textHasBlockedToken(headline.title);
 }
 
 /** Drop every headline whose publisher is blocked. Pure: returns a new

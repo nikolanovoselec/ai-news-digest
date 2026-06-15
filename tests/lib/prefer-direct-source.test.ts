@@ -22,8 +22,17 @@ function h(
   url: string,
   source_name: string,
   source_tags: string[] = [],
+  source_tags_requiring_evidence: string[] = [],
 ): Headline {
-  return { title, url, source_name, source_tags };
+  return {
+    title,
+    url,
+    source_name,
+    source_tags,
+    ...(source_tags_requiring_evidence.length > 0
+      ? { source_tags_requiring_evidence }
+      : {}),
+  };
 }
 
 describe('isGoogleNewsUrl — REQ-PIPE-003', () => {
@@ -89,16 +98,40 @@ describe('preferDirectOverGoogleNews — REQ-PIPE-003', () => {
         'https://news.google.com/articles/CBAi-something',
         'googlenews',
         ['generative-ai'],
+        ['generative-ai'],
       ),
     ];
     const out = preferDirectOverGoogleNews(input);
     expect(out).toHaveLength(1);
     expect(out[0]?.source_name).toBe('hackernews');
     // The direct headline absorbs the Google News entry's source_tags
-    // so multi-tag discovery state is preserved.
+    // while preserving broad-source evidence provenance.
     expect(out[0]?.source_tags).toEqual(
       expect.arrayContaining(['ai-agents', 'generative-ai']),
     );
+    expect(out[0]?.source_tags_requiring_evidence).toEqual(['generative-ai']);
+  });
+
+  it('REQ-PIPE-020: direct same-tag provenance wins over Google News evidence requirement', () => {
+    const input: Headline[] = [
+      h(
+        'Cloudflare Workers routing controls launch for platform teams',
+        'https://blog.cloudflare.com/workers-routing-controls/',
+        'cloudflare-blog',
+        ['cloudflare'],
+      ),
+      h(
+        'Cloudflare Workers routing controls launch for platform teams',
+        'https://news.google.com/articles/CBAi-cloudflare',
+        'googlenews',
+        ['cloudflare'],
+        ['cloudflare'],
+      ),
+    ];
+    const out = preferDirectOverGoogleNews(input);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.source_tags).toEqual(['cloudflare']);
+    expect(out[0]?.source_tags_requiring_evidence).toBeUndefined();
   });
 
   it('keeps the Google News headline when no direct duplicate exists', () => {

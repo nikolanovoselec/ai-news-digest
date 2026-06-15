@@ -49,7 +49,7 @@ function verdictResponse(indices: ReadonlyArray<{ i: number; same_event: boolean
   return { response: JSON.stringify({ verdicts: indices }) };
 }
 
-describe('readRerankFloor - REQ-PIPE-009', () => {
+describe('readRerankFloor - REQ-PIPE-023', () => {
   it('returns the configured float when valid', () => {
     expect(readRerankFloor({ DEDUP_RERANK_FLOOR: '0.7' })).toBe(0.7);
   });
@@ -73,7 +73,7 @@ describe('readRerankFloor - REQ-PIPE-009', () => {
   });
 });
 
-describe('rerankBorderlinePairsBatch - REQ-PIPE-009 (AD48 batched API)', () => {
+describe('rerankBorderlinePairsBatch - REQ-PIPE-009 / REQ-PIPE-023 (AD48 batched API)', () => {
   it('returns [] on empty input without calling the AI', async () => {
     const env = makeAi({ response: '{"verdicts":[]}' });
     const verdicts = await rerankViaWorkersAi(env, []);

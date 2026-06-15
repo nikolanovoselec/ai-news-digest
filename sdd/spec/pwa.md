@@ -12,7 +12,7 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 
 **Acceptance Criteria:**
 1. `/manifest.webmanifest` declares `name`, `short_name`, `description`, `start_url=/digest`, `display=standalone`, `theme_color`, and `background_color`.
-2. The manifest's `theme_color` and `background_color` are pinned to the dark-theme background colour so that PWA users in dark mode (the common case for a news reader at the typical reading hours) never see a light-coloured splash or status bar at cold launch or during standalone-mode navigation transitions.
+2. Manifest `theme_color` and `background_color` are pinned to the dark background so dark-mode PWA users never see a light splash or status bar on cold launch or standalone navigation.
 3. Users in light mode see a brief dark splash at cold launch only, after which the runtime theme controls take over and paint the document in their selected theme.
 4. Icons declared in `/manifest.webmanifest` include at least one `purpose: "any"` and one `purpose: "maskable"`; either a scalable SVG (`type: "image/svg+xml"`, `sizes: "any"`) or raster PNGs at 192x192 and 512x512 satisfy both requirements.
 5. Apple meta tags in the root layout set `apple-mobile-web-app-capable=yes`, `apple-mobile-web-app-status-bar-style=black-translucent`, `apple-mobile-web-app-title`, and a 180x180 PNG `apple-touch-icon`, since iOS does not consume `/manifest.webmanifest` for its home-screen icon.
@@ -38,13 +38,13 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The viewport meta tag on every page is `width=device-width, initial-scale=1, viewport-fit=cover`.
-2. The header respects iPhone notches and Android gesture bars via safe-area insets so its controls never sit under system chrome.
-3. Navigation is consolidated into the header on every viewport: brand on the left, and on the right a standalone theme-toggle icon immediately followed by an avatar-triggered user menu.
-4. The avatar user menu contains a "Search & History" entry, Starred, Settings, and Log out.
-5. The header carries no separate sidebar, no bottom tab bar, and no standalone header buttons beyond the brand, theme toggle, and avatar trigger.
-6. Tap highlights are disabled globally; focus and active states are handled by CSS.
-7. Interactive header controls (theme toggle, avatar) meet the 44x44 CSS-pixel minimum tap-target guidance on mobile viewports.
+1. The viewport meta tag on every page is `width=device-width, initial-scale=1, viewport-fit=cover`. <!-- @impl: src/layouts/Base.astro::readThemeCookie -->
+2. The header respects iPhone notches and Android gesture bars via safe-area insets so its controls never sit under system chrome. <!-- @impl: src/layouts/Base.astro::readThemeCookie -->
+3. Navigation is consolidated into the header on every viewport: brand on the left, and on the right a standalone theme-toggle icon immediately followed by an avatar-triggered user menu. <!-- @impl: src/layouts/Base.astro::ogImageUrl -->
+4. The avatar user menu contains a "Search & History" entry, Starred, Settings, and Log out. <!-- @impl: src/components/UserMenu.astro::sha256Hex -->
+5. The header carries no separate sidebar, no bottom tab bar, and no standalone header buttons beyond the brand, theme toggle, and avatar trigger. <!-- @impl: src/layouts/Base.astro::readThemeCookie -->
+6. Tap highlights are disabled globally; focus and active states are handled by CSS. <!-- @impl: src/scripts/page-effects.ts::syncBrowserTz -->
+7. Interactive header controls (theme toggle, avatar) meet the 44x44 CSS-pixel minimum tap-target guidance on mobile viewports. <!-- @impl: src/layouts/Base.astro::readThemeCookie -->
 
 **Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum)
 
@@ -65,11 +65,13 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The digest is the app home and clicking the brand returns to it when signed in.
-2. On the unfiltered digest URL, the brand scrolls to the top of the list (a "back to top" affordance) rather than self-navigating.
-3. On a filtered digest URL (any query string present), the brand falls through to natural navigation so the filter clears (a "click to reset" affordance).
-4. Modifier-clicks (Cmd/Ctrl/Shift/Alt) and non-primary mouse buttons are never intercepted, so "open in new tab/window" continues to work on the brand.
-5. The brand tap target stretches to fill the entire left half of the header between the safe-area inset and the right-side controls, with visible content remaining left-aligned so the layout is unchanged.
+1. The digest is the app home and clicking the brand returns to it when signed in. <!-- @impl: src/layouts/Base.astro::data-brand-home -->
+2. On the unfiltered digest URL, the brand scrolls to the top of the list (a "back to top" affordance) rather than self-navigating. <!-- @impl: src/layouts/Base.astro::data-brand-home -->
+3. On a filtered digest URL (any query string present), the brand falls through to natural navigation so the filter clears (a "click to reset" affordance). <!-- @impl: src/layouts/Base.astro::data-brand-home -->
+4. Modifier-clicks (Cmd/Ctrl/Shift/Alt) and non-primary mouse buttons are never intercepted, so "open in new tab/window" continues to work on the brand. <!-- @impl: src/layouts/Base.astro::data-brand-home -->
+5. The brand tap target stretches to fill the entire left half of the header between the safe-area inset and the right-side controls, with visible content remaining left-aligned so the layout is unchanged. <!-- @impl: src/layouts/Base.astro::data-brand-home -->
+
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
 **Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum)
 
@@ -79,4 +81,4 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 
 **Verification:** Integration test
 
-**Status:** Implemented
+**Status:** Partial

@@ -10,6 +10,7 @@ Every log line in this Worker is `JSON.stringify`'d and emitted via `console.log
 
 - [Event envelope](#event-envelope)
 - [Event enum](#event-enum)
+- [Digest generation chunk status fields](#digest-generation-chunk-status-fields)
 - [Error detail field](#error-detail-field)
 - [Rate-limiter atomicity and the WAF backstop](#rate-limiter-atomicity-and-the-waf-backstop)
 - [Refresh rate-limit fail-mode fields](#refresh-rate-limit-fail-mode-fields)
@@ -49,7 +50,7 @@ Each event has fixed semantics and may carry additional event-specific fields; c
 | `auth.account.delete` | User row deleted from D1 |
 | `auth.account.delete.failed` | D1 delete threw, or KV cleanup threw |
 | `auth.set_tz.failed` | D1 update in `POST /api/auth/set-tz` threw |
-| `digest.generation` | Digest generation completed (success or failure) |
+| `digest.generation` | Scrape pipeline progress; chunk-level `status` values are detailed below. |
 | `source.fetch.failed` | An individual source could not be fetched during fan-out |
 | `refresh.rejected` | Manual refresh rejected (rate-limited or already in progress) |
 | `auth.refresh.rotated` | Refresh-token row rotated (middleware or explicit endpoint) |
@@ -72,6 +73,21 @@ Each event has fixed semantics and may carry additional event-specific fields; c
 | `auth.refresh.rate_limited` | Refresh rate-limit bucket hit; request rejected with 429 |
 | `rate.limit.kv_error` | KV read/write in the rate-limit helper threw |
 | `article.star.failed` | D1 insert or delete in `POST/DELETE /api/articles/:id/star` threw |
+
+---
+
+## Digest generation chunk status fields
+
+`digest.generation` is the top-level event for scrape pipeline progress. Its `status` field identifies chunk-level sub-events that operators use for prompt accounting and pre-LLM drop diagnosis.
+
+| `status` | Level | Key fields | Meaning |
+|---|---|---|---|
+| `chunk_prompt_candidates_built` | `info` | `prompt_candidates`, `original_candidates`, `prompt_body_chars`, `feed_body_chars`, `fetched_body_chars`, `fetched_body_promotions`, `dropped_before_llm` | Prompt input accounting after body fetches and pre-LLM filtering. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates --> |
+| `chunk_landing_noise_candidates_dropped` | `warn` | `dropped`, `non_article_dropped`, `fetch_failure_dropped`, `total` | Portal-like candidates removed before the LLM. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates --> |
+| `chunk_article_dropped_tag_relevance` | `warn` | `article_index`, `unsupported_tags`, `llm_title` | A tag lacked required article-level evidence, so the article was dropped. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle --> |
+| `chunk_ready` with `skip_reason: "no_prompt_candidates"` | `info` | `articles_ingested`, `articles_deduped`, `tokens_in`, `tokens_out`, `estimated_cost_usd`, `completed_chunks`, `first_completion` | The chunk completed without model spend because no prompt candidates remained. <!-- @impl: src/queue/scrape-chunk-consumer.ts::processOneChunk --> |
+
+All four statuses carry `scrape_run_id` and `chunk_index`; `chunk_ready` also carries `total_chunks`. The prompt-accounting and zero-prompt rows support [REQ-PIPE-022](../../sdd/spec/generation.md#req-pipe-022-chunk-prompt-input-compaction), landing-noise drops support [REQ-PIPE-011](../../sdd/spec/generation.md#req-pipe-011-candidate-filtering-rules), and tag-relevance drops support [REQ-PIPE-020](../../sdd/spec/generation.md#req-pipe-020-chunk-tag-validation-guardrails).
 
 ---
 

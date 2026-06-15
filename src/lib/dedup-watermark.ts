@@ -1,4 +1,4 @@
-// Implements REQ-PIPE-009
+// Implements REQ-PIPE-024
 //
 // Persists the timestamp of the most recent successful auto-sweep run.
 // The sweep's rerank pass uses this watermark to skip LLM calls on

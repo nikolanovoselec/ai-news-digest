@@ -214,6 +214,35 @@ describe('PROCESS_CHUNK_SYSTEM + processChunkUserPrompt — REQ-PIPE-002', () =>
     expect(prompt).not.toContain('dedup_groups');
   });
 
+  it('REQ-PIPE-002: JSON example uses the first prompted sparse candidate index', () => {
+    const prompt = processChunkUserPrompt(
+      [
+        {
+          index: 7,
+          title: 'Sparse survivor after pre-prompt drops',
+          url: 'https://example.com/survivor',
+          source_name: 'Example',
+          published_at: 1_700_000_000,
+          body_snippet: 'Grounded survivor snippet',
+        },
+      ],
+      ['cloudflare'],
+    );
+
+    expect(prompt).toContain('[7] Sparse survivor after pre-prompt drops');
+    expect(prompt).toContain('"index": 7');
+    expect(prompt).toContain('candidate [7] specifically');
+    expect(prompt).not.toContain('"index": 0');
+    expect(prompt).not.toContain('candidate [0]');
+  });
+
+  it('REQ-PIPE-002: JSON example for an empty candidate prompt returns no articles', () => {
+    const prompt = processChunkUserPrompt([], ['cloudflare']);
+
+    expect(prompt).toContain('"articles": []');
+    expect(prompt).not.toContain('"index": 0');
+  });
+
   it('CF-032: title containing triple backticks cannot break the fenced block', () => {
     const candidates = [
       {

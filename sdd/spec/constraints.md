@@ -39,7 +39,7 @@ All responses include a strict CSP with no inline scripts (`script-src 'self'`),
 
 ### CON-SEC-002: Outbound article-body fetches flow through the SSRF-guarded helper
 
-Server-side article-body fetches are allowed only through the shared SSRF-guarded helper used by the scrape coordinator to ground thin feed snippets. Every outbound request is HTTPS-only, refuses private, loopback, link-local, and Cloudflare-internal address ranges, enforces a bounded timeout, caps the downloaded body at a fixed size, and strips scripts, styles, and chrome from the extracted text before it reaches the LLM prompt. Discovery and LLM-ranking paths still never issue raw outbound GETs to URLs supplied by users or the model.
+Server-side article-body fetches are allowed only through the shared SSRF-guarded helper used by the scrape pipeline to ground thin, forced, and portal-like candidates. Every outbound request and followed redirect target is HTTPS-only, refuses private, loopback, link-local, and Cloudflare-internal address ranges, enforces a bounded timeout, caps the downloaded body at a fixed size, and strips scripts, styles, and chrome from the extracted text before it reaches the LLM prompt. Discovery and LLM-ranking paths still never issue raw outbound GETs to URLs supplied by users or the model.
 
 **Applies To:** Digest generation, source discovery
 

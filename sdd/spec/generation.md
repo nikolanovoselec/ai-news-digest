@@ -15,7 +15,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 2. The coordinator partitions candidates across one or more chunk jobs whose size is capped to fit the model's context window so LLM calls stay within budget and partial failures only lose one chunk. <!-- @impl: src/queue/scrape-coordinator.ts::packCandidatesIntoChunks -->
 3. Each run is tracked by a `scrape_runs` row that transitions `running` → `ready` on success (or `failed` on abort), with progress derived from `scrape_runs.chunk_count` and D1 chunk-completion rows. <!-- @impl: src/queue/scrape-chunk-consumer.ts::recordChunkCompletionAndCheckFinalize -->
 4. Article-pool ingestion (URL deduplication, source-list aggregation, first-ingestion timestamp preservation, and per-item publisher resolution) is governed by [REQ-PIPE-017](#req-pipe-017-article-pool-ingestion-contract). <!-- @impl: src/queue/scrape-chunk-consumer.ts::buildArticleBatchStatements -->
-5. Body-fetch behaviour for candidates with thin feed snippets is governed by [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-feed-snippets). <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+5. Body-fetch behaviour for thin, forced, and portal-like candidates is governed by [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-forced-and-portal-like-candidates). <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 6. Google News query-RSS long-tail backstop coverage is governed by [REQ-PIPE-019](#req-pipe-019-google-news-query-rss-long-tail-backstop). <!-- @impl: src/queue/scrape-coordinator.ts::assembleAllSources -->
 7. A run waiting too long for scrape completion exits failed rather than looping silently. <!-- @impl: src/queue/pipeline-consumer.ts::runScrapeWait -->
 
@@ -23,7 +23,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags), [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-feed-snippets), [REQ-PIPE-011](#req-pipe-011-candidate-filtering-rules), [REQ-PIPE-017](#req-pipe-017-article-pool-ingestion-contract), [REQ-PIPE-019](#req-pipe-019-google-news-query-rss-long-tail-backstop)
+**Dependencies:** [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags)
 
 **Verification:** Integration test
 
@@ -33,13 +33,13 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ### REQ-PIPE-019: Google News query-RSS long-tail backstop
 
-**Intent:** Every interest tag is guaranteed baseline coverage by a per-tag Google News query-RSS source added to each scrape tick. The aggregator-vs-direct dedup pass in [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract) makes the wide fan-out safe — direct publisher copies always win over Google News copies that land in the same tick, so the backstop produces baseline coverage without polluting the pool with aggregator duplicates.
+**Intent:** Every interest tag is guaranteed baseline coverage by a per-tag Google News query-RSS source added to each scrape tick. The aggregator-vs-direct dedup pass in [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract) makes the wide fan-out safe — direct publisher copies always win over Google News copies that land in the same tick, so the backstop produces baseline coverage without polluting the pool with aggregator duplicates.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Every tag in the union of (default-seed hashtags ∪ curated source tags ∪ discovered KV tags) gets a per-tag Google News query-RSS source added to the tick's source list as a long-tail backstop.
-2. Tags already served by a bespoke hand-tuned Google News curated entry are skipped, so the same tag never gets two Google News queries in one tick.
+1. Every tag in the union of (default-seed hashtags ∪ curated source tags ∪ discovered KV tags) gets a per-tag Google News query-RSS source added to the tick's source list as a long-tail backstop. <!-- @impl: src/queue/scrape-coordinator.ts::capChunks -->
+2. Tags already served by a bespoke hand-tuned Google News curated entry are skipped, so the same tag never gets two Google News queries in one tick. <!-- @impl: src/queue/scrape-coordinator.ts::capChunks -->
 3. A Google News wrapper candidate whose title strongly matches an already-stored recent article, including high coverage of the longer title, is appended as another source/tag sighting for that article. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches -->
 4. Only a high-confidence title-matched Google News wrapper candidate is skipped before chunk fan-out so it does not produce a duplicate LLM summary. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches -->
 5. Same-topic partial-overlap Google News wrapper candidates remain eligible for chunk fan-out. <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches -->
@@ -48,7 +48,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P1
 
-**Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags)
+**Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags)
 
 **Verification:** Integration test
 
@@ -63,10 +63,10 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Candidates whose canonical URL is already present in the article pool are skipped on subsequent ticks so the same story is never re-summarised.
-2. When a re-discovered URL arrives from a source that wasn't already on the article's source list, the new source is appended to the article's source list (multi-source aggregation).
-3. An article's first-ingestion timestamp is preserved across every subsequent re-discovery so the dashboard ordering reflects when each story first entered the pool, not how recently a feed re-emitted it.
-4. When a feed entry identifies a per-item publisher distinct from the feed itself (for example a Google News item that names the underlying outlet), the per-item publisher is used as the source name in the article's source list; absent or empty per-item publishers fall back to the feed-level name.
+1. Candidates whose canonical URL is already present in the article pool are skipped on subsequent ticks so the same story is never re-summarised. <!-- @impl: src/queue/scrape-chunk-consumer.ts::runChunkLLM -->
+2. When a re-discovered URL arrives from a source that wasn't already on the article's source list, the new source is appended to the article's source list (multi-source aggregation). <!-- @impl: src/queue/scrape-chunk-consumer.ts::handleChunkBatch -->
+3. An article's first-ingestion timestamp is preserved across every subsequent re-discovery so the dashboard ordering reflects when each story first entered the pool, not how recently a feed re-emitted it. <!-- @impl: src/queue/scrape-chunk-consumer.ts::processOneChunk -->
+4. When a feed entry supplies a per-item publisher distinct from the feed, that publisher becomes the article source name; missing or empty per-item publishers fall back to the feed name. <!-- @impl: src/queue/scrape-chunk-consumer.ts::runChunkLLM -->
 
 **Constraints:** [CON-PERF-001](constraints.md#con-perf-001-100-user-thundering-herd-target)
 
@@ -116,6 +116,8 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Acceptance Criteria:**
 1. Long candidate body snippets are compacted into extractive prompt context before the chunk LLM call. <!-- @impl: src/lib/prompts.ts::compactChunkBodySnippetForPrompt -->
 2. The compacted prompt context preserves the article lead and later high-signal factual passages. <!-- @impl: src/lib/prompts.ts::compactChunkBodySnippetForPrompt -->
+3. Chunk prompt construction logs prompt-candidate counts and body-character totals so operators can verify whether pre-LLM filtering reduces or expands summarisation input. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+4. If pre-LLM filtering removes every candidate in a chunk, the chunk completes without an LLM call and records zero token, cost, and ingested-article totals. <!-- @impl: src/queue/scrape-chunk-consumer.ts::processOneChunk -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts), [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output)
 
@@ -164,8 +166,8 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Acceptance Criteria:**
 1. Tags outside the allowlist are discarded before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
-2. Articles with zero valid tags after filtering are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
-3. Chunk messages carry candidate-local source tag hints when the source that surfaced the article has known tags. <!-- @impl: src/queue/scrape-coordinator.ts::fetchAllSources --> <!-- @impl: src/queue/scrape-coordinator.ts::flattenToChunkCandidates -->
+2. Articles with zero valid tags after allowlist, contextual-source, and required article-evidence filtering are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
+3. Broad-source tag hints retain evidence-required provenance across merges; same-tag item-level provenance clears it, and existing-title appends skip evidence-required tags. <!-- @impl: src/queue/scrape-coordinator.ts::fetchAllSources --> <!-- @impl: src/lib/prefer-direct-source.ts::preferDirectOverGoogleNews --> <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::tagRequiresArticleEvidence -->
 4. When candidate-local source tags are present, persisted tags are restricted to that candidate-local set rather than the global allowlist. <!-- @impl: src/queue/scrape-chunk-consumer.ts::contextualTagSetForCluster --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 5. An article with at least 10 model-emitted tags causes the chunk message to retry. <!-- @impl: src/queue/scrape-chunk-consumer.ts::TAG_FANOUT_RETRY_THRESHOLD = 10 --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::rejectArticlesWithModelTagFanout -->
 6. A tag-fanout retry persists no article from that model response. <!-- @impl: src/queue/scrape-chunk-consumer.ts::processOneChunk -->
@@ -202,7 +204,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants), [REQ-PIPE-013](#req-pipe-013-same-story-cross-tick-automation-and-retention-coupling), [REQ-PIPE-014](#req-pipe-014-same-story-operator-surfaces), [REQ-PIPE-018](#req-pipe-018-same-story-collapse-mechanics-survivor-selection-and-data-merge)
+**Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
 **Verification:** Automated test
 
@@ -217,21 +219,23 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. When two articles are recognised as the same story, the article with the earlier publication time survives as the primary card and the later one is recorded as an alternative source on it.
-2. Two same-story articles that share an identical publication time (including wire-syndicated stories whose publication times match to the second) still collapse to a single card via a deterministic tie-break that picks the survivor, rather than being silently kept apart by timestamp granularity.
-3. When the same story appears under both a direct publisher / community link and an aggregator-wrapper link whose canonical form differs from the publisher's (for example a Google News URL), the aggregator-wrapper copy is dropped in favour of the direct copy and any tag-of-discovery state from the dropped copy is merged onto the surviving direct article. When no direct copy is present, the aggregator-wrapper copy is kept so coverage of stories no direct source surfaced is preserved.
-4. Source links, tag union, stars, and read marks from the later article are preserved on the surviving primary card so a user never loses a star or a read by virtue of dedup.
-5. A single-source article (no same-story matches) is persisted with zero alternative-source rows.
+1. When two articles are recognised as the same story, the article with the earlier publication time survives as the primary card and the later one is recorded as an alternative source on it. <!-- @impl: src/lib/finalize-merge.ts::mergeAsAltSource -->
+2. Two same-story articles that share an identical publication time (including wire-syndicated stories whose publication times match to the second) still collapse to a single card via a deterministic tie-break that picks the survivor, rather than being silently kept apart by timestamp granularity. <!-- @impl: src/lib/finalize-merge.ts::mergeAsAltSource -->
+3. When direct and aggregator-wrapper copies of the same story exist, the direct copy survives and inherits discovery tags from the wrapper. If no direct copy exists, the wrapper copy is kept for coverage. <!-- @impl: src/lib/finalize-merge.ts::mergeAsAltSource -->
+4. Source links, tag union, stars, and read marks from the later article are preserved on the surviving primary card so a user never loses a star or a read by virtue of dedup. <!-- @impl: src/lib/finalize-merge.ts::mergeAsAltSource -->
+5. A single-source article (no same-story matches) is persisted with zero alternative-source rows. <!-- @impl: src/lib/finalize-merge.ts::mergeAsAltSource -->
+
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract)
 
 **Verification:** Automated test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 
@@ -242,11 +246,11 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. The registry contains at least 50 entries, each declaring a slug, human-readable name, feed URL, feed kind, and at least one tag.
-2. Every one of the 21 system tags is covered by at least one source.
-3. Every source declares at least one tag drawn from the system tag list.
-4. Every feed URL uses HTTPS.
-5. A live-fetch validator can be run on demand to detect dead feeds so operators can swap them out before they pollute the pool.
+1. The registry contains at least 50 entries, each declaring a slug, human-readable name, feed URL, feed kind, and at least one tag. <!-- @impl: src/lib/curated-sources.ts::hasCuratedSource -->
+2. Every one of the 21 system tags is covered by at least one source. <!-- @impl: src/lib/curated-sources.ts::hasCuratedSource -->
+3. Every source declares at least one tag drawn from the system tag list. <!-- @impl: src/lib/curated-sources.ts::hasCuratedSource -->
+4. Every feed URL uses HTTPS. <!-- @impl: src/lib/curated-sources.ts::hasCuratedSource -->
+5. A live-fetch validator can be run on demand to detect dead feeds so operators can swap them out before they pollute the pool. <!-- @impl: src/lib/curated-sources.ts::hasCuratedSource -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
@@ -267,10 +271,10 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. A daily cron fires at 03:00 UTC and deletes articles whose published-at timestamp is older than 14 days, when no user has starred the article.
-2. An article starred by any user is preserved regardless of age.
-3. Deletion cascades remove the article's alternative sources, tag rows, and read-tracking rows so no orphans remain.
-4. The cleanup run is independent of the global scrape run and never blocks ingestion.
+1. A daily cron fires at 03:00 UTC and deletes articles whose published-at timestamp is older than 14 days, when no user has starred the article. <!-- @impl: src/queue/cleanup.ts::runChunkCompletionsPurge -->
+2. An article starred by any user is preserved regardless of age. <!-- @impl: src/queue/cleanup.ts::runOrphanScrapeRunSweep -->
+3. Deletion cascades remove the article's alternative sources, tag rows, and read-tracking rows so no orphans remain. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
+4. The cleanup run is independent of the global scrape run and never blocks ingestion. <!-- @impl: src/queue/cleanup.ts::runOrphanScrapeRunSweep -->
 
 **Constraints:** [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
 
@@ -291,12 +295,12 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Each run records its start time, finish time, articles ingested, articles deduplicated, input and output token counts, estimated cost in USD, model identifier, chunk count, and final status.
-2. The stats widget reads global token and cost totals as sums over the scrape-run aggregation.
-3. The history page reads its per-day aggregates and per-tick expansions from the same aggregation, not from article rows.
-4. Status transitions running to ready on success, or running to failed when the run aborts. Once a run leaves running its status is terminal: a late-arriving failed chunk whose retries exhausted after the run already reached ready does not flap the dashboard back to failed, and a late success message after a run was already marked failed does not flip it back to ready.
-5. A lightweight status endpoint reports whether a scrape is currently running; while running it returns the run identifier, start time, chunks completed, total chunks, and articles ingested so far.
-6. The reading surface uses the status endpoint to replace its "Next update in Xm" countdown with an "Update in progress, X/Y chunks" indicator, and the settings surface shows the same progress alongside its manual-refresh control. Both indicators hide themselves automatically when the run finishes.
+1. Each run records its start time, finish time, articles ingested, articles deduplicated, input and output token counts, estimated cost in USD, model identifier, chunk count, and final status. <!-- @impl: src/lib/scrape-run.ts::startRun -->
+2. The stats widget reads global token and cost totals as sums over the scrape-run aggregation. <!-- @impl: src/lib/scrape-run.ts::addChunkStats -->
+3. The history page reads its per-day aggregates and per-tick expansions from the same aggregation, not from article rows. <!-- @impl: src/queue/cleanup.ts::runChunkCompletionsPurge -->
+4. A run moves from running to ready on success or failed on abort, and terminal status never flaps: late failed chunks cannot undo ready, and late successes cannot undo failed. <!-- @impl: src/lib/scrape-run.ts::addChunkStats -->
+5. A lightweight status endpoint reports whether a scrape is currently running; while running it returns the run identifier, start time, chunks completed, total chunks, and articles ingested so far. <!-- @impl: src/pages/api/scrape-status.ts::GET -->
+6. The reading surface uses the status endpoint to replace its "Next update in Xm" countdown with an "Update in progress, X/Y chunks" indicator, and the settings surface shows the same progress alongside its manual-refresh control. Both indicators hide themselves automatically when the run finishes. <!-- @impl: src/pages/api/scrape-status.ts::GET -->
 
 **Constraints:** [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
 
@@ -365,11 +369,11 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. The same daily cron that prunes old articles also enumerates the discovered-feed cache, identifies entries whose tag does not appear in any user's saved tag list, and deletes them.
-2. Tags configured by at least one user are preserved regardless of how stale their feed list is — the self-healing eviction loop is the only path that mutates an actively-owned tag's cache.
-3. The cleanup pass is idempotent: a second immediate run is a no-op because the first run already removed every orphan.
-4. The pass logs the number of orphan caches deleted so operators can watch for unexpected churn (a sudden mass deletion would indicate a bad tag-list write rather than legitimate user de-selection).
-5. A failure in the orphan sweep never blocks the article-retention sweep that runs in the same cron, and vice versa — the two halves succeed or fail independently.
+1. The same daily cron that prunes old articles also enumerates the discovered-feed cache, identifies entries whose tag does not appear in any user's saved tag list, and deletes them. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
+2. Tags configured by at least one user are preserved regardless of how stale their feed list is — the self-healing eviction loop is the only path that mutates an actively-owned tag's cache. <!-- @impl: src/queue/cleanup.ts::runRefreshTokenPurge -->
+3. The cleanup pass is idempotent: a second immediate run is a no-op because the first run already removed every orphan. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
+4. The pass logs the number of orphan caches deleted so operators can watch for unexpected churn (a sudden mass deletion would indicate a bad tag-list write rather than legitimate user de-selection). <!-- @impl: src/queue/cleanup.ts::runCleanup -->
+5. A failure in the orphan sweep never blocks the article-retention sweep that runs in the same cron, and vice versa — the two halves succeed or fail independently. <!-- @impl: src/queue/cleanup.ts::runOrphanScrapeRunSweep -->
 
 **Constraints:** [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
 
@@ -385,45 +389,94 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ### REQ-PIPE-009: LLM re-rank pass for borderline same-story candidates
 
-**Intent:** When two articles describe the same news event but their summaries take different angles (e.g., one frames the event as "PM ousted in no-confidence vote" and another as "government collapses as far-right coalition forms"), embedding similarity alone places them in a borderline band that is too low to auto-merge but too high to safely call them distinct. A targeted same-event judgment by the language model decides those borderline pairs without lowering the auto-merge bar that protects against false merges between distinct same-day stories from the same source.
+**Intent:** When two articles describe the same news event but their summaries take different angles, embedding similarity alone places them in a borderline band that is too low to auto-merge but too high to safely call them distinct. A targeted same-event judgment by the language model decides those borderline pairs without lowering the auto-merge bar that protects against false merges between distinct same-day stories from the same source.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Same-story candidates whose similarity falls in a configured borderline band (above a floor and below the auto-merge threshold from REQ-PIPE-003) trigger a single same-event judgment by the language model. Pairs at or above the auto-merge threshold are merged without an LLM call; pairs below the floor stay distinct without an LLM call.
-2. The same-event judgment receives only the two articles' titles and short body excerpts. The judgment is binary and conservative: an unparseable, ambiguous, or failed response is treated as "different events" so a borderline pair never collapses on the strength of an unreliable model answer.
-3. A pair the model marks as the same event is merged using the same first-source-wins rule as REQ-PIPE-003: the earlier-published article survives as the primary card and the later one becomes an alternative source on it.
-4. The same borderline gate runs on both the per-tick cross-tick pass and the operator-initiated historical re-run sweep, so re-running the sweep after a threshold change picks up borderline pairs the original ingest missed.
-5. Each invocation is bounded by a wall-clock budget rather than a fixed count of borderline judgments, so an operator-triggered sweep over a large corpus still converges without dropping borderline pairs silently. Per-invocation rerank counts are recorded in operator-visible logs so an operator can see how much rerank work each batch performed.
-6. When a single newly-arrived article has multiple borderline candidates rather than one, the same-event judgment is invoked on the candidates in best-first order until a same-event verdict accepts or a small per-article cap is reached, so a genuine same-event sibling that happens not to be the top-scoring nearest neighbour is not silently dropped.
-7. The borderline floor is operator-tunable at runtime through the same configuration mechanism as the auto-merge threshold, so an operator can widen or narrow the LLM-judgment band without a code change.
-8. When a single article has multiple borderline candidates, those pairs are judged in a single batched language-model call rather than one call per pair, so an article with several borderline siblings does not multiply per-pair inference cost. A parse failure on the batched response is treated as "different events" for every pair in that batch, preserving the conservative default.
-9. The recurring background sweep records the timestamp of its last successful completion and, on the next run, skips the same-event judgment for any borderline pair whose two articles were both already in the corpus at that prior watermark. The judgment for those pairs is already settled and the model is deterministic. An operator-initiated sweep ignores the watermark and re-judges every borderline pair, so a manual run after a threshold or prompt change covers the corpus end-to-end.
+1. Same-story candidates whose similarity falls in a configured borderline band trigger a same-event judgment by the language model. <!-- @impl: src/lib/bidirectional-dedup.ts::classifyMatchPair --> <!-- @impl: src/lib/dedup-rerank.ts::readRerankFloor -->
+2. Pairs at or above the auto-merge threshold are merged without an LLM call. <!-- @impl: src/lib/bidirectional-dedup.ts::classifyMatchPair -->
+3. Pairs below the rerank floor stay distinct without an LLM call. <!-- @impl: src/lib/dedup-rerank.ts::readRerankFloor -->
+4. The same-event judgment receives only the two articles' titles and short body excerpts. <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
+5. An unparseable, ambiguous, or failed same-event response is treated as "different events". <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
+6. A pair the model marks as the same event is merged using the same first-source-wins rule as [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract). <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch --> <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize -->
+7. The same borderline gate runs on both the per-tick cross-tick pass and the operator-initiated historical re-run sweep. <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize --> <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
 **Priority:** P1
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract)
 
 **Verification:** Automated test
 
 **Status:** Implemented
 
 ---
-### REQ-PIPE-010: Body-fetch for thin feed snippets
 
-**Intent:** When a feed entry's summary is too short to ground a faithful LLM summary, the pipeline fetches the article body directly so summarisation has real content to work with. Body-fetch is a sub-feature of the coordinator pipeline (REQ-PIPE-001) carved out per the AC count cap.
+### REQ-PIPE-023: LLM re-rank cost controls
+
+**Intent:** Borderline same-story judgments stay bounded and observable: each invocation has a wall-clock budget, per-article candidate cap, configurable floor, and batched LLM call shape so dense borderline clusters do not multiply inference cost.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. Each invocation is bounded by a wall-clock budget rather than a fixed count of borderline judgments. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+2. Per-invocation rerank counts are recorded in operator-visible logs. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+3. When a single newly-arrived article has multiple borderline candidates, the same-event judgment is invoked on candidates in best-first order until a same-event verdict accepts or a small per-article cap is reached. <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize -->
+4. The borderline floor is operator-tunable at runtime through the same configuration mechanism as the auto-merge threshold. <!-- @impl: src/lib/dedup-rerank.ts::readRerankFloor -->
+5. When a single article has multiple borderline candidates, those pairs are judged in a single batched language-model call. <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
+6. A parse failure on the batched response is treated as "different events" for every pair in that batch. <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
+
+**Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-009](#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-024: Recurring sweep watermark and manual bypass
+
+**Intent:** Recurring same-story sweeps remember which borderline pairs have already been judged, while operator-triggered sweeps can deliberately ignore that watermark after a threshold or prompt change.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. The recurring background sweep records the timestamp of its last successful completion. <!-- @impl: src/lib/dedup-watermark.ts::writeWatermark -->
+2. The next recurring sweep skips same-event judgment for any borderline pair whose two articles both predate the prior successful sweep watermark. <!-- @impl: src/lib/dedup-watermark.ts::readWatermark --> <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+3. An operator-initiated sweep ignores the watermark and re-judges every borderline pair. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+
+**Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-PIPE-009](#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-PIPE-023](#req-pipe-023-llm-re-rank-cost-controls)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-010: Body-fetch for thin, forced, and portal-like candidates
+
+**Intent:** When a feed entry's summary is too short to ground a faithful LLM summary, a source adapter marks a wrapper URL for linked-page fetch, or a candidate URL looks like a portal/landing page, the pipeline fetches the page body directly so summarisation has real article content to work with. Body-fetch is a sub-feature of the coordinator pipeline (REQ-PIPE-001) carved out per the AC count cap.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 1. When a candidate's feed snippet is too thin to ground a faithful summary, the pipeline fetches the article body directly. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 2. Cross-site outbound feed snippets fetch the linked article body even when the feed snippet is long. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
-3. Discussion or score metadata is not used as fallback article text. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates -->
-4. Readable plaintext is extracted from a successful body fetch and attached to the candidate. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
-5. When body-fetch extraction yields too little text, the candidate falls back to whatever the feed itself provided. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
-6. A failed body-fetch never blocks a summary. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+3. Portal-like or landing-like candidate URLs fetch the page body even when the feed snippet is long enough to skip thin-snippet fetching. <!-- @impl: src/lib/article-fetch.ts::isLikelyLandingOrPortalUrl --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+4. Discussion or score metadata is not used as fallback article text. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates -->
+5. Readable plaintext is extracted from a successful body fetch and attached to the candidate. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+6. When body-fetch extraction yields too little text for a candidate that is not a high-confidence listing URL, the candidate falls back to whatever the feed itself provided. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+7. A failed body-fetch for a candidate that is not a high-confidence listing URL falls back to the feed text. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
@@ -439,17 +492,18 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ### REQ-PIPE-011: Candidate filtering rules
 
-**Intent:** Coordinator-level filters keep stale, undated, or blocklisted candidates out of the LLM pipeline so summarisation budget and dashboard surface area stay clean. Filtering is a sub-feature of the coordinator pipeline (REQ-PIPE-001) carved out per the AC count cap.
+**Intent:** Coordinator-level filters keep stale, off-topic, or listing-noise candidates out of the LLM pipeline so summarisation budget and dashboard surface area stay clean. Filtering is a sub-feature of the coordinator pipeline (REQ-PIPE-001) carved out per the AC count cap.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Each candidate's published-at timestamp reflects the source feed's real publish date (parsed from the feed entry) rather than the ingestion tick time, so a story first published three weeks ago is never displayed as "today" on the dashboard. When a feed entry provides no usable publish date, or the parsed value is implausible (pre-2000 or more than one day in the future), the ingestion time is used as a safe fallback.
-2. Candidates whose parsed publish date is older than 48 hours before the current tick are dropped before LLM summarisation so stale backlog items do not consume LLM budget or clutter the dashboard. Candidates with no parsable publish date (which fall back to the ingestion time) are kept — a missing date is not treated the same as a stale date.
-3. Headlines from publishers that an AI tech news product would never surface — primarily financial / stock-pump aggregators that Google News routes into tech tags when a vendor's ticker matches — are dropped at the coordinator before clustering, embedding, or LLM summarisation.
-4. The blocklist is matched against both the article URL's host and the per-item publisher name reported by the feed entry, so an aggregator-wrapped item (whose URL points at a redirect envelope rather than the publisher's site) is still recognised by the publisher name the feed exposes.
-5. The blocklist applies uniformly across every tag and every user — a user with a tag that matches a tech vendor's ticker never sees those stock-pump articles in their digest.
-6. The blocklist is operator-maintained at the source level rather than configurable per user; the contract is a single project-wide list, not a personal mute list.
+1. Each candidate's published-at timestamp uses a parsed source feed publish date when one is present and plausible. <!-- @impl: src/lib/sources.ts::parseFeedDate --> <!-- @impl: src/queue/scrape-coordinator.ts::buildCandidates -->
+2. Missing, pre-2000, or more-than-one-day-future feed dates fall back to ingestion time. <!-- @impl: src/lib/sources.ts::parseFeedDate --> <!-- @impl: src/queue/scrape-coordinator.ts::buildCandidates -->
+3. Candidates with parsed publish dates more than 48 hours before the tick are dropped before LLM summarisation. <!-- @impl: src/queue/scrape-coordinator.ts::buildCandidates -->
+4. Headlines from publishers that an AI tech news product would never surface — primarily financial / stock-pump aggregators that Google News routes into tech tags when a vendor's ticker matches — are dropped at the coordinator before clustering, embedding, or LLM summarisation. <!-- @impl: src/lib/blocked-publishers.ts::isBlockedPublisher --> <!-- @impl: src/queue/scrape-coordinator.ts::runCoordinator -->
+5. The blocklist is matched against the article URL's host, per-item publisher name, and headline title, so aggregator-wrapped items and title-only wrappers such as Show HN are still recognised. <!-- @impl: src/lib/blocked-publishers.ts::isBlockedPublisher -->
+6. The blocklist is a single project-wide source-maintained list, not a personal mute list. <!-- @impl: src/lib/blocked-publishers.ts::BLOCKED_HOSTS --> <!-- @impl: src/lib/blocked-publishers.ts::BLOCKED_NAME_TOKENS -->
+7. Candidates identified as landing/listing noise before prompting cannot be summarised or persisted. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
 
 **Constraints:** [CON-PERF-001](constraints.md#con-perf-001-100-user-thundering-herd-target)
 
@@ -470,17 +524,17 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Two studies, audits, or benchmarks on the same topic that cite different numbers, methodologies, or authors are treated as distinct stories and never merged — even when they discuss identical subject matter — so conflicting findings on the same topic remain visible as separate cards on the dashboard.
-2. Two articles published by the same publisher must clear a stricter same-story bar than two articles from different publishers, so a publisher's recurring writing style does not push unrelated stories from the same outlet over the same-story threshold.
-3. "Same publisher" means both articles' direct URLs identify the same real publisher; pairs whose URLs route through an aggregator-wrapper host are treated as cross-publisher for this purpose, so two aggregator-wrapped copies of the same story are not blocked from folding by the same-publisher penalty.
-4. The diagnostic surface from [REQ-PIPE-014](#req-pipe-014-same-story-operator-surfaces) AC 2 reports both the raw cosine and the stricter score actually used by the merge decision, so an operator can see why a same-publisher pair was kept apart.
-5. Articles describing the same event are merged across sources only when their publishing dates fall within roughly the same news cycle; pairs whose publication times are far apart on calendar terms are kept as distinct cards even when their topics overlap, so dense theme clusters stay separated by event rather than collapsing on topical similarity alone.
+1. Studies, audits, or benchmarks on the same topic stay distinct when they cite different numbers, methods, or authors, so conflicting findings remain separate dashboard cards. <!-- @impl: src/queue/scrape-finalize-consumer.ts::isBetterAutoCandidate -->
+2. Two articles published by the same publisher must clear a stricter same-story bar than two articles from different publishers, so a publisher's recurring writing style does not push unrelated stories from the same outlet over the same-story threshold. <!-- @impl: src/lib/embeddings.ts::readCosineThreshold -->
+3. "Same publisher" means both articles' direct URLs identify the same real publisher; pairs whose URLs route through an aggregator-wrapper host are treated as cross-publisher for this purpose, so two aggregator-wrapped copies of the same story are not blocked from folding by the same-publisher penalty. <!-- @impl: src/lib/embeddings.ts::readCosineThreshold -->
+4. The diagnostic surface from [REQ-PIPE-014](#req-pipe-014-same-story-operator-surfaces) AC 2 reports both the raw cosine and the stricter score actually used by the merge decision, so an operator can see why a same-publisher pair was kept apart. <!-- @impl: src/lib/embeddings.ts::readHighConfidenceCosine -->
+5. Same-event articles merge only within roughly the same news cycle. Pairs far apart on calendar time stay distinct even when topics overlap, so theme clusters do not collapse on similarity alone. <!-- @impl: src/queue/scrape-finalize-consumer.ts::handleFinalizeBatch -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract)
 
 **Verification:** Automated test
 
@@ -495,17 +549,17 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Articles become visible to users as soon as the scrape run reaches `ready`. Cross-tick same-story matching runs asynchronously after that, so a user may briefly see two cards for the same story; the window is bounded by the queue's processing latency and the second card is replaced by an alternative-source row on the surviving card on the next pass of the asynchronous matcher.
-2. The retention sweep (REQ-PIPE-005) that drops articles older than 14 days also removes the corresponding entries from the same-story index, so a deleted article can never be cited as a "match" for a future article and starred articles preserved past the retention window keep their same-story matching capability.
-3. Cross-tick same-story matching runs automatically after every scrape tick, so the window between an article becoming visible and its absorption as an alternative source onto an existing primary card is bounded by tick cadence rather than by any operator action.
-4. The operator's historical-sweep surface remains available for matching across older stories when needed, but routine cross-tick collapse no longer requires the operator to take any action.
-5. The reach of automatic post-tick matching covers the same-news-cycle window from [REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants) AC 3, so cross-day clusters that span up to that window collapse via the automatic path alone without an operator-triggered full-corpus sweep, regardless of the order in which the cluster's siblings arrived.
+1. Articles show when the run reaches ready. Cross-tick same-story matching runs asynchronously, so duplicate cards may briefly appear, then the queue replaces the duplicate with an alternative-source row. <!-- @impl: src/queue/scrape-finalize-consumer.ts::isBetterAutoCandidate -->
+2. The REQ-PIPE-005 retention sweep removes same-story-index rows for deleted articles, so deleted stories cannot match future articles, while starred articles kept past retention remain matchable. <!-- @impl: src/queue/dedup-sweep-consumer.ts::handleDedupSweepBatch -->
+3. Cross-tick same-story matching runs automatically after every scrape tick, so the window between an article becoming visible and its absorption as an alternative source onto an existing primary card is bounded by tick cadence rather than by any operator action. <!-- @impl: src/queue/scrape-finalize-consumer.ts::isBetterAutoCandidate -->
+4. The operator's historical-sweep surface remains available for matching across older stories when needed, but routine cross-tick collapse no longer requires the operator to take any action. <!-- @impl: src/queue/scrape-finalize-consumer.ts::isBetterAutoCandidate -->
+5. The reach of automatic post-tick matching covers the same-news-cycle window from [REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants) AC 3, so cross-day clusters that span up to that window collapse via the automatic path alone without an operator-triggered full-corpus sweep, regardless of the order in which the cluster's siblings arrived. <!-- @impl: src/queue/dedup-sweep-consumer.ts::processOneDedupSweep -->
 
 **Constraints:** [CON-PERF-001](constraints.md#con-perf-001-100-user-thundering-herd-target)
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-005](#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-005](#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants)
 
 **Verification:** Automated test
 
@@ -520,19 +574,19 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. An operator can re-run same-story matching across the entire historical article pool on demand (admin-gated). The sweep runs to completion in the background after the operator triggers it, and closing or navigating away from the operator surface does not interrupt the sweep.
-2. While a historical sweep is in flight, progress (articles scanned, duplicates merged, articles remaining) is observable both during the sweep and on the next visit to the operator surface.
-3. The articles-scanned, duplicates-merged, and remaining counters advance exactly once per batch regardless of how many times the queue redelivers that batch's message, so a redelivered batch that has already been folded into the run leaves these counters at their existing values and the operator never sees inflated scanned or merged totals attributable to retry traffic rather than real matching work.
-4. An operator can inspect the cosine similarity between any two articles' stored embeddings on demand (admin-gated) alongside the currently-effective same-story threshold and a flag for whether the two articles come from the same publisher, so a threshold change can be evaluated against known true-positive and false-positive pairs before it is committed. The diagnostic reports an explicit not-found when either article or either embedding is missing rather than silently returning a misleading similarity.
-5. An operator can re-run embedding generation across the entire historical article pool on demand (admin-gated), so the corpus can be rebuilt against an improved embedding input without waiting for natural churn or re-scraping.
-6. When the similarity index is fully unreachable for a batch of the operator-triggered historical sweep (every per-article lookup against it fails), the sweep pauses on that batch with its cursor preserved and the batch is redelivered until the index is reachable again, so cross-tick duplicates that landed during an outage still collapse on a later attempt instead of being silently skipped past forever.
-7. A partial-outage batch where at least one lookup succeeded still advances the cursor; only the all-failed case halts the sweep.
+1. An operator can re-run same-story matching across the entire historical article pool on demand (admin-gated). The sweep runs to completion in the background after the operator triggers it, and closing or navigating away from the operator surface does not interrupt the sweep. <!-- @impl: src/queue/dedup-sweep-consumer.ts::handleDedupSweepBatch -->
+2. While a historical sweep is in flight, progress (articles scanned, duplicates merged, articles remaining) is observable both during the sweep and on the next visit to the operator surface. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+3. Scanned, merged, and remaining counters advance once per batch. Redelivered messages already folded into the run leave counters unchanged, preventing retry traffic from inflating totals. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+4. An admin diagnostic shows any two articles' cosine similarity, effective threshold, and same-publisher flag. It returns not-found when either article or embedding is missing, so operators can evaluate threshold changes safely. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+5. An operator can re-run embedding generation across the entire historical article pool on demand (admin-gated), so the corpus can be rebuilt against an improved embedding input without waiting for natural churn or re-scraping. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+6. If every same-story-index lookup fails for a historical-sweep batch, the sweep pauses with its cursor preserved and redelivers the batch until the index recovers, instead of skipping outage duplicates. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+7. A partial-outage batch where at least one lookup succeeded still advances the cursor; only the all-failed case halts the sweep. <!-- @impl: src/queue/dedup-sweep-consumer.ts::handleDedupSweepBatch -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract)
 
 **Verification:** Automated test
 

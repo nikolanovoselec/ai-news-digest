@@ -101,6 +101,12 @@ describe('isUrlSafe', () => {
       expect(isUrlSafe('https://[febf::1]')).toBe(false);
     });
 
+    it('REQ-DISC-005: rejects IPv4-mapped IPv6 literals', () => {
+      expect(isUrlSafe('https://[::ffff:a9fe:a9fe]/latest/meta-data')).toBe(false);
+      expect(isUrlSafe('https://[::ffff:169.254.169.254]/latest/meta-data')).toBe(false);
+      expect(isUrlSafe('https://[::ffff:0808:0808]/')).toBe(false);
+    });
+
     it('REQ-DISC-005: accepts public IPv6 literals', () => {
       expect(isUrlSafe('https://[2606:4700:4700::1111]')).toBe(true);
     });

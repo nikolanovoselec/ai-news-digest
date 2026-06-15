@@ -82,12 +82,19 @@ After rollback, verify `GET $APP_URL` returns `200`/`303`. D1 migrations are for
 CI/CD: `.github/workflows/deploy.yml` triggers on a `workflow_run` event — fires only when "PR Checks" on `main` completes with `success`. `workflow_dispatch` is retained for manual re-runs.
 
 The deploy job:
-1. Applies D1 migrations (drift-tolerant). "Duplicate column" / "already exists" errors are handled by stamping the migration into `d1_migrations` and retrying up to 5 attempts. Real SQL errors surface immediately. Drift tolerance covers the case where an operator ran `wrangler d1 migrations apply --remote` out-of-band (e.g. during incident response); without it, the next CI deploy would block on a migration the remote already applied.
-2. Runs the same two-step security audit as PR Checks (advisory HIGH+, blocking CRITICAL) as a defence-in-depth gate — catches CVEs introduced between the merge and the deploy (transient transitive bumps, Dependabot lockfile regenerations, etc.).
-3. Preflights Cloudflare AI Gateway by sending a one-token `dynamic/news_digest` chat-completions request through the configured `AI_GATEWAY_URL`; 401, 404, missing-route, provider-missing, or model-missing responses stop the deploy before Worker publish.
-4. Pushes Worker secrets via `wrangler secret put` (file-redirect form). Conditional secrets (`ADMIN_EMAIL`, `CF_ACCESS_AUD`, `DEV_BYPASS_USER_ID`) are pushed only when the corresponding GitHub Actions secret is non-empty.
+
+1. Applies D1 migrations with drift tolerance: duplicate-column/already-exists results stamp `d1_migrations` and retry; real SQL errors fail immediately. This protects incident-response migrations already applied remotely.
+
+2. Runs the same two-step security audit as PR Checks (advisory HIGH+, blocking CRITICAL) as a defence-in-depth gate for CVEs introduced between merge and deploy.
+
+3. Preflights Cloudflare AI Gateway through the configured `AI_GATEWAY_URL`; 401, 404, missing-route, provider-missing, or model-missing responses stop deploy before Worker publish.
+
+4. Pushes Worker secrets via `wrangler secret put` (file-redirect form). Conditional secrets are pushed only when the matching GitHub Actions secret is non-empty.
+
 5. Deploys the Worker.
+
 6. Binds the custom domain extracted from `APP_URL` via the Workers Custom Domains API. Idempotent.
+
 7. Smoke-tests `GET /` against `APP_URL`. Accepts `200` or `303`.
 
 `scripts/e2e-test.sh` is manual only (`bash scripts/e2e-test.sh --force-prod`) and not part of CI deploy — running it triggers a full LLM-cost scrape and mutates the owner's account.
@@ -153,10 +160,14 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
    - Add provider keys for whichever models the route will call.
    - Create and deploy a Dynamic Routing route named `news_digest`.
    - Store the least-privilege Gateway token as secret `AI_GATEWAY_API_TOKEN`.
-2. **Create the GitHub Environment.** Repo → Settings → Environments → New environment → name it `integration`. The empty environment is what activates the secret-fallback semantics in the workflow.
-3. **Set `APP_URL` as an environment variable** (Variables tab, not Secrets — it's a public hostname). Use a custom domain URL whose zone is in the same Cloudflare account; the integration workflow requires this value before deploy.
-4. **Confirm the OAuth callback URL is registered** with whichever providers you use — `${APP_URL}/api/auth/google/callback` and/or `${APP_URL}/api/auth/github/callback`.
-5. **(Optional) Override config per-env.** Environment Secrets can override `OAUTH_JWT_SECRET` and `AI_GATEWAY_API_TOKEN`. Environment Variables can override `AI_GATEWAY_NAME`, so integration can use a separate Gateway from production.
+
+2. **Create the GitHub Environment.** Repo → Settings → Environments → New environment → name it `integration`. The empty environment activates secret-fallback semantics.
+
+3. **Set `APP_URL` as an environment variable** (Variables tab, not Secrets). Use a same-account custom domain URL; the workflow requires it before deploy.
+
+4. **Confirm the OAuth callback URL is registered** with providers: `${APP_URL}/api/auth/google/callback` and/or `${APP_URL}/api/auth/github/callback`.
+
+5. **(Optional) Override config per-env.** Environment Secrets can override `OAUTH_JWT_SECRET` and `AI_GATEWAY_API_TOKEN`. Environment Variables can override `AI_GATEWAY_NAME`.
 
 **How to deploy:**
 
@@ -187,13 +198,13 @@ curl -i ${APP_URL}/api/admin/force-refresh
 | `KV` | KV namespace | `ai-news-digest-kv` (auto-created on first deploy by the deploy workflow's inline `wrangler kv namespace list / create` block; the resolved id is patched into wrangler.toml in CI) | Caches (headlines, sources, health) |
 | `SCRAPE_COORDINATOR` | Queue | `scrape-coordinator` | Every-4-hours coordinator dispatch (00/04/08/12/16/20 UTC) |
 | `SCRAPE_CHUNKS` | Queue | `scrape-chunks` | LLM chunk jobs |
-| `SCRAPE_FINALIZE` | Queue | `scrape-finalize` | Same-story dedup pass; one message enqueued by the last chunk consumer per scrape run ([REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
+| `SCRAPE_FINALIZE` | Queue | `scrape-finalize` | Same-story dedup pass; one message enqueued by the last chunk consumer per scrape run ([REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract)) |
 | `DEDUP_SWEEP` | Queue | `dedup-sweep` | Self-chaining historical-dedup sweep; the kicker enqueues the first message and the consumer re-enqueues a continuation per batch until the corpus tail is reached ([REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1) |
 | `PIPELINE_JOBS` | Queue | `pipeline-jobs` (`pipeline-jobs-integration` on integration) | Backend-driven full pipeline orchestrator; one consumer walks the seven phases by self-chaining messages ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](../decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)) |
 | — | Queue (DLQ) | `ai-news-dlq` (`ai-news-dlq-integration` on integration) | Dead-letter queue for the finalize and pipeline-jobs consumers. Terminal queue retry exhaustion lands messages here so they are inspectable rather than silently dropped (CF-001). Provisioned by the deploy workflow inline `wrangler queues create` block; no binding needed in `wrangler.toml`. |
 | AI Gateway | Cloudflare AI Gateway | configured by `AI_GATEWAY_URL` | Dynamic route `dynamic/news_digest` for summaries, discovery, and rerank; deploy preflight verifies the Gateway, route, runtime token, and route provider keys before publish |
 | `AI` | Workers AI | (account-level) | bge-base-en-v1.5 embedding generation; non-Gateway model fallback |
-| `VECTORIZE` | Vectorize index | `ai-news-embeddings` | 768-dim cosine index for same-story dedup; provisioned by the deploy workflow via `wrangler vectorize create` ([REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)) |
+| `VECTORIZE` | Vectorize index | `ai-news-embeddings` | 768-dim cosine index for same-story dedup; provisioned by the deploy workflow via `wrangler vectorize create` ([REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract)) |
 
 ## Dependency Automation
 
@@ -245,8 +256,8 @@ Every admin endpoint sits under `/api/admin/*` so a **single wildcard rule** cov
 | Path | What it does |
 |---|---|
 | `/api/admin/force-refresh` | Manually kicks the global-feed coordinator (every-4-hours cron). Implements [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint). Backs phase 1 of **Refresh articles** ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)) and is reachable directly for scripted callers. |
-| `/api/admin/embed-backfill` | Resumable embedding backfill. `POST ?reembed=1` re-embeds the corpus; plain `POST` drains only `NULL`/`'failed'` rows. Backs phases 0 and 3 of **Refresh articles** ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)). Implements [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract). See [Admin API Reference](api-reference-admin.md#post-apiadminembed-backfill). |
-| `/api/admin/historical-dedup` | Starts the oldest-first same-story sweep on `DEDUP_SWEEP`; no-body `POST` enqueues a run, while JSON `{cursor, batch}` runs one legacy/dev-bypass batch. Implements [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) AC 3 and [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1/4. See [Admin API Reference](api-reference-admin.md#post-apiadminhistorical-dedup). |
+| `/api/admin/embed-backfill` | Resumable embedding backfill. `POST ?reembed=1` re-embeds the corpus; plain `POST` drains only `NULL`/`'failed'` rows. Backs phases 0 and 3 of **Refresh articles** ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)). Implements [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract). See [Admin API Reference](api-reference-admin.md#post-apiadminembed-backfill). |
+| `/api/admin/historical-dedup` | Starts the oldest-first same-story sweep on `DEDUP_SWEEP`; no-body `POST` enqueues a run, while JSON `{cursor, batch}` runs one legacy/dev-bypass batch. Implements [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract) AC 3 and [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1/4. See [Admin API Reference](api-reference-admin.md#post-apiadminhistorical-dedup). |
 | `/api/admin/dedup-status` | Polls the `dedup_runs` audit row for a queue-driven sweep. GET with `?run_id=<ULID>` returns running counters and terminal status. Backs the operator-surface progress banner. Implements [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1/2. See [Admin API Reference](api-reference-admin.md#get-apiadmindedup-status). |
 | `/api/admin/dedup-diag` | Returns cosine similarity, adjusted score, same-vendor penalty, and merge decision for a given article pair. Diagnostic only; no writes. Implements [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 4. See [Admin API Reference](api-reference-admin.md#get-apiadmindedup-diag). |
 | `/api/admin/pipeline-run` | Kicker for the backend-driven full pipeline run. POST (JSON body) for scripts; GET (`?mode=`) for browser navigation via CF Access (see [AD38](../decisions/README.md#ad38-cf-access-protected-admin-endpoints-must-be-invoked-via-top-level-navigation-not-fetch)). Implements [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface). See [Admin API Reference](api-reference-admin.md#post-apiadminpipeline-run). |

@@ -314,7 +314,7 @@ Sending no body invokes the kicker path; sending any of the fields above invokes
 | `500` | Kicker insert failed | `{ error: "historical_dedup_kick_failed" }` |
 | `500` | Sync batch threw | `{ error: "historical_dedup_failed" }` |
 
-**Implements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) AC 3, [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1 + AC 4, [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 4)
+**Implements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract) AC 3, [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1 + AC 4, [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-PIPE-023](../../sdd/spec/generation.md#req-pipe-023-llm-re-rank-cost-controls), [REQ-PIPE-024](../../sdd/spec/generation.md#req-pipe-024-recurring-sweep-watermark-and-manual-bypass), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 4)
 
 **Notes**
 
@@ -528,7 +528,9 @@ GET /api/admin/dedup-diag
 
 **Notes**
 
-`same_etld1` is `true` when both articles' `primary_source_url` values resolve to the same registrable domain via `src/lib/etld.ts:sameVendor` AND neither URL routes through a known aggregator-wrapper host (currently `news.google.com`). Aggregator-wrapper URLs carry no publisher identity at the URL level, so pairs where either article comes from an aggregator host return `same_etld1: false` and do not pay the same-publisher penalty regardless of eTLD+1 match. `threshold` is the value of `DEDUP_COSINE_THRESHOLD` in effect at request time. `same_vendor_penalty` is the value of `DEDUP_SAME_VENDOR_PENALTY`. `adjusted_score` is `cosine - same_vendor_penalty` when `same_etld1` is true, otherwise equals `cosine`; it is the value the dedup decision actually compares to the threshold. `above_threshold` is `adjusted_score >= threshold`.
+`same_etld1` is `true` when both `primary_source_url` values resolve to the same registrable domain via `src/lib/etld.ts:sameVendor` and neither URL is a known aggregator wrapper (`news.google.com`). Aggregator URLs carry no publisher identity, so any pair involving one returns `same_etld1: false` and avoids the same-publisher penalty.
+
+`threshold` is `DEDUP_COSINE_THRESHOLD`. `same_vendor_penalty` is `DEDUP_SAME_VENDOR_PENALTY`. `adjusted_score` is `cosine - same_vendor_penalty` when `same_etld1` is true, otherwise `cosine`; `above_threshold` is `adjusted_score >= threshold`.
 
 ---
 

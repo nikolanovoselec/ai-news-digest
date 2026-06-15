@@ -46,6 +46,17 @@ describe('estimateCandidateChars (REQ-PIPE-001)', () => {
     expect(cost).toBe(5_000 + 400);
   });
 
+  it('REQ-PIPE-010: portal-like URLs budget a body fetch even with a retained snippet', () => {
+    const snippet = 'x'.repeat(SNIPPET_FLOOR);
+    const cost = estimateCandidateChars(
+      makeCandidate({
+        source_url: 'https://example.com/news',
+        body_snippet: snippet,
+      }),
+    );
+    expect(cost).toBe(3_000 + 400);
+  });
+
   it('REQ-PIPE-010: force_body_fetch budgets retained long snippets as fallback prompt text', () => {
     const snippet = 'x'.repeat(5_000);
     const cost = estimateCandidateChars(
