@@ -21,7 +21,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Priority:** P0
 
-**Dependencies:** [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-SET-009](#req-set-009-save-endpoint-transports-and-native-form-ux)
+**Dependencies:** [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
 **Verification:** Integration test
 
@@ -232,7 +232,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Priority:** P2
 
-**Dependencies:** [REQ-SET-003](#req-set-003-scheduled-digest-time-with-timezone), [REQ-SET-010](#req-set-010-manual-timezone-picker)
+**Dependencies:** [REQ-SET-003](#req-set-003-scheduled-digest-time-with-timezone)
 
 **Verification:** Integration test
 

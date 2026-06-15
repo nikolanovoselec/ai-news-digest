@@ -174,7 +174,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 **Priority:** P2
 
-**Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-003](#req-disc-003-self-healing-feed-health-tracking), [REQ-DISC-004](#req-disc-004-manual-re-discover-ui-surface)
+**Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-003](#req-disc-003-self-healing-feed-health-tracking)
 
 **Verification:** Integration test
 

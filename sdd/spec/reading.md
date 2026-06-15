@@ -23,7 +23,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-001](generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-SET-002](settings.md#req-set-002-hashtag-curation-strip-ux), [REQ-READ-011](#req-read-011-digest-header-freshness-state)
+**Dependencies:** [REQ-PIPE-001](generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-SET-002](settings.md#req-set-002-hashtag-curation-strip-ux)
 
 **Verification:** Integration test
 
@@ -198,7 +198,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Priority:** P2
 
-**Dependencies:** [REQ-READ-001](#req-read-001-overview-grid-of-todays-digest), [REQ-HIST-001](history.md#req-hist-001-day-grouped-article-history), [REQ-READ-010](#req-read-010-tag-railing-slide-destination-and-duration-policy)
+**Dependencies:** [REQ-READ-001](#req-read-001-overview-grid-of-todays-digest), [REQ-HIST-001](history.md#req-hist-001-day-grouped-article-history)
 
 **Verification:** Integration test
 

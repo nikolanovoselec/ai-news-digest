@@ -227,7 +227,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Priority:** P2
 
-**Dependencies:** [REQ-OPS-005](#req-ops-005-admin-force-refresh-endpoint), [REQ-PIPE-003](generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-OPS-010](#req-ops-010-wipe-and-re-embed-pre-phase-toggle)
+**Dependencies:** [REQ-OPS-005](#req-ops-005-admin-force-refresh-endpoint), [REQ-PIPE-003](generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
 **Verification:** Integration test
 

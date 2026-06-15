@@ -23,7 +23,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags), [REQ-PIPE-010](#req-pipe-010-body-fetch-for-thin-forced-and-portal-like-candidates), [REQ-PIPE-011](#req-pipe-011-candidate-filtering-rules), [REQ-PIPE-017](#req-pipe-017-article-pool-ingestion-contract), [REQ-PIPE-019](#req-pipe-019-google-news-query-rss-long-tail-backstop)
+**Dependencies:** [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags)
 
 **Verification:** Integration test
 
@@ -204,7 +204,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants), [REQ-PIPE-013](#req-pipe-013-same-story-cross-tick-automation-and-retention-coupling), [REQ-PIPE-014](#req-pipe-014-same-story-operator-surfaces), [REQ-PIPE-018](#req-pipe-018-same-story-collapse-mechanics-survivor-selection-and-data-merge)
+**Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
 **Verification:** Automated test
 

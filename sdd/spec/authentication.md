@@ -54,7 +54,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Priority:** P0
 
-**Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-008](#req-auth-008-refresh-token-rotation-and-per-device-logout)
+**Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider)
 
 **Verification:** Automated test
 
