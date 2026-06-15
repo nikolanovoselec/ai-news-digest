@@ -2,6 +2,7 @@
 // Implements REQ-PIPE-003 AC 17
 // Implements REQ-PIPE-009
 // Implements REQ-PIPE-023
+// Implements REQ-PIPE-024
 //
 // Pure helper for one batch of the historical same-story sweep,
 // extracted so both the synchronous admin endpoint

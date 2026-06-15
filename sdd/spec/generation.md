@@ -394,16 +394,19 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Same-story candidates whose similarity falls in a configured borderline band trigger a same-event judgment by the language model. Pairs at or above the auto-merge threshold are merged without an LLM call; pairs below the floor stay distinct without an LLM call. <!-- @impl: src/lib/bidirectional-dedup.ts::classifyMatchPair --> <!-- @impl: src/lib/dedup-rerank.ts::readRerankFloor -->
-2. The same-event judgment receives only the two articles' titles and short body excerpts. The judgment is binary and conservative: an unparseable, ambiguous, or failed response is treated as "different events". <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
-3. A pair the model marks as the same event is merged using the same first-source-wins rule as [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract). <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch --> <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize -->
-4. The same borderline gate runs on both the per-tick cross-tick pass and the operator-initiated historical re-run sweep. <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize --> <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+1. Same-story candidates whose similarity falls in a configured borderline band trigger a same-event judgment by the language model. <!-- @impl: src/lib/bidirectional-dedup.ts::classifyMatchPair --> <!-- @impl: src/lib/dedup-rerank.ts::readRerankFloor -->
+2. Pairs at or above the auto-merge threshold are merged without an LLM call. <!-- @impl: src/lib/bidirectional-dedup.ts::classifyMatchPair -->
+3. Pairs below the rerank floor stay distinct without an LLM call. <!-- @impl: src/lib/dedup-rerank.ts::readRerankFloor -->
+4. The same-event judgment receives only the two articles' titles and short body excerpts. <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
+5. An unparseable, ambiguous, or failed same-event response is treated as "different events". <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
+6. A pair the model marks as the same event is merged using the same first-source-wins rule as [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract). <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch --> <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize -->
+7. The same borderline gate runs on both the per-tick cross-tick pass and the operator-initiated historical re-run sweep. <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize --> <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
 **Priority:** P1
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-023](#req-pipe-023-llm-re-rank-cost-controls-and-sweep-watermark)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract)
 
 **Verification:** Automated test
 
@@ -411,24 +414,48 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ---
 
-### REQ-PIPE-023: LLM re-rank cost controls and sweep watermark
+### REQ-PIPE-023: LLM re-rank cost controls
 
-**Intent:** Borderline same-story judgments stay bounded and observable: each batch has a wall-clock budget, per-article candidate cap, configurable floor, batched LLM call shape, and auto-sweep watermark so recurring sweeps do not re-pay for already-settled pairs.
+**Intent:** Borderline same-story judgments stay bounded and observable: each invocation has a wall-clock budget, per-article candidate cap, configurable floor, and batched LLM call shape so dense borderline clusters do not multiply inference cost.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Each invocation is bounded by a wall-clock budget rather than a fixed count of borderline judgments, and per-invocation rerank counts are recorded in operator-visible logs. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
-2. When a single newly-arrived article has multiple borderline candidates, the same-event judgment is invoked on candidates in best-first order until a same-event verdict accepts or a small per-article cap is reached. <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize -->
-3. The borderline floor is operator-tunable at runtime through the same configuration mechanism as the auto-merge threshold. <!-- @impl: src/lib/dedup-rerank.ts::readRerankFloor -->
-4. When a single article has multiple borderline candidates, those pairs are judged in a single batched language-model call; a parse failure on the batched response is treated as "different events" for every pair in that batch. <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
-5. The recurring background sweep records the timestamp of its last successful completion and skips settled pre-watermark pairs on the next run; an operator-initiated sweep ignores the watermark and re-judges every borderline pair. <!-- @impl: src/lib/dedup-watermark.ts::readWatermark --> <!-- @impl: src/lib/dedup-watermark.ts::writeWatermark --> <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+1. Each invocation is bounded by a wall-clock budget rather than a fixed count of borderline judgments. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+2. Per-invocation rerank counts are recorded in operator-visible logs. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+3. When a single newly-arrived article has multiple borderline candidates, the same-event judgment is invoked on candidates in best-first order until a same-event verdict accepts or a small per-article cap is reached. <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize -->
+4. The borderline floor is operator-tunable at runtime through the same configuration mechanism as the auto-merge threshold. <!-- @impl: src/lib/dedup-rerank.ts::readRerankFloor -->
+5. When a single article has multiple borderline candidates, those pairs are judged in a single batched language-model call. <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
+6. A parse failure on the batched response is treated as "different events" for every pair in that batch. <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
 **Priority:** P1
 
 **Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-024: Recurring sweep watermark and manual bypass
+
+**Intent:** Recurring same-story sweeps remember which borderline pairs have already been judged, while operator-triggered sweeps can deliberately ignore that watermark after a threshold or prompt change.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. The recurring background sweep records the timestamp of its last successful completion. <!-- @impl: src/lib/dedup-watermark.ts::writeWatermark -->
+2. The next recurring sweep skips same-event judgment for any borderline pair whose two articles both predate the prior successful sweep watermark. <!-- @impl: src/lib/dedup-watermark.ts::readWatermark --> <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+3. An operator-initiated sweep ignores the watermark and re-judges every borderline pair. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+
+**Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-PIPE-009](#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-PIPE-023](#req-pipe-023-llm-re-rank-cost-controls)
 
 **Verification:** Automated test
 

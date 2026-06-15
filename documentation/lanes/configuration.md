@@ -129,7 +129,7 @@ Declared in `wrangler.toml` under `[vars]`. Forks may override per-environment v
 | `DEDUP_COSINE_THRESHOLD` | `"0.88"` | Yes | `src/lib/embeddings.ts` (`readCosineThreshold`), `src/queue/scrape-finalize-consumer.ts`, `src/pages/api/admin/dedup-diag.ts` | [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) |
 | `DEDUP_TIME_WINDOW_SECONDS` | `"604800"` (7d) | Yes | `src/lib/embeddings.ts`, `src/queue/dedup-sweep-consumer.ts` | [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 3 (same-news-cycle window), [REQ-PIPE-013](../../sdd/spec/generation.md#req-pipe-013-same-story-cross-tick-automation-and-retention-coupling) AC 3 |
 | `DEDUP_SAME_VENDOR_PENALTY` | `"0.05"` | Yes | `src/lib/embeddings.ts` | [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 2 |
-| `DEDUP_RERANK_FLOOR` | `"0.70"` | Yes | `src/lib/dedup-rerank.ts` | [REQ-PIPE-023](../../sdd/spec/generation.md#req-pipe-023-llm-re-rank-cost-controls-and-sweep-watermark) |
+| `DEDUP_RERANK_FLOOR` | `"0.70"` | Yes | `src/lib/dedup-rerank.ts` | [REQ-PIPE-023](../../sdd/spec/generation.md#req-pipe-023-llm-re-rank-cost-controls) |
 | `DEDUP_HIGH_CONFIDENCE_COSINE` | `"0.92"` | Yes | `src/lib/embeddings.ts` | [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) AC 3 (deterministic collapse) |
 | `IS_PRODUCTION` | `"true"` (prod), `"false"` (integration) | Yes | `src/pages/api/dev/login.ts`, `src/pages/api/dev/trigger-scrape.ts`, `src/pages/api/auth/[provider]/callback.ts` | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 10 |
 
