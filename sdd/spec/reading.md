@@ -161,7 +161,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. When the LLM returns fewer than 3 articles, the page shows "No stories today — try broader hashtags" with a link to `/settings`.
+1. Low-yield or empty digest states use the `/digest` empty-state contract from [REQ-READ-005](#req-read-005-empty-dashboard-state), not a separate LLM-failure page. <!-- @impl: src/pages/digest.astro::digest-page__empty -->
 2. When the digest has `status='failed'`, the page shows "We couldn't build your digest" with a Try-again control and a Go-to-settings link; the raw `error_code` appears in a muted monospace footer, never prose from the error. <!-- @impl: src/pages/404.astro::error-page__code -->
 3. Try-again submits in place and updates an inline status (`Retrying…`, rate-limit countdown, or network error). The failure page remains until a new generation is accepted. <!-- @impl: src/pages/rate-limited.astro::url -->
 4. When `navigator.onLine` is false, a top-of-page banner reads "You're offline — showing the last digest you viewed"; the Refresh button is disabled with a tooltip. <!-- @impl: src/pages/offline.astro::offline-page__banner -->

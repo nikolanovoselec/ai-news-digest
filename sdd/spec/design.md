@@ -14,8 +14,8 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 1. The type scale provides 5 sizes from caption to display and 2 weights (body and heading); only system fonts are used — no webfont download is required. <!-- @impl: src/styles/global.css::--font-sans --> <!-- @impl: src/styles/global.css::--text-xs --> <!-- @impl: src/styles/global.css::--text-2xl -->
 2. The palette is restricted to neutral grays with a single accent color per theme; no decorative gradients or drop shadows appear on steady-state UI surfaces. Motion-driven gradients required by another REQ (e.g., transient progress affordances) are exempt. <!-- @impl: src/styles/global.css::--color-bg -->
 3. Inputs render with a minimum 16 px font size to prevent iOS zoom-on-focus. <!-- @impl: src/styles/global.css::--text-base -->
-4. Every interactive element shows a visible focus ring on keyboard focus.
-5. All interactive elements have a minimum 44 × 44 pixel touch target.
+4. Every interactive element shows a visible focus ring on keyboard focus. <!-- @impl: src/styles/global.css:::focus-visible -->
+5. All interactive elements have a minimum 44 × 44 pixel touch target. <!-- @impl: src/styles/global.css::[role='button'], -->
 6. Every page fills the mobile viewport, even when content is shorter than the viewport, so the chrome color never dominates the screen; the top of the content surface stays clear of the header and the bottom stays clear of device safe-area insets. <!-- @impl: src/styles/global.css::--surface -->
 
 **Notes:** Exact font stacks, size values, and tokens are documented in [`documentation/lanes/architecture.md`](../../documentation/lanes/architecture.md#design-system-tokens).
