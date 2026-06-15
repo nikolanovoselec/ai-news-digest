@@ -873,6 +873,13 @@ function findExistingGoogleNewsTitleMatch(
  * sighting to that existing article and skip chunk fan-out. This preserves
  * coverage and tag-of-discovery while avoiding a duplicate LLM summary.
  */
+function evidenceRequiredTagsForSource(source: Candidate): Set<string> {
+  const tags =
+    source.source_tags_requiring_evidence ??
+    (source.requires_tag_evidence === true ? source.source_tags ?? [] : []);
+  return new Set(normaliseSourceTags(tags));
+}
+
 async function filterAndAggregateGoogleNewsTitleMatches(
   env: Env,
   clusters: ReturnType<typeof clusterByCanonical>,
@@ -944,9 +951,11 @@ async function filterAndAggregateGoogleNewsTitleMatches(
           publishedAt: source.published_at,
         });
       }
+      const evidenceRequiredTags = evidenceRequiredTagsForSource(source);
       for (const rawTag of source.source_tags ?? []) {
         const tag = normalizeHashtag(rawTag.trim());
         if (tag === '') continue;
+        if (evidenceRequiredTags.has(tag)) continue;
         const tagKey = `${match.id} ${tag}`;
         if (!tagInserts.has(tagKey)) {
           tagInserts.set(tagKey, { articleId: match.id, tag });

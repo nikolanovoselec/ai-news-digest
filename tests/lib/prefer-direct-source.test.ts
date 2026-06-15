@@ -112,6 +112,28 @@ describe('preferDirectOverGoogleNews — REQ-PIPE-003', () => {
     expect(out[0]?.source_tags_requiring_evidence).toEqual(['generative-ai']);
   });
 
+  it('REQ-PIPE-020: direct same-tag provenance wins over Google News evidence requirement', () => {
+    const input: Headline[] = [
+      h(
+        'Cloudflare Workers routing controls launch for platform teams',
+        'https://blog.cloudflare.com/workers-routing-controls/',
+        'cloudflare-blog',
+        ['cloudflare'],
+      ),
+      h(
+        'Cloudflare Workers routing controls launch for platform teams',
+        'https://news.google.com/articles/CBAi-cloudflare',
+        'googlenews',
+        ['cloudflare'],
+        ['cloudflare'],
+      ),
+    ];
+    const out = preferDirectOverGoogleNews(input);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.source_tags).toEqual(['cloudflare']);
+    expect(out[0]?.source_tags_requiring_evidence).toBeUndefined();
+  });
+
   it('keeps the Google News headline when no direct duplicate exists', () => {
     const input: Headline[] = [
       h(

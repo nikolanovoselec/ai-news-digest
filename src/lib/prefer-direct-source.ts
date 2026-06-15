@@ -115,16 +115,23 @@ export function preferDirectOverGoogleNews(
         for (const t of g.h.source_tags ?? []) existing.add(t);
         absorbedTagsByDirectIdx.set(d.idx, existing);
 
+        const directEvidenceTags = new Set<string>(
+          d.h.source_tags_requiring_evidence ??
+          (d.h.requires_tag_evidence === true ? d.h.source_tags ?? [] : []),
+        );
+        const directItemLevelTags = new Set(
+          (d.h.source_tags ?? []).filter((tag) => !directEvidenceTags.has(tag)),
+        );
         const existingEvidence =
           absorbedEvidenceTagsByDirectIdx.get(d.idx) ??
-          new Set<string>(
-            d.h.source_tags_requiring_evidence ??
-            (d.h.requires_tag_evidence === true ? d.h.source_tags ?? [] : []),
-          );
+          new Set<string>(directEvidenceTags);
         const googleEvidenceTags =
           g.h.source_tags_requiring_evidence ??
           (g.h.requires_tag_evidence === true ? g.h.source_tags ?? [] : []);
-        for (const t of googleEvidenceTags) existingEvidence.add(t);
+        for (const t of googleEvidenceTags) {
+          if (!directItemLevelTags.has(t)) existingEvidence.add(t);
+        }
+        for (const t of directItemLevelTags) existingEvidence.delete(t);
         absorbedEvidenceTagsByDirectIdx.set(d.idx, existingEvidence);
         droppedGoogleIdxs.add(g.idx);
         break;
