@@ -6,18 +6,34 @@ This is the implementation documentation. The product specification (what the sy
 
 ---
 
-## Index
+## Canonical Documentation Layout
 
-| Document | Description | Audience |
-|----------|-------------|----------|
-| [Architecture](lanes/architecture.md) | System overview, components, data flow | Developers |
-| [API Reference](lanes/api-reference.md) | All endpoints — public, internal, request/response formats | Developers |
-| [Admin API Reference](lanes/api-reference-admin.md) | Operator endpoints under `/api/admin/*` for queue replay, discovery retries, and health probes | Operators |
-| [Configuration](lanes/configuration.md) | Environment variables, secrets, Cloudflare bindings | Developers, Operators |
-| [Deployment](lanes/deployment.md) | Dev setup, deployment steps, CI secrets | Developers, Operators |
-| [Security](lanes/security.md) | CSP, HSTS, cookie policy, rate limiting | Developers, Operators |
-| [Observability](lanes/observability.md) | Structured log event enum, rate-limiter atomicity, fingerprint-drift rationale | Developers, Operators |
-| [Decisions](decisions/README.md) | Architecture Decision Records | Developers |
+This file is the documentation index. The `documentation/` tree intentionally contains this README, lane files under `documentation/lanes/`, the ADR ledger under `documentation/decisions/`, and one internal coverage queue. Root-level documentation files other than this README and `.doc-coverage.md` are not canonical.
+
+Current layout count: `documentation/README.md` + 9 indexed files = 10 tracked documentation files.
+
+## Implementation Lanes
+
+These 7 files are the canonical operational documentation lanes.
+
+| Document | File | Audience | Description |
+|----------|------|----------|-------------|
+| Architecture | [`lanes/architecture.md`](lanes/architecture.md) | Developers | System overview, components, data flow |
+| API Reference | [`lanes/api-reference.md`](lanes/api-reference.md) | Developers | Public/internal endpoints and request/response formats |
+| Admin API Reference | [`lanes/api-reference-admin.md`](lanes/api-reference-admin.md) | Operators | `/api/admin/*` endpoints for queue replay, discovery retries, and health probes |
+| Configuration | [`lanes/configuration.md`](lanes/configuration.md) | Developers, Operators | Environment variables, secrets, Cloudflare bindings |
+| Deployment | [`lanes/deployment.md`](lanes/deployment.md) | Developers, Operators | Dev setup, deployment steps, CI secrets |
+| Security | [`lanes/security.md`](lanes/security.md) | Developers, Operators | CSP, HSTS, cookie policy, rate limiting |
+| Observability | [`lanes/observability.md`](lanes/observability.md) | Developers, Operators | Structured logs, rate-limiter atomicity, fingerprint-drift rationale |
+
+## Decision and Support Files
+
+These 2 files are canonical documentation support files, not lane docs.
+
+| File | Purpose | Audience |
+|---|---|---|
+| [`decisions/README.md`](decisions/README.md) | Architecture Decision Records | Developers |
+| [`.doc-coverage.md`](.doc-coverage.md) | Documentation coverage/review queue; should say `No open findings.` when clean | Maintainers |
 
 ---
 
