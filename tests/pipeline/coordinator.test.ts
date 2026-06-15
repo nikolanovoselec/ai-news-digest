@@ -373,7 +373,14 @@ describe('scrape-coordinator - REQ-PIPE-001 / REQ-PIPE-010 / REQ-PIPE-011 / REQ-
           : input instanceof URL
             ? input.toString()
             : input.url;
-        const body = url.includes('news.google.com')
+        const hostname = (() => {
+          try {
+            return new URL(url).hostname;
+          } catch {
+            return '';
+          }
+        })();
+        const body = hostname === 'news.google.com'
           ? `<rss><channel><item><title>${title}</title><link>https://news.google.com/articles/duplicate</link></item></channel></rss>`
           : '<rss><channel></channel></rss>';
         return Promise.resolve(new Response(body, {
