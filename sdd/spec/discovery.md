@@ -86,9 +86,9 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. `GET /api/discovery/status` returns `{ pending: string[] }` scoped to the session user via `SELECT tag FROM pending_discoveries WHERE user_id = :session_user_id`.
-2. `/digest` displays a subtle banner "Discovering sources for #{tag1}, #{tag2}… Your next digest will include them." while the returned list is non-empty.
-3. The banner hides automatically when the returned list becomes empty (no manual refresh required on the user's side).
+1. `GET /api/discovery/status` returns `{ pending: string[] }` scoped to the session user via `SELECT tag FROM pending_discoveries WHERE user_id = :session_user_id`. <!-- @impl: src/pages/api/discovery/status.ts::GET -->
+2. `/digest` displays a subtle banner "Discovering sources for #{tag1}, #{tag2}… Your next digest will include them." while the returned list is non-empty. <!-- @impl: src/pages/api/discovery/status.ts::GET -->
+3. The banner hides automatically when the returned list becomes empty (no manual refresh required on the user's side). <!-- @impl: src/pages/api/discovery/status.ts::GET -->
 
 **Constraints:** None
 
@@ -109,13 +109,13 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. Every per-feed fetch in the global scrape pipeline records its outcome against a per-URL health counter.
-2. A successful fetch (any HTTP 200 response with a parseable feed body, even if the feed lists zero items) resets the counter for that URL.
-3. A failed fetch (network error, non-2xx status, body cap exceeded, unparseable content) increments the counter.
-4. The counter is stored in a shared cache with a seven-day expiry so stale entries never accumulate.
-5. When the counter for a URL reaches thirty consecutive failed fetches, the URL is evicted from the tag's feed list on the next scrape tick — thirty aligns with the six-times-daily scrape cadence so a feed must fail continuously for roughly five days before removal, absorbing day-long outages without thrashing.
-6. When eviction empties a tag's feed list, the tag is automatically enqueued for a fresh discovery pass so the next discovery cron repopulates it with new sources; the re-queue path is identical whether the tag was seeded by the default list on sign-up or added by a user.
-7. Hard-coded curated feeds (the operator-maintained global registry) participate in the same counter so operators see failing URLs in logs, but they are never mutated at runtime — their replacement is a code change, not a runtime eviction.
+1. Every per-feed fetch in the global scrape pipeline records its outcome against a per-URL health counter. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
+2. A successful fetch (any HTTP 200 response with a parseable feed body, even if the feed lists zero items) resets the counter for that URL. <!-- @impl: src/lib/sources.ts::fetchFromSourceWithResult -->
+3. A failed fetch (network error, non-2xx status, body cap exceeded, unparseable content) increments the counter. <!-- @impl: src/lib/sources.ts::readBodyCapped -->
+4. The counter is stored in a shared cache with a seven-day expiry so stale entries never accumulate. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
+5. When the counter for a URL reaches thirty consecutive failed fetches, the URL is evicted from the tag's feed list on the next scrape tick — thirty aligns with the six-times-daily scrape cadence so a feed must fail continuously for roughly five days before removal, absorbing day-long outages without thrashing. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
+6. When eviction empties a tag's feed list, the tag is automatically enqueued for a fresh discovery pass so the next discovery cron repopulates it with new sources; the re-queue path is identical whether the tag was seeded by the default list on sign-up or added by a user. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
+7. Hard-coded curated feeds (the operator-maintained global registry) participate in the same counter so operators see failing URLs in logs, but they are never mutated at runtime — their replacement is a code change, not a runtime eviction. <!-- @impl: src/lib/sources.ts::fetchFromSourceWithResult -->
 
 **Constraints:** None
 
@@ -136,10 +136,10 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. The settings page renders a single "Discover missing sources" button whenever at least one of the user's tags is "stuck" — defined as: not covered by any curated source AND either has no successful discovery cache yet, has an unparseable cache entry, or has an explicitly-empty cached feed list.
-2. Tags covered by a curated source are never flagged as stuck, so curated-feed tags never appear in the Stuck list.
-3. Transient cache-read errors fall back to "not stuck" so a flaky read does not light up every tag at once.
-4. The Stuck tags section is absent entirely from the page when no tag is stuck.
+1. The settings page renders a single "Discover missing sources" button whenever at least one of the user's tags is "stuck" — defined as: not covered by any curated source AND either has no successful discovery cache yet, has an unparseable cache entry, or has an explicitly-empty cached feed list. <!-- @impl: src/pages/api/admin/discovery/retry-bulk.ts::isEmptyFeedsEntry -->
+2. Tags covered by a curated source are never flagged as stuck, so curated-feed tags never appear in the Stuck list. <!-- @impl: src/lib/discovery.ts::has -->
+3. Transient cache-read errors fall back to "not stuck" so a flaky read does not light up every tag at once. <!-- @impl: src/lib/discovery.ts::has -->
+4. The Stuck tags section is absent entirely from the page when no tag is stuck. <!-- @impl: src/pages/api/admin/discovery/retry-bulk.ts::userHashtags -->
 
 **Constraints:** None
 
@@ -160,13 +160,13 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. The re-discover endpoint(s) validate that every tag they are asked to re-queue is in the authenticated user's saved tag list; any unknown tag is refused, preventing anyone with a session from triggering arbitrary LLM calls for strings they do not control.
-2. A valid re-discover request clears each affected tag's cached feeds and per-tag discovery-failure counter, then enqueues a fresh discovery pass for each so the next discovery cron repopulates them.
-3. Two transports are supported: a single-tag JSON API for scripted callers (returns an API-shaped response) and a bulk-by-default native HTML form submission from the settings page.
-4. The bulk endpoint accepts both POST (the form submission) and GET (the request shape Cloudflare Access uses when it bounces a click through SSO and lands the operator back at the original URL).
-5. After a POST form submission, the browser lands on the settings page with a confirmation banner naming how many tags were re-queued.
-6. After the SSO-bounced GET, the browser also lands on the settings page with the same confirmation banner, never on a raw 404.
-7. The routes are additionally gated by Cloudflare Access at the zone level so only the admin account can reach them in production; other authenticated users never see a reachable endpoint even if the settings button were to be forged into their page.
+1. The re-discover endpoint(s) validate that every tag they are asked to re-queue is in the authenticated user's saved tag list; any unknown tag is refused, preventing anyone with a session from triggering arbitrary LLM calls for strings they do not control. <!-- @impl: src/pages/api/admin/discovery/retry.ts::POST -->
+2. A valid re-discover request clears each affected tag's cached feeds and per-tag discovery-failure counter, then enqueues a fresh discovery pass for each so the next discovery cron repopulates them. <!-- @impl: src/pages/api/admin/discovery/retry.ts::POST -->
+3. Two transports are supported: a single-tag JSON API for scripted callers (returns an API-shaped response) and a bulk-by-default native HTML form submission from the settings page. <!-- @impl: src/pages/api/admin/discovery/retry.ts::POST -->
+4. The bulk endpoint accepts both POST (the form submission) and GET (the request shape Cloudflare Access uses when it bounces a click through SSO and lands the operator back at the original URL). <!-- @impl: src/pages/api/admin/discovery/retry.ts::POST -->
+5. After a POST form submission, the browser lands on the settings page with a confirmation banner naming how many tags were re-queued. <!-- @impl: src/pages/api/admin/discovery/retry.ts::POST -->
+6. After the SSO-bounced GET, the browser also lands on the settings page with the same confirmation banner, never on a raw 404. <!-- @impl: src/pages/api/admin/discovery/retry.ts::POST -->
+7. The routes are additionally gated by Cloudflare Access at the zone level so only the admin account can reach them in production; other authenticated users never see a reachable endpoint even if the settings button were to be forged into their page. <!-- @impl: src/pages/api/admin/discovery/retry.ts::POST -->
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
@@ -189,10 +189,10 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The discovery prompt fences the user-supplied tag with triple backticks so the model treats it as data, not instructions.
-2. The system prompt forbids guessing URLs and instructs the model to return fewer entries over unverified ones.
-3. Every suggested URL passes SSRF validation (HTTPS-only, no private IPs) before any network call is made.
-4. URL validation is applied independently of the LLM response — a malicious suggestion cannot bypass it.
+1. The discovery prompt fences the user-supplied tag with triple backticks so the model treats it as data, not instructions. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
+2. The system prompt forbids guessing URLs and instructs the model to return fewer entries over unverified ones. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
+3. Every suggested URL passes SSRF validation (HTTPS-only, no private IPs) before any network call is made. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
+4. URL validation is applied independently of the LLM response — a malicious suggestion cannot bypass it. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper), [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
@@ -213,10 +213,10 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The settings page lists the actual hashtag names that currently have no working feeds (not just a count), so the user can see at a glance which tags are stuck.
-2. A tag whose discovered-source cache has remained in the empty state for more than 7 days is removed from every user's interests automatically by the daily retention pass. Its discovered-source cache and per-tag failure counter are cleared in the same pass.
-3. Removal does not block other passes: a transient failure of the prune step still lets article retention and orphan-tag cleanup complete.
-4. The 7-day window resets the moment discovery succeeds: a tag whose feeds come back online before the cutoff stays in the user's interests with no further action.
+1. The settings page lists the actual hashtag names that currently have no working feeds (not just a count), so the user can see at a glance which tags are stuck. <!-- @impl: src/pages/settings.astro::submitSettings -->
+2. A tag whose discovered-source cache has remained in the empty state for more than 7 days is removed from every user's interests automatically by the daily retention pass. Its discovered-source cache and per-tag failure counter are cleared in the same pass. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
+3. Removal does not block other passes: a transient failure of the prune step still lets article retention and orphan-tag cleanup complete. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
+4. The 7-day window resets the moment discovery succeeds: a tag whose feeds come back online before the cutoff stays in the user's interests with no further action. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
 
 **Constraints:** None
 

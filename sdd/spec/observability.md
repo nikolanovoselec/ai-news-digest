@@ -35,10 +35,10 @@ Structured JSON logging as the single operational surface — no external observ
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The `digests.error_code` column uses a short sanitized enum: `llm_invalid_json`, `llm_failed`, `all_sources_failed`, `generation_stalled`, `user_cancelled`.
-2. API error responses carry the code and a generic user-facing message; raw error details appear only in server logs.
-3. The failure page on `/digest` displays the `error_code` in a muted monospace footer, never prose from the original error.
-4. OAuth error codes follow a parallel allowlist (`access_denied`, `no_verified_email`, `invalid_state`, `oauth_error`) and any value not on the list is normalized to `oauth_error` before being put in a URL.
+1. The `digests.error_code` column uses a short sanitized enum: `llm_invalid_json`, `llm_failed`, `all_sources_failed`, `generation_stalled`, `user_cancelled`. <!-- @impl: src/lib/errors.ts::errorResponse -->
+2. API error responses carry the code and a generic user-facing message; raw error details appear only in server logs. <!-- @impl: src/lib/errors.ts::errorResponse -->
+3. The failure page on `/digest` displays the `error_code` in a muted monospace footer, never prose from the original error. <!-- @impl: src/lib/errors.ts::errorResponse -->
+4. OAuth error codes follow a parallel allowlist (`access_denied`, `no_verified_email`, `invalid_state`, `oauth_error`) and any value not on the list is normalized to `oauth_error` before being put in a URL. <!-- @impl: src/lib/rate-limit.ts::rateLimitResponse -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -59,11 +59,11 @@ Structured JSON logging as the single operational surface — no external observ
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. Every authenticated response carries a Content-Security-Policy header that restricts script execution to same-origin and blocks inline event handlers.
-2. The Content-Security-Policy limits external image origins to those the app explicitly loads (Gravatar avatars) so an injected reference to an arbitrary third-party host cannot fetch images.
-3. The Content-Security-Policy prevents the page from being embedded in an iframe and prevents forms from submitting to third-party origins.
-4. Every response includes `X-Frame-Options: DENY` as defense-in-depth alongside `frame-ancestors 'none'`.
-5. No inline script tags exist anywhere in the app; the CSP `script-src` is `'self'` only.
+1. Every authenticated response carries a Content-Security-Policy header that restricts script execution to same-origin and blocks inline event handlers. <!-- @impl: src/middleware/security-headers.ts::CSP_HEADER_VALUE -->
+2. The Content-Security-Policy limits external image origins to those the app explicitly loads (Gravatar avatars) so an injected reference to an arbitrary third-party host cannot fetch images. <!-- @impl: src/middleware/security-headers.ts::CSP_HEADER_VALUE -->
+3. The Content-Security-Policy prevents the page from being embedded in an iframe and prevents forms from submitting to third-party origins. <!-- @impl: src/middleware/security-headers.ts::securityHeadersMiddleware -->
+4. Every response includes `X-Frame-Options: DENY` as defense-in-depth alongside `frame-ancestors 'none'`. <!-- @impl: src/middleware/security-headers.ts::CSP_HEADER_VALUE -->
+5. No inline script tags exist anywhere in the app; the CSP `script-src` is `'self'` only. <!-- @impl: src/middleware/security-headers.ts::CSP_HEADER_VALUE -->
 
 **Notes:** Exact CSP directive value is documented at [`documentation/lanes/security.md`](../../documentation/lanes/security.md).
 
@@ -86,10 +86,10 @@ Structured JSON logging as the single operational surface — no external observ
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. Every response includes `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`.
-2. Every response includes `X-Content-Type-Options: nosniff`.
-3. Every response includes `Referrer-Policy: strict-origin-when-cross-origin`.
-4. Every response includes `Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), clipboard-read=()`.
+1. Every response includes `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS -->
+2. Every response includes `X-Content-Type-Options: nosniff`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS -->
+3. Every response includes `Referrer-Policy: strict-origin-when-cross-origin`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS -->
+4. Every response includes `Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), clipboard-read=()`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS -->
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
@@ -112,11 +112,11 @@ Structured JSON logging as the single operational surface — no external observ
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. The endpoint accepts both POST and GET. Both methods do the same work, so callers can pick whichever fits their context (form submissions, JSON fetches, and direct URL visits all reach the same coordinator dispatch).
-2. Triggering the endpoint starts a fresh scrape run with status running and sends one coordinator message — the same work the every-four-hours cron does.
-3. If a run started by an earlier cron tick or a previous manual trigger is still running and started within the last two minutes, the endpoint reuses that run rather than starting a new one. This protects against accidental double-clicks and tab-restore replays.
-4. The response is content-negotiated so browser callers land back on the settings surface with the run id visible and scripted callers can read the run id and reuse flag programmatically.
-5. The endpoint is gated by all three admin layers per [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8: Cloudflare Access at the zone level (optionally audience-pinned), a valid worker session, and the session email matching the configured operator email; failure at any layer returns that layer's native deny response.
+1. The endpoint accepts both POST and GET. Both methods do the same work, so callers can pick whichever fits their context (form submissions, JSON fetches, and direct URL visits all reach the same coordinator dispatch). <!-- @impl: src/pages/api/admin/force-refresh.ts::POST -->
+2. Triggering the endpoint starts a fresh scrape run with status running and sends one coordinator message — the same work the every-four-hours cron does. <!-- @impl: src/pages/api/admin/force-refresh.ts::GET -->
+3. If a run started by an earlier cron tick or a previous manual trigger is still running and started within the last two minutes, the endpoint reuses that run rather than starting a new one. This protects against accidental double-clicks and tab-restore replays. <!-- @impl: src/pages/api/admin/force-refresh.ts::rateLimited -->
+4. The response is content-negotiated so browser callers land back on the settings surface with the run id visible and scripted callers can read the run id and reuse flag programmatically. <!-- @impl: src/pages/api/admin/force-refresh.ts::redirectToSettings -->
+5. The endpoint is gated by all three admin layers per [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8: Cloudflare Access at the zone level (optionally audience-pinned), a valid worker session, and the session email matching the configured operator email; failure at any layer returns that layer's native deny response. <!-- @impl: src/pages/api/admin/force-refresh.ts::rateLimited -->
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -137,12 +137,12 @@ Structured JSON logging as the single operational surface — no external observ
 **Applies To:** User (via operator setup)
 
 **Acceptance Criteria:**
-1. The landing page carries title, description, canonical, and Open Graph metadata suitable for a search result card.
-2. A crawler policy file declares the landing page and public assets as allowed, every authenticated surface and the API as disallowed, and blocks known AI training user agents.
-3. A machine-readable agents policy file describes what the product is, what is public, and an explicit request not to train on content behind the login.
-4. A sitemap is served from a stable URL, lists only public URLs, and is referenced from the crawler policy file.
-5. Error pages served for not-found and server-error conditions are flagged no-index so crawler spaces stay clean.
-6. Structured-data (JSON-LD) blocks emitted into the page head are serialized through a defensive helper that rewrites every `<`, `>`, and `&` byte to its `\uNNNN` JSON form, defeating every HTML state-transition vector that could escape the script block (`</script>`, `<!--`, `]]>`, `<script` re-entry). Today every JSON-LD value is server-controlled; the defence is preventive insurance for a future refactor that interpolates a user-controlled value (e.g., article title) into the graph.
+1. The landing page carries title, description, canonical, and Open Graph metadata suitable for a search result card. <!-- @impl: src/layouts/Base.astro::fullTitle -->
+2. A crawler policy file declares the landing page and public assets as allowed, every authenticated surface and the API as disallowed, and blocks known AI training user agents. <!-- @impl: src/layouts/Base.astro::fullTitle -->
+3. A machine-readable agents policy file describes what the product is, what is public, and an explicit request not to train on content behind the login. <!-- @impl: src/layouts/Base.astro::fullTitle -->
+4. A sitemap is served from a stable URL, lists only public URLs, and is referenced from the crawler policy file. <!-- @impl: src/lib/json-ld.ts::is -->
+5. Error pages served for not-found and server-error conditions are flagged no-index so crawler spaces stay clean. <!-- @impl: src/lib/json-ld.ts::is -->
+6. Structured-data (JSON-LD) blocks emitted into the page head are serialized through a defensive helper that rewrites every `<`, `>`, and `&` byte to its `\uNNNN` JSON form, defeating every HTML state-transition vector that could escape the script block (`</script>`, `<!--`, `]]>`, `<script` re-entry). Today every JSON-LD value is server-controlled; the defence is preventive insurance for a future refactor that interpolates a user-controlled value (e.g., article title) into the graph. <!-- @impl: src/lib/json-ld.ts::safeJsonLd -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -192,12 +192,12 @@ Structured JSON logging as the single operational surface — no external observ
 **Applies To:** Public
 
 **Acceptance Criteria:**
-1. The sitemap endpoint returns an XML response carrying the standard sitemap content type.
-2. The body is a well-formed sitemap containing only public surfaces (the landing page); authenticated routes are absent.
-3. Each entry advertises a location, a last-modified date stamped to the day of the request, an update-frequency hint, and a relative priority per the sitemap protocol.
-4. The response is cacheable by intermediate caches and crawlers for at least one hour.
-5. The sitemap URL is advertised in the robots policy so crawlers find it without guessing.
-6. The sitemap origin follows the request hostname, not a hardcoded one — a fork or staging deploy emits its own URLs, never the production origin.
+1. The sitemap endpoint returns an XML response carrying the standard sitemap content type. <!-- @impl: src/pages/sitemap.xml.ts::GET -->
+2. The body is a well-formed sitemap containing only public surfaces (the landing page); authenticated routes are absent. <!-- @impl: src/pages/sitemap.xml.ts::GET -->
+3. Each entry advertises a location, a last-modified date stamped to the day of the request, an update-frequency hint, and a relative priority per the sitemap protocol. <!-- @impl: src/pages/sitemap.xml.ts::GET -->
+4. The response is cacheable by intermediate caches and crawlers for at least one hour. <!-- @impl: src/pages/sitemap.xml.ts::GET -->
+5. The sitemap URL is advertised in the robots policy so crawlers find it without guessing. <!-- @impl: src/pages/sitemap.xml.ts::GET -->
+6. The sitemap origin follows the request hostname, not a hardcoded one — a fork or staging deploy emits its own URLs, never the production origin. <!-- @impl: src/pages/sitemap.xml.ts::GET -->
 
 **Constraints:** —
 
@@ -218,10 +218,10 @@ Structured JSON logging as the single operational surface — no external observ
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. The settings surface exposes one admin action inside an Administration section, labelled to the effect of "Refresh articles".
-2. The action sequentially executes the optional wipe-and-re-embed pre-phase, a fresh scrape tick equivalent to the every-four-hours cron, a backfill of any embeddings the scrape did not land, and an oldest-first cross-article same-story sweep across the surviving pool.
-3. Each phase only begins after the previous phase reports done; no phase fires speculatively or in parallel with its predecessor.
-4. Every phase is gated by the same admin authentication used elsewhere in the admin surface ([REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)). An unauthenticated tab where the admin gate has lapsed surfaces the auth failure as a user-readable failed-status line rather than silently no-op'ing.
+1. The settings surface exposes one admin action inside an Administration section, labelled to the effect of "Refresh articles". <!-- @impl: src/pages/settings.astro::submitSettings -->
+2. The action sequentially executes the optional wipe-and-re-embed pre-phase, a fresh scrape tick equivalent to the every-four-hours cron, a backfill of any embeddings the scrape did not land, and an oldest-first cross-article same-story sweep across the surviving pool. <!-- @impl: src/pages/settings.astro::teardownScrapeProgress -->
+3. Each phase only begins after the previous phase reports done; no phase fires speculatively or in parallel with its predecessor. <!-- @impl: src/pages/api/admin/pipeline-status.ts::GET -->
+4. Every phase is gated by the same admin authentication used elsewhere in the admin surface ([REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)). An unauthenticated tab where the admin gate has lapsed surfaces the auth failure as a user-readable failed-status line rather than silently no-op'ing. <!-- @impl: src/pages/api/admin/pipeline-run.ts::POST -->
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -242,9 +242,9 @@ Structured JSON logging as the single operational surface — no external observ
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. A toggle adjacent to the admin pipeline action lets the operator opt into the wipe-and-re-embed pre-phase before the scrape tick.
-2. With the toggle off, the action skips the pre-phase and starts at the scrape tick.
-3. With the toggle on, the action first wipes and re-embeds every surviving article, then proceeds to the scrape tick.
+1. A toggle adjacent to the admin pipeline action lets the operator opt into the wipe-and-re-embed pre-phase before the scrape tick. <!-- @impl: src/pages/api/admin/pipeline-run.ts::POST -->
+2. With the toggle off, the action skips the pre-phase and starts at the scrape tick. <!-- @impl: src/pages/api/admin/pipeline-run.ts::POST -->
+3. With the toggle on, the action first wipes and re-embeds every surviving article, then proceeds to the scrape tick. <!-- @impl: src/pages/api/admin/pipeline-run.ts::POST -->
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
@@ -267,13 +267,13 @@ Structured JSON logging as the single operational surface — no external observ
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. While either run kicked from [REQ-OPS-008](#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) is in flight, both admin actions are disabled and a status line reports the current phase in user-readable prose; the status line updates as each phase advances, and both actions re-enable when the run finishes or errors.
-2. The full pipeline run continues to completion irrespective of the operator's browser tab state, because every phase advance is driven server-side after activation; closing the tab, navigating away, or losing network mid-run does not interrupt the pipeline.
-3. When the operator returns to the settings surface during an in-flight run, live progress is restored from the run's audit state.
-4. If the operator navigates away while a run is in flight and returns within the last-thirty-minutes freshness window, the surface restores the most recent phase line.
-5. When the underlying run completed while the operator was away, the restored status is annotated to indicate the run finished without their presence.
-6. State older than the freshness window is forgotten and the surface paints fresh on return.
-7. When a run reaches a terminal status (completed, denied by the auth gate, or kick-time error), the surface paints the terminal message and keeps it visible across reloads within the freshness window — replaced by the next kick or aged out by the freshness window in AC 6, never auto-cleared the moment it is rendered.
+1. While either run kicked from [REQ-OPS-008](#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) is in flight, both admin actions are disabled and a status line reports the current phase in user-readable prose; the status line updates as each phase advances, and both actions re-enable when the run finishes or errors. <!-- @impl: src/queue/pipeline-consumer.ts::handlePipelineJobsBatch -->
+2. The full pipeline run continues to completion irrespective of the operator's browser tab state, because every phase advance is driven server-side after activation; closing the tab, navigating away, or losing network mid-run does not interrupt the pipeline. <!-- @impl: src/queue/pipeline-consumer.ts::handlePipelineJobsBatch -->
+3. When the operator returns to the settings surface during an in-flight run, live progress is restored from the run's audit state. <!-- @impl: src/queue/pipeline-consumer.ts::runReembedFlip -->
+4. If the operator navigates away while a run is in flight and returns within the last-thirty-minutes freshness window, the surface restores the most recent phase line. <!-- @impl: src/queue/pipeline-consumer.ts::runReembedFlip -->
+5. When the underlying run completed while the operator was away, the restored status is annotated to indicate the run finished without their presence. <!-- @impl: src/queue/pipeline-consumer.ts::runReembedFlip -->
+6. State older than the freshness window is forgotten and the surface paints fresh on return. <!-- @impl: src/queue/pipeline-consumer.ts::runReembedFlip -->
+7. When a run reaches a terminal status (completed, denied by the auth gate, or kick-time error), the surface paints the terminal message and keeps it visible across reloads within the freshness window — replaced by the next kick or aged out by the freshness window in AC 6, never auto-cleared the moment it is rendered. <!-- @impl: src/queue/pipeline-consumer.ts::processOnePipelineMessage -->
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
