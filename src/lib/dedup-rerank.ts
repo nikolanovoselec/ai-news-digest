@@ -1,4 +1,5 @@
 // Implements REQ-PIPE-009
+// Implements REQ-PIPE-023
 //
 // LLM re-rank pass for borderline cosine pairs. Sits between the
 // auto-merge band (cosine >= DEDUP_COSINE_THRESHOLD, default 0.78) and

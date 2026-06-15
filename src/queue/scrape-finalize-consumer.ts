@@ -2,6 +2,7 @@
 // Implements REQ-PIPE-003 AC 17
 // Implements REQ-PIPE-003
 // Implements REQ-PIPE-009
+// Implements REQ-PIPE-023
 //
 // Cross-tick semantic dedup pass for the global-feed pipeline. Runs
 // once per scrape tick AFTER all chunks have written their articles +

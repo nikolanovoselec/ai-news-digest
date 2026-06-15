@@ -387,26 +387,46 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ### REQ-PIPE-009: LLM re-rank pass for borderline same-story candidates
 
-**Intent:** When two articles describe the same news event but their summaries take different angles (e.g., one frames the event as "PM ousted in no-confidence vote" and another as "government collapses as far-right coalition forms"), embedding similarity alone places them in a borderline band that is too low to auto-merge but too high to safely call them distinct. A targeted same-event judgment by the language model decides those borderline pairs without lowering the auto-merge bar that protects against false merges between distinct same-day stories from the same source.
+**Intent:** When two articles describe the same news event but their summaries take different angles, embedding similarity alone places them in a borderline band that is too low to auto-merge but too high to safely call them distinct. A targeted same-event judgment by the language model decides those borderline pairs without lowering the auto-merge bar that protects against false merges between distinct same-day stories from the same source.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Same-story candidates whose similarity falls in a configured borderline band (above a floor and below the auto-merge threshold from REQ-PIPE-003) trigger a single same-event judgment by the language model. Pairs at or above the auto-merge threshold are merged without an LLM call; pairs below the floor stay distinct without an LLM call.
-2. The same-event judgment receives only the two articles' titles and short body excerpts. The judgment is binary and conservative: an unparseable, ambiguous, or failed response is treated as "different events" so a borderline pair never collapses on the strength of an unreliable model answer.
-3. A pair the model marks as the same event is merged using the same first-source-wins rule as REQ-PIPE-003: the earlier-published article survives as the primary card and the later one becomes an alternative source on it.
-4. The same borderline gate runs on both the per-tick cross-tick pass and the operator-initiated historical re-run sweep, so re-running the sweep after a threshold change picks up borderline pairs the original ingest missed.
-5. Each invocation is bounded by a wall-clock budget rather than a fixed count of borderline judgments, so an operator-triggered sweep over a large corpus still converges without dropping borderline pairs silently. Per-invocation rerank counts are recorded in operator-visible logs so an operator can see how much rerank work each batch performed.
-6. When a single newly-arrived article has multiple borderline candidates rather than one, the same-event judgment is invoked on the candidates in best-first order until a same-event verdict accepts or a small per-article cap is reached, so a genuine same-event sibling that happens not to be the top-scoring nearest neighbour is not silently dropped.
-7. The borderline floor is operator-tunable at runtime through the same configuration mechanism as the auto-merge threshold, so an operator can widen or narrow the LLM-judgment band without a code change.
-8. When a single article has multiple borderline candidates, those pairs are judged in a single batched language-model call rather than one call per pair, so an article with several borderline siblings does not multiply per-pair inference cost. A parse failure on the batched response is treated as "different events" for every pair in that batch, preserving the conservative default.
-9. The recurring background sweep records the timestamp of its last successful completion and, on the next run, skips the same-event judgment for any borderline pair whose two articles were both already in the corpus at that prior watermark. The judgment for those pairs is already settled and the model is deterministic. An operator-initiated sweep ignores the watermark and re-judges every borderline pair, so a manual run after a threshold or prompt change covers the corpus end-to-end.
+1. Same-story candidates whose similarity falls in a configured borderline band trigger a same-event judgment by the language model. Pairs at or above the auto-merge threshold are merged without an LLM call; pairs below the floor stay distinct without an LLM call. <!-- @impl: src/lib/bidirectional-dedup.ts::classifyMatchPair --> <!-- @impl: src/lib/dedup-rerank.ts::readRerankFloor -->
+2. The same-event judgment receives only the two articles' titles and short body excerpts. The judgment is binary and conservative: an unparseable, ambiguous, or failed response is treated as "different events". <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
+3. A pair the model marks as the same event is merged using the same first-source-wins rule as [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract). <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch --> <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize -->
+4. The same borderline gate runs on both the per-tick cross-tick pass and the operator-initiated historical re-run sweep. <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize --> <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
 **Priority:** P1
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-023](#req-pipe-023-llm-re-rank-cost-controls-and-sweep-watermark)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-PIPE-023: LLM re-rank cost controls and sweep watermark
+
+**Intent:** Borderline same-story judgments stay bounded and observable: each batch has a wall-clock budget, per-article candidate cap, configurable floor, batched LLM call shape, and auto-sweep watermark so recurring sweeps do not re-pay for already-settled pairs.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+1. Each invocation is bounded by a wall-clock budget rather than a fixed count of borderline judgments, and per-invocation rerank counts are recorded in operator-visible logs. <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+2. When a single newly-arrived article has multiple borderline candidates, the same-event judgment is invoked on candidates in best-first order until a same-event verdict accepts or a small per-article cap is reached. <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize -->
+3. The borderline floor is operator-tunable at runtime through the same configuration mechanism as the auto-merge threshold. <!-- @impl: src/lib/dedup-rerank.ts::readRerankFloor -->
+4. When a single article has multiple borderline candidates, those pairs are judged in a single batched language-model call; a parse failure on the batched response is treated as "different events" for every pair in that batch. <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
+5. The recurring background sweep records the timestamp of its last successful completion and skips settled pre-watermark pairs on the next run; an operator-initiated sweep ignores the watermark and re-judges every borderline pair. <!-- @impl: src/lib/dedup-watermark.ts::readWatermark --> <!-- @impl: src/lib/dedup-watermark.ts::writeWatermark --> <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
+
+**Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
 
 **Verification:** Automated test
 
