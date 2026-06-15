@@ -36,11 +36,11 @@ Past digests paginated on `/history`, 30 per page. A four-tile stats widget on `
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. Typing 3 or more characters into the search input hides the day-grouped list and renders matching articles in a flat dashboard-style grid above it; clearing back below 3 characters restores the day-grouped view instantly and preserves scroll position. The active query is reflected in the URL as a `q` parameter so opening an article from search and returning via the browser back button restores the exact result set. <!-- @impl: src/components/AltSourcesModal.astro::MONTHS -->
-2. A tag railing sits between the search input and the day list, mirroring the dashboard's visual component: each chip shows the tag's count across the 14-day window, supports add-tag and remove-tag affordances that persist to the user's hashtag list, and pre-selects chips listed in the URL `tags` parameter. <!-- @impl: src/pages/history.astro::rawTagsParam -->
+1. Search input with 3+ characters switches from day groups to a flat dashboard-style result grid. Clearing restores grouped view and scroll position; URL `q` preserves results when returning from an article. <!-- @impl: src/components/AltSourcesModal.astro::MONTHS -->
+2. A tag railing between search and days mirrors dashboard chips: counts cover the 14-day window, add/remove affordances persist to hashtags, and URL `tags` pre-selects chips. <!-- @impl: src/pages/history.astro::rawTagsParam -->
 3. Selecting a tag hides the day-grouped list and renders matching articles in the same flat grid the search uses. <!-- @impl: src/components/DigestCard.astro::data-vt-slug -->
 4. Search and tag selections combine with AND logic (both must match), and both states are reflected in the URL so the browser back button from an opened article restores the exact filtered view. <!-- @impl: src/components/TagStrip.astro::selected -->
-5. `/history` accepts a deep-link query parameter specifying a single local calendar date; when present and the date matches one of the available days, the page renders only that day's row pre-expanded (the search input and other day rows are suppressed) and shows a "Back to all days" control that returns the user to the full 14-day list without the query parameter. An unknown or malformed date parameter is ignored and the full list is shown. <!-- @impl: src/pages/history.astro::env -->
+5. `/history?date=` renders only the matching local day pre-expanded, suppressing search and other days, with a `Back to all days` control. Unknown or malformed dates fall back to the full list. <!-- @impl: src/pages/history.astro::env -->
 
 **Constraints:** [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
 
@@ -63,7 +63,7 @@ Past digests paginated on `/history`, 30 per page. A four-tile stats widget on `
 **Acceptance Criteria:**
 1. `/settings` displays a compact widget with four tiles: Digests generated, Articles read / total, Tokens consumed, Cost to date. <!-- @impl: src/pages/api/stats.ts::accepting -->
 2. Tokens-consumed and Cost-to-date tiles read from the scrape-run aggregation, reflecting the global pipeline's totals rather than any per-user generation cost. <!-- @impl: src/pages/api/stats.ts::accepting -->
-3. Articles-total counts the articles in the pool whose tags intersect the session user's currently-active tag list. Articles-read counts the user's reads scoped to that same active-tag pool, so the ratio always describes "of the articles you can see right now, how many have you read" — reads on articles whose only tag the user has since deselected drop out of both numerator and denominator. <!-- @impl: src/pages/api/stats.ts::accepting -->
+3. Articles-total counts pool articles intersecting the user's active tags; articles-read counts that user's reads in the same pool, so the ratio reflects only currently visible articles. <!-- @impl: src/pages/api/stats.ts::accepting -->
 4. "Articles read / total" shows both numbers as `{read} of {total}`. <!-- @impl: src/pages/api/stats.ts::accepting -->
 5. Cost is displayed in USD with 2-4 significant figures, e.g., `$0.14` or `$2.37`. <!-- @impl: src/components/StatsWidget.astro::formatCostUsd -->
 6. The widget refreshes on every page load; no cache layer is involved. <!-- @impl: src/components/StatsWidget.astro::loadFailed -->

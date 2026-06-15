@@ -39,7 +39,7 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The authenticated site header contains a standalone theme-toggle icon button, placed immediately to the left of the avatar user menu, that labels the *target* mode via its accessible name — when the current theme is light it announces "Dark Mode" and shows a moon icon; when dark it announces "Light Mode" and shows a sun icon. Clicking it performs the switch in a single tap, with no intermediate menu to open. <!-- @impl: src/components/ThemeToggle.astro::data-theme -->
+1. Authenticated header shows a standalone theme-toggle button immediately left of the avatar menu. Its accessible name labels the target mode (`Dark Mode` with moon, `Light Mode` with sun), and one tap switches without a menu. <!-- @impl: src/components/ThemeToggle.astro::data-theme -->
 2. Anonymous (signed-out) pages expose the same single-tap theme control in the same header position with visually matching styling, so the affordance and interaction are identical before and after sign-in. <!-- @impl: src/components/ThemeToggle.astro::data-theme -->
 3. Clicking the toggle toggles the theme between `light` and `dark`, persists the choice for the current browser, and propagates the choice to the server so subsequent navigations render the correct theme in the first byte. <!-- @impl: src/scripts/bundled/theme-toggle.ts::readStoredTheme -->
 4. On every authenticated or anonymous request, the server renders the document root with the user's chosen theme already applied, so the first paint is never the wrong theme even on slow connections or when client-side scripts are deferred. <!-- @impl: src/layouts/Base.astro::readThemeCookie -->
@@ -67,7 +67,7 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 **Acceptance Criteria:**
 1. The mobile system status bar (iOS / Android) matches the app's selected theme, not the operating-system theme — a user in the app's dark theme whose device is in light mode still sees a dark status bar above the dark UI, and vice versa. <!-- @impl: src/styles/global.css::view-transition -->
 2. The status bar repaints immediately when the user toggles theme mid-session, and its colour persists across client-side route navigations without a transient flash to the opposite theme. <!-- @impl: src/styles/global.css::view-transition -->
-3. The document body never flashes the opposite theme between client-side route navigations — even when the app is launched as an installed PWA and navigated via client-side route swaps, the page background paints the user's chosen theme from the very first frame, never an intermediate white frame between routes. <!-- @impl: src/styles/global.css::view-transition -->
+3. Across client-side route swaps, including installed PWA navigation, the body paints the chosen theme on the first frame and never flashes the opposite or intermediate background. <!-- @impl: src/styles/global.css::view-transition -->
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
@@ -95,7 +95,7 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 3. The digest card → article detail route uses the View Transitions shared-element morph so the card expands into the detail view. <!-- @impl: src/scripts/page-effects.ts::preFilterIncomingDocument -->
 4. All motion is wrapped in `@media (prefers-reduced-motion: no-preference)`; under `reduce`, transitions collapse to instant state changes. <!-- @impl: src/scripts/page-effects.ts::syncBrowserTz -->
 5. Hashtag chip selection, button `:active` press, and card hover (desktop) each have a single, short transition (150–200 ms) on the relevant property only. <!-- @impl: src/layouts/Base.astro::readThemeCookie -->
-6. The site header chrome stays visually solid throughout every route transition — the user never sees stale body content from the outgoing page bleeding through the header band while the page beneath cross-fades. Because the header is identical on every route, it does not animate during the swap; it simply remains in place with the theme background. <!-- @impl: src/layouts/Base.astro::readThemeCookie -->
+6. During route transitions, the identical header remains fixed with the theme background and no animation, so outgoing body content never bleeds through the header band. <!-- @impl: src/layouts/Base.astro::readThemeCookie -->
 
 **Notes:** Exact motion durations, easing curve, and token names are documented in [`documentation/lanes/architecture.md`](../../documentation/lanes/architecture.md#motion-tokens).
 

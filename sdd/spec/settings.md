@@ -70,7 +70,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 4. Clicking the body of a selected tag returns it to the unselected state. <!-- @impl: src/lib/schemas/settings.ts::SettingsPutBodySchema -->
 5. Clicking the red remove affordance deletes that tag from the user's selection. <!-- @impl: src/lib/default-hashtags.ts::DEFAULT_HASHTAGS -->
 6. An add affordance at the end of the strip expands inline into a single text input; submitting the input appends a new tag to the selection. <!-- @impl: src/lib/hashtags.ts::parseHashtags -->
-7. While one or more tags are selected, the reading surface filters its visible articles to those whose stored tag list intersects the selection. When every article is filtered out, the reading surface shows a short message naming the selected tags and inviting the user to deselect. <!-- @impl: src/lib/default-hashtags.ts::DEFAULT_HASHTAGS -->
+7. When tags are selected, reading surfaces show only articles whose stored tags intersect the selection; an empty result names selected tags and invites deselection. <!-- @impl: src/lib/default-hashtags.ts::DEFAULT_HASHTAGS -->
 
 **Constraints:** None
 
@@ -93,10 +93,10 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 **Acceptance Criteria:**
 1. Every add or remove persists immediately via the dedicated tags write endpoint with no form submit required; the user's tag list updates visibly on success. Toggling selection never writes to the server; it only affects the client-side filter state. <!-- @impl: src/pages/api/tags/delete-initial.ts::POST -->
 2. Each hashtag must be 2 to 32 characters long, is normalised to lowercase with any leading `#` stripped, and may contain only characters in `[a-z0-9-]`; other characters are stripped server-side before storage. <!-- @impl: src/pages/api/tags/delete-initial.ts::POST -->
-3. At least one hashtag is required for a digest to generate, a maximum of 25 total hashtags is enforced server-side, and duplicates are collapsed before storage. The cap sits 4 slots above the 21-tag default seed so a new account can immediately add custom interests without having to delete a default first. <!-- @impl: src/pages/api/tags/delete-initial.ts::POST -->
+3. Server-side storage requires at least one hashtag, caps total hashtags at 25, and collapses duplicates; the cap leaves four custom slots above the 21-tag default seed. <!-- @impl: src/pages/api/tags/delete-initial.ts::POST -->
 4. Brand-new accounts are seeded with a curated default hashtag list so the first digest has meaningful input before the user touches the strip. <!-- @impl: src/pages/api/tags/delete-initial.ts::POST -->
 5. The settings page exposes two paired actions side-by-side: "Restore initial tags" replaces the current list with the full default seed; "Delete all tags" clears the user's tag list entirely so they can build a completely custom set without removing default chips one-by-one. <!-- @impl: src/pages/api/tags/delete-initial.ts::POST -->
-6. Each paired action is only visible when it would do something useful: Restore appears when at least one default is missing from the user's list, Delete appears whenever the user has at least one tag, so an empty list hides Delete and a list identical to the initials hides Restore. <!-- @impl: src/pages/api/tags/delete-initial.ts::POST -->
+6. Restore appears only when default tags are missing; Delete appears only when at least one tag exists, so no-op paired actions stay hidden. <!-- @impl: src/pages/api/tags/delete-initial.ts::POST -->
 
 **Constraints:** None
 
@@ -117,7 +117,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The digest time is captured via two dropdowns whose label format matches the user's preferred clock convention as reported by the browser: 12-hour AM/PM labels for 12-hour locales (en-US, en-CA, en-AU), 24-hour labels (00 to 23) for 24-hour locales (en-GB, hr-HR, ja-JP), auto-detected at render time without country-by-country hardcoding. <!-- @impl: src/pages/settings.astro::teardownScrapeProgress -->
+1. Digest time uses two dropdowns labelled from the browser's clock convention: 12-hour labels for 12-hour locales and 24-hour labels for 24-hour locales, detected without country hardcoding. <!-- @impl: src/pages/settings.astro::teardownScrapeProgress -->
 2. Selectable digest-time values follow a 5-minute step (00:00, 00:05, ..., 23:55) so the picker matches the dispatcher's 5-minute cron tick. <!-- @impl: src/pages/settings.astro::teardownScrapeProgress -->
 3. The browser-detected IANA timezone is displayed next to the time and auto-syncs to the server whenever it differs from the stored value; there is no manual timezone picker in the UI. <!-- @impl: src/pages/settings.astro::submitSettings -->
 4. Initial timezone is populated from the browser's resolved IANA zone on first load, saved to the user row, and re-synced on every subsequent visit if it changes (e.g., travel). <!-- @impl: src/pages/settings.astro::submitSettings -->
@@ -200,7 +200,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 2. Once the scheduled-digest time is set, visiting the first-run settings view redirects to the steady-state settings view. <!-- @impl: src/middleware/settings-gate.ts::SETTINGS_PATH -->
 3. The gate keys only on "scheduled time not yet set" — having no hashtags selected does NOT trip the gate, and a user whose first digest fails is not trapped. <!-- @impl: src/middleware/settings-gate.ts::is -->
 4. While the gate is active, the global navigation hides entries that lead to gated routes so the user sees only the Settings destination and cannot tap into a dead-end redirect. <!-- @impl: src/middleware/settings-gate.ts::is -->
-5. The discovery-progress endpoint that the settings page polls while pending discoveries drain is rate-limited per authenticated user, sized to leave a few-seconds polling cadence untouched while bounding pathological client loops, per REQ-AUTH-001 AC 9a. An exhausted limit returns HTTP 429 with `Retry-After`; the settings page surfaces the polling pause without blocking the rest of the form. <!-- @impl: src/middleware/settings-gate.ts::SETTINGS_PATH -->
+5. Discovery-progress polling is per-user rate-limited to allow normal few-second polling but bound client loops; 429 includes `Retry-After`, and settings shows the pause without blocking the form. <!-- @impl: src/middleware/settings-gate.ts::SETTINGS_PATH -->
 
 **Constraints:** None
 
@@ -225,7 +225,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 2. When the two differ, the browser silently posts the new timezone to the timezone-update endpoint and the server persists it; no confirmation banner or dialog is shown. <!-- @impl: src/pages/settings.astro::submitSettings -->
 3. The correction runs on every route (not just the settings page), so users who sign up and go straight to the reading surface never miss the update. <!-- @impl: src/pages/settings.astro::submitSettings -->
 4. A failed correction request is non-fatal: the page continues to render and the next page load retries. <!-- @impl: src/pages/settings.astro::wireScrapeProgress -->
-5. Once the stored timezone is anything other than the seeded default — set either by an earlier silent correction or by the manual settings picker — the silent path stops touching it, so a user's deliberate choice is never overwritten by a privacy-masked or stale browser timezone on the next page load. <!-- @impl: src/scripts/page-effects.ts::syncBrowserTz -->
+5. Once stored timezone differs from the seeded default, silent correction stops, so manual or earlier browser choices are never overwritten by privacy-masked or stale browser zones. <!-- @impl: src/scripts/page-effects.ts::syncBrowserTz -->
 6. The timezone-update endpoint is rate-limited per authenticated user per [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9a; an exhausted limit returns HTTP 429 with `Retry-After` and is non-fatal per AC 4 above. <!-- @impl: src/pages/api/auth/set-tz.ts::POST -->
 
 **Constraints:** None

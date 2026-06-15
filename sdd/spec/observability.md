@@ -168,7 +168,7 @@ Structured JSON logging as the single operational surface — no external observ
 3. The manual trigger always deploys the current `develop` branch HEAD, regardless of which branch the dispatch was fired from in the GitHub UI.
 4. The integration worker has no cron triggers — the scrape pipeline runs only when the operator hits the admin force-refresh endpoint. Production crons (every-four-hours scrape, daily cleanup, every-five-minutes email) do not fire on integration.
 5. Schema migrations apply to a fresh D1 database on first deploy. No production data is copied across; integration starts empty and accumulates only what manual force-refresh runs produce.
-6. Worker secrets are sourced from the same repo-level GitHub Actions secrets the production deploy uses, with GitHub-Environment-scoped overrides taking precedence when defined. The environment variable that anchors the public hostname (APP_URL) lives in the deployment manifest, not in secrets, so swapping environments doesn't require swapping secrets.
+6. Worker secrets come from the repo-level GitHub Actions secrets used by production, with Environment overrides winning. Public `APP_URL` stays in the deploy manifest, not secrets.
 7. Promotion path is one-way: develop → integration smoke (manual) → develop merged to main → production auto-deploy. There is no path that pushes integration changes back to develop.
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
@@ -273,7 +273,7 @@ Structured JSON logging as the single operational surface — no external observ
 4. If the operator navigates away while a run is in flight and returns within the last-thirty-minutes freshness window, the surface restores the most recent phase line. <!-- @impl: src/queue/pipeline-consumer.ts::runReembedFlip -->
 5. When the underlying run completed while the operator was away, the restored status is annotated to indicate the run finished without their presence. <!-- @impl: src/queue/pipeline-consumer.ts::runReembedFlip -->
 6. State older than the freshness window is forgotten and the surface paints fresh on return. <!-- @impl: src/queue/pipeline-consumer.ts::runReembedFlip -->
-7. When a run reaches a terminal status (completed, denied by the auth gate, or kick-time error), the surface paints the terminal message and keeps it visible across reloads within the freshness window — replaced by the next kick or aged out by the freshness window in AC 6, never auto-cleared the moment it is rendered. <!-- @impl: src/queue/pipeline-consumer.ts::processOnePipelineMessage -->
+7. Terminal status (completed, auth-denied, or kick-time error) remains visible across reloads within the freshness window, then is replaced by the next kick or aged out, never immediately auto-cleared. <!-- @impl: src/queue/pipeline-consumer.ts::processOnePipelineMessage -->
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 

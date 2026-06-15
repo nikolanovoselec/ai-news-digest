@@ -14,10 +14,10 @@ The heart of the product. Overview grid of the freshest articles read from the s
 1. `/digest` reads articles from the global article pool filtered by the user's active tags; articles whose tag list does not intersect the user's tag list are excluded. <!-- @impl: src/pages/digest.astro::env -->
 2. When the user has no tag filters selected, the grid shows every article whose tags intersect the user's full tag list; when one or more filter tags are selected, the grid narrows to articles matching those filters. <!-- @impl: src/pages/digest.astro::env -->
 3. The grid shows the 29 articles with the most recent first ingestion matching the user's active tags, ordered by first-ingestion descending with published-at as a tiebreaker. <!-- @impl: src/pages/digest.astro::env -->
-4. "First ingestion" is the timestamp at which a story first entered the pool; re-discoveries on later ticks append the new source to the article's source list but never re-stamp the ingestion time, so older stories that keep being re-broadcast by feeds do not displace genuinely fresher arrivals. <!-- @impl: src/pages/digest.astro::env -->
+4. `first_ingested_at` is when a story first entered the pool; later re-discoveries append sources without restamping it, so rebroadcast older stories cannot displace fresher arrivals. <!-- @impl: src/pages/digest.astro::env -->
 5. Articles roll off the 29-card window as newer arrivals push them out. <!-- @impl: src/lib/digest-today.ts::loadTodayPayload -->
-6. The grid's final slot (slot 30) is a "see all of today's articles in Search & History" tile containing a centred list-style icon; activating it navigates the user to the Search & History page scoped to today's local date. Per-tag filtering that reaches beyond the newest-29 window lives on Search & History, not on the dashboard. <!-- @impl: src/pages/digest.astro::isCardHidden -->
-7. When the same story has been reported by more than one source, the source label at the bottom of the card shows the primary publisher name with a `+N` suffix (e.g. `MASHABLE +1`, `TECHCRUNCH +3`) where N is the count of additional sources beyond the primary; single-source articles show the publisher name with no suffix. The same `+N` treatment applies to cards rendered on Search & History and the starred-articles surface so attribution reads identically across all card grids. <!-- @impl: src/lib/alt-source-label.ts::formatAltSourceLabel -->
+6. Slot 30 is a `see all today's articles in Search & History` tile with a centered list icon that links to today's local date; wider per-tag filtering lives on Search & History. <!-- @impl: src/pages/digest.astro::isCardHidden -->
+7. Multi-source cards show primary publisher plus `+N` additional sources; single-source cards show only the publisher. The same attribution format is used on digest, Search & History, and starred grids. <!-- @impl: src/lib/alt-source-label.ts::formatAltSourceLabel -->
 
 **Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum)
 
@@ -38,7 +38,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The top of `/digest` shows "Last updated at HH:MM" with the most-recent scrape time, alongside a live "Next update in Xm" countdown (formatted "Xh Ym" when more than an hour remains, "Xm" otherwise) that counts down toward the next scheduled scrape tick and is visibly updated as time passes. <!-- @impl: src/pages/digest.astro::data-digest-page -->
+1. `/digest` shows `Last updated at HH:MM` plus a live countdown to the next scrape tick, formatted `Xh Ym` above one hour and `Xm` otherwise. <!-- @impl: src/pages/digest.astro::data-digest-page -->
 2. When a scrape run is currently in flight at first paint, the countdown is replaced by an "Update in progress…" indicator until the run completes, so a reader landing mid-run sees the live state immediately rather than a misleading countdown to the next tick. <!-- @impl: src/pages/digest.astro::data-digest-page -->
 3. No manual Refresh button is rendered and no live-state skeleton cards are shown; the pool is always populated so the grid renders directly under the header. <!-- @impl: src/pages/digest.astro::data-digest-page -->
 
@@ -88,8 +88,8 @@ The heart of the product. Overview grid of the freshest articles read from the s
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. A back control returns the user to the page they navigated FROM (the dashboard, search results, starred page, history day view, etc.) when they arrived via in-app navigation, whether the origin page was loaded as a fresh document or reached as a same-app client-side navigation; direct-link visitors (no prior in-app page in this tab's session) land on `/digest`. <!-- @impl: src/pages/digest/[id]/[slug].astro::formatDate -->
-2. The View Transitions shared-element morph plays in reverse when returning to a page that renders the same card, including when that card sits below the fold of the origin page (e.g. a card inside an expanded day deep in `/history`). The source page's scroll position is restored before the morph snapshot is captured so the reverse morph lands on the originating card rather than silently degrading to a root cross-fade. <!-- @impl: src/components/AltSourcesModal.astro::MONTHS -->
+1. The back control returns to the in-app origin page across fresh or client-side navigations; direct-link visitors without same-tab app history fall back to `/digest`. <!-- @impl: src/pages/digest/[id]/[slug].astro::formatDate -->
+2. Reverse shared-element morphs restore the source page scroll before snapshot capture, so returning to a below-fold origin card lands on that card instead of a root cross-fade. <!-- @impl: src/components/AltSourcesModal.astro::MONTHS -->
 3. When the article has at least one alternative source, activating "Read at source" opens a modal listing every known source (primary + alternatives) with each source's name and per-source timestamp. <!-- @impl: src/components/AltSourcesModal.astro::formatPublished -->
 4. When the article has only one source, "Read at source" links directly to that source in a new tab with `rel="noopener noreferrer"` rather than opening the modal. <!-- @impl: src/components/AltSourcesModal.astro::formatPublished -->
 5. The source-list modal closes on Escape and on backdrop click. <!-- @impl: src/scripts/alt-sources-modal.ts::positionAnchored -->
@@ -163,7 +163,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 **Acceptance Criteria:**
 1. When the LLM returns fewer than 3 articles, the page shows "No stories today — try broader hashtags" with a link to `/settings`. <!-- @impl: src/pages/offline.astro::offline-page -->
 2. When the digest has `status='failed'`, the page shows "We couldn't build your digest" with a Try-again control and a Go-to-settings link; the raw `error_code` appears in a muted monospace footer, never prose from the error. <!-- @impl: src/pages/404.astro::error-page__code -->
-3. The Try-again control submits the refresh request in place and updates an inline status region next to the button — "Retrying…" while the request is in flight, a rate-limit reason with countdown when the refresh is rejected, and a network-error message on transport failure. The user stays on the failure page throughout; navigation to the live digest only happens once a new generation is actually accepted. <!-- @impl: src/pages/rate-limited.astro::url -->
+3. Try-again submits in place and updates an inline status (`Retrying…`, rate-limit countdown, or network error). The failure page remains until a new generation is accepted. <!-- @impl: src/pages/rate-limited.astro::url -->
 4. When `navigator.onLine` is false, a top-of-page banner reads "You're offline — showing the last digest you viewed"; the Refresh button is disabled with a tooltip. <!-- @impl: src/pages/offline.astro::offline-page__banner -->
 5. 404 and 500 responses have dedicated pages with a calm headline and at least one clear action. <!-- @impl: src/pages/404.astro::error-page -->
 
@@ -238,11 +238,11 @@ The heart of the product. Overview grid of the freshest articles read from the s
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. On a viewport that scrolls the railing horizontally, the railing's scroll position is preserved across the cascade and the tap never produces an auto-scroll. The tapped chip slides toward its destination and may exit off either edge of the visible area; the user navigates the railing manually to see chips that have moved off-screen. <!-- @impl: src/components/TagStrip.astro::selected -->
-2. After a SELECT cascade that lands at slot 0, the next time the user starts to scroll the surrounding page downward the railing smoothly scrolls back to its leftmost position so the just-selected chip is revealed at the start. This convenience scroll fires at most once per tap and is cancelled if the user manually swipes the railing during it. <!-- @impl: src/components/TagStrip.astro::data-tag-chip -->
+1. On horizontally scrolling railings, tapping preserves scroll position and never auto-scrolls; the chip moves to its destination and may exit either edge, leaving manual railing navigation. <!-- @impl: src/components/TagStrip.astro::selected -->
+2. After a SELECT cascade to slot 0, the next page-down scroll reveals the selected chip by smoothly scrolling the railing left once, unless the user manually swipes first. <!-- @impl: src/components/TagStrip.astro::data-tag-chip -->
 3. Unselect cascades do not arm the convenience scroll, because the chip lands mid-railing rather than at slot 0. <!-- @impl: src/components/TagStrip.astro::data-tag-chip -->
 4. On a viewport that wraps the railing into multiple rows, the railing does not scroll at all; the user sees the entire cascade play out across whatever rows the chips occupy. <!-- @impl: src/components/TagStrip.astro::data-tag-chip -->
-5. When the runtime does not support the animation primitives, the reorder still happens (the tapped chip ends up at its correct sort position, slot 0 on select or natural sort position on unselect, and the data order is correct); only the pop, hold, and cascade motion are skipped. <!-- @impl: src/components/TagStrip.astro::is -->
+5. Without animation primitives, data reorder still completes to the correct slot/order, while pop, hold, and cascade motion are skipped. <!-- @impl: src/components/TagStrip.astro::is -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 

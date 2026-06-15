@@ -20,7 +20,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 4. The callback exchanges the authorization code for a verified identity and creates or looks up a user keyed by provider plus provider-user-id; the GitHub provider preserves its legacy bare-numeric key format so existing accounts are unchanged. <!-- @impl: src/lib/oauth-providers.ts::providerByName -->
 5. If the provider returns no verified email, sign-in fails with error code `no_verified_email` and the user is redirected to the landing page with a clear message naming the affected provider. <!-- @impl: src/lib/oauth-providers.ts::providerByName -->
 6. A brand-new account is seeded with a curated default hashtag list (covering cloud platforms, AI/LLM, security, identity, and infrastructure) where every default tag has at least one curated source, so the first digest has meaningful input before the user touches the strip. <!-- @impl: src/lib/default-hashtags.ts::DEFAULT_HASHTAGS -->
-7. A brand-new account is also seeded with a default scheduled-digest time of 08:00, a default UTC timezone (overwritten by the browser's IANA zone on first load), and email-notification enabled, so successful first sign-in lands the user directly on the reading surface with real articles visible and no forced onboarding detour. <!-- @impl: src/lib/rate-limit.ts::clientIp -->
+7. New accounts are seeded with digest time 08:00, UTC timezone until browser correction, and email notifications enabled, so first sign-in can land on populated reading without forced onboarding. <!-- @impl: src/lib/rate-limit.ts::clientIp -->
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
 
@@ -45,7 +45,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 1. An authenticated session is carried by two cookies issued at OAuth completion: a short-lived access cookie unreadable by page JavaScript, and a long-lived refresh cookie with the same protection. <!-- @impl: src/middleware/auth.ts::buildSessionCookie -->
 2. Every authenticated request first verifies the access cookie against a per-user session-version stamp. Mismatched or expired access cookies fall through to the refresh-token flow. <!-- @impl: src/middleware/auth.ts::buildClearSessionCookie -->
 3. Logout immediately invalidates every access cookie previously issued to the user and revokes the active refresh-token row. Both cookies are cleared on the response. <!-- @impl: src/middleware/auth.ts::buildClearSessionCookie -->
-4. When the access cookie is missing or expired but the refresh cookie is valid, middleware mints a new access cookie and rotates the refresh-token row inline on the same request. Both API routes and page navigations attach the re-issued cookies, so plain navigation extends the session — the user never sees a login prompt from access-token expiry alone. <!-- @impl: src/middleware/auth.ts::buildSessionCookie -->
+4. When access is missing or expired and refresh is valid, middleware reissues access and rotates refresh on the same request. API routes and pages attach the new cookies, so access expiry alone never prompts login. <!-- @impl: src/middleware/auth.ts::buildSessionCookie -->
 5. An explicit refresh endpoint force-rotates the refresh-token row regardless of remaining access-cookie lifetime, tolerates a concurrent-rotation race per [REQ-AUTH-008](#req-auth-008-refresh-token-rotation-and-per-device-logout), and clears both cookies on any failure path so a half-cleared session cannot persist. <!-- @impl: src/middleware/auth.ts::buildClearSessionCookie -->
 
 **Notes:** Cookie attribute set (`__Host-` prefix, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`) and the signing algorithm are documented in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#auth-cookie-policy).
@@ -200,7 +200,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Acceptance Criteria:**
 
-1. Every successful refresh rotates the refresh-token row: the existing row is revoked, a new row is issued, and the old cookie value is single-use; the persisted row identifier is independent of the cookie secret so a leaked database dump cannot be replayed against the live system. <!-- @impl: src/lib/refresh-tokens.ts::generateRefreshTokenValue -->
+1. Each successful refresh revokes the old refresh row, issues a new row, and makes the old cookie single-use. Row identifiers are separate from cookie secrets so database dumps cannot replay sessions. <!-- @impl: src/lib/refresh-tokens.ts::generateRefreshTokenValue -->
 2. Logout revokes only the active refresh-token row and not every row for the user, so logging out on one device does not sign the user out of other devices. <!-- @impl: src/pages/api/auth/logout.ts::POST -->
 
 **Notes:** Grace-window length and the parent-link pointer are documented at [`documentation/lanes/security.md`](../../documentation/lanes/security.md#auth-cookie-policy).

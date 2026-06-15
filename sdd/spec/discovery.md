@@ -113,8 +113,8 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 2. A successful fetch (any HTTP 200 response with a parseable feed body, even if the feed lists zero items) resets the counter for that URL. <!-- @impl: src/lib/sources.ts::fetchFromSourceWithResult -->
 3. A failed fetch (network error, non-2xx status, body cap exceeded, unparseable content) increments the counter. <!-- @impl: src/lib/sources.ts::readBodyCapped -->
 4. The counter is stored in a shared cache with a seven-day expiry so stale entries never accumulate. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
-5. When the counter for a URL reaches thirty consecutive failed fetches, the URL is evicted from the tag's feed list on the next scrape tick — thirty aligns with the six-times-daily scrape cadence so a feed must fail continuously for roughly five days before removal, absorbing day-long outages without thrashing. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
-6. When eviction empties a tag's feed list, the tag is automatically enqueued for a fresh discovery pass so the next discovery cron repopulates it with new sources; the re-queue path is identical whether the tag was seeded by the default list on sign-up or added by a user. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
+5. A URL is evicted on the next scrape tick after 30 consecutive failed fetches, matching roughly five days at six scrapes/day so day-long outages do not thrash feeds. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
+6. If eviction empties a tag's feed list, the tag is enqueued for the same discovery cron path used by default-seeded and user-added tags. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
 7. Hard-coded curated feeds (the operator-maintained global registry) participate in the same counter so operators see failing URLs in logs, but they are never mutated at runtime — their replacement is a code change, not a runtime eviction. <!-- @impl: src/lib/sources.ts::fetchFromSourceWithResult -->
 
 **Constraints:** None
@@ -136,7 +136,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. The settings page renders a single "Discover missing sources" button whenever at least one of the user's tags is "stuck" — defined as: not covered by any curated source AND either has no successful discovery cache yet, has an unparseable cache entry, or has an explicitly-empty cached feed list. <!-- @impl: src/pages/api/admin/discovery/retry-bulk.ts::isEmptyFeedsEntry -->
+1. Settings shows one `Discover missing sources` button when any user tag is stuck: no curated source and no successful parseable discovery cache, or an explicitly empty cached feed list. <!-- @impl: src/pages/api/admin/discovery/retry-bulk.ts::isEmptyFeedsEntry -->
 2. Tags covered by a curated source are never flagged as stuck, so curated-feed tags never appear in the Stuck list. <!-- @impl: src/lib/discovery.ts::has -->
 3. Transient cache-read errors fall back to "not stuck" so a flaky read does not light up every tag at once. <!-- @impl: src/lib/discovery.ts::has -->
 4. The Stuck tags section is absent entirely from the page when no tag is stuck. <!-- @impl: src/pages/api/admin/discovery/retry-bulk.ts::userHashtags -->

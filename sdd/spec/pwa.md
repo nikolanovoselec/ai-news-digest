@@ -12,7 +12,7 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 
 **Acceptance Criteria:**
 1. `/manifest.webmanifest` declares `name`, `short_name`, `description`, `start_url=/digest`, `display=standalone`, `theme_color`, and `background_color`.
-2. The manifest's `theme_color` and `background_color` are pinned to the dark-theme background colour so that PWA users in dark mode (the common case for a news reader at the typical reading hours) never see a light-coloured splash or status bar at cold launch or during standalone-mode navigation transitions.
+2. Manifest `theme_color` and `background_color` are pinned to the dark background so dark-mode PWA users never see a light splash or status bar on cold launch or standalone navigation.
 3. Users in light mode see a brief dark splash at cold launch only, after which the runtime theme controls take over and paint the document in their selected theme.
 4. Icons declared in `/manifest.webmanifest` include at least one `purpose: "any"` and one `purpose: "maskable"`; either a scalable SVG (`type: "image/svg+xml"`, `sizes: "any"`) or raster PNGs at 192x192 and 512x512 satisfy both requirements.
 5. Apple meta tags in the root layout set `apple-mobile-web-app-capable=yes`, `apple-mobile-web-app-status-bar-style=black-translucent`, `apple-mobile-web-app-title`, and a 180x180 PNG `apple-touch-icon`, since iOS does not consume `/manifest.webmanifest` for its home-screen icon.

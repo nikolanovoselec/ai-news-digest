@@ -11,8 +11,8 @@ Resend-backed notification sent after every successful digest — whether genera
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The subject reads "{N} new articles · {top tags}", where N is the headline count and {top tags} is the top three tag slugs by descending article count, comma-joined. (N is always at least 1 for any email that reaches an inbox, per the send-policy contract in REQ-MAIL-003.) <!-- @impl: src/lib/email.ts::renderDigestReadyEmail -->
-2. The body lists up to five unread articles (excluding articles the recipient has previously opened), each as a clickable title that links to the article detail page on the dashboard. No adjacent source-name label is rendered next to the headline; the article-detail page surfaces alternate sources instead. <!-- @impl: src/lib/email.ts::renderDigestReadyEmail -->
+1. The subject is `{N} new articles · {top tags}`, where N is the headline count and `{top tags}` is the top three tag slugs by article count; N is always at least 1. <!-- @impl: src/lib/email.ts::renderDigestReadyEmail -->
+2. The body lists up to five unread articles as clickable article-detail links, excluding articles the recipient already opened. No source-name label is shown next to headlines; detail pages show alternate sources. <!-- @impl: src/lib/email.ts::renderDigestReadyEmail -->
 3. The body shows a tally of articles ingested since the recipient's local midnight, listing each tag with its article count; the line is omitted entirely when no articles have been ingested in that window. <!-- @impl: src/lib/email.ts::pad2 -->
 4. The body shows the current send time and tomorrow's send time, both formatted in the recipient's timezone. <!-- @impl: src/lib/email.ts::pad2 -->
 5. The body contains a "Manage notifications" link to the settings page above the brand footer. <!-- @impl: src/lib/email.ts::withSenderDisplayName -->
@@ -40,7 +40,7 @@ Resend-backed notification sent after every successful digest — whether genera
 **Acceptance Criteria:**
 1. The Resend POST uses a short request timeout. <!-- @impl: src/lib/email.ts::withSenderDisplayName -->
 2. Any non-2xx response, network failure, or timeout is logged as a structured error event; no exception bubbles up to the cron handler. <!-- @impl: src/lib/email.ts::sendEmail -->
-3. One user's failed send never blocks or aborts another user's send in the same cron invocation, and a precondition error against one timezone bucket (e.g. an unrecognised IANA zone in a stored row) never blocks or aborts sibling buckets in the same tick — the dispatcher skips the bad row, logs it as a structured warning, and continues. <!-- @impl: src/lib/email-dispatch.ts::dispatchDailyEmails -->
+3. One user's failed send, or one bad timezone bucket/precondition row, is logged and skipped without blocking sibling users or buckets in the same cron invocation. <!-- @impl: src/lib/email-dispatch.ts::dispatchDailyEmails -->
 4. The reading surfaces stay fully usable regardless of email outcome. <!-- @impl: src/lib/email.ts::sendEmail -->
 5. On send failure, the per-user "last emailed date" marker is NOT advanced, so the next cron tick retries the same user naturally. <!-- @impl: src/lib/email-dispatch.ts::loadDispatchUsers -->
 
