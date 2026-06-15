@@ -257,7 +257,7 @@ Coordinator
   ├─ Mark cross-site feed snippets for linked-page body fetch; discard discussion/score metadata fallback (REQ-PIPE-010 AC 2, AC 4)
   ├─ Record per-URL fetch outcome → KV source_health:{url}
   ├─ Evict URLs at 30 consecutive failures; re-queue discovery if feed list empties
-  ├─ Use plausible feed publish dates, fall back missing/implausible dates to ingestion time, and drop parsed dates older than 48 h
+  ├─ Use plausible feed publish dates, fall back missing/implausible dates to ingestion time, and drop parsed dates older than 48 h (REQ-PIPE-011 AC 1-3)
   ├─ Canonical-URL dedup across all candidates
   ├─ Re-seen URLs: INSERT OR IGNORE new sources into article_sources (multi-source aggregation);
   │  ingested_at and primary attribution are NOT re-stamped (first-ingestion preserved)
