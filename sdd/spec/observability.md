@@ -91,6 +91,8 @@ Structured JSON logging as the single operational surface — no external observ
 3. Every response includes `Referrer-Policy: strict-origin-when-cross-origin`.
 4. Every response includes `Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), clipboard-read=()`.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P0
@@ -99,7 +101,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Verification:** Integration test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 
@@ -244,6 +246,8 @@ Structured JSON logging as the single operational surface — no external observ
 2. With the toggle off, the action skips the pre-phase and starts at the scrape tick.
 3. With the toggle on, the action first wipes and re-embeds every surviving article, then proceeds to the scrape tick.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
 
 **Priority:** P2
@@ -252,7 +256,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Verification:** Integration test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 
@@ -271,6 +275,8 @@ Structured JSON logging as the single operational surface — no external observ
 6. State older than the freshness window is forgotten and the surface paints fresh on return.
 7. When a run reaches a terminal status (completed, denied by the auth gate, or kick-time error), the surface paints the terminal message and keeps it visible across reloads within the freshness window — replaced by the next kick or aged out by the freshness window in AC 6, never auto-cleared the moment it is rendered.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P2
@@ -279,4 +285,4 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Verification:** Integration test
 
-**Status:** Implemented
+**Status:** Partial

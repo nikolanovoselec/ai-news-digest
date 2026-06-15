@@ -225,6 +225,8 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 4. Source links, tag union, stars, and read marks from the later article are preserved on the surviving primary card so a user never loses a star or a read by virtue of dedup.
 5. A single-source article (no same-story matches) is persisted with zero alternative-source rows.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
 **Priority:** P0
@@ -233,7 +235,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Verification:** Automated test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 

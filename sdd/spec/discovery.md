@@ -168,6 +168,8 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 6. After the SSO-bounced GET, the browser also lands on the settings page with the same confirmation banner, never on a raw 404.
 7. The routes are additionally gated by Cloudflare Access at the zone level so only the admin account can reach them in production; other authenticated users never see a reachable endpoint even if the settings button were to be forged into their page.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** None
 
 **Priority:** P2
@@ -176,7 +178,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 **Verification:** Integration test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 

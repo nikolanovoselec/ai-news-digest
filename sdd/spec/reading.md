@@ -42,6 +42,8 @@ The heart of the product. Overview grid of the freshest articles read from the s
 2. When a scrape run is currently in flight at first paint, the countdown is replaced by an "Update in progress…" indicator until the run completes, so a reader landing mid-run sees the live state immediately rather than a misleading countdown to the next tick.
 3. No manual Refresh button is rendered and no live-state skeleton cards are shown; the pool is always populated so the grid renders directly under the header.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum)
 
 **Priority:** P0
@@ -50,7 +52,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Verification:** Integration test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 
@@ -92,6 +94,8 @@ The heart of the product. Overview grid of the freshest articles read from the s
 4. When the article has only one source, "Read at source" links directly to that source in a new tab with `rel="noopener noreferrer"` rather than opening the modal.
 5. The source-list modal closes on Escape and on backdrop click.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum)
 
 **Priority:** P0
@@ -100,7 +104,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Verification:** Integration test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 
@@ -213,6 +217,8 @@ The heart of the product. Overview grid of the freshest articles read from the s
 2. On UN-SELECT, the slide destination is the chip's natural sort position among non-selected chips (sorted by article count descending, with alphabetical tie-break), so the chip rejoins the count hierarchy.
 3. The slide duration is shaped so the on-screen portion of the chip's journey takes roughly the same wall time whether the chip travels a short visible hop or a long mostly-off-screen one, giving far chips a comfortably trackable visible window instead of a blur.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P2
@@ -221,7 +227,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Verification:** Integration test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 

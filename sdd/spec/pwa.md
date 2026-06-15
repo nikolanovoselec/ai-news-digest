@@ -71,6 +71,8 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 4. Modifier-clicks (Cmd/Ctrl/Shift/Alt) and non-primary mouse buttons are never intercepted, so "open in new tab/window" continues to work on the brand.
 5. The brand tap target stretches to fill the entire left half of the header between the safe-area inset and the right-side controls, with visible content remaining left-aligned so the layout is unchanged.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum)
 
 **Priority:** P1
@@ -79,4 +81,4 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 
 **Verification:** Integration test
 
-**Status:** Implemented
+**Status:** Partial

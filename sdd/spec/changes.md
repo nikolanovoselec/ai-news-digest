@@ -6,6 +6,10 @@ Each entry is dated, ≤2 sentences, user-facing only. No commit SHAs. No "verif
 
 Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are archived in [`changes-archive-2026-04.md`](changes-archive-2026-04.md).
 
+## 2026-06-15
+
+- Fourteen REQs moved to Partial because the current automated tests do not cite their REQ IDs; shipped behavior remains unchanged pending test-name or test-backlink repair.
+
 ## 2026-06-12
 
 - REQ-PIPE-011 and REQ-PIPE-020 changed: high-confidence portal/listing fetch failures now drop before summarisation, title-only blocklist signals are recognised, and broad-source tags retain per-tag evidence provenance when merged onto precise candidates.

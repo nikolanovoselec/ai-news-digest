@@ -69,6 +69,8 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 2. The status bar repaints immediately when the user toggles theme mid-session, and its colour persists across client-side route navigations without a transient flash to the opposite theme.
 3. The document body never flashes the opposite theme between client-side route navigations — even when the app is launched as an installed PWA and navigated via client-side route swaps, the page background paints the user's chosen theme from the very first frame, never an intermediate white frame between routes.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P1
@@ -77,7 +79,7 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 
 **Verification:** Integration test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 

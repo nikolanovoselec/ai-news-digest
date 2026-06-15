@@ -231,6 +231,8 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 4. The steady-state refresh path logs but does not block on a fingerprint change between issuance and refresh, because legitimate UA strings drift on browser auto-updates.
 5. A fingerprint mismatch within the concurrent-rotation grace window IS enforced as theft, because the only legitimate cause of a grace-window replay is the same client racing itself.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P0
@@ -239,7 +241,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Verification:** Automated test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 
@@ -253,6 +255,8 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 1. Expired and old-revoked refresh-token rows are pruned by the daily retention sweep with a retention floor long enough that the reuse-detection branch can still observe `revoked_at` on a stolen-then-rotated cookie.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
 
 **Priority:** P1
@@ -261,7 +265,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Verification:** Automated test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 

@@ -43,6 +43,8 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 5. Query parameters carrying the outcome are stripped from the URL after display so a refresh does not re-show stale text.
 6. Unauthenticated native-form POSTs redirect to the site root rather than persisting state or showing an error message.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** None
 
 **Priority:** P0
@@ -51,7 +53,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Verification:** Integration test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 
@@ -249,6 +251,8 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 2. The picker is pre-populated with the browser-detected zone, or with the stored zone when the browser's value is unavailable, so the most likely correct value is one click away even when the silent auto-sync has failed.
 3. Saving the form persists the picked zone via the same timezone-update endpoint used by the silent auto-sync path.
 
+**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+
 **Constraints:** None
 
 **Priority:** P2
@@ -257,4 +261,4 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Verification:** Integration test
 
-**Status:** Implemented
+**Status:** Partial
