@@ -58,6 +58,7 @@ import {
   preferDirectOverGoogleNews,
   sharedTitleTokenCount,
 } from '~/lib/prefer-direct-source';
+import { isLikelyLandingOrPortalUrl } from '~/lib/article-fetch';
 import { isBlockedPublisher } from '~/lib/blocked-publishers';
 import { tokenizeTitle } from '~/lib/title-overlap';
 import { readTimeWindowSeconds } from '~/lib/embeddings';
@@ -145,22 +146,25 @@ const ESTIMATED_BODY_FETCH_CHARS = 3_000;
 
 /** Estimate the per-candidate char cost the chunk's prompt will
  * incur. When a feed snippet is already attached, large enough
- * (≥ `SNIPPET_FLOOR`, imported from the chunk consumer), and not
- * marked `force_body_fetch`, the consumer skips its own body fetch
- * and the snippet length is the actual cost. Otherwise the consumer
- * will fetch and the body could be anywhere between 0 and SNIPPET_CAP
- * (15K). For forced fetches with retained fallback snippets, budget the
- * larger of the snippet and median body estimate because the consumer
- * prompts with whichever text is longer.
+ * (≥ `SNIPPET_FLOOR`, imported from the chunk consumer), not
+ * marked `force_body_fetch`, and not portal-like, the consumer skips
+ * its own body fetch and the snippet length is the actual cost.
+ * Otherwise the consumer will fetch and the body could be anywhere
+ * between 0 and SNIPPET_CAP (15K). For forced or portal-like fetches
+ * with retained fallback snippets, budget the larger of the snippet
+ * and median body estimate because the consumer prompts with whichever
+ * text is longer.
  *
  * Exported for direct testing. */
 export function estimateCandidateChars(c: ChunkCandidate): number {
   const snippet = c.body_snippet ?? '';
-  const bodyChars = c.force_body_fetch === true
+  const willFetchBody =
+    c.force_body_fetch === true ||
+    snippet.length < SNIPPET_FLOOR ||
+    isLikelyLandingOrPortalUrl(c.source_url);
+  const bodyChars = willFetchBody
     ? Math.max(snippet.length, ESTIMATED_BODY_FETCH_CHARS)
-    : snippet.length >= SNIPPET_FLOOR
-      ? snippet.length
-      : ESTIMATED_BODY_FETCH_CHARS;
+    : snippet.length;
   return bodyChars + PER_CANDIDATE_OVERHEAD_CHARS;
 }
 

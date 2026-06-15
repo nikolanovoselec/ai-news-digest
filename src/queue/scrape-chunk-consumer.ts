@@ -897,8 +897,27 @@ const TAG_RELEVANCE_ALIASES: Record<string, readonly string[]> = {
   graymatter: ['graymatter', 'gray matter'],
 };
 
-function clusterRequiresTagEvidence(cluster: Cluster): boolean {
+function tagRequiresArticleEvidence(tag: string, cluster: Cluster): boolean {
+  // Evidence is per tag, not per cluster: a precise first-party or
+  // tag-specific source can still provide candidate-local evidence for
+  // its own tag even when another alternative came from a broad source.
   const candidates = [cluster.primary, ...cluster.alternatives];
+  let hasContextualTags = false;
+  let requiringCandidateCarriesTag = false;
+
+  for (const candidate of candidates) {
+    for (const sourceTag of candidate.source_tags ?? []) {
+      const normalised = normalizeHashtag(sourceTag.trim());
+      if (normalised === '') continue;
+      hasContextualTags = true;
+      if (normalised !== tag) continue;
+      if (candidate.requires_tag_evidence !== true) return false;
+      requiringCandidateCarriesTag = true;
+    }
+  }
+
+  if (requiringCandidateCarriesTag) return true;
+  if (hasContextualTags) return false;
   return candidates.some((candidate) => candidate.requires_tag_evidence === true);
 }
 
@@ -1042,7 +1061,6 @@ function validateAndSanitizeArticle(
   }
 
   const contextualTagSet = contextualTagSetForCluster(s.cluster);
-  const requiresTagEvidence = clusterRequiresTagEvidence(s.cluster);
   const tags: string[] = [];
   const seen = new Set<string>();
   const unsupportedEvidenceTags: string[] = [];
@@ -1052,7 +1070,10 @@ function validateAndSanitizeArticle(
     if (normalised === '' || seen.has(normalised)) continue;
     if (!allowedTagSet.has(normalised)) continue;
     if (contextualTagSet.size > 0 && !contextualTagSet.has(normalised)) continue;
-    if (requiresTagEvidence && !tagHasArticleEvidence(normalised, s.cluster)) {
+    if (
+      tagRequiresArticleEvidence(normalised, s.cluster) &&
+      !tagHasArticleEvidence(normalised, s.cluster)
+    ) {
       unsupportedEvidenceTags.push(normalised);
       continue;
     }

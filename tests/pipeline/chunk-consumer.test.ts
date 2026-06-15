@@ -986,6 +986,52 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
     expect(tagInserts.map((r) => r.params[1])).toEqual(['hrvatska']);
   });
 
+  it('REQ-PIPE-020: keeps precise candidate-local tags when an alternative requires evidence', async () => {
+    const aiResponse = {
+      response: JSON.stringify({
+        articles: [
+          {
+            index: 0,
+            title: 'Regional platform teams adopt new deployment workflow',
+            details: LONG_BODY,
+            tags: ['hrvatska'],
+          },
+        ],
+        dedup_groups: [],
+      }),
+      usage: { input_tokens: 10, output_tokens: 10 },
+    };
+    const { db, records } = makeDb();
+    const { kv } = makeKv({ chunksRemaining: '1', sourcesKeys: ['sources:hrvatska'] });
+    const env = makeEnv(db, kv, aiResponse);
+    await processOneChunk(env, makeChunk({
+      candidates: [
+        {
+          canonical_url: 'https://publisher.example/2026/06/platform-update',
+          source_url: 'https://publisher.example/2026/06/platform-update',
+          source_name: 'Regional Source',
+          title: 'Regional platform teams adopt new deployment workflow',
+          published_at: 100,
+          body_snippet: 'Platform teams changed their deployment workflow for a regional launch. '.repeat(8),
+          source_tags: ['hrvatska'],
+          alternatives: [
+            {
+              source_url: 'https://news.google.com/rss/articles/example',
+              source_name: 'Google News',
+              source_tags: ['cloudflare'],
+              requires_tag_evidence: true,
+            },
+          ],
+        },
+      ],
+    }));
+
+    const tagInserts = records.filter(
+      (r) => r.via === 'batch' && r.sql.startsWith('INSERT OR IGNORE INTO article_tags'),
+    );
+    expect(tagInserts.map((r) => r.params[1])).toEqual(['hrvatska']);
+  });
+
   it('REQ-PIPE-020: retries the chunk when model output emits 10 or more tags', async () => {
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     try {
