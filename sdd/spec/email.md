@@ -13,9 +13,9 @@ Resend-backed notification sent after every successful digest — whether genera
 **Acceptance Criteria:**
 1. The subject is `{N} new articles · {top tags}`, where N is the headline count and `{top tags}` is the top three tag slugs by article count; N is always at least 1. <!-- @impl: src/lib/email.ts::renderDigestReadyEmail -->
 2. The body lists up to five unread articles as clickable article-detail links, excluding articles the recipient already opened. No source-name label is shown next to headlines; detail pages show alternate sources. <!-- @impl: src/lib/email.ts::renderDigestReadyEmail -->
-3. The body shows a tally of articles ingested since the recipient's local midnight, listing each tag with its article count; the line is omitted entirely when no articles have been ingested in that window. <!-- @impl: src/lib/email.ts::pad2 -->
-4. The body shows the current send time and tomorrow's send time, both formatted in the recipient's timezone. <!-- @impl: src/lib/email.ts::pad2 -->
-5. The body contains a "Manage notifications" link to the settings page above the brand footer. <!-- @impl: src/lib/email.ts::withSenderDisplayName -->
+3. The body shows a tally of articles ingested since the recipient's local midnight, listing each tag with its article count; the line is omitted entirely when no articles have been ingested in that window. <!-- @impl: src/lib/email.ts::renderDigestReadyEmail -->
+4. The body shows the current send time and tomorrow's send time, both formatted in the recipient's timezone. <!-- @impl: src/lib/email.ts::renderDigestReadyEmail -->
+5. The body contains a "Manage notifications" link to the settings page above the brand footer. <!-- @impl: src/lib/email.ts::renderDigestReadyEmail -->
 6. The brand footer reads "Built with Codeflare © 2026 Gray Matter GmbH" and matches the in-app site footer (uppercase, tracked, muted), with both "Codeflare" and "Gray Matter GmbH" rendered as hyperlinks. <!-- @impl: src/lib/email.ts::renderDigestReadyEmail -->
 7. The From header reads "News Digest <noreply@graymatter.ch>" (display name "News Digest" plus the configured sender address) so inbox lists show the brand instead of the bare email. <!-- @impl: src/lib/email.ts::withSenderDisplayName -->
 
@@ -38,7 +38,7 @@ Resend-backed notification sent after every successful digest — whether genera
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The Resend POST uses a short request timeout. <!-- @impl: src/lib/email.ts::withSenderDisplayName -->
+1. The Resend POST uses a short request timeout. <!-- @impl: src/lib/email.ts::sendEmail --> <!-- @impl: src/lib/email.ts::RESEND_TIMEOUT_MS -->
 2. Any non-2xx response, network failure, or timeout is logged as a structured error event; no exception bubbles up to the cron handler. <!-- @impl: src/lib/email.ts::sendEmail -->
 3. One user's failed send, or one bad timezone bucket/precondition row, is logged and skipped without blocking sibling users or buckets in the same cron invocation. <!-- @impl: src/lib/email-dispatch.ts::dispatchDailyEmails -->
 4. The reading surfaces stay fully usable regardless of email outcome. <!-- @impl: src/lib/email.ts::sendEmail -->
@@ -63,11 +63,11 @@ Resend-backed notification sent after every successful digest — whether genera
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. At most one email per user is sent per day, gated so the same user never receives a second notification on the same local date. <!-- @impl: src/lib/email.ts::withSenderDisplayName -->
-2. The email fires at the user's configured local digest time, independent of the global scrape cadence. <!-- @impl: src/lib/email.ts::renderDigestReadyEmail -->
-3. Users who turn off `email_enabled` in settings receive no email. <!-- @impl: src/lib/email.ts::renderDigestReadyEmail -->
-4. When the recipient has zero unread articles for the local day, no email is sent so an empty inbox produces silence rather than a noisy zero-article notification. <!-- @impl: src/lib/email.ts::pad2 -->
-5. The per-user "last emailed date" marker is not stamped on a zero-article day, so the user is naturally retried at their next configured digest time the following local day. <!-- @impl: src/lib/email.ts::withSenderDisplayName -->
+1. At most one email per user is sent per day, gated so the same user never receives a second notification on the same local date. <!-- @impl: src/lib/email-dispatch.ts::loadDispatchUsers --> <!-- @impl: src/lib/email-dispatch.ts::processOneUser -->
+2. The email fires at the user's configured local digest time, independent of the global scrape cadence. <!-- @impl: src/lib/email-dispatch.ts::dispatchForTz -->
+3. Users who turn off `email_enabled` in settings receive no email. <!-- @impl: src/lib/email-dispatch.ts::loadDispatchUsers -->
+4. When the recipient has zero unread articles for the local day, no email is sent so an empty inbox produces silence rather than a noisy zero-article notification. <!-- @impl: src/lib/email-dispatch.ts::processOneUser -->
+5. The per-user "last emailed date" marker is not stamped on a zero-article day, so the user is naturally retried at their next configured digest time the following local day. <!-- @impl: src/lib/email-dispatch.ts::processOneUser -->
 
 **Constraints:** None
 

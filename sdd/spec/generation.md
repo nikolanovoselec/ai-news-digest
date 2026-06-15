@@ -33,7 +33,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ### REQ-PIPE-019: Google News query-RSS long-tail backstop
 
-**Intent:** Every interest tag is guaranteed baseline coverage by a per-tag Google News query-RSS source added to each scrape tick. The aggregator-vs-direct dedup pass in [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract) makes the wide fan-out safe — direct publisher copies always win over Google News copies that land in the same tick, so the backstop produces baseline coverage without polluting the pool with aggregator duplicates.
+**Intent:** Every interest tag is guaranteed baseline coverage by a per-tag Google News query-RSS source added to each scrape tick. The aggregator-vs-direct dedup pass in [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract) makes the wide fan-out safe — direct publisher copies always win over Google News copies that land in the same tick, so the backstop produces baseline coverage without polluting the pool with aggregator duplicates.
 
 **Applies To:** Admin
 
@@ -48,7 +48,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P1
 
-**Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags)
+**Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags)
 
 **Verification:** Integration test
 
@@ -231,7 +231,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract)
 
 **Verification:** Automated test
 
@@ -399,14 +399,14 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 3. Pairs below the rerank floor stay distinct without an LLM call. <!-- @impl: src/lib/dedup-rerank.ts::readRerankFloor -->
 4. The same-event judgment receives only the two articles' titles and short body excerpts. <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
 5. An unparseable, ambiguous, or failed same-event response is treated as "different events". <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
-6. A pair the model marks as the same event is merged using the same first-source-wins rule as [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract). <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch --> <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize -->
+6. A pair the model marks as the same event is merged using the same first-source-wins rule as [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract). <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch --> <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize -->
 7. The same borderline gate runs on both the per-tick cross-tick pass and the operator-initiated historical re-run sweep. <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize --> <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
 **Priority:** P1
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract)
 
 **Verification:** Automated test
 
@@ -432,7 +432,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P1
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-009](#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
 
 **Verification:** Automated test
 
@@ -534,7 +534,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract)
 
 **Verification:** Automated test
 
@@ -559,7 +559,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-005](#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-005](#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants)
 
 **Verification:** Automated test
 
@@ -586,7 +586,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract)
 
 **Verification:** Automated test
 

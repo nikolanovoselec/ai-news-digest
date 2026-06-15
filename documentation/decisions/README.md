@@ -231,11 +231,11 @@ KV's eventual consistency made both races effectively undetectable via testing i
 - Durable Object for serialized counter updates - correct, but adds a DO dependency to a pipeline that runs without one today.
 - KV with Compare-And-Swap (`getWithMetadata` + `put` with `expirationTtl` as a CAS surrogate) - fragile; KV has no native CAS and the surrogate is not atomic.
 
-**Rationale:** AD5's own principle applies directly: completion counting needs transactional semantics. `INSERT OR IGNORE` into a table keyed by `(scrape_run_id, chunk_index)` is idempotent under redelivery and gives an exact count via `SELECT COUNT(*)` - no race. The finalize-enqueue gate is collapsed into a single atomic `UPDATE … WHERE finalize_enqueued = 0`; D1 returns `meta.changes` for exactly one consumer. At acceptance time, the KV counter (`scrape_run:{id}:chunks_remaining`) was retained as a derived mirror for the `/api/scrape-status` progress display but was no longer authoritative; AD56 later retired that mirror. Implements [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract) and the same-story finalize gate now in [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) (the prior LLM-finalize-dedup REQ that owned this gate was retired in the 2026-05-13 same-story matching consolidation).
+**Rationale:** AD5's own principle applies directly: completion counting needs transactional semantics. `INSERT OR IGNORE` into a table keyed by `(scrape_run_id, chunk_index)` is idempotent under redelivery and gives an exact count via `SELECT COUNT(*)` - no race. The finalize-enqueue gate is collapsed into a single atomic `UPDATE … WHERE finalize_enqueued = 0`; D1 returns `meta.changes` for exactly one consumer. At acceptance time, the KV counter (`scrape_run:{id}:chunks_remaining`) was retained as a derived mirror for the `/api/scrape-status` progress display but was no longer authoritative; AD56 later retired that mirror. Implements [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract) and the same-story finalize gate now in [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract) (the prior LLM-finalize-dedup REQ that owned this gate was retired in the 2026-05-13 same-story matching consolidation).
 
 **Consequences:** The `scrape_chunk_completions` table grows one row per chunk per run; the retention cron (03:00 UTC) must cover this table or it will grow unbounded. At acceptance time, the KV mirror was best-effort and could lag behind D1 by up to one propagation window - consumers could not rely on it for correctness, only for display. AD56 later removed that propagation window by deriving progress from D1 only.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract)
 
 ---
 
@@ -318,7 +318,7 @@ KV's eventual consistency made both races effectively undetectable via testing i
 - The third gate that would warrant the keyed-table refactor is treated as the trigger; this ADR is the artifact future readers find when they look for "why isn't there an `acquireOnceLock` helper?".
 - New gate sites MUST copy the pattern verbatim and document the meta.changes semantics inline. When a fourth gate site lands, this ADR is reopened and the trigger refactor proposed in the Alternatives section becomes mandatory rather than deferred.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-018](../../sdd/spec/generation.md#req-pipe-018-same-story-collapse-mechanics-survivor-selection-and-data-merge)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-018](../../sdd/spec/generation.md#req-pipe-018-same-story-collapse-mechanics--survivor-selection-and-data-merge)
 
 ---
 
@@ -512,7 +512,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - The chunk consumer's `normaliseDedupGroups` stays as-is, slightly looser than the finalize variant. This is documented in the chunk consumer's source comment.
 - If future canonical-URL dedup is loosened (e.g., a feature lets two canonical URLs survive within one cluster), revisit this decision and land the extraction.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract)
 
 ---
 
@@ -909,14 +909,14 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 
 **Consequences:**
 
-- The prior LLM finalize dedup contract was retired on 2026-05-06 and removed on 2026-05-13; same-story behavior now lives in [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) + [REQ-PIPE-018](../../sdd/spec/generation.md#req-pipe-018-same-story-collapse-mechanics-survivor-selection-and-data-merge).
+- The prior LLM finalize dedup contract was retired on 2026-05-06 and removed on 2026-05-13; same-story behavior now lives in [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract) + [REQ-PIPE-018](../../sdd/spec/generation.md#req-pipe-018-same-story-collapse-mechanics--survivor-selection-and-data-merge).
 - The retention sweep (REQ-PIPE-005) MUST dual-delete: D1 row drop plus `VECTORIZE.deleteByIds`. Single-side deletes leak vectors that future articles will match against, producing phantom merges into rows that no longer exist.
 - Forks must provision their own Vectorize index (`ai-news-embeddings` for production, `ai-news-embeddings-integration` for the integration env). Index creation is wired into both deploy workflows via `wrangler vectorize create`, idempotent on subsequent deploys.
 - The 0.85 threshold is validated against the current corpus and model. Re-validate before relying on it after a model bump or major corpus shift. Operators tune via `DEDUP_COSINE_THRESHOLD` without a code change.
 - Vectorize cold-start lag on the first query of a new index (≈30 s) means the first scrape tick after a fresh deploy may produce duplicates; the historical-dedup admin route resolves them on demand.
 - Embedding-model drift: bge-base-en-v1.5 is pinned by id in `src/lib/embeddings.ts`. A future Cloudflare catalogue upgrade does not silently change the vector space.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-005](../../sdd/spec/generation.md#req-pipe-005-article-pool-retention-sweep)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-005](../../sdd/spec/generation.md#req-pipe-005-article-pool-retention-sweep)
 
 ---
 
@@ -1037,7 +1037,7 @@ Both clusters were entirely below the 0.85 auto-merge bar; the larger valuation 
 - If false-merges surface in the new band, the lever is the `DEDUP_COSINE_THRESHOLD` env var (no code change). The dedup-diag diagnostic and per-run rerank counters are the observation surfaces.
 - The rerank prompt loosening is the smaller knob: a future tightening (back toward "exact same announcement only") is a drop-in env-or-prompt change without revisiting the threshold.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) AC 1, AC 2, [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 2 (same-vendor penalty), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates).
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract) AC 1, AC 2, [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 2 (same-vendor penalty), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates).
 
 ---
 
@@ -1213,7 +1213,7 @@ The bidirectional merge is a 1-direction-to-2-direction generalisation of code a
 - Per-article diagnostic log volume in `wrangler tail` doubles for ticks where the sweep also matches a window-overlapping article - the same finalize_dedup_diag shape now appears for the sweep walk too.
 - Forward-only fix. The next auto-sweep after deploy catches existing visible duplicates from the 2026-05-09 corpus, which fall within the 48h lookback at deploy time.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) (threshold raise + rerank cap removal)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) (threshold raise + rerank cap removal)
 
 ---
 
@@ -1285,7 +1285,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Future tuning of the scoring rules (e.g., adding a tertiary penalty) happens in one place.
 - CF-029 (cache the comparator secondary key) is satisfied naturally - each match is classified exactly once and reuses the result.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
 
 ---
 
@@ -1457,7 +1457,7 @@ The 7-day window and 4-hour cadence are non-negotiable: PANW-cluster spans valid
 - Operator-triggered `/api/admin/historical-dedup` and `?reembed=1` invalidate the watermark (the latter via `clearWatermark`, the former via a `bypassWatermark: true` flag propagated through every continuation queue message) so a manual sweep after a threshold or prompt change re-judges everything.
 - Test fixtures that previously mocked single-pair `{"same_event": ...}` responses now mock the batched `{"verdicts":[{"i":N,"same_event":...}]}` shape; a no-verdicts response degrades to "all false" per pair, preserving the conservative default.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-PIPE-023](../../sdd/spec/generation.md#req-pipe-023-llm-re-rank-cost-controls), [REQ-PIPE-024](../../sdd/spec/generation.md#req-pipe-024-recurring-sweep-watermark-and-manual-bypass), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-PIPE-023](../../sdd/spec/generation.md#req-pipe-023-llm-re-rank-cost-controls), [REQ-PIPE-024](../../sdd/spec/generation.md#req-pipe-024-recurring-sweep-watermark-and-manual-bypass), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection)
 
 ---
 
@@ -1692,7 +1692,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - Summary quality gates stay where they were: the chunk prompt still requires 100-150 words, server validation still drops short bodies, and semantic dedup still runs after ingestion.
 - Future cost reductions should prefer pre-LLM candidate elimination or input compaction before changing the summary contract.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-019](../../sdd/spec/generation.md#req-pipe-019-google-news-query-rss-long-tail-backstop), [REQ-PIPE-022](../../sdd/spec/generation.md#req-pipe-022-chunk-prompt-input-compaction), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract)
+**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-019](../../sdd/spec/generation.md#req-pipe-019-google-news-query-rss-long-tail-backstop), [REQ-PIPE-022](../../sdd/spec/generation.md#req-pipe-022-chunk-prompt-input-compaction), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract)
 
 ---
 

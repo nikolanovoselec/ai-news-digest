@@ -20,7 +20,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 4. The callback exchanges the authorization code for a verified identity and creates or looks up a user keyed by provider plus provider-user-id; the GitHub provider preserves its legacy bare-numeric key format so existing accounts are unchanged. <!-- @impl: src/lib/oauth-providers.ts::providerByName -->
 5. If the provider returns no verified email, sign-in fails with error code `no_verified_email` and the user is redirected to the landing page with a clear message naming the affected provider. <!-- @impl: src/lib/oauth-providers.ts::providerByName -->
 6. A brand-new account is seeded with a curated default hashtag list (covering cloud platforms, AI/LLM, security, identity, and infrastructure) where every default tag has at least one curated source, so the first digest has meaningful input before the user touches the strip. <!-- @impl: src/lib/default-hashtags.ts::DEFAULT_HASHTAGS -->
-7. New accounts are seeded with digest time 08:00, UTC timezone until browser correction, and email notifications enabled, so first sign-in can land on populated reading without forced onboarding. <!-- @impl: src/lib/rate-limit.ts::clientIp -->
+7. New accounts are seeded with digest time 08:00, UTC timezone until browser correction, and email notifications enabled, so first sign-in can land on populated reading without forced onboarding. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::step6UpsertUserRow -->
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
 
