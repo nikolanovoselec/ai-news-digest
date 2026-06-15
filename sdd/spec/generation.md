@@ -167,7 +167,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Acceptance Criteria:**
 1. Tags outside the allowlist are discarded before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 2. Articles with zero valid tags after allowlist, contextual-source, and required article-evidence filtering are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
-3. Broad-source tag hints retain evidence-required provenance when merged onto candidate-local tags. <!-- @impl: src/queue/scrape-coordinator.ts::fetchAllSources --> <!-- @impl: src/lib/prefer-direct-source.ts::preferDirectOverGoogleNews --> <!-- @impl: src/queue/scrape-coordinator.ts::flattenToChunkCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::tagRequiresArticleEvidence -->
+3. Broad-source tag hints retain evidence-required provenance across merges; same-tag item-level provenance clears it, and existing-title appends skip evidence-required tags. <!-- @impl: src/queue/scrape-coordinator.ts::fetchAllSources --> <!-- @impl: src/lib/prefer-direct-source.ts::preferDirectOverGoogleNews --> <!-- @impl: src/queue/scrape-coordinator.ts::filterAndAggregateGoogleNewsTitleMatches --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::tagRequiresArticleEvidence -->
 4. When candidate-local source tags are present, persisted tags are restricted to that candidate-local set rather than the global allowlist. <!-- @impl: src/queue/scrape-chunk-consumer.ts::contextualTagSetForCluster --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 5. An article with at least 10 model-emitted tags causes the chunk message to retry. <!-- @impl: src/queue/scrape-chunk-consumer.ts::TAG_FANOUT_RETRY_THRESHOLD = 10 --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::rejectArticlesWithModelTagFanout -->
 6. A tag-fanout retry persists no article from that model response. <!-- @impl: src/queue/scrape-chunk-consumer.ts::processOneChunk -->
@@ -443,7 +443,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ### REQ-PIPE-011: Candidate filtering rules
 
-**Intent:** Coordinator-level filters keep stale, undated, or blocklisted candidates out of the LLM pipeline so summarisation budget and dashboard surface area stay clean. Filtering is a sub-feature of the coordinator pipeline (REQ-PIPE-001) carved out per the AC count cap.
+**Intent:** Coordinator-level filters keep stale, off-topic, or listing-noise candidates out of the LLM pipeline so summarisation budget and dashboard surface area stay clean. Filtering is a sub-feature of the coordinator pipeline (REQ-PIPE-001) carved out per the AC count cap.
 
 **Applies To:** Admin
 
@@ -451,9 +451,9 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 1. Each candidate's published-at timestamp uses a parsed source feed publish date when one is present and plausible. <!-- @impl: src/lib/sources.ts::parseFeedDate --> <!-- @impl: src/queue/scrape-coordinator.ts::buildCandidates -->
 2. Missing, pre-2000, or more-than-one-day-future feed dates fall back to ingestion time. <!-- @impl: src/lib/sources.ts::parseFeedDate --> <!-- @impl: src/queue/scrape-coordinator.ts::buildCandidates -->
 3. Candidates with parsed publish dates more than 48 hours before the tick are dropped before LLM summarisation. <!-- @impl: src/queue/scrape-coordinator.ts::buildCandidates -->
-4. Headlines from publishers that an AI tech news product would never surface — primarily financial / stock-pump aggregators that Google News routes into tech tags when a vendor's ticker matches — are dropped at the coordinator before clustering, embedding, or LLM summarisation.
+4. Headlines from publishers that an AI tech news product would never surface — primarily financial / stock-pump aggregators that Google News routes into tech tags when a vendor's ticker matches — are dropped at the coordinator before clustering, embedding, or LLM summarisation. <!-- @impl: src/lib/blocked-publishers.ts::isBlockedPublisher --> <!-- @impl: src/queue/scrape-coordinator.ts::runCoordinator -->
 5. The blocklist is matched against the article URL's host, per-item publisher name, and headline title, so aggregator-wrapped items and title-only wrappers such as Show HN are still recognised. <!-- @impl: src/lib/blocked-publishers.ts::isBlockedPublisher -->
-6. The blocklist is a single project-wide source-maintained list, not a personal mute list.
+6. The blocklist is a single project-wide source-maintained list, not a personal mute list. <!-- @impl: src/lib/blocked-publishers.ts::BLOCKED_HOSTS --> <!-- @impl: src/lib/blocked-publishers.ts::BLOCKED_NAME_TOKENS -->
 7. Candidates identified as landing/listing noise before prompting cannot be summarised or persisted. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
 
 **Constraints:** [CON-PERF-001](constraints.md#con-perf-001-100-user-thundering-herd-target)

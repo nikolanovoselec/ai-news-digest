@@ -131,8 +131,8 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `digest-today.ts` | Dashboard payload loader (`loadTodayPayload`) and next-cron-tick calculator (`computeNextScrapeAt`); factored out of the API route so server-rendered pages call it directly without cross-module route imports | [REQ-READ-001](../../sdd/spec/reading.md#req-read-001-overview-grid-of-todays-digest) |
 | `slug.ts` | Deterministic ASCII slug generation | [REQ-READ-001](../../sdd/spec/reading.md#req-read-001-overview-grid-of-todays-digest) |
 | `sources.ts` | Source adapters (RSS/Atom/JSON) and fan-out coordinator; `itemToHeadline` applies a per-item `<source>` element override so Google News items carry the underlying publisher name (e.g. "Help Net Security") and only promotes `<source url>` when it is article-shaped, keeping homepage/category URLs as Google News item links | [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
-| `prefer-direct-source.ts` | Resolve aggregator URLs (e.g., Google News) to underlying publisher and merge tag-of-discovery state | [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) |
-| `blocked-publishers.ts` | Hard publisher blocklist. Drops financial, press-wire, Show HN, and housing-wire noise before clustering, embedding, or LLM processing. Checks host suffixes, RSS source-name tokens, and headline titles because Google News wrappers hide publisher hosts and title-only wrappers can carry the only blocklist signal. | [REQ-PIPE-011](../../sdd/spec/generation.md#req-pipe-011-candidate-filtering-rules) AC 3, AC 4 |
+| `prefer-direct-source.ts` | Resolve aggregator URLs (e.g., Google News) to underlying publisher and merge tag-of-discovery state while preserving per-tag evidence provenance | [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract), [REQ-PIPE-020](../../sdd/spec/generation.md#req-pipe-020-chunk-tag-validation-guardrails) AC 3 |
+| `blocked-publishers.ts` | Hard publisher blocklist. Drops financial, press-wire, Show HN, and housing-wire noise before clustering, embedding, or LLM processing. Checks host suffixes, RSS source-name tokens, and headline titles because Google News wrappers hide publisher hosts and title-only wrappers can carry the only blocklist signal. | [REQ-PIPE-011](../../sdd/spec/generation.md#req-pipe-011-candidate-filtering-rules) AC 4, AC 5 |
 | `paragraph-split.ts` | Normalise LLM-produced prose into a paragraph array for the article-detail view | [REQ-READ-002](../../sdd/spec/reading.md#req-read-002-article-detail-view-rendering) |
 | `curated-sources.ts` | Static registry of curated feeds; exports `googleNewsSourceForTag` (per-tag GN query-RSS synthesis) and `hasCuratedGoogleNews` (skip-guard for the coordinator baseline pass) | [REQ-PIPE-004](../../sdd/spec/generation.md#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags), [REQ-PIPE-019](../../sdd/spec/generation.md#req-pipe-019-google-news-query-rss-long-tail-backstop) |
 | `dedupe.ts` | Canonical-URL clustering (first pass over a chunk's candidates) | [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe-core-matching-contract) |
@@ -257,12 +257,12 @@ Coordinator
   ├─ Mark cross-site feed snippets for linked-page body fetch; discard discussion/score metadata fallback (REQ-PIPE-010 AC 2, AC 4)
   ├─ Record per-URL fetch outcome → KV source_health:{url}
   ├─ Evict URLs at 30 consecutive failures; re-queue discovery if feed list empties
-  ├─ Drop candidates older than 48 h; keep undated candidates
+  ├─ Use plausible feed publish dates, fall back missing/implausible dates to ingestion time, and drop parsed dates older than 48 h
   ├─ Canonical-URL dedup across all candidates
   ├─ Re-seen URLs: INSERT OR IGNORE new sources into article_sources (multi-source aggregation);
   │  ingested_at and primary attribution are NOT re-stamped (first-ingestion preserved)
-  ├─ Google News wrappers whose titles high-confidence match recent stored articles are source/tag-appended
-  │  and skipped before LLM fan-out; same-topic partial overlaps still fan out (REQ-PIPE-019 AC 3-5)
+  ├─ Google News wrappers whose titles high-confidence match recent stored articles are source-appended
+  │  and skipped before LLM fan-out; evidence-required tags are not appended directly (REQ-PIPE-019 AC 3-5, REQ-PIPE-020 AC 3)
   └─ Chunk → enqueue one SCRAPE_CHUNK per chunk
        │
        ▼
@@ -273,7 +273,7 @@ Chunk consumer (per chunk)
   ├─ Single DEFAULT_MODEL_ID call (`dynamic/news_digest` AI Gateway route); align output to inputs by echoed index
   ├─ If invalid JSON consumed tokens, add zero-article `scrape_runs` token/cost stats before queue retry
   ├─ Reject 10+ model-emitted tags for queue retry; count that completed LLM call as zero-article token/cost spend before throwing
-  ├─ Filter accepted tags against the system-approved allowlist + candidate-local source tags; broad aggregators require article-level tag evidence before persistence (REQ-PIPE-020 AC 2-4)
+  ├─ Filter accepted tags against the system-approved allowlist + candidate-local source tags; broad tags keep evidence provenance across merges, while same-tag item-level provenance clears that requirement (REQ-PIPE-020 AC 2-4)
   ├─ Canonical-URL dedup within chunk (first-source-wins)
   ├─ Build embedding inputs (title + body, length-capped)
   ├─ Single Workers AI embedding call to bge-base-en-v1.5 → vectors
