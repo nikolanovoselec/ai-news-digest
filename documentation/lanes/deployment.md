@@ -82,12 +82,19 @@ After rollback, verify `GET $APP_URL` returns `200`/`303`. D1 migrations are for
 CI/CD: `.github/workflows/deploy.yml` triggers on a `workflow_run` event — fires only when "PR Checks" on `main` completes with `success`. `workflow_dispatch` is retained for manual re-runs.
 
 The deploy job:
-1. Applies D1 migrations (drift-tolerant). "Duplicate column" / "already exists" errors are handled by stamping the migration into `d1_migrations` and retrying up to 5 attempts. Real SQL errors surface immediately. Drift tolerance covers the case where an operator ran `wrangler d1 migrations apply --remote` out-of-band (e.g. during incident response); without it, the next CI deploy would block on a migration the remote already applied.
-2. Runs the same two-step security audit as PR Checks (advisory HIGH+, blocking CRITICAL) as a defence-in-depth gate — catches CVEs introduced between the merge and the deploy (transient transitive bumps, Dependabot lockfile regenerations, etc.).
-3. Preflights Cloudflare AI Gateway by sending a one-token `dynamic/news_digest` chat-completions request through the configured `AI_GATEWAY_URL`; 401, 404, missing-route, provider-missing, or model-missing responses stop the deploy before Worker publish.
-4. Pushes Worker secrets via `wrangler secret put` (file-redirect form). Conditional secrets (`ADMIN_EMAIL`, `CF_ACCESS_AUD`, `DEV_BYPASS_USER_ID`) are pushed only when the corresponding GitHub Actions secret is non-empty.
+
+1. Applies D1 migrations with drift tolerance: duplicate-column/already-exists results stamp `d1_migrations` and retry; real SQL errors fail immediately. This protects incident-response migrations already applied remotely.
+
+2. Runs the same two-step security audit as PR Checks (advisory HIGH+, blocking CRITICAL) as a defence-in-depth gate for CVEs introduced between merge and deploy.
+
+3. Preflights Cloudflare AI Gateway through the configured `AI_GATEWAY_URL`; 401, 404, missing-route, provider-missing, or model-missing responses stop deploy before Worker publish.
+
+4. Pushes Worker secrets via `wrangler secret put` (file-redirect form). Conditional secrets are pushed only when the matching GitHub Actions secret is non-empty.
+
 5. Deploys the Worker.
+
 6. Binds the custom domain extracted from `APP_URL` via the Workers Custom Domains API. Idempotent.
+
 7. Smoke-tests `GET /` against `APP_URL`. Accepts `200` or `303`.
 
 `scripts/e2e-test.sh` is manual only (`bash scripts/e2e-test.sh --force-prod`) and not part of CI deploy — running it triggers a full LLM-cost scrape and mutates the owner's account.
@@ -153,10 +160,14 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
    - Add provider keys for whichever models the route will call.
    - Create and deploy a Dynamic Routing route named `news_digest`.
    - Store the least-privilege Gateway token as secret `AI_GATEWAY_API_TOKEN`.
-2. **Create the GitHub Environment.** Repo → Settings → Environments → New environment → name it `integration`. The empty environment is what activates the secret-fallback semantics in the workflow.
-3. **Set `APP_URL` as an environment variable** (Variables tab, not Secrets — it's a public hostname). Use a custom domain URL whose zone is in the same Cloudflare account; the integration workflow requires this value before deploy.
-4. **Confirm the OAuth callback URL is registered** with whichever providers you use — `${APP_URL}/api/auth/google/callback` and/or `${APP_URL}/api/auth/github/callback`.
-5. **(Optional) Override config per-env.** Environment Secrets can override `OAUTH_JWT_SECRET` and `AI_GATEWAY_API_TOKEN`. Environment Variables can override `AI_GATEWAY_NAME`, so integration can use a separate Gateway from production.
+
+2. **Create the GitHub Environment.** Repo → Settings → Environments → New environment → name it `integration`. The empty environment activates secret-fallback semantics.
+
+3. **Set `APP_URL` as an environment variable** (Variables tab, not Secrets). Use a same-account custom domain URL; the workflow requires it before deploy.
+
+4. **Confirm the OAuth callback URL is registered** with providers: `${APP_URL}/api/auth/google/callback` and/or `${APP_URL}/api/auth/github/callback`.
+
+5. **(Optional) Override config per-env.** Environment Secrets can override `OAUTH_JWT_SECRET` and `AI_GATEWAY_API_TOKEN`. Environment Variables can override `AI_GATEWAY_NAME`.
 
 **How to deploy:**
 

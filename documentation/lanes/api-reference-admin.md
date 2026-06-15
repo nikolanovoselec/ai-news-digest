@@ -528,7 +528,9 @@ GET /api/admin/dedup-diag
 
 **Notes**
 
-`same_etld1` is `true` when both articles' `primary_source_url` values resolve to the same registrable domain via `src/lib/etld.ts:sameVendor` AND neither URL routes through a known aggregator-wrapper host (currently `news.google.com`). Aggregator-wrapper URLs carry no publisher identity at the URL level, so pairs where either article comes from an aggregator host return `same_etld1: false` and do not pay the same-publisher penalty regardless of eTLD+1 match. `threshold` is the value of `DEDUP_COSINE_THRESHOLD` in effect at request time. `same_vendor_penalty` is the value of `DEDUP_SAME_VENDOR_PENALTY`. `adjusted_score` is `cosine - same_vendor_penalty` when `same_etld1` is true, otherwise equals `cosine`; it is the value the dedup decision actually compares to the threshold. `above_threshold` is `adjusted_score >= threshold`.
+`same_etld1` is `true` when both `primary_source_url` values resolve to the same registrable domain via `src/lib/etld.ts:sameVendor` and neither URL is a known aggregator wrapper (`news.google.com`). Aggregator URLs carry no publisher identity, so any pair involving one returns `same_etld1: false` and avoids the same-publisher penalty.
+
+`threshold` is `DEDUP_COSINE_THRESHOLD`. `same_vendor_penalty` is `DEDUP_SAME_VENDOR_PENALTY`. `adjusted_score` is `cosine - same_vendor_penalty` when `same_etld1` is true, otherwise `cosine`; `above_threshold` is `adjusted_score >= threshold`.
 
 ---
 
