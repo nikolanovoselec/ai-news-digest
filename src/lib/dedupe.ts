@@ -47,6 +47,10 @@ export interface Candidate {
    * tag allowlist so a model cannot attach the global allowlist to an
    * unrelated article and make it visible to every user. */
   source_tags?: string[];
+  /** Subset of `source_tags` from broad sources. These tags constrain
+   * model output but require deterministic article evidence unless the
+   * same tag also has item-level provenance on another candidate. */
+  source_tags_requiring_evidence?: string[];
   /** True for broad aggregators whose registry tags are source-level
    * coverage hints, not item-level relevance evidence. */
   requires_tag_evidence?: boolean;

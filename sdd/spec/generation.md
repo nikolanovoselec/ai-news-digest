@@ -167,7 +167,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Acceptance Criteria:**
 1. Tags outside the allowlist are discarded before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 2. Articles with zero valid tags after allowlist, contextual-source, and required article-evidence filtering are dropped before persistence. <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
-3. Item-level source tag hints constrain persisted tags, while broad-source tags require article-evidence validation before persistence. <!-- @impl: src/queue/scrape-coordinator.ts::assembleAllSources --> <!-- @impl: src/queue/scrape-coordinator.ts::flattenToChunkCandidates -->
+3. Broad-source tag hints require article-evidence validation before persistence. <!-- @impl: src/queue/scrape-coordinator.ts::assembleAllSources --> <!-- @impl: src/queue/scrape-coordinator.ts::flattenToChunkCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::tagRequiresArticleEvidence -->
 4. When candidate-local source tags are present, persisted tags are restricted to that candidate-local set rather than the global allowlist. <!-- @impl: src/queue/scrape-chunk-consumer.ts::contextualTagSetForCluster --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 5. An article with at least 10 model-emitted tags causes the chunk message to retry. <!-- @impl: src/queue/scrape-chunk-consumer.ts::TAG_FANOUT_RETRY_THRESHOLD = 10 --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::rejectArticlesWithModelTagFanout -->
 6. A tag-fanout retry persists no article from that model response. <!-- @impl: src/queue/scrape-chunk-consumer.ts::processOneChunk -->
@@ -427,7 +427,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 4. Discussion or score metadata is not used as fallback article text. <!-- @impl: src/lib/sources.ts::feedSnippetFromCandidates -->
 5. Readable plaintext is extracted from a successful body fetch and attached to the candidate. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 6. When body-fetch extraction yields too little text for a candidate that is not a high-confidence listing URL, the candidate falls back to whatever the feed itself provided. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
-7. A failed body-fetch for a candidate that is not a high-confidence listing URL never blocks a summary; high-confidence listing failures are dropped before prompting. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
+7. A failed body-fetch for a candidate that is not a high-confidence listing URL falls back to the feed text. <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
@@ -448,13 +448,13 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. Each candidate's published-at timestamp uses the source feed's publish date, not the ingestion tick. Missing, pre-2000, or more-than-one-day-future dates fall back to ingestion time.
-2. Candidates published more than 48 hours before the tick are dropped before LLM summarisation. Candidates with no parsable publish date are kept because they fall back to ingestion time.
+1. Each candidate's published-at timestamp uses the source feed's publish date, not the ingestion tick. Missing, pre-2000, or more-than-one-day-future dates fall back to ingestion time. <!-- @impl: src/queue/scrape-coordinator.ts::buildCandidates -->
+2. Candidates published more than 48 hours before the tick are dropped before LLM summarisation. Candidates with no parsable publish date are kept because they fall back to ingestion time. <!-- @impl: src/queue/scrape-coordinator.ts::buildCandidates -->
 3. Headlines from publishers that an AI tech news product would never surface — primarily financial / stock-pump aggregators that Google News routes into tech tags when a vendor's ticker matches — are dropped at the coordinator before clustering, embedding, or LLM summarisation.
 4. The blocklist is matched against the article URL's host, per-item publisher name, and headline title, so aggregator-wrapped items and title-only wrappers such as Show HN are still recognised. <!-- @impl: src/lib/blocked-publishers.ts::isBlockedPublisher -->
 5. The blocklist applies uniformly across every tag and every user — a user with a tag that matches a tech vendor's ticker never sees those stock-pump articles in their digest.
 6. The blocklist is operator-maintained at the source level rather than configurable per user; the contract is a single project-wide list, not a personal mute list.
-7. Portal-like or landing-like candidates whose fetched page is classified as non-article cannot be summarised or persisted in the article pool. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
+7. Candidates identified as landing/listing noise before prompting cannot be summarised or persisted. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
 
 **Constraints:** [CON-PERF-001](constraints.md#con-perf-001-100-user-thundering-herd-target)
 

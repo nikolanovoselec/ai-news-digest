@@ -8,7 +8,7 @@ Entries from 2026-04-22 through 2026-04-26 (the global-feed rework window) are a
 
 ## 2026-06-12
 
-- REQ-PIPE-011 and REQ-PIPE-020 changed: high-confidence portal/listing fetch failures now drop before summarisation, title-only blocklist signals are recognised, and broad aggregator tags require article-level evidence before persistence.
+- REQ-PIPE-011 and REQ-PIPE-020 changed: high-confidence portal/listing fetch failures now drop before summarisation, title-only blocklist signals are recognised, and broad-source tags retain per-tag evidence provenance when merged onto precise candidates.
 - REQ-PIPE-022 changed: chunk prompt construction now logs candidate and body-character counts so operators can verify summarisation input cost after pre-LLM filtering, and all-candidate pre-LLM drops complete without model spend.
 
 ## 2026-06-11

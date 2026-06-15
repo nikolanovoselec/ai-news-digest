@@ -289,11 +289,13 @@ export interface ChunkCandidate {
   body_snippet?: string;
   force_body_fetch?: boolean;
   source_tags?: string[];
+  source_tags_requiring_evidence?: string[];
   requires_tag_evidence?: boolean;
   alternatives: Array<{
     source_url: string;
     source_name: string;
     source_tags?: string[];
+    source_tags_requiring_evidence?: string[];
     requires_tag_evidence?: boolean;
   }>;
 }
@@ -640,6 +642,9 @@ function buildCandidates(
     if (!hasParsedPub) missingPubdateKept += 1;
 
     const sourceTags = normaliseSourceTags(row.headline.source_tags ?? []);
+    const evidenceTags = normaliseSourceTags(
+      row.headline.source_tags_requiring_evidence ?? [],
+    );
     candidates.push({
       canonical_url: canonical,
       source_url: row.headline.url,
@@ -653,6 +658,9 @@ function buildCandidates(
         ? { force_body_fetch: true }
         : {}),
       ...(sourceTags.length > 0 ? { source_tags: sourceTags } : {}),
+      ...(evidenceTags.length > 0
+        ? { source_tags_requiring_evidence: evidenceTags }
+        : {}),
       ...(row.headline.requires_tag_evidence === true
         ? { requires_tag_evidence: true }
         : {}),
@@ -1033,6 +1041,10 @@ function flattenToChunkCandidates(
       ...(Array.isArray(c.primary.source_tags) && c.primary.source_tags.length > 0
         ? { source_tags: c.primary.source_tags }
         : {}),
+      ...(Array.isArray(c.primary.source_tags_requiring_evidence) &&
+        c.primary.source_tags_requiring_evidence.length > 0
+        ? { source_tags_requiring_evidence: c.primary.source_tags_requiring_evidence }
+        : {}),
       ...(c.primary.requires_tag_evidence === true
         ? { requires_tag_evidence: true }
         : {}),
@@ -1041,6 +1053,10 @@ function flattenToChunkCandidates(
         source_name: alt.source_name,
         ...(Array.isArray(alt.source_tags) && alt.source_tags.length > 0
           ? { source_tags: alt.source_tags }
+          : {}),
+        ...(Array.isArray(alt.source_tags_requiring_evidence) &&
+          alt.source_tags_requiring_evidence.length > 0
+          ? { source_tags_requiring_evidence: alt.source_tags_requiring_evidence }
           : {}),
         ...(alt.requires_tag_evidence === true
           ? { requires_tag_evidence: true }
@@ -1405,15 +1421,28 @@ async function fetchAllSources(
         // publisher and undid the 289656d fix in production.
         const capped = headlines
           .slice(0, PER_SOURCE_ITEM_CAP)
-          .map((h) => ({
-            headline: {
-              ...h,
-              source_tags: mergeSourceTags(h.source_tags, job.sourceTags),
-              ...(job.requiresTagEvidence || h.requires_tag_evidence === true
-                ? { requires_tag_evidence: true }
-                : {}),
-            },
-          }));
+          .map((h) => {
+            const sourceTags = mergeSourceTags(h.source_tags, job.sourceTags);
+            const evidenceTags = mergeSourceTags(
+              h.source_tags_requiring_evidence,
+              [
+                ...(job.requiresTagEvidence ? job.sourceTags : []),
+                ...(h.requires_tag_evidence === true ? h.source_tags ?? [] : []),
+              ],
+            );
+            return {
+              headline: {
+                ...h,
+                source_tags: sourceTags,
+                ...(evidenceTags.length > 0
+                  ? { source_tags_requiring_evidence: evidenceTags }
+                  : {}),
+                ...(job.requiresTagEvidence || h.requires_tag_evidence === true
+                  ? { requires_tag_evidence: true }
+                  : {}),
+              },
+            };
+          });
         let eviction: FeedEviction | null = null;
         // Only record health for live fetches on discovered feeds -
         // cache hits are neither a liveness signal nor a failure.

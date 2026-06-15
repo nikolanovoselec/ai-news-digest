@@ -40,6 +40,9 @@ export interface Headline {
    * topic for the item. Extract() implementations don't need to set
    * it — the coordinator stamps the field after fetch. */
   source_tags?: string[];
+  /** Subset of `source_tags` that came from broad sources and must be
+   * supported by article title/body text before persistence. */
+  source_tags_requiring_evidence?: string[];
   /** True when the source is broad enough that registry tags are not
    * item-level evidence. The chunk consumer must require title/body
    * support before any model-selected tag can be persisted. */

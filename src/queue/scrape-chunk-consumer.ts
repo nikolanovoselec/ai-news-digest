@@ -92,6 +92,9 @@ export interface ChunkJobMessage {
     /** Candidate-local tag hints from the source that surfaced this
      * article. Used as a contextual allowlist during tag validation. */
     source_tags?: string[];
+    /** Subset of `source_tags` from broad sources. These constrain
+     * model output but still require article title/body evidence. */
+    source_tags_requiring_evidence?: string[];
     /** True when source tags are not item-level evidence and selected
      * tags must be supported by the article title/body text. */
     requires_tag_evidence?: boolean;
@@ -102,6 +105,7 @@ export interface ChunkJobMessage {
       source_url: string;
       source_name: string;
       source_tags?: string[];
+      source_tags_requiring_evidence?: string[];
       requires_tag_evidence?: boolean;
     }>;
   }>;
@@ -369,6 +373,10 @@ export async function processOneChunk(
       ...(Array.isArray(c.source_tags) && c.source_tags.length > 0
         ? { source_tags: c.source_tags }
         : {}),
+      ...(Array.isArray(c.source_tags_requiring_evidence) &&
+        c.source_tags_requiring_evidence.length > 0
+        ? { source_tags_requiring_evidence: c.source_tags_requiring_evidence }
+        : {}),
       ...(c.requires_tag_evidence === true
         ? { requires_tag_evidence: true }
         : {}),
@@ -381,6 +389,10 @@ export async function processOneChunk(
       published_at: c.published_at,
       ...(Array.isArray(alt.source_tags) && alt.source_tags.length > 0
         ? { source_tags: alt.source_tags }
+        : {}),
+      ...(Array.isArray(alt.source_tags_requiring_evidence) &&
+        alt.source_tags_requiring_evidence.length > 0
+        ? { source_tags_requiring_evidence: alt.source_tags_requiring_evidence }
         : {}),
       ...(alt.requires_tag_evidence === true
         ? { requires_tag_evidence: true }
@@ -897,26 +909,41 @@ const TAG_RELEVANCE_ALIASES: Record<string, readonly string[]> = {
   graymatter: ['graymatter', 'gray matter'],
 };
 
+function normalisedTagSet(tags: readonly string[] | undefined): Set<string> {
+  const out = new Set<string>();
+  for (const tag of tags ?? []) {
+    const normalised = normalizeHashtag(tag.trim());
+    if (normalised !== '') out.add(normalised);
+  }
+  return out;
+}
+
 function tagRequiresArticleEvidence(tag: string, cluster: Cluster): boolean {
   // Evidence is per tag, not per cluster: a precise first-party or
   // tag-specific source can still provide candidate-local evidence for
   // its own tag even when another alternative came from a broad source.
   const candidates = [cluster.primary, ...cluster.alternatives];
   let hasContextualTags = false;
-  let requiringCandidateCarriesTag = false;
+  let hasItemLevelProvenanceForTag = false;
+  let hasEvidenceRequiredProvenanceForTag = false;
 
   for (const candidate of candidates) {
-    for (const sourceTag of candidate.source_tags ?? []) {
-      const normalised = normalizeHashtag(sourceTag.trim());
-      if (normalised === '') continue;
-      hasContextualTags = true;
-      if (normalised !== tag) continue;
-      if (candidate.requires_tag_evidence !== true) return false;
-      requiringCandidateCarriesTag = true;
+    const sourceTags = normalisedTagSet(candidate.source_tags);
+    if (sourceTags.size > 0) hasContextualTags = true;
+    if (!sourceTags.has(tag)) continue;
+
+    const evidenceTags = normalisedTagSet(
+      candidate.source_tags_requiring_evidence,
+    );
+    if (evidenceTags.has(tag) || candidate.requires_tag_evidence === true) {
+      hasEvidenceRequiredProvenanceForTag = true;
+    } else {
+      hasItemLevelProvenanceForTag = true;
     }
   }
 
-  if (requiringCandidateCarriesTag) return true;
+  if (hasItemLevelProvenanceForTag) return false;
+  if (hasEvidenceRequiredProvenanceForTag) return true;
   if (hasContextualTags) return false;
   return candidates.some((candidate) => candidate.requires_tag_evidence === true);
 }
