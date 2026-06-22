@@ -44,7 +44,7 @@ jobs:
       # Always deploy develop's current HEAD regardless of which branch
       # the dispatch was fired from in the UI. Develop is the single
       # source of truth for what gets smoke-tested on integration.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: develop
 
