@@ -57,7 +57,7 @@ jobs:
           echo "host=$HOST" >> "$GITHUB_OUTPUT"
           echo "Validated APP_URL host: $HOST"
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
 
