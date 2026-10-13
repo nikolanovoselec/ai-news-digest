@@ -26,7 +26,7 @@ Local development setup and production deployment steps.
 
 - Node.js 22+ (local dev only; production runs on Cloudflare Workers)
 - Cloudflare account with Workers Paid plan enabled
-- Cloudflare AI Gateway with a deployed Dynamic Routing route named `news_digest` (called as model `dynamic/news_digest`) and provider keys for the route's model nodes
+- Cloudflare AI Gateway with an OpenAI provider key that can call `gpt-6-luna` (the previous `dynamic/news_digest` route may be kept for rollback)
 - At least one OAuth provider configured: GitHub (Settings → Developer Settings → OAuth Apps) and/or Google (console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client IDs)
 - Resend account with a verified sending domain
 - `wrangler` CLI installed (`npm i -g wrangler` or use `npx wrangler`)
@@ -148,7 +148,7 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 | KV | `ai-news-digest-integration-kv` (auto-derived) |
 | Queues | `scrape-coordinator-integration`, `scrape-chunks-integration`, `scrape-finalize-integration`, `dedup-sweep-integration`, `pipeline-jobs-integration` |
 | DLQ | `ai-news-dlq-integration` (unbound; receives terminal retry exhaustion from finalize + pipeline-jobs consumers) |
-| AI Gateway | `AI_GATEWAY_NAME` repo/environment variable, default `ai-news-digest` (shared); set an integration-specific Gateway name to isolate and ensure it has the `news_digest` Dynamic Routing route plus provider keys |
+| AI Gateway | `AI_GATEWAY_NAME` repo/environment variable, default `ai-news-digest` (shared); set an integration-specific Gateway name to isolate and ensure it has an OpenAI provider key for `gpt-6-luna` |
 | Workers AI | shared `AI` binding for embeddings (no per-env isolation needed) |
 | Vectorize | `ai-news-embeddings-integration` |
 
@@ -157,8 +157,8 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 1. **Create the AI Gateway path.**
    - Create or choose a Cloudflare AI Gateway named `ai-news-digest`.
    - For a different name, set variable `AI_GATEWAY_NAME`.
-   - Add provider keys for whichever models the route will call.
-   - Create and deploy a Dynamic Routing route named `news_digest`.
+   - Add an OpenAI provider key with access to `gpt-6-luna`.
+   - Keep the previous Dynamic Routing route named `news_digest` if you want rollback via `dynamic/news_digest`.
    - Store the least-privilege Gateway token as secret `AI_GATEWAY_API_TOKEN`.
 
 2. **Create the GitHub Environment.** Repo → Settings → Environments → New environment → name it `integration`. The empty environment activates secret-fallback semantics.
@@ -202,7 +202,7 @@ curl -i ${APP_URL}/api/admin/force-refresh
 | `DEDUP_SWEEP` | Queue | `dedup-sweep` | Self-chaining historical-dedup sweep; the kicker enqueues the first message and the consumer re-enqueues a continuation per batch until the corpus tail is reached ([REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1) |
 | `PIPELINE_JOBS` | Queue | `pipeline-jobs` (`pipeline-jobs-integration` on integration) | Backend-driven full pipeline orchestrator; one consumer walks the seven phases by self-chaining messages ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](../decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)) |
 | — | Queue (DLQ) | `ai-news-dlq` (`ai-news-dlq-integration` on integration) | Dead-letter queue for the finalize and pipeline-jobs consumers. Terminal queue retry exhaustion lands messages here so they are inspectable rather than silently dropped (CF-001). Provisioned by the deploy workflow inline `wrangler queues create` block; no binding needed in `wrangler.toml`. |
-| AI Gateway | Cloudflare AI Gateway | configured by `AI_GATEWAY_URL` | Dynamic route `dynamic/news_digest` for summaries, discovery, and rerank; deploy preflight verifies the Gateway, route, runtime token, and route provider keys before publish |
+| AI Gateway | Cloudflare AI Gateway | configured by `AI_GATEWAY_URL` | OpenAI provider model `openai/gpt-6-luna` for summaries, discovery, and rerank; deploy preflight verifies the Gateway, provider key, model access, and runtime token before publish |
 | `AI` | Workers AI | (account-level) | bge-base-en-v1.5 embedding generation; non-Gateway model fallback |
 | `VECTORIZE` | Vectorize index | `ai-news-embeddings` | 768-dim cosine index for same-story dedup; provisioned by the deploy workflow via `wrangler vectorize create` ([REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract)) |
 

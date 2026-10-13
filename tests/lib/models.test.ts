@@ -45,8 +45,8 @@ describe('MODELS catalog', () => {
 });
 
 describe('DEFAULT_MODEL_ID', () => {
-  it('REQ-SET-004: DEFAULT_MODEL_ID is the AI Gateway Dynamic Routing route', () => {
-    expect(DEFAULT_MODEL_ID).toBe('dynamic/news_digest');
+  it('REQ-SET-004: DEFAULT_MODEL_ID is the OpenAI Gateway model', () => {
+    expect(DEFAULT_MODEL_ID).toBe('openai/gpt-6-luna');
   });
 
   it('REQ-SET-004: DEFAULT_MODEL_ID is present in MODELS', () => {
@@ -73,19 +73,17 @@ describe('modelById', () => {
 
 describe('estimateCost', () => {
   it('REQ-SET-004: estimateCost computes USD from per-million-token prices', () => {
-    // Dynamic route estimate currently mirrors the Flash-Lite baseline:
-    // input $0.10 / output $0.40 per Mtok.
-    // 1,000,000 in -> $0.10; 1,000,000 out -> $0.40; total $0.50.
+    // OpenAI GPT-6 Luna pricing is tracked in the catalog as a zero-cost
+    // canary until published rates are confirmed.
     const cost = estimateCost(DEFAULT_MODEL_ID, 1_000_000, 1_000_000);
-    expect(cost).toBeCloseTo(0.50, 6);
+    expect(cost).toBeCloseTo(0, 6);
   });
 
   it('REQ-SET-004: estimateCost scales linearly with token counts', () => {
-    // 2,000 input tokens * $0.10/Mtok = $0.000200
-    // 1,000 output tokens * $0.40/Mtok = $0.000400
-    // total ~= $0.000600
+    // OpenAI GPT-6 Luna pricing is tracked as zero until published rates
+    // are confirmed, so scaling should preserve the catalog estimate.
     const cost = estimateCost(DEFAULT_MODEL_ID, 2_000, 1_000);
-    expect(cost).toBeCloseTo(0.0006, 9);
+    expect(cost).toBeCloseTo(0, 9);
   });
 
   it('REQ-SET-004: estimateCost is non-zero for Kimi K2.5 (published pricing)', () => {

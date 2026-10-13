@@ -82,7 +82,7 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003 / REQ-SET-004', () => {
     expect(result.modelUsed).toBe('custom-model');
   });
 
-  it('REQ-SET-004 AC6: gateway models use AI Gateway compat instead of AI.run when gateway config is present', async () => {
+  it('REQ-SET-004 AC6: OpenAI gateway models use AI Gateway compat instead of AI.run when gateway config is present', async () => {
     const ai = makeAi([]);
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(
@@ -105,7 +105,11 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003 / REQ-SET-004', () => {
         chunk_index: 2,
         total_chunks: 4,
       },
-      params: { messages: [{ role: 'user', content: 'json' }] },
+      params: {
+        messages: [{ role: 'user', content: 'json' }],
+        temperature: 0.6,
+        max_tokens: 123,
+      },
       narrow: (raw) => (typeof raw === 'string' ? (JSON.parse(raw) as { articles: unknown[] }) : null),
     });
 
@@ -126,7 +130,13 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003 / REQ-SET-004', () => {
       }),
     });
     const body = JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>;
-    expect(body).toMatchObject({ model: DEFAULT_MODEL_ID });
+    expect(body).toMatchObject({
+      model: DEFAULT_MODEL_ID,
+      max_completion_tokens: 123,
+    });
+    expect(body.model).toBe('openai/gpt-6-luna');
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.temperature).toBeUndefined();
     expect(body.reasoning_effort).toBeUndefined();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
