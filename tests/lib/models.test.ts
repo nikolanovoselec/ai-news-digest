@@ -73,17 +73,22 @@ describe('modelById', () => {
 
 describe('estimateCost', () => {
   it('REQ-SET-004: estimateCost computes USD from per-million-token prices', () => {
-    // OpenAI GPT-6 Luna pricing is tracked in the catalog as a zero-cost
-    // canary until published rates are confirmed.
-    const cost = estimateCost(DEFAULT_MODEL_ID, 1_000_000, 1_000_000);
-    expect(cost).toBeCloseTo(0, 6);
+    // Gemini Flash-Lite catalog pricing: $0.10 input / $0.40 output per Mtok.
+    const model = 'google-ai-studio/gemini-2.5-flash-lite';
+    expect(estimateCost(model, 1_000_000, 0)).toBeCloseTo(0.10, 6);
+    expect(estimateCost(model, 0, 1_000_000)).toBeCloseTo(0.40, 6);
+    expect(estimateCost(model, 1_000_000, 1_000_000)).toBeCloseTo(0.50, 6);
   });
 
-  it('REQ-SET-004: estimateCost scales linearly with token counts', () => {
-    // OpenAI GPT-6 Luna pricing is tracked as zero until published rates
-    // are confirmed, so scaling should preserve the catalog estimate.
-    const cost = estimateCost(DEFAULT_MODEL_ID, 2_000, 1_000);
-    expect(cost).toBeCloseTo(0, 9);
+  it('REQ-SET-004: estimateCost scales linearly with unequal token counts', () => {
+    const model = 'google-ai-studio/gemini-2.5-flash-lite';
+    // 2,000 input at $0.10/Mtok + 1,000 output at $0.40/Mtok = $0.000600.
+    expect(estimateCost(model, 2_000, 1_000)).toBeCloseTo(0.0006, 9);
+    expect(estimateCost(model, 4_000, 2_000)).toBeCloseTo(0.0012, 9);
+  });
+
+  it('REQ-SET-004: Luna returns the disclosed zero estimate while pricing is provisional', () => {
+    expect(estimateCost('openai/gpt-6-luna', 2_000, 1_000)).toBe(0);
   });
 
   it('REQ-SET-004: estimateCost is non-zero for Kimi K2.5 (published pricing)', () => {

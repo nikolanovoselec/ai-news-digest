@@ -62,6 +62,12 @@ jobs:
         with:
           node-version: '22'
 
+      # Keep the installer aligned with PR Checks' fixed peer resolver.
+      - name: Use fixed npm resolver
+        run: |
+          npm install --global npm@12.2.0 --no-fund --no-audit
+          npm --version
+
       - name: Install dependencies
         run: npm install --no-fund --no-audit
 
@@ -283,8 +289,8 @@ jobs:
           # Fail deploy before Worker publish when Gateway, OpenAI provider,
           # or the least-privilege Gateway token is unusable. The runtime
           # default model is Gateway-only, so a deploy that cannot complete
-          # this one-token chat request would fail every summary/discovery/
-          # rerank call after release.
+          # this JSON preflight (capped at 50 completion tokens) would fail
+          # every summary/discovery/rerank call after release.
           # Previous route retained for rollback: dynamic/news_digest
           AI_GATEWAY_PREFLIGHT_MODEL='openai/gpt-6-luna'
           AI_GATEWAY_PREFLIGHT_BODY=$(mktemp)

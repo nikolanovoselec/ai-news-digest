@@ -126,7 +126,7 @@ Custom token via [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflar
 1. Idempotently looks up (or creates) the D1 database, KV namespace, queues (`scrape-coordinator`, `scrape-chunks`, `scrape-finalize`, `dedup-sweep`, `pipeline-jobs`), and the `ai-news-embeddings` Vectorize index. All resolved IDs are patched into a CI-only copy of `wrangler.toml` so the deploy binds the right resources without committing back to the repo.
 2. (D1 + KV are looked up by name; the workflow creates them on first deploy if they don't exist yet.)
 3. Applies D1 migrations
-4. Preflights AI Gateway with a one-token `openai/gpt-6-luna` chat-completions request
+4. Preflights AI Gateway with a cache-bypassing `openai/gpt-6-luna` chat-completions request capped at 50 completion tokens
 5. Pushes Worker secrets, including AI Gateway runtime config (Resend pair skipped when unset)
 6. `wrangler deploy`
 7. Binds the custom domain from `APP_URL` to the Worker

@@ -86,7 +86,7 @@ Gateway-backed OpenAI provider calls require one Cloudflare setup path before de
 4. Create a least-privilege AI Gateway API token for runtime inference and store it as the GitHub Actions secret `AI_GATEWAY_API_TOKEN`. Do not reuse `CLOUDFLARE_API_TOKEN`; that deploy/provisioning token is intentionally deleted from Worker secrets.
 5. Confirm `CLOUDFLARE_ACCOUNT_ID` is the account that owns the Gateway.
 
-The workflow builds `AI_GATEWAY_URL` as `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions`. It sends a one-token, cache-bypassing `openai/gpt-6-luna` chat-completions request before deploy; HTTP 401, 404, provider, or model errors fail the workflow before a broken runtime reaches users.
+The workflow builds `AI_GATEWAY_URL` as `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat/chat/completions`. It sends a cache-bypassing `openai/gpt-6-luna` chat-completions request capped at 50 completion tokens before deploy; HTTP 401, 404, provider, or model errors fail the workflow before a broken runtime reaches users.
 
 ### Setting `CF_ACCESS_AUD` (production, when binding Cloudflare Access)
 
