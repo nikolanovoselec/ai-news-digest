@@ -16871,12 +16871,12 @@
       "source_location": "L29"
     },
     {
-      "id": "package_devdependencies_cloudflare_vitest_pool_workers",
-      "label": "@cloudflare/vitest-pool-workers",
+      "id": "package_devdependencies_cloudflare_vitest_plugin",
+      "label": "@cloudflare/vitest-plugin",
       "_origin": "ast",
       "community": 50,
       "file_type": "code",
-      "norm_label": "@cloudflare/vitest-pool-workers",
+      "norm_label": "@cloudflare/vitest-plugin",
       "source_file": "package.json",
       "source_location": "L30"
     },
@@ -17321,12 +17321,12 @@
       "source_location": "L1"
     },
     {
-      "id": "ref_cloudflare_vitest_pool_workers",
-      "label": "@cloudflare/vitest-pool-workers",
+      "id": "ref_cloudflare_vitest_plugin",
+      "label": "@cloudflare/vitest-plugin",
       "_origin": "ast",
       "community": 54,
       "file_type": "concept",
-      "norm_label": "@cloudflare/vitest-pool-workers",
+      "norm_label": "@cloudflare/vitest-plugin",
       "source_file": "package.json",
       "source_location": "L30"
     },
@@ -35328,7 +35328,7 @@
     },
     {
       "source": "package",
-      "target": "ref_cloudflare_vitest_pool_workers",
+      "target": "ref_cloudflare_vitest_plugin",
       "relation": "imports",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -56491,7 +56491,7 @@
     },
     {
       "source": "vitest_config",
-      "target": "ref_cloudflare_vitest_pool_workers",
+      "target": "ref_cloudflare_vitest_plugin",
       "relation": "imports_from",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -57451,7 +57451,7 @@
     },
     {
       "source": "package_devdependencies",
-      "target": "package_devdependencies_cloudflare_vitest_pool_workers",
+      "target": "package_devdependencies_cloudflare_vitest_plugin",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -70133,5 +70133,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "9c7371c61aaa8b2d2033aee052b75f18cfbf4432"
+  "built_at_commit": "ab0f7ab3b44b0547e415f086f68dee48d8c9c628"
 }

@@ -1,7 +1,7 @@
 # Graph Report - ai-news-digest  (2026-10-13)
 
 ## Corpus Check
-- 365 files · ~457,382 words
+- 365 files · ~457,455 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 10 file(s) not represented in the graph (top: (none) 5, .toml 2, .example 1)
 
@@ -340,7 +340,7 @@ Nodes (10): clearDiscoveryFailure(), DiscoveryRetryBodySchema, executeRetryBulk(
 
 ### Community 50 - "Community 50"
 Cohesion: 0.15
-Nodes (13): devDependencies, @astrojs/check, @cloudflare/vitest-pool-workers, @cloudflare/workers-types, esbuild, knip, oxlint, @resvg/resvg-js (+5 more)
+Nodes (13): devDependencies, @astrojs/check, @cloudflare/vitest-plugin, @cloudflare/workers-types, esbuild, knip, oxlint, @resvg/resvg-js (+5 more)
 
 ### Community 51 - "Community 51"
 Cohesion: 0.15
@@ -352,7 +352,7 @@ Nodes (5): DEFAULT_HASHTAGS, DELETE_ALL_TAGS_LABEL, RESTORE_DEFAULTS_LABEL, sign
 
 ### Community 54 - "Community 54"
 Cohesion: 0.17
-Nodes (8): @cloudflare/vitest-pool-workers, here, integ, onlyInInteg, onlyInProd, prod, text, tomlPath
+Nodes (8): @cloudflare/vitest-plugin, here, integ, onlyInInteg, onlyInProd, prod, text, tomlPath
 
 ### Community 55 - "Community 55"
 Cohesion: 0.20
