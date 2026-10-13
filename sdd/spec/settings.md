@@ -36,12 +36,13 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The save endpoint accepts both a JSON API request (used when the in-page submit handler is bound) and a native HTML form submission, so clicking the primary button always persists regardless of whether client-side JavaScript has initialised. <!-- @impl: src/pages/api/settings.ts::POST -->
-2. Both transports apply identical server-side validation and the same `Origin` check from [REQ-AUTH-003](authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints). <!-- @impl: src/pages/api/settings.ts::POST -->
-3. On the native-form path, the response is always a redirect back to the settings page on both success and failure, so the user never sees a raw JSON error body. <!-- @impl: src/pages/api/settings.ts::POST -->
-4. After the redirect, a successful save surfaces a confirmation inline next to the Save button; a validation or server error surfaces an inline message naming what went wrong. <!-- @impl: src/pages/api/settings.ts::POST -->
-5. Query parameters carrying the outcome are stripped from the URL after display so a refresh does not re-show stale text. <!-- @impl: src/pages/api/settings.ts::POST -->
-6. Unauthenticated native-form POSTs redirect to the site root rather than persisting state or showing an error message. <!-- @impl: src/pages/api/settings.ts::POST -->
+1. The save endpoint accepts and persists a JSON API request, used when the in-page submit handler is bound. <!-- @impl: src/pages/api/settings.ts::POST -->
+2. The save endpoint accepts and persists a native HTML form submission, so clicking the primary button persists regardless of whether client-side JavaScript has initialised. <!-- @impl: src/pages/api/settings.ts::POST -->
+3. Both transports apply identical server-side validation and the same `Origin` check from [REQ-AUTH-003](authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints). <!-- @impl: src/pages/api/settings.ts::POST -->
+4. On the native-form path, the response is always a redirect back to the settings page on both success and failure, so the user never sees a raw JSON error body. <!-- @impl: src/pages/api/settings.ts::POST -->
+5. After the redirect, a successful save surfaces a confirmation inline next to the Save button; a validation or server error surfaces an inline message naming what went wrong. <!-- @impl: src/pages/api/settings.ts::POST -->
+6. Query parameters carrying the outcome are stripped from the URL after display so a refresh does not re-show stale text. <!-- @impl: src/pages/api/settings.ts::POST -->
+7. Unauthenticated native-form POSTs redirect to the site root rather than persisting state or showing an error message. <!-- @impl: src/pages/api/settings.ts::POST -->
 
 **Notes:** Behavioral evidence is incomplete for the save transports and inline outcomes.
 
