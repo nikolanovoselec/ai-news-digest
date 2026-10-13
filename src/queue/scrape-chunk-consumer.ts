@@ -10,7 +10,8 @@
 // the every-4-hours coordinator (REQ-PIPE-001). The consumer:
 //
 //   1. Builds the chunk prompt: PROCESS_CHUNK_SYSTEM + processChunkUserPrompt.
-//   2. Calls Workers AI once (env.AI.run) with the default model.
+//   2. Generates summaries with the default model and, when needed,
+//      shortens only overlong, otherwise-valid summaries in one additional call.
 //   3. Parses strict JSON via the shared extractResponsePayload +
 //      parseLLMPayload helpers from `src/lib/generate.ts`.
 //   4. Defensively normalises any `dedup_groups` field the model may
@@ -41,6 +42,8 @@ import {
   PROCESS_CHUNK_SYSTEM,
   CHUNK_LLM_PARAMS,
   processChunkUserPrompt,
+  SHORTEN_CHUNK_SYSTEM,
+  shortenChunkUserPrompt,
 } from '~/lib/prompts';
 import {
   parseLLMPayload,
@@ -422,11 +425,89 @@ export async function processOneChunk(
     promptCandidates,
   );
 
-  // Validate + sanitize each survivor; drop articles that fail any gate.
+  // Validate + sanitize each survivor; preserve existing eligibility gates.
   let prepared: PreparedArticle[] = [];
+  const overlong: Array<{ index: number; article: PreparedArticle }> = [];
   for (const s of survivors) {
     const article = validateAndSanitizeArticle(s, allowedTagSet, body);
-    if (article !== null) prepared.push(article);
+    if (article === null) continue;
+    prepared.push(article);
+    if (article.details.join(' ').trim().split(/\s+/).length > 150) {
+      overlong.push({ index: s.articleIdx, article });
+    }
+  }
+
+  let tokensIn = llmRun.tokensIn;
+  let tokensOut = llmRun.tokensOut;
+  let costUsd = llmRun.costUsd;
+  if (overlong.length > 0) {
+    // REQ-PIPE-002 AC5: one bounded, details-only revision before any
+    // embedding or persistence. Valid siblings and metadata stay untouched.
+    const requestedIndexes = new Set(overlong.map((entry) => entry.index));
+    const correction = await runJson<Map<number, string[]>>({
+      ai: asAiBinding(env.AI),
+      aiGatewayApiToken: env.AI_GATEWAY_API_TOKEN,
+      aiGatewayUrl: env.AI_GATEWAY_URL,
+      metadata: {
+        purpose: 'scrape_chunk_shortening',
+        scrape_run_id: body.scrape_run_id,
+        chunk_index: body.chunk_index,
+        total_chunks: body.total_chunks,
+      },
+      params: {
+        messages: [
+          { role: 'system', content: SHORTEN_CHUNK_SYSTEM },
+          { role: 'user', content: shortenChunkUserPrompt(overlong.map(({ index, article }) => ({
+            index, title: article.title, details: article.details,
+          }))) },
+        ],
+        ...CHUNK_LLM_PARAMS,
+      },
+      narrow: (raw) => {
+        const payload = narrowChunkPayload(parseLLMPayload(raw), raw);
+        if (payload === null || !Array.isArray(payload.articles)) return null;
+        const replacements = new Map<number, string[]>();
+        for (const entry of payload.articles) {
+          if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return null;
+          const index = entry.index;
+          if (typeof index !== 'number' || !Number.isInteger(index) ||
+              !requestedIndexes.has(index) || replacements.has(index)) return null;
+          const details = normalizeChunkDetails(entry.details);
+          const words = details.join(' ').trim().split(/\s+/).length;
+          if (words < 100 || words > 150) return null;
+          replacements.set(index, details);
+        }
+        return replacements.size === requestedIndexes.size ? replacements : null;
+      },
+    });
+    const spend = correction.ok ? correction : correction.attempt;
+    tokensIn += spend.tokensIn;
+    tokensOut += spend.tokensOut;
+    costUsd += spend.costUsd;
+    if (!correction.ok) {
+      await addChunkStats(env.DB, body.scrape_run_id, {
+        tokens_in: tokensIn,
+        tokens_out: tokensOut,
+        estimated_cost_usd: costUsd,
+        articles_ingested: 0,
+        articles_deduped: 0,
+      });
+      log('warn', 'digest.generation', {
+        status: 'chunk_summary_correction_failed',
+        scrape_run_id: body.scrape_run_id,
+        chunk_index: body.chunk_index,
+        summaries_to_shorten: overlong.length,
+        tokens_in: tokensIn,
+        tokens_out: tokensOut,
+        estimated_cost_usd: costUsd,
+      });
+      // Keep the original candidate job in the existing retry/DLQ path;
+      // do not truncate summaries or substitute empty/drop records.
+      throw new Error('chunk_summary_correction_failed');
+    }
+    for (const { index, article } of overlong) {
+      article.details = correction.parsed.get(index)!;
+    }
   }
 
   // Embed each prepared article. On success, articles carry their
@@ -458,9 +539,6 @@ export async function processOneChunk(
     completedCount,
   } = await recordChunkCompletionAndCheckFinalize(env, body);
 
-  const tokensIn = llmRun.tokensIn;
-  const tokensOut = llmRun.tokensOut;
-  const costUsd = llmRun.costUsd;
   const articlesIngested = prepared.length;
   const articlesDeduped = body.candidates.length - articlesIngested;
 
@@ -499,6 +577,18 @@ export async function processOneChunk(
 }
 
 // ---------- step helpers (colocated; not re-exported) ---------------------
+
+/** Use the same plaintext/paragraph normalization for initial and revised prose. */
+function normalizeChunkDetails(detailsRaw: unknown): string[] {
+  const rawPieces: string[] = Array.isArray(detailsRaw)
+    ? detailsRaw.flatMap((p) =>
+        typeof p === 'string' ? splitIntoParagraphs(p) : [],
+      )
+    : typeof detailsRaw === 'string'
+      ? splitIntoParagraphs(detailsRaw)
+      : [];
+  return rawPieces.map((p) => sanitizeText(p)).filter((p) => p !== '');
+}
 
 /**
  * Fetch article bodies for candidates that either already look thin
@@ -1041,17 +1131,7 @@ function validateAndSanitizeArticle(
 ): PreparedArticle | null {
   const title = sanitizeText(s.llmArticle.title);
   const llmTags = Array.isArray(s.llmArticle.tags) ? s.llmArticle.tags : [];
-  const detailsRaw = s.llmArticle.details;
-  const rawPieces: string[] = Array.isArray(detailsRaw)
-    ? detailsRaw.flatMap((p) =>
-        typeof p === 'string' ? splitIntoParagraphs(p) : [],
-      )
-    : typeof detailsRaw === 'string'
-      ? splitIntoParagraphs(detailsRaw)
-      : [];
-  const details = rawPieces
-    .map((p) => sanitizeText(p))
-    .filter((p) => p !== '');
+  const details = normalizeChunkDetails(s.llmArticle.details);
   if (title === '' || details.length === 0) return null;
 
   // REQ-PIPE-015 AC6: enforce 80-word backstop floor server-side. The
