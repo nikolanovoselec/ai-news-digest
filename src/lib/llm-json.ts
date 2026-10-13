@@ -7,9 +7,8 @@
 // Single-model architecture (2026-05-06): the helper runs ONE model
 // per call. The previous primary-then-fallback path (Gemma → 120b)
 // was removed when the project consolidated on a single model;
-// swapping models now means updating the AI Gateway Dynamic Routing
-// route behind `DEFAULT_MODEL_ID`, not threading model ids through
-// every call site.
+// swapping models now means updating `DEFAULT_MODEL_ID`, not threading
+// model ids through every call site.
 //
 // Why a helper, not three copies:
 //   - Token-cost accounting was subtly different at each site (only
@@ -47,7 +46,7 @@ export function asAiBinding(ai: unknown): AiBinding {
   return ai as AiBinding;
 }
 
-const AI_GATEWAY_MODEL_PREFIXES = ['google-ai-studio/', 'dynamic/'] as const;
+const AI_GATEWAY_MODEL_PREFIXES = ['google-ai-studio/', 'dynamic/', 'openai/'] as const;
 
 // Keep each Gateway call well below the queue/Worker wall-clock budget so
 // a stalled upstream provider surfaces through runJson's ok:false path
@@ -196,6 +195,25 @@ function gatewayModelParams(model: string): Record<string, unknown> {
   return {};
 }
 
+function gatewayRequestParams(
+  model: string,
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  const requestParams = { ...params };
+
+  if (model === 'openai/gpt-6-luna') {
+    const maxTokens = requestParams.max_tokens;
+    if (typeof maxTokens === 'number') {
+      requestParams.max_completion_tokens = maxTokens;
+      delete requestParams.max_tokens;
+    }
+    // gpt-6-luna currently accepts only the provider default temperature.
+    delete requestParams.temperature;
+  }
+
+  return requestParams;
+}
+
 async function runAiGatewayChatCompletion(options: {
   model: string;
   params: Record<string, unknown>;
@@ -225,7 +243,7 @@ async function runAiGatewayChatCompletion(options: {
       body: JSON.stringify({
         model: options.model,
         ...gatewayModelParams(options.model),
-        ...options.params,
+        ...gatewayRequestParams(options.model, options.params),
       }),
     },
   );

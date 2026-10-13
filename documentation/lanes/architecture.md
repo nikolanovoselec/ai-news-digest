@@ -23,7 +23,7 @@ This document describes **what** the system is and **how requests flow through i
 
 ## 1. Overview
 
-`news-digest` is a single Cloudflare Worker serving an Astro-rendered web app. A 4-hour scrape run scrapes a curated set of RSS/Atom/JSON feeds, summarises new candidates through the default LLM route (`dynamic/news_digest` via Cloudflare AI Gateway Dynamic Routing), and writes them to the shared **article pool**. Per-user dashboards filter the pool by the user's hashtags - there are no per-user LLM calls.
+`news-digest` is a single Cloudflare Worker serving an Astro-rendered web app. A 4-hour scrape run scrapes a curated set of RSS/Atom/JSON feeds, summarises new candidates through the default LLM model (`openai/gpt-6-luna` via Cloudflare AI Gateway's OpenAI provider), and writes them to the shared **article pool**. Per-user dashboards filter the pool by the user's hashtags - there are no per-user LLM calls.
 
 Separate cron triggers dispatch email every 5 minutes and drain pending feed-discovery jobs every 10 minutes on a 2-minute offset. A 03:00 UTC cron purges articles older than 14 days (starred articles exempt).
 
@@ -120,7 +120,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `headline-cache.ts` | KV-backed shared headline cache | [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence) |
 | `log.ts` | Structured JSON log emitter with closed `LogEvent` enum | [REQ-OPS-001](../../sdd/spec/observability.md#req-ops-001-structured-json-logging) |
 | `default-hashtags.ts` | Seed hashtag list for new accounts | [REQ-SET-008](../../sdd/spec/settings.md#req-set-008-hashtag-persistence-validation-and-defaults) |
-| `models.ts` | `MODELS` catalog, `DEFAULT_MODEL_ID` (`dynamic/news_digest`, an AI Gateway Dynamic Routing route; see [AD57](../decisions/README.md#ad57-ai-gateway-dynamic-route-for-pipeline-model-control)), and token-cost estimator | [REQ-PIPE-006](../../sdd/spec/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection) |
+| `models.ts` | `MODELS` catalog, `DEFAULT_MODEL_ID` (`openai/gpt-6-luna`, with `dynamic/news_digest` retained for rollback), and token-cost estimator | [REQ-PIPE-006](../../sdd/spec/generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection) |
 | `google-jwks.ts` | RS256 signature verification for Google `id_token`s via JWKS (`https://www.googleapis.com/oauth2/v3/certs`); caches the key set for 1 hour in KV (`oidc:jwks:google`) to bound isolate-level fetch cost (CF-013) | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `oauth-providers.ts` | GitHub + Google adapters with id_token validation | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `oauth-errors.ts` | OAuth error code allowlist and sanitizer | [REQ-AUTH-004](../../sdd/spec/authentication.md#req-auth-004-oauth-error-surfacing) |
@@ -270,7 +270,7 @@ Chunk consumer (per chunk)
   ├─ Fetch article bodies for thin, forced, and portal-like candidates (concurrency 20; REQ-PIPE-010)
   ├─ Drop portal-like fetched pages classified as non-article, plus high-confidence listing URLs that fail fetch, before LLM prompt construction/alignment (REQ-PIPE-011 AC 7)
   ├─ Compact long body text to lead + high-signal factual passages for the prompt and log candidate/body character totals (REQ-PIPE-022 AC 1-3)
-  ├─ Single DEFAULT_MODEL_ID call (`dynamic/news_digest` AI Gateway route); align output to inputs by echoed index
+  ├─ Single DEFAULT_MODEL_ID call (`openai/gpt-6-luna` AI Gateway OpenAI provider); align output to inputs by echoed index
   ├─ If invalid JSON consumed tokens, add zero-article `scrape_runs` token/cost stats before queue retry
   ├─ Reject 10+ model-emitted tags for queue retry; count that completed LLM call as zero-article token/cost spend before throwing
   ├─ Filter accepted tags against the system-approved allowlist + candidate-local source tags; broad tags keep evidence provenance across merges, while same-tag item-level provenance clears that requirement (REQ-PIPE-020 AC 2-4)
