@@ -35,6 +35,12 @@ jobs:
         with:
           node-version: '22'
 
+      # Keep the installer aligned with PR Checks' fixed peer resolver.
+      - name: Use fixed npm resolver
+        run: |
+          npm install --global npm@12.2.0 --no-fund --no-audit
+          npm --version
+
       - name: Install dependencies
         run: npm install --no-fund --no-audit
 

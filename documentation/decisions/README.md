@@ -71,10 +71,11 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default) | Gemini 2.5 Flash-Lite via AI Gateway for pipeline default *(Superseded by AD57)* | Architecture | 2026-06-07 |
 | [AD55](#ad55-adr-ledger-escalation-threshold-after-model-canary-growth) | ADR ledger escalation threshold after model-canary growth | Documentation | 2026-06-07 |
 | [AD56](#ad56-scrape-progress-derived-from-d1-kv-progress-mirror-retired) | Scrape progress derives from D1; KV progress mirror retired | Storage | 2026-06-08 |
-| [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) | AI Gateway Dynamic Routing route controls the pipeline model | Architecture | 2026-06-09 |
+| [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) | AI Gateway Dynamic Routing route controls the pipeline model *(Model-control portion superseded by [AD61](#ad61-direct-openai-luna-provider-with-low-reasoning))* | Architecture | 2026-06-09 |
 | [AD58](#ad58-preserve-summary-quality-by-reducing-paid-input-not-output-length) | Preserve summary quality by reducing paid input, not output length | Architecture | 2026-06-09 |
 | [AD59](#ad59-forced-and-portal-like-candidate-fetch-with-deterministic-non-article-drop) | Forced and portal-like candidate fetch with deterministic non-article drop | Architecture | 2026-06-12 |
 | [AD60](#ad60-broad-source-tags-require-article-level-evidence) | Broad source tags require article-level evidence | Architecture | 2026-06-12 |
+| [AD61](#ad61-direct-openai-luna-provider-with-low-reasoning) | Direct OpenAI Luna provider with low reasoning; retain the dynamic route for rollback | Architecture | 2026-10-13 |
 
 ---
 
@@ -1654,7 +1655,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 
 ### AD57: AI Gateway dynamic route for pipeline model control
 
-**Status:** Accepted (2026-06-09)
+**Status:** Model-control portion superseded by [AD61](#ad61-direct-openai-luna-provider-with-low-reasoning) (2026-10-13). The original decision below is historical; dynamic-route support and tag guardrails remain in effect.
 
 **Supersedes:** [AD54](#ad54-gemini-25-flash-lite-ai-gateway-canary-for-pipeline-default)
 
@@ -1721,6 +1722,29 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 **Consequences:** Broad-source articles can still surface when their title or body actually supports a selected tag, but unsupported tags are discarded and zero-tag articles are dropped. Precise first-party or tag-specific tags keep the candidate-local fast path; broad tags merged onto those candidates retain per-tag evidence provenance. <!-- @impl: src/lib/prefer-direct-source.ts::preferDirectOverGoogleNews --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::tagRequiresArticleEvidence -->
 
 **Related requirements:** [REQ-PIPE-011](../../sdd/spec/generation.md#req-pipe-011-candidate-filtering-rules), [REQ-PIPE-020](../../sdd/spec/generation.md#req-pipe-020-chunk-tag-validation-guardrails), [REQ-PIPE-022](../../sdd/spec/generation.md#req-pipe-022-chunk-prompt-input-compaction)
+
+---
+
+### AD61: Direct OpenAI Luna provider with low reasoning
+
+**Status:** Accepted for the develop canary (2026-10-13); production promotion requires separate authorization.
+
+**Supersedes:** The default-model-control portion of [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control). Its tag guardrails and dynamic-route support remain unchanged.
+
+**Decision:** Set the shared default to `openai/gpt-6-luna` through Cloudflare AI Gateway's direct OpenAI provider path, with `reasoning_effort: 'low'`. Retain the previous `dynamic/news_digest` default as a commented rollback option and keep its catalog entry and Gemini provider support. <!-- @impl: src/lib/models.ts::DEFAULT_MODEL_ID --> <!-- @impl: src/lib/llm-json.ts::gatewayModelParams -->
+
+**Context:** The operator chose a direct OpenAI provider trial rather than changing the deployed Gemini-backed dynamic route. Live provider probes rejected `max_tokens` and non-default `temperature`, while adapted JSON requests succeeded. Low reasoning lets the application explicitly control reasoning effort without changing article or dedup response contracts. <!-- @impl: src/lib/llm-json.ts::gatewayRequestParams -->
+
+**Consequences:**
+
+- The default bypasses `news_digest`; changing that dashboard route does not change this application's inference until the default is restored. A provider/model change now requires updating application configuration and deploying it.
+- All shared LLM call sites use the same default. Luna requests translate output budgets to `max_completion_tokens`, omit `temperature`, and use low reasoning; the existing chat-completions parser and token accounting remain in use.
+- Deploy preflights target Luna with low reasoning and a 50-completion-token cap. Rollback requires restoring both the application default and the corresponding preflight requests, then redeploying; no automatic fallback is added.
+- The provider key remains in Gateway. Workers AI embeddings, article validation, candidate-local tags, and same-story matching are unchanged.
+- Luna's zero catalog prices are provisional, so displayed cost estimates do not represent actual spend. The configured 128K context budget is an assumption to confirm, not a verified provider limit.
+- Live smoke checks establish request/response compatibility, not full production acceptance. Green review/CI and a deployed integration scrape are required before production promotion.
+
+**Related requirements:** [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection), [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
 
 ---
 

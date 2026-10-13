@@ -30,6 +30,13 @@ jobs:
         with:
           node-version: '22'
 
+      # npm 10's Arborist can crash in peer traversal (npm/cli#8261).
+      # npm/cli#8448 fixes the null-parent resolver failure.
+      - name: Use fixed npm resolver
+        run: |
+          npm install --global npm@12.2.0 --no-fund --no-audit
+          npm --version
+
       - name: Install dependencies
         run: npm install --no-fund --no-audit
 
