@@ -11,13 +11,15 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. `/manifest.webmanifest` declares `name`, `short_name`, `description`, `start_url=/digest`, `display=standalone`, `theme_color`, and `background_color`.
-2. Manifest `theme_color` and `background_color` are pinned to the dark background so dark-mode PWA users never see a light splash or status bar on cold launch or standalone navigation.
-3. Users in light mode see a brief dark splash at cold launch only, after which the runtime theme controls take over and paint the document in their selected theme.
-4. Icons declared in `/manifest.webmanifest` include at least one `purpose: "any"` and one `purpose: "maskable"`; either a scalable SVG (`type: "image/svg+xml"`, `sizes: "any"`) or raster PNGs at 192x192 and 512x512 satisfy both requirements.
-5. Apple meta tags in the root layout set `apple-mobile-web-app-capable=yes`, `apple-mobile-web-app-status-bar-style=black-translucent`, `apple-mobile-web-app-title`, and a 180x180 PNG `apple-touch-icon`, since iOS does not consume `/manifest.webmanifest` for its home-screen icon.
-6. iOS Safari users (detected via user agent with `!navigator.standalone`) see a one-time instructional note: "Tap the share icon, then Add to Home Screen."
-7. Android and desktop Chrome users see an "Install app" button in `/settings`; click triggers the `beforeinstallprompt` event's prompt.
+1. `/manifest.webmanifest` declares `name`, `short_name`, `description`, `start_url=/digest`, `display=standalone`, `theme_color`, and `background_color`. <!-- @impl: public/manifest.webmanifest::name --> <!-- @impl: public/manifest.webmanifest::start_url -->
+2. Manifest `theme_color` and `background_color` are pinned to the dark background so dark-mode PWA users never see a light splash or status bar on cold launch or standalone navigation. <!-- @impl: public/manifest.webmanifest::theme_color --> <!-- @impl: public/manifest.webmanifest::background_color -->
+3. Users in light mode see a brief dark splash at cold launch only, after which the runtime theme controls take over and paint the document in their selected theme. <!-- @impl: src/layouts/Base.astro::initialTheme -->
+4. Icons declared in `/manifest.webmanifest` include at least one `purpose: "any"` and one `purpose: "maskable"`; either a scalable SVG (`type: "image/svg+xml"`, `sizes: "any"`) or raster PNGs at 192x192 and 512x512 satisfy both requirements. <!-- @impl: public/manifest.webmanifest::icons -->
+5. Apple meta tags in the root layout set `apple-mobile-web-app-capable=yes`, `apple-mobile-web-app-status-bar-style=black-translucent`, `apple-mobile-web-app-title`, and a 180x180 PNG `apple-touch-icon`, since iOS does not consume `/manifest.webmanifest` for its home-screen icon. <!-- @impl: src/layouts/Base.astro::apple-mobile-web-app-capable --> <!-- @impl: src/layouts/Base.astro::apple-touch-icon -->
+6. iOS Safari users (detected via user agent with `!navigator.standalone`) see a one-time instructional note: "Tap the share icon, then Add to Home Screen." <!-- @impl: src/scripts/install-prompt.ts::initInstallPrompt -->
+7. Android and desktop Chrome users see an "Install app" button in `/settings`; click triggers the `beforeinstallprompt` event's prompt. <!-- @impl: src/scripts/install-prompt.ts::initInstallPrompt -->
+
+**Notes:** The layout declares an SVG Apple touch icon rather than the required 180x180 PNG; platform launch and install-prompt evidence remains incomplete.
 
 **Constraints:** None.
 
@@ -27,7 +29,7 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 
 **Verification:** Automated test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 
