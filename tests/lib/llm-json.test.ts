@@ -137,7 +137,7 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003 / REQ-SET-004', () => {
     expect(body.model).toBe('openai/gpt-6-luna');
     expect(body.max_tokens).toBeUndefined();
     expect(body.temperature).toBeUndefined();
-    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.reasoning_effort).toBe('low');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.tokensIn).toBe(11);
