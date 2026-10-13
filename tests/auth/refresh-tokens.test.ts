@@ -1,7 +1,7 @@
 // Integration tests for src/lib/refresh-tokens.ts and the inline
 // refresh flow in src/middleware/auth.ts — REQ-AUTH-002, REQ-AUTH-008.
 //
-// Uses @cloudflare/vitest-pool-workers + miniflare-backed D1 because
+// Uses @cloudflare/vitest-plugin + miniflare-backed D1 because
 // the refresh path does INSERT/UPDATE on `refresh_tokens` and a unit
 // mock of D1 cannot exercise the `WHERE token_hash = ?` lookup or the
 // rotation batch.

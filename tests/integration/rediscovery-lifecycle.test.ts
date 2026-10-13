@@ -20,7 +20,7 @@
 //      upstream — pinned here by asserting that calling applyEvictions
 //      with no evictions is a clean no-op.
 //
-// Uses the @cloudflare/vitest-pool-workers harness so D1 + KV are real
+// Uses the @cloudflare/vitest-plugin harness so D1 + KV are real
 // miniflare bindings (matching the schema-0005 test pattern).
 
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';

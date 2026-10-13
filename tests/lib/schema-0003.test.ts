@@ -1,6 +1,6 @@
 // Integration tests for migrations/0003_global_feed.sql — REQ-PIPE-004.
 //
-// Uses @cloudflare/vitest-pool-workers to run the migrations against a
+// Uses @cloudflare/vitest-plugin to run the migrations against a
 // miniflare-backed D1 instance, then exercises the new schema:
 //   - articles.canonical_url UNIQUE enforcement
 //   - article_sources + article_tags bound to a parent article

@@ -84,7 +84,7 @@ Implements [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrap
 | `public/` | Static assets, manifest, runtime client-script bundles |
 | `migrations/` | D1 schema migrations |
 | `scripts/` | Build tooling (PWA icon generation, worker handler merge) |
-| `tests/` | Vitest suites; run via `@cloudflare/vitest-pool-workers` |
+| `tests/` | Vitest suites; run via `@cloudflare/vitest-plugin` |
 
 ## 4. Source Module Map
 
