@@ -25,7 +25,7 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 
 **Dependencies:** [REQ-DES-001](design.md#req-des-001-swiss-minimal-visual-language)
 
-**Verification:** Manual check
+**Verification:** Automated test
 
 **Status:** Implemented
 

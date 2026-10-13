@@ -22,7 +22,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Dependencies:** None.
 
-**Verification:** Manual check
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -91,7 +91,7 @@ Structured JSON logging as the single operational surface — no external observ
 3. Every response includes `Referrer-Policy: strict-origin-when-cross-origin`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS --> <!-- @test: tests/observability/security-headers.test.ts (REQ-OPS-003: adds Referrer-Policy: strict-origin-when-cross-origin) -->
 4. Every response includes `Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), clipboard-read=()`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS --> <!-- @test: tests/observability/security-headers.test.ts (REQ-OPS-003: adds Permissions-Policy locking down all five features) -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Header coverage across every response surface remains unverified.
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -171,7 +171,7 @@ Structured JSON logging as the single operational surface — no external observ
 6. Worker secrets come from the repo-level GitHub Actions secrets used by production, with Environment overrides winning. Public `APP_URL` stays in the deploy manifest, not secrets.
 7. Promotion path is one-way: develop → integration smoke (manual) → develop merged to main → production auto-deploy. There is no path that pushes integration changes back to develop.
 
-**Notes:** Verification is the manual promotion checklist (develop -> integration smoke -> main). The deployment topology is exercised by [`.github/workflows/deploy-integration.yml`](../../.github/workflows/deploy-integration.yml); the workflow's header comment carries the REQ-OPS-006 backlink for traceability.
+**Notes:** Deployment criteria do not yet have independently verified automated coverage.
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -179,9 +179,9 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Dependencies:** [REQ-OPS-005](#req-ops-005-admin-force-refresh-endpoint)
 
-**Verification:** Manual check
+**Verification:** Automated test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 
