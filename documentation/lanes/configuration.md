@@ -119,6 +119,10 @@ Declared in `wrangler.toml`:
 
 All five queue consumers (`SCRAPE_COORDINATOR`, `SCRAPE_CHUNKS`, `SCRAPE_FINALIZE`, `DEDUP_SWEEP`, `PIPELINE_JOBS`) run with `max_batch_size = 1` (one isolate per message) and `max_retries = 3`. The `SCRAPE_FINALIZE` and `PIPELINE_JOBS` consumers have a DLQ (`ai-news-dlq`) configured so terminal retry exhaustion is inspectable rather than silently dropped (CF-001); the DLQ queue is provisioned by the deploy workflow, not bound in the Worker code.
 
+### Stored model preference
+
+The settings form hides the model picker but round-trips the stored `model_id`, falling back to the server default when none is stored. The settings API validates and persists that preference, so it remains part of the persistence contract even without a visible picker ([REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection)). Source: `src/pages/settings.astro`, `src/pages/api/settings.ts`, and `src/lib/models.ts`. <!-- @impl: src/pages/settings.astro::currentModelId --> <!-- @impl: src/pages/api/settings.ts::PUT -->
+
 ## Worker Vars (non-secret)
 
 Declared in `wrangler.toml` under `[vars]`. Forks may override per-environment via `[env.<name>.vars]`.

@@ -231,7 +231,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 4. The steady-state refresh path logs but does not block on a fingerprint change between issuance and refresh, because legitimate UA strings drift on browser auto-updates. <!-- @impl: src/lib/refresh-tokens.ts::rotateRefreshToken -->
 5. A fingerprint mismatch within the concurrent-rotation grace window IS enforced as theft, because the only legitimate cause of a grace-window replay is the same client racing itself. <!-- @impl: src/lib/refresh-tokens.ts::rotateRefreshToken --> <!-- @test: tests/auth/refresh-tokens.test.ts (REQ-AUTH-008 AC 1: grace-window fingerprint mismatch is treated as theft (gate retained)) -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Behavioral evidence is incomplete for some acceptance criteria.
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -255,7 +255,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 1. Expired and old-revoked refresh-token rows are pruned by the daily retention sweep with a retention floor long enough that the reuse-detection branch can still observe `revoked_at` on a stolen-then-rotated cookie. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Behavioral evidence is incomplete for the retention guarantee.
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt)
 

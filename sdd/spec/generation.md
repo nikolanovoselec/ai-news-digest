@@ -225,7 +225,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 4. Source links, tag union, stars, and read marks from the later article are preserved on the surviving primary card so a user never loses a star or a read by virtue of dedup. <!-- @impl: src/lib/finalize-merge.ts::mergeAsAltSource -->
 5. A single-source article (no same-story matches) is persisted with zero alternative-source rows. <!-- @impl: src/lib/finalize-merge.ts::mergeAsAltSource -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Survivor-selection and data-preservation evidence is incomplete.
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper)
 
@@ -527,7 +527,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 1. Studies, audits, or benchmarks on the same topic stay distinct when they cite different numbers, methods, or authors, so conflicting findings remain separate dashboard cards. <!-- @impl: src/queue/scrape-finalize-consumer.ts::isBetterAutoCandidate -->
 2. Two articles published by the same publisher must clear a stricter same-story bar than two articles from different publishers, so a publisher's recurring writing style does not push unrelated stories from the same outlet over the same-story threshold. <!-- @impl: src/lib/embeddings.ts::readCosineThreshold -->
 3. "Same publisher" means both articles' direct URLs identify the same real publisher; pairs whose URLs route through an aggregator-wrapper host are treated as cross-publisher for this purpose, so two aggregator-wrapped copies of the same story are not blocked from folding by the same-publisher penalty. <!-- @impl: src/lib/embeddings.ts::readCosineThreshold -->
-4. The diagnostic surface from [REQ-PIPE-014](#req-pipe-014-same-story-operator-surfaces) AC 2 reports both the raw cosine and the stricter score actually used by the merge decision, so an operator can see why a same-publisher pair was kept apart. <!-- @impl: src/lib/embeddings.ts::readHighConfidenceCosine -->
+4. The diagnostic surface from [REQ-PIPE-014](#req-pipe-014-same-story-operator-surfaces) AC 4 reports both the raw cosine and the stricter score actually used by the merge decision, so an operator can see why a same-publisher pair was kept apart. <!-- @impl: src/lib/embeddings.ts::readHighConfidenceCosine -->
 5. Same-event articles merge only within roughly the same news cycle. Pairs far apart on calendar time stay distinct even when topics overlap, so theme clusters do not collapse on similarity alone. <!-- @impl: src/queue/scrape-finalize-consumer.ts::handleFinalizeBatch -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
@@ -553,7 +553,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 2. The REQ-PIPE-005 retention sweep removes same-story-index rows for deleted articles, so deleted stories cannot match future articles, while starred articles kept past retention remain matchable. <!-- @impl: src/queue/dedup-sweep-consumer.ts::handleDedupSweepBatch -->
 3. Cross-tick same-story matching runs automatically after every scrape tick, so the window between an article becoming visible and its absorption as an alternative source onto an existing primary card is bounded by tick cadence rather than by any operator action. <!-- @impl: src/queue/scrape-finalize-consumer.ts::isBetterAutoCandidate -->
 4. The operator's historical-sweep surface remains available for matching across older stories when needed, but routine cross-tick collapse no longer requires the operator to take any action. <!-- @impl: src/queue/scrape-finalize-consumer.ts::isBetterAutoCandidate -->
-5. The reach of automatic post-tick matching covers the same-news-cycle window from [REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants) AC 3, so cross-day clusters that span up to that window collapse via the automatic path alone without an operator-triggered full-corpus sweep, regardless of the order in which the cluster's siblings arrived. <!-- @impl: src/queue/dedup-sweep-consumer.ts::processOneDedupSweep -->
+5. The reach of automatic post-tick matching covers the same-news-cycle window from [REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants) AC 5, so cross-day clusters that span up to that window collapse via the automatic path alone without an operator-triggered full-corpus sweep, regardless of the order in which the cluster's siblings arrived. <!-- @impl: src/queue/dedup-sweep-consumer.ts::processOneDedupSweep -->
 
 **Constraints:** [CON-PERF-001](constraints.md#con-perf-001-100-user-thundering-herd-target)
 
@@ -591,11 +591,5 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 **Verification:** Automated test
 
 **Status:** Implemented
-
----
-
-## Out of Scope
-
-The following REQs described the previous per-user digest generation pipeline. They are superseded by REQ-PIPE-* in the 2026-04-23 global-feed rework and are preserved here verbatim for decision history.
 
 ---

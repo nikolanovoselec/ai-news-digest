@@ -71,7 +71,7 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 4. Modifier-clicks (Cmd/Ctrl/Shift/Alt) and non-primary mouse buttons are never intercepted, so "open in new tab/window" continues to work on the brand. <!-- @impl: src/layouts/Base.astro::data-brand-home -->
 5. The brand tap target stretches to fill the entire left half of the header between the safe-area inset and the right-side controls, with visible content remaining left-aligned so the layout is unchanged. <!-- @impl: src/layouts/Base.astro::data-brand-home -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Brand-navigation behavior is not fully covered by verified behavioral evidence.
 
 **Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum)
 

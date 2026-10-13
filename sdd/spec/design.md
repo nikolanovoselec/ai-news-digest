@@ -69,7 +69,7 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 2. The status bar repaints immediately when the user toggles theme mid-session, and its colour persists across client-side route navigations without a transient flash to the opposite theme. <!-- @impl: src/styles/global.css::view-transition -->
 3. Across client-side route swaps, including installed PWA navigation, the body paints the chosen theme on the first frame and never flashes the opposite or intermediate background. <!-- @impl: src/styles/global.css::view-transition -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Mobile and installed-app first-frame behavior remains incompletely verified.
 
 **Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 

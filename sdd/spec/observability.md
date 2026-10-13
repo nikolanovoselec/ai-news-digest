@@ -116,7 +116,7 @@ Structured JSON logging as the single operational surface — no external observ
 2. Triggering the endpoint starts a fresh scrape run with status running and sends one coordinator message — the same work the every-four-hours cron does. <!-- @impl: src/pages/api/admin/force-refresh.ts::GET -->
 3. If a run started by an earlier cron tick or a previous manual trigger is still running and started within the last two minutes, the endpoint reuses that run rather than starting a new one. This protects against accidental double-clicks and tab-restore replays. <!-- @impl: src/pages/api/admin/force-refresh.ts::rateLimited -->
 4. The response is content-negotiated so browser callers land back on the settings surface with the run id visible and scripted callers can read the run id and reuse flag programmatically. <!-- @impl: src/pages/api/admin/force-refresh.ts::redirectToSettings -->
-5. The endpoint is gated by all three admin layers per [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8: Cloudflare Access at the zone level (optionally audience-pinned), a valid worker session, and the session email matching the configured operator email; failure at any layer returns that layer's native deny response. <!-- @impl: src/pages/api/admin/force-refresh.ts::rateLimited -->
+5. The endpoint is gated by all three admin layers per [REQ-AUTH-006](authentication.md#req-auth-006-admin-surface-gating): Cloudflare Access at the zone level (optionally audience-pinned), a valid worker session, and the session email matching the configured operator email; failure at any layer returns that layer's native deny response. <!-- @impl: src/pages/api/admin/force-refresh.ts::rateLimited -->
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -246,7 +246,7 @@ Structured JSON logging as the single operational surface — no external observ
 2. With the toggle off, the action skips the pre-phase and starts at the scrape tick. <!-- @impl: src/pages/api/admin/pipeline-run.ts::POST -->
 3. With the toggle on, the action first wipes and re-embeds every surviving article, then proceeds to the scrape tick. <!-- @impl: src/pages/api/admin/pipeline-run.ts::POST -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Behavioral evidence is incomplete for the optional destructive pre-phase.
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt)
 
@@ -275,7 +275,7 @@ Structured JSON logging as the single operational surface — no external observ
 6. State older than the freshness window is forgotten and the surface paints fresh on return. <!-- @impl: src/queue/pipeline-consumer.ts::runReembedFlip -->
 7. Terminal status (completed, auth-denied, or kick-time error) remains visible across reloads within the freshness window, then is replaced by the next kick or aged out, never immediately auto-cleared. <!-- @impl: src/queue/pipeline-consumer.ts::processOnePipelineMessage -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Behavioral evidence is incomplete for progress restoration and terminal-state persistence.
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 

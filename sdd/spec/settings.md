@@ -43,7 +43,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 5. Query parameters carrying the outcome are stripped from the URL after display so a refresh does not re-show stale text. <!-- @impl: src/pages/api/settings.ts::POST -->
 6. Unauthenticated native-form POSTs redirect to the site root rather than persisting state or showing an error message. <!-- @impl: src/pages/api/settings.ts::POST -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Behavioral evidence is incomplete for the save transports and inline outcomes.
 
 **Constraints:** None.
 
@@ -151,7 +151,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 6. Provider-backed defaults fail closed until runtime inference credentials are configured. <!-- @impl: src/lib/llm-json.ts::runModel --> <!-- @test: tests/lib/llm-json.test.ts (REQ-SET-004 AC6: gateway models fail closed when gateway config is missing) -->
 7. Cost estimates use the model catalog's pricing data. <!-- @impl: src/lib/models.ts::estimateCost --> <!-- @test: tests/lib/models.test.ts (estimateCost) -->
 
-**Notes:** The model-selection UI is hidden from the settings form, but the settings API still accepts and persists a `model_id` field. True removal requires retiring `model_id` from the persistence contract first.
+**Notes:** The legacy model preference and the system-wide inference contract are not fully reconciled.
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
@@ -226,7 +226,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 3. The correction runs on every route (not just the settings page), so users who sign up and go straight to the reading surface never miss the update. <!-- @impl: src/pages/settings.astro::submitSettings -->
 4. A failed correction request is non-fatal: the page continues to render and the next page load retries. <!-- @impl: src/pages/settings.astro::wireScrapeProgress -->
 5. Once stored timezone differs from the seeded default, silent correction stops, so manual or earlier browser choices are never overwritten by privacy-masked or stale browser zones. <!-- @impl: src/scripts/page-effects.ts::syncBrowserTz -->
-6. The timezone-update endpoint is rate-limited per authenticated user per [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9a; an exhausted limit returns HTTP 429 with `Retry-After` and is non-fatal per AC 4 above. <!-- @impl: src/pages/api/auth/set-tz.ts::POST -->
+6. The timezone-update endpoint is rate-limited per authenticated user per [REQ-RATE-001](rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface); an exhausted limit returns HTTP 429 with `Retry-After` and is non-fatal per AC 4 above. <!-- @impl: src/pages/api/auth/set-tz.ts::POST -->
 
 **Constraints:** None.
 
@@ -251,7 +251,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 2. The picker is pre-populated with the browser-detected zone, or with the stored zone when the browser's value is unavailable, so the most likely correct value is one click away even when the silent auto-sync has failed. <!-- @impl: src/pages/api/auth/set-tz.ts::POST -->
 3. Saving the form persists the picked zone via the same timezone-update endpoint used by the silent auto-sync path. <!-- @impl: src/pages/api/auth/set-tz.ts::POST -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Behavioral evidence is incomplete for manual timezone selection.
 
 **Constraints:** None.
 
