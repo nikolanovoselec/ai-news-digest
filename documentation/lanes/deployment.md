@@ -116,9 +116,9 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 - The morph-pair structural contract lives in `tests/layouts/base.test.ts` — Playwright cannot observe Astro lifecycle timing from outside the browser, so a static source-grep is the right layer for that class.
 - The history-vs-digest perf-comparability test is permanently skipped (see [AD14](../decisions/README.md#ad14-history-page-perf-comparability-test-permanently-skipped)).
 
-**How to run:** Actions tab → `Playwright E2E (live)` → Run workflow. Optional `base_url` input targets a preview deploy.
+**How to run:** Actions tab → `Playwright E2E (live)` → Run workflow against the reviewed branch. The target defaults to the integration environment's `vars.APP_URL`; an optional `base_url` must have the same HTTPS origin. Target validation runs before the secret-bearing test step.
 
-**Required secret:** `DEV_BYPASS_TOKEN` (must match the Worker secret on the target deployment).
+**Required secret:** Integration-environment `DEV_BYPASS_TOKEN` (with GitHub's standard repository fallback), matching the integration Worker secret. The live workflow disables traces so session cookies cannot enter downloadable failure traces; failure artifacts contain screenshots and available reports instead.
 
 **Sandbox:** Mutations are scoped to the synthetic `__e2e__` user. Implements [REQ-READ-002](../../sdd/spec/reading.md#req-read-002-article-detail-view-rendering), [REQ-HIST-001](../../sdd/spec/history.md#req-hist-001-day-grouped-article-history).
 
