@@ -36,6 +36,8 @@ The conventions below apply to every endpoint in this document. They are stated 
 - **Rate limit.** Present only on endpoints with a limiter; format is `{count}/{window} per {scope}` plus `fail-open` or `fail-closed`.
 - **Rate-limit failures.** Exhausted buckets return `429` with `Retry-After`; see [REQ-RATE-001 AC 1](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface) and [`security.md`](security.md#rate-limiting).
 - **Implements.** Every endpoint cites the REQ that owns its contract.
+- **Digest timestamp units.** Numeric `published_at`, scrape-run `started_at`/`finished_at`, and `next_scrape_at` in the digest response are Unix seconds, not milliseconds. Nullable timestamps may be `null`; see [`loadTodayPayload`](../../src/lib/digest-today.ts).
+- **Walkthrough scope.** The example below is an authenticated reader API call, not an anonymous endpoint or a traffic ranking. Sign in through the landing page at the same deployment before acquiring its cookie.
 - **Curl pattern.** For any `session`-auth endpoint, copy the cookie value from browser DevTools (Application > Cookies > `__Host-session`) and pass it verbatim. Example against `GET /api/digest/today`:
 
 ```bash
@@ -493,7 +495,7 @@ GET /api/digest/today
   "articles": [{
     "id": "string", "title": "string", "details": ["string"],
     "primary_source_name": "string", "primary_source_url": "string",
-    "published_at": "ISO-8601", "tags": ["string"],
+    "published_at": 1700000000, "tags": ["string"],
     "alt_source_count": 0, "starred": false, "read": false
   }],
   "last_scrape_run": { "id": "string", "started_at": 0, "finished_at": 0, "status": "ready" },
@@ -506,7 +508,7 @@ GET /api/digest/today
 
 **Notes**
 
-`last_scrape_run` and `next_scrape_at` may be `null` before the first cron tick. `next_scrape_at` is derived from the cron schedule (next UTC quadrant-hour boundary `HH:00` where `HH ∈ {0,4,8,12,16,20}`), not from the last run's start time, so a delayed run does not push the next tick out.
+`last_scrape_run` may be `null` before the first ready scrape. `next_scrape_at` is the predicted next tick in Unix seconds. `next_scrape_at` is derived from the cron schedule (next UTC quadrant-hour boundary `HH:00` where `HH ∈ {0,4,8,12,16,20}`), not from the last run's start time, so a delayed run does not push the next tick out.
 
 `scrape_running` is the SSR first-paint indicator for the "Update in progress" banner. It is `true` only when the **most-recent** `scrape_runs` row has `status = 'running'` - the same predicate used by `GET /api/scrape-status`. A stuck older `running` row that coexists with a newer `ready` row does not trigger the banner.
 

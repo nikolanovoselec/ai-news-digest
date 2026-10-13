@@ -58,9 +58,9 @@ Implements [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrap
 
 | Component | Responsibility | Inputs | Outputs | Source |
 |---|---|---|---|---|
-| Astro Worker | Serves all HTML pages and JSON APIs in the Cloudflare Workers runtime | HTTP requests | HTML and API responses | `src/app-worker.ts`, `src/middleware/index.ts`, `src/pages/` |
-| Cron Triggers | 4-hour scrape, daily 03:00 UTC retention, 5-minute email, 10-minute discovery | Scheduled events | Scrape, retention, email and discovery work | `src/worker.ts` |
-| Queue Consumers | `SCRAPE_COORDINATOR`, `SCRAPE_CHUNKS`, `SCRAPE_FINALIZE`, `DEDUP_SWEEP`, `PIPELINE_JOBS` | Bound queue messages | Persisted phase results and continuation messages | `src/queue/` |
+| Astro Worker | Serves all HTML pages and JSON APIs in the Cloudflare Workers runtime | HTTP requests | HTML and API responses | `src/app-worker.ts`, `src/middleware/index.ts`, `src/pages/` <!-- @impl: src/app-worker.ts::fetch --> |
+| Cron Triggers | 4-hour scrape, daily 03:00 UTC retention, 5-minute email, 10-minute discovery | Scheduled events | Scrape, retention, email and discovery work | `src/worker.ts` <!-- @impl: src/worker.ts::scheduled --> |
+| Queue Consumers | `SCRAPE_COORDINATOR`, `SCRAPE_CHUNKS`, `SCRAPE_FINALIZE`, `DEDUP_SWEEP`, `PIPELINE_JOBS` | Bound queue messages | Persisted phase results and continuation messages | `src/queue/` <!-- @impl: src/worker.ts::queue --> |
 | D1 | Strongly-consistent storage: users, articles, scrape_runs, refresh_tokens, pending_discoveries | Application queries and mutations | Consistent rows and query results | `migrations/`, `src/lib/db.ts` |
 | KV | Edge-cached `sources:{tag}`, headline cache, per-URL fetch-health counters, rate-limit counters | Cache and counter operations | Edge-replicated cache and limit state | `src/lib/kv/`, `src/lib/rate-limit.ts` |
 | AI Gateway + Workers AI | Gateway-backed LLM calls for summaries/discovery/rerank; Workers AI embeddings for same-story dedup | Prompts and embedding input | LLM output and vectors | `src/lib/llm-json.ts`, `src/lib/embeddings.ts` |
@@ -83,12 +83,12 @@ Implements [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrap
 | `src/styles/` | Global CSS and design tokens |
 | `public/` | Static assets, manifest, runtime client-script bundles |
 | `migrations/` | D1 schema migrations |
-| `scripts/` | Build tooling (PWA icon generation, worker handler merge) |
+| `scripts/` | Build tooling (PWA icon generation, client-script bundles, deployment validation) |
 | `tests/` | Vitest suites; run via `@cloudflare/vitest-plugin` |
 
 ## 4. Source Module Map
 
-Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-NNN` comments. The tables below summarise role; refer to source for the full contract.
+The tables below identify current source ownership. `// Implements REQ-X-NNN` comments, where present, provide additional requirement backlinks; their presence is not behavioral proof. Refer to current declarations for the full contract. Historical ADR bodies describe their original decisions, not guarantees that retired modules or automation still exist.
 
 ### 4.1 Middleware
 

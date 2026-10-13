@@ -72,14 +72,50 @@ node scripts/check-deploy-config.mjs
 npx wrangler deploy
 ```
 **Verify:** AI Gateway preflight succeeds, then smoke test `GET /` against `APP_URL` returns `200` or `303` (the deploy job's final smoke step).
-**Rollback:** Cloudflare Workers supports instant rollback via the dashboard or CLI. To revert to the previous Worker version:
+**Rollback:** Requires explicit owner authorization. From the repository root, use the production account, root `wrangler.toml` (not generated integration configuration), and Worker `ai-news-digest`. Do not pass `--env integration`. A deployment is a traffic assignment; its referenced version UUID identifies the code. Rollback takes the **version ID**, not the deployment ID ([Wrangler reference](https://developers.cloudflare.com/workers/wrangler/commands/workers/)).
+
+Authenticate Wrangler using an already approved credential. Inspect accounts with `npx wrangler whoami`; compare the production Worker's account in the Cloudflare dashboard and set `CLOUDFLARE_ACCOUNT_ID` explicitly to that account ID. This ID selects the account; it is not an authentication token. Stop if account identity is ambiguous.
+
+Inspect production deployments read-only and identify the intended previous version UUID. In GitHub Actions, locate the successful Deploy run whose Wrangler publish log contains that exact version UUID; use its checkout log to identify the actual deployed commit. Do not substitute the newest run or assume its triggering SHA equals the checkout. If a version cannot be bound to its source commit, stop:
+
 ```bash
-# List recent deployments and find the previous version ID
-npx wrangler deployments list
-# Roll back to a specific version
-npx wrangler rollback <deployment-id>
+env -u CLOUDFLARE_ENV npx wrangler deployments list \
+  --config wrangler.toml --name ai-news-digest
 ```
-After rollback, verify `GET $APP_URL` returns `200`/`303`. D1 migrations are forward-only - if the bad deploy included a schema migration, coordinate the rollback with a matching reverse migration or restore from a D1 backup before reverting the Worker.
+
+Before changing traffic, collect migration and schema metadata read-only:
+
+```bash
+env -u CLOUDFLARE_ENV npx wrangler d1 execute DB --remote \
+  --config wrangler.toml \
+  --command 'SELECT name, applied_at FROM d1_migrations ORDER BY id;'
+env -u CLOUDFLARE_ENV npx wrangler d1 execute DB --remote \
+  --config wrangler.toml \
+  --command "SELECT name, sql FROM sqlite_schema WHERE type = 'table';"
+git diff --name-status <previous-commit>..<deployed-commit> -- migrations/
+```
+
+Review each changed migration against the returned schema and old code's queries; these commands read metadata, not user rows. Compare the previous version's migrations and code with the applied D1 schema. Confirm the old code still supports every applied change. Worker rollback does not reverse D1, KV, queues, secrets, or provider configuration. If compatibility is unknown or a migration removed/changed required data, stop and use a reviewed forward fix or separately authorized database recovery plan. Do not improvise reverse migrations or restore a database as part of this command.
+
+Only after authorization and compatibility review, roll back and inspect the resulting traffic assignment:
+
+```bash
+# MUTATION: substitute the reviewed previous VERSION UUID.
+env -u CLOUDFLARE_ENV npx wrangler rollback <previous-version-id> \
+  --config wrangler.toml --name ai-news-digest
+env -u CLOUDFLARE_ENV npx wrangler deployments list \
+  --config wrangler.toml --name ai-news-digest
+```
+
+Confirm the intended version is active, then run a non-mutating anonymous smoke check; expect 200 or 303:
+
+```bash
+APP_URL='https://news.graymatter.ch'
+curl --silent --show-error --output /dev/null \
+  --write-out '%{http_code}\n' "$APP_URL/"
+```
+
+A landing-page status does not prove pipeline, authorization, or data compatibility. As a non-mutating auth check, anonymous `GET /api/digest/today` should receive the Worker's 401 response; the same GET with a valid same-deployment `__Host-session` should return 200 JSON with `articles`. Use the [reader API cookie procedure](api-reference.md#conventions). An Access challenge is not evidence that Worker authorization passed. For an incident involving pipeline state, inspect an existing run through the [admin status API](api-reference-admin.md#get-apiadminpipeline-status); do not start another run merely to verify rollback. Other incident-specific checks require their own acceptance criteria. These are operator instructions, not a rollback or database recovery performed by a documentation review.
 
 CI/CD: `.github/workflows/deploy.yml` triggers on a `workflow_run` event - fires only when "PR Checks" on `main` completes with `success`. `workflow_dispatch` is retained for manual re-runs.
 
@@ -321,7 +357,7 @@ Both writes propagate at Cloudflare's secret-store cadence - re-run the `/api/de
 
 <!-- doc-allow-element: AD46 dev-bypass-runbook session-mint and admin-drive block -->
 ```bash
-# Mint a session - Origin header is required (the route enforces same-origin POST).
+# Mint a session - a supplied Origin must match; token-authenticated curl may omit it.
 curl -s -X POST "https://news.novoselec.ch/api/dev/login" \
   -H "Authorization: Bearer $(cat /tmp/.bypass_token)" \
   -H "Origin: https://news.novoselec.ch" \
@@ -367,7 +403,7 @@ curl -s "https://news.novoselec.ch/api/admin/pipeline-status?id=$PIPE_ID" \
 |---|---|---|
 | `/api/dev/login` returns 404 | `DEV_BYPASS_TOKEN` empty/missing on the worker (deploy push truncated it) | Re-push via REST as above |
 | `/api/dev/login` returns 200 but admin route returns 401/403 | `DEV_BYPASS_USER_ID` deleted by deploy → session is `__e2e__`, not admin | Set `DEV_BYPASS_USER_ID` via REST as above |
-| `/api/dev/login` returns 403 with "Cross-site POST forbidden" | Missing `Origin: https://news.novoselec.ch` header | Add it; the route enforces same-origin POST |
+| `/api/dev/login` returns 404 with a supplied wrong Origin | Origin differs from the deployment's APP_URL | Supply the matching Origin; absent Origin is permitted for token-authenticated scripts |
 | Session cookie present but admin still 401 | Session expired (5-minute access-token TTL) | Re-mint via `/api/dev/login` |
 
 The token in `/tmp/.bypass_token` is the canonical local source of truth; treat the GitHub Actions `DEV_BYPASS_TOKEN` secret as derivative - re-push it from `/tmp/.bypass_token` when `/api/dev/login` returns 404 on integration despite a non-empty GitHub Actions secret (deploy push truncated the worker-side value).

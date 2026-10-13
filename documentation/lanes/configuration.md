@@ -49,6 +49,22 @@ The `GH_` prefix on the GitHub OAuth secrets is required because GitHub Actions 
 
 A bare address (e.g., `digest@example.com`) is automatically wrapped in `News Digest <digest@example.com>` display-name format before sending so recipients see a friendly name in their inbox regardless of the stored format. To set a custom display name, store the full RFC 5322 form in the secret (`Acme News <digest@example.com>`); the wrapper only fires when no `<` is present.
 
+### Developer-route environment contract
+
+Developer routes require the exact string `IS_PRODUCTION="false"`; missing, boolean `false`, empty, or any other value leaves them disabled. The route bodies consume the following values; secrets and these configured scalar variables are strings, while service bindings are platform objects.
+
+| Value | Runtime type | Default / missing behavior | Login consumer | Trigger-scrape consumer |
+|---|---|---|---|---|
+| `IS_PRODUCTION` | string | `"true"` production, `"false"` integration; missing disables routes | Production guard | Production guard |
+| `DEV_BYPASS_TOKEN` | string | No default; missing/empty returns 404 | Token comparison | Token comparison |
+| `OAUTH_JWT_SECRET` | string | No default; missing/empty returns 500 on login, 404 on trigger | Token comparison key and session signing | Token comparison key |
+| `APP_URL` | string | No route default; missing skips the supplied-Origin check | Origin validation | Origin validation |
+| `DEV_BYPASS_USER_ID` | optional string | `__e2e__` | Server-selected session identity | Not consumed |
+| `DB` | D1 binding | No route default; provisioned by deployment | User lookup and refresh-token issuance | Scrape-run persistence |
+| `SCRAPE_COORDINATOR` | Queue binding | No route default; provisioned by deployment | Not consumed | Coordinator dispatch |
+
+Source: [`login.ts`](../../src/pages/api/dev/login.ts), [`trigger-scrape.ts`](../../src/pages/api/dev/trigger-scrape.ts), and [`checkDevEndpointOrigin`](../../src/middleware/origin-check.ts). A supplied wrong Origin returns 404; absent Origin is permitted for token-authenticated scripts. This describes the guard, not authorization to enable bypasses or impersonate users.
+
 ### DEV_BYPASS_USER_ID override
 
 Unset is the right value for almost every deployment. When unset, `/api/dev/login` mints sessions for the synthetic `__e2e__` row from `migrations/0006_e2e_user.sql` - this keeps e2e tests from mutating the operator's account. Set this only for unusual cases (e.g., impersonating a specific staging account); the deploy workflow does not propagate the value.
