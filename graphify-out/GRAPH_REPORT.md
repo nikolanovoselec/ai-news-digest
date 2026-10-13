@@ -1,691 +1,730 @@
-# Graph Report - /home/user/workspace/ai-news-digest  (2026-06-15)
+# Graph Report - ai-news-digest  (2026-10-13)
 
 ## Corpus Check
-- label apply mode — file stats not available
+- 354 files · ~464,184 words
+- Verdict: corpus is large enough that graph structure adds value.
+- Unclassified: 10 file(s) not represented in the graph (top: (none) 5, .toml 2, .example 1)
 
 ## Summary
-- 2109 nodes · 4086 edges · 174 communities (141 shown, 33 thin omitted)
-- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 17 edges (avg confidence: 0.8)
+- 2337 nodes · 4982 edges · 161 communities (128 shown, 33 thin omitted)
+- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 127 edges (avg confidence: 0.92)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `085940fe`
+- Built from commit: `7e2f7fb1`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- [[_COMMUNITY_Feed Source Fetching|Feed Source Fetching]]
-- [[_COMMUNITY_Email Digest Dispatch|Email Digest Dispatch]]
-- [[_COMMUNITY_Pipeline Queue Worker|Pipeline Queue Worker]]
-- [[_COMMUNITY_Cleanup Refresh Tests|Cleanup Refresh Tests]]
-- [[_COMMUNITY_Feed Discovery Workflow|Feed Discovery Workflow]]
-- [[_COMMUNITY_Package Tooling Config|Package Tooling Config]]
-- [[_COMMUNITY_Request Errors Rate Limits|Request Errors Rate Limits]]
-- [[_COMMUNITY_Session Auth Middleware|Session Auth Middleware]]
-- [[_COMMUNITY_Scrape Chunk Processing|Scrape Chunk Processing]]
-- [[_COMMUNITY_Admin Pipeline APIs|Admin Pipeline APIs]]
-- [[_COMMUNITY_Digest History Interactions|Digest History Interactions]]
-- [[_COMMUNITY_OAuth Callback Flow|OAuth Callback Flow]]
-- [[_COMMUNITY_Scrape Finalize Dedup|Scrape Finalize Dedup]]
-- [[_COMMUNITY_LLM Model JSON|LLM Model JSON]]
-- [[_COMMUNITY_Embedding Backfill Admin|Embedding Backfill Admin]]
-- [[_COMMUNITY_TypeScript Compiler Config|TypeScript Compiler Config]]
-- [[_COMMUNITY_Scrape Coordinator Chunking|Scrape Coordinator Chunking]]
-- [[_COMMUNITY_Settings Stars Auth Fixtures|Settings Stars Auth Fixtures]]
-- [[_COMMUNITY_Article Star Logging|Article Star Logging]]
-- [[_COMMUNITY_Admin Pipeline Run API|Admin Pipeline Run API]]
-- [[_COMMUNITY_Astro Layout Error Pages|Astro Layout Error Pages]]
-- [[_COMMUNITY_Dev Trigger Crypto|Dev Trigger Crypto]]
-- [[_COMMUNITY_Discovery Retry Admin|Discovery Retry Admin]]
-- [[_COMMUNITY_Theme Toggle Script|Theme Toggle Script]]
-- [[_COMMUNITY_Curated Source Assembly|Curated Source Assembly]]
-- [[_COMMUNITY_Dedup Diagnostics API|Dedup Diagnostics API]]
-- [[_COMMUNITY_Historical Dedup Routing|Historical Dedup Routing]]
-- [[_COMMUNITY_Settings Gate Page|Settings Gate Page]]
-- [[_COMMUNITY_Dedup Rerank Batches|Dedup Rerank Batches]]
-- [[_COMMUNITY_Digest Starred Pages|Digest Starred Pages]]
-- [[_COMMUNITY_Session JWT Verification|Session JWT Verification]]
-- [[_COMMUNITY_Page Transition Effects|Page Transition Effects]]
-- [[_COMMUNITY_Feed Health Rediscovery|Feed Health Rediscovery]]
-- [[_COMMUNITY_LLM Response Parsing|LLM Response Parsing]]
-- [[_COMMUNITY_Card Interaction Script|Card Interaction Script]]
-- [[_COMMUNITY_History Hashtag API|History Hashtag API]]
-- [[_COMMUNITY_Today Digest Payload|Today Digest Payload]]
-- [[_COMMUNITY_OAuth Provider Config|OAuth Provider Config]]
-- [[_COMMUNITY_Scrape Status API|Scrape Status API]]
-- [[_COMMUNITY_Article Feed Tests|Article Feed Tests]]
-- [[_COMMUNITY_Discovery Bulk Retry Tests|Discovery Bulk Retry Tests]]
-- [[_COMMUNITY_History API Tests|History API Tests]]
-- [[_COMMUNITY_History Stats Tests|History Stats Tests]]
-- [[_COMMUNITY_Pipeline Dedupe Clustering|Pipeline Dedupe Clustering]]
-- [[_COMMUNITY_Google JWKS Verification|Google JWKS Verification]]
-- [[_COMMUNITY_OAuth Login Flow|OAuth Login Flow]]
-- [[_COMMUNITY_Force Refresh Tests|Force Refresh Tests]]
-- [[_COMMUNITY_Astro Pattern Checker|Astro Pattern Checker]]
-- [[_COMMUNITY_Dedup Diagnostic Tests|Dedup Diagnostic Tests]]
-- [[_COMMUNITY_Auth Callback Defaults|Auth Callback Defaults]]
-- [[_COMMUNITY_Historical Dedup Batch Tests|Historical Dedup Batch Tests]]
-- [[_COMMUNITY_Alt Sources Modal|Alt Sources Modal]]
-- [[_COMMUNITY_Requirement Backlink Checker|Requirement Backlink Checker]]
-- [[_COMMUNITY_Historical Dedup Admin Tests|Historical Dedup Admin Tests]]
-- [[_COMMUNITY_Account API Tests|Account API Tests]]
-- [[_COMMUNITY_Google Callback Tests|Google Callback Tests]]
-- [[_COMMUNITY_OAuth Login Tests|OAuth Login Tests]]
-- [[_COMMUNITY_Discovery Retry Tests|Discovery Retry Tests]]
-- [[_COMMUNITY_Dedup Sweep Consumer|Dedup Sweep Consumer]]
-- [[_COMMUNITY_Sources Cache Eviction|Sources Cache Eviction]]
-- [[_COMMUNITY_Article Detail Page|Article Detail Page]]
-- [[_COMMUNITY_Install Prompt Script|Install Prompt Script]]
-- [[_COMMUNITY_Finalize Vectorize Tests|Finalize Vectorize Tests]]
-- [[_COMMUNITY_Wrangler Vars Parity|Wrangler Vars Parity]]
-- [[_COMMUNITY_PWA Icon Generator|PWA Icon Generator]]
-- [[_COMMUNITY_Timezone Set Tests|Timezone Set Tests]]
-- [[_COMMUNITY_Bidirectional Dedup Classifier|Bidirectional Dedup Classifier]]
-- [[_COMMUNITY_Finalize Merge Logic|Finalize Merge Logic]]
-- [[_COMMUNITY_Chunk Consumer Tests|Chunk Consumer Tests]]
-- [[_COMMUNITY_Coordinator Queue Tests|Coordinator Queue Tests]]
-- [[_COMMUNITY_Initial Settings Delete Tests|Initial Settings Delete Tests]]
-- [[_COMMUNITY_Discovery Status Tests|Discovery Status Tests]]
-- [[_COMMUNITY_Logout Tests|Logout Tests]]
-- [[_COMMUNITY_Articles Repository Persistence|Articles Repository Persistence]]
-- [[_COMMUNITY_Global Feed Schema|Global Feed Schema]]
-- [[_COMMUNITY_Feed Eviction Tests|Feed Eviction Tests]]
-- [[_COMMUNITY_Landing OAuth Page|Landing OAuth Page]]
-- [[_COMMUNITY_Web Manifest Tests|Web Manifest Tests]]
-- [[_COMMUNITY_Crawler Layout Tests|Crawler Layout Tests]]
-- [[_COMMUNITY_Shell End To End Script|Shell End To End Script]]
-- [[_COMMUNITY_Canonical URL Normalization|Canonical URL Normalization]]
-- [[_COMMUNITY_Security Headers Middleware|Security Headers Middleware]]
-- [[_COMMUNITY_Initial Database Schema|Initial Database Schema]]
-- [[_COMMUNITY_Worker Handler Merger|Worker Handler Merger]]
-- [[_COMMUNITY_Refresh Gone Endpoint|Refresh Gone Endpoint]]
-- [[_COMMUNITY_Auth Links Schema|Auth Links Schema]]
-- [[_COMMUNITY_Fixture Generator Script|Fixture Generator Script]]
-- [[_COMMUNITY_Runtime Env Types|Runtime Env Types]]
-- [[_COMMUNITY_CSP Violation End To End|CSP Violation End To End]]
-- [[_COMMUNITY_History Expand End To End|History Expand End To End]]
-- [[_COMMUNITY_Star Button End To End|Star Button End To End]]
-- [[_COMMUNITY_Tag Railing Flip End To End|Tag Railing Flip End To End]]
-- [[_COMMUNITY_View Transition End To End|View Transition End To End]]
-- [[_COMMUNITY_Test Env Types|Test Env Types]]
-- [[_COMMUNITY_End To End Global Setup|End To End Global Setup]]
-- [[_COMMUNITY_Knip Config|Knip Config]]
-- [[_COMMUNITY_Alt Source Label|Alt Source Label]]
-- [[_COMMUNITY_Article Tags Schema|Article Tags Schema]]
-- [[_COMMUNITY_Chunk Completions Schema|Chunk Completions Schema]]
-- [[_COMMUNITY_Finalize Lock Schema|Finalize Lock Schema]]
-- [[_COMMUNITY_Finalize Recorded Schema|Finalize Recorded Schema]]
-- [[_COMMUNITY_Article Embeddings Schema|Article Embeddings Schema]]
-- [[_COMMUNITY_Article Snippet Schema|Article Snippet Schema]]
-- [[_COMMUNITY_Dedup Runs Schema|Dedup Runs Schema]]
-- [[_COMMUNITY_Wait Iterations Schema|Wait Iterations Schema]]
-- [[_COMMUNITY_Discovery Priority Schema|Discovery Priority Schema]]
-- [[_COMMUNITY_Client Script Builder|Client Script Builder]]
-- [[_COMMUNITY_App URL Validator|App URL Validator]]
-- [[_COMMUNITY_Digest Generation Requirements|Digest Generation Requirements]]
-- [[_COMMUNITY_Admin API Reference|Admin API Reference]]
-- [[_COMMUNITY_Spec Change Log|Spec Change Log]]
-- [[_COMMUNITY_Deployment Runbooks|Deployment Runbooks]]
-- [[_COMMUNITY_Configuration Reference|Configuration Reference]]
-- [[_COMMUNITY_Pipeline Consumer Phases|Pipeline Consumer Phases]]
-- [[_COMMUNITY_Force Refresh Trigger|Force Refresh Trigger]]
-- [[_COMMUNITY_Headline Source Preference|Headline Source Preference]]
-- [[_COMMUNITY_Legacy Discovery Requirements|Legacy Discovery Requirements]]
-- [[_COMMUNITY_Constraint Guardrails|Constraint Guardrails]]
-- [[_COMMUNITY_Reading Requirements Spec|Reading Requirements Spec]]
-- [[_COMMUNITY_Security Documentation|Security Documentation]]
-- [[_COMMUNITY_Authentication Requirements Spec|Authentication Requirements Spec]]
-- [[_COMMUNITY_Observability Requirements Spec|Observability Requirements Spec]]
-- [[_COMMUNITY_Settings Requirements Spec|Settings Requirements Spec]]
-- [[_COMMUNITY_Observability Documentation|Observability Documentation]]
-- [[_COMMUNITY_Scrape Run Repository|Scrape Run Repository]]
-- [[_COMMUNITY_Historical Requirements Overview|Historical Requirements Overview]]
-- [[_COMMUNITY_Discovery Requirements Spec|Discovery Requirements Spec]]
-- [[_COMMUNITY_Project Root Readme|Project Root Readme]]
-- [[_COMMUNITY_Product Spec Index|Product Spec Index]]
-- [[_COMMUNITY_Blocked Publisher Filtering|Blocked Publisher Filtering]]
-- [[_COMMUNITY_Pending Work Tracker|Pending Work Tracker]]
-- [[_COMMUNITY_Legacy Motion Requirements|Legacy Motion Requirements]]
-- [[_COMMUNITY_Documentation Index|Documentation Index]]
-- [[_COMMUNITY_April Change Archive|April Change Archive]]
-- [[_COMMUNITY_Legacy HTTP API Requirements|Legacy HTTP API Requirements]]
-- [[_COMMUNITY_Legacy Email Requirements|Legacy Email Requirements]]
-- [[_COMMUNITY_Security Policy|Security Policy]]
-- [[_COMMUNITY_Design Requirements Spec|Design Requirements Spec]]
-- [[_COMMUNITY_Migration Index|Migration Index]]
-- [[_COMMUNITY_Legacy Prompt Requirements|Legacy Prompt Requirements]]
-- [[_COMMUNITY_Email Requirements Spec|Email Requirements Spec]]
-- [[_COMMUNITY_History Requirements Spec|History Requirements Spec]]
-- [[_COMMUNITY_PWA Requirements Spec|PWA Requirements Spec]]
-- [[_COMMUNITY_PWA Icon Assets|PWA Icon Assets]]
-- [[_COMMUNITY_Legacy Stats Requirements|Legacy Stats Requirements]]
-- [[_COMMUNITY_Architecture Decision Ledger|Architecture Decision Ledger]]
-- [[_COMMUNITY_Legacy Scale Tradeoffs|Legacy Scale Tradeoffs]]
-- [[_COMMUNITY_Rate Limit Requirements|Rate Limit Requirements]]
-- [[_COMMUNITY_SDD Review Queue|SDD Review Queue]]
-- [[_COMMUNITY_Documentation Coverage Queue|Documentation Coverage Queue]]
-- [[_COMMUNITY_Spec Glossary|Spec Glossary]]
+- sources.ts
+- settings.astro
+- worker.ts
+- [provider]/login.ts
+- discovery.ts
+- devDependencies
+- Decision Index
+- API Reference
+- signSession
+- errors.ts
+- scrape-coordinator.ts
+- auth/refresh.ts
+- digest-page.ts
+- callback.ts
+- scrape-chunk-consumer.ts
+- compilerOptions
+- cleanup.test.ts
+- errorResponse
+- lib/historical-dedup.ts
+- 0014_pipeline_runs.sql
+- Base.astro
+- enforceRateLimit
+- auth.ts
+- Digest Generation
+- [slug].astro
+- rediscovery-lifecycle.test.ts
+- originOf
+- integration.test.ts
+- Spec Changes
+- dedup-diag.ts
+- log
+- digest.astro
+- session-jwt.ts
+- email.ts
+- Architecture
+- cron.test.ts
+- dedup-rerank.ts
+- main
+- 4.2 Libraries (`src/lib/`)
+- email-dispatch.ts
+- api/settings.ts
+- bundled/theme-toggle.ts
+- Configuration
+- history.astro
+- cloudflare-test.ts
+- pipeline-consumer.ts
+- bidirectional-dedup.ts
+- check-no-page-pattern-b.mjs
+- crawler-policy.test.ts
+- vitest
+- types.ts
+- page-effects.ts
+- check-req-backlinks.mjs
+- mergeAsAltSource
+- scripts
+- Reading Experience
+- generateUlid
+- SESSION_COOKIE_NAME
+- security-headers.ts
+- feed.test.ts
+- sources-cache.ts
+- sdd/README.md
+- tag-railing-flip.test.ts
+- Authentication
+- check-wrangler-vars-parity.mjs
+- generate-pwa-icons.mjs
+- Observability
+- dedupe.ts
+- delete-initial.test.ts
+- queue-handler.ts
+- embed-backfill.test.ts
+- alt-sources-modal.ts
+- retry-bulk-endpoint.test.ts
+- history/api.test.ts
+- stats.test.ts
+- force-refresh.test.ts
+- 0001_initial.sql
+- Non-Functional Requirements
+- design.md
+- Onboarding & Settings
+- DigestCard.astro
+- lib/embed-backfill.ts
+- e2e-test.sh
+- dedup-diag.test.ts
+- Endpoints
+- Deployment
+- ref_node_path
+- Source Discovery
+- stats.ts
+- set-tz.test.ts
+- src/env.d.ts
+- install-prompt.ts
+- account.test.ts
+- callback-google.test.ts
+- Conventions
+- Observability
+- auth/account.ts
+- blocked-publishers.ts
+- scrape-finalize-consumer.ts
+- historical-dedup.test.ts
+- package.json
+- coordinator.test.ts
+- 0007_scrape_chunk_completions.sql
+- idx_articles_embedding_status
+- 0013_dedup_runs.sql
+- finalize-vectorize.test.ts
+- initFooterScramble
+- fetch
+- pipeline-status.ts
+- chunk-consumer.test.ts
+- discovery-status.test.ts
+- rules
+- dependencies
+- manifest.test.ts
+- ref_node_fs
+- pipeline-run.test.ts
+- logout.test.ts
+- buildEmbeddingInput
+- Admin-only routes (Cloudflare Access gating)
+- Spec Changes — Archive (April 2026)
+- canonical-url.ts
+- dedup-sweep-consumer.test.ts
+- PWA icons
+- CF-003 at `src/pages/api/admin/embed-backfill.ts:69`, `src/pages/api/admin/historical-dedup.ts:118`, `src/pages/api/admin/discovery/retry.ts:93`, `src/pages/api/admin/discovery/retry-bulk.ts:155` (Missing rate limiting / cost amplification)
+- Email Notifications
+- History & Stats
+- refresh-gone.test.ts
+- rate-limited.ts
+- data.test.ts
+- article-detail.ts
+- Architecture Decision Records
+- Content sources
+- validate-app-url.sh
+- ~/styles/global.css
+- news-digest — requirements (historical)
+- News Digest — curated by an LLM
+- news-digest — Product Specification
+- Operational TODOs
+- Motion & polish
+- news-digest — Documentation
+- HTTP API
+- Email notifications (Resend)
+- Security Policy
+- Migrations
+- LLM prompts
+- User stats widget
+- Scale and tradeoffs
+- .doc-coverage.md
 
 ## God Nodes (most connected - your core abstractions)
-1. `log()` - 148 edges
-2. `Decision Index` - 63 edges
-3. `signSession()` - 51 edges
-4. `errorResponse()` - 48 edges
-5. `originOf()` - 41 edges
-6. `enforceRateLimit()` - 36 edges
-7. `checkOrigin()` - 32 edges
-8. `requireAdminSession()` - 28 edges
-9. `requireSession()` - 28 edges
-10. `applyRefreshCookie()` - 27 edges
+1. `log()` - 158 edges
+2. `vitest` - 129 edges
+3. `Decision Index` - 65 edges
+4. `signSession()` - 49 edges
+5. `errorResponse()` - 48 edges
+6. `originOf()` - 41 edges
+7. `enforceRateLimit()` - 36 edges
+8. `astro` - 33 edges
+9. `checkOrigin()` - 32 edges
+10. `requireAdminSession()` - 30 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `probe()` --calls--> `fetch()`  [INFERRED]
-  scripts/validate-curated-sources.mjs → src/worker.ts
-- `authedRequest()` --calls--> `signSession()`  [EXTRACTED]
-  tests/articles/feed.test.ts → src/lib/session-jwt.ts
-- `validSessionCookie()` --calls--> `signSession()`  [EXTRACTED]
-  tests/discovery/retry-bulk-endpoint.test.ts → src/lib/session-jwt.ts
-- `validSessionCookie()` --calls--> `signSession()`  [EXTRACTED]
-  tests/discovery/retry-endpoint.test.ts → src/lib/session-jwt.ts
-- `authedToken()` --calls--> `signSession()`  [EXTRACTED]
-  tests/history/api.test.ts → src/lib/session-jwt.ts
+- `PR Checks — CI gates (`test.yml`)` --references--> `main()`  [INFERRED]
+  documentation/lanes/deployment.md → scripts/validate-curated-sources.mjs
+- `Supported Versions` --references--> `main()`  [INFERRED]
+  SECURITY.md → scripts/validate-curated-sources.mjs
+- `AD24: Single OAUTH_JWT_SECRET for both session signing and CSRF state` --references--> `verifyHmacSignature()`  [INFERRED]
+  documentation/decisions/README.md → src/lib/crypto.ts
+- `AD48: Dedup cost reduction: borderline-rerank watermark + batched rerank call + pipeline-wide gpt-oss-20b` --references--> `clearWatermark()`  [INFERRED]
+  documentation/decisions/README.md → src/lib/dedup-watermark.ts
+- `Worker Vars (non-secret)` --references--> `readCosineThreshold()`  [INFERRED]
+  documentation/lanes/configuration.md → src/lib/embeddings.ts
 
 ## Import Cycles
 - None detected.
 
-## Communities (174 total, 33 thin omitted)
+## Communities (161 total, 33 thin omitted)
 
-### Community 0 - "Feed Source Fetching"
-Cohesion: 0.10
-Nodes (37): headlineCacheKey(), readCachedHeadlines(), writeCachedHeadlines(), decodeHtmlEntities(), stripHtmlToText(), definedProp(), adaptersForDiscoveredFeeds(), asString() (+29 more)
+### Community 0 - "sources.ts"
+Cohesion: 0.07
+Nodes (57): RFC-2822, AD22: SSRF defence relies on Workers network sandbox; static IP allowlist is best-effort only, AD59: Forced and portal-like candidate fetch with deterministic non-article drop, 5.1 Global-feed pipeline (every 4 hours), ArticleBodyResult, extractArticleText(), fetchArticleBodies(), fetchArticleBodiesWithQuality() (+49 more)
 
-### Community 1 - "Email Digest Dispatch"
-Cohesion: 0.06
-Nodes (38): DbStubOptions, SqlCall, SqlCall, TzRow, UserRow, CapturedCall, DispatchUserRow, PreparedCall (+30 more)
-
-### Community 2 - "Pipeline Queue Worker"
-Cohesion: 0.19
-Nodes (14): handleBatch(), handleDedupSweepBatch(), fakeCtx, fakeEnv, { mockHandleCoordinator, mockHandleChunks, mockHandleFinalize, mockLog }, handlePipelineJobsBatch(), PipelineJobMessage, handleChunkBatch() (+6 more)
-
-### Community 3 - "Cleanup Refresh Tests"
-Cohesion: 0.06
-Nodes (28): env, errMsg(), insertArticle(), insertUser(), now(), insertArticle(), now(), UserRow (+20 more)
-
-### Community 4 - "Feed Discovery Workflow"
-Cohesion: 0.08
-Nodes (14): mockFetch(), PutOptions, PutOptions, recordDiscoveryFailure(), asArray(), contentTypeMatches(), discoverTag(), hasJsonItem() (+6 more)
-
-### Community 5 - "Package Tooling Config"
-Cohesion: 0.04
-Nodes (45): ignorePatterns, rules, no-console, no-unused-vars, typescript/no-explicit-any, $schema, dependencies, astro (+37 more)
-
-### Community 6 - "Request Errors Rate Limits"
-Cohesion: 0.16
-Nodes (34): findTagsNeedingDiscovery(), GET(), isIntegerInRange(), POST(), PUT(), UserSettingsRow, validateHashtags(), GET() (+26 more)
-
-### Community 7 - "Session Auth Middleware"
-Cohesion: 0.11
-Nodes (31): DELETE(), deleteAccountCore(), deleteUserKvEntries(), POST(), makeDb(), makeEnv(), POST(), unauthorizedResponse() (+23 more)
-
-### Community 8 - "Scrape Chunk Processing"
-Cohesion: 0.11
-Nodes (27): countChunkCompletions(), recordChunkCompletion(), applyForeignKeysPragma(), sanitizeText(), splitIntoParagraphs(), alignLlmArticlesToInputs(), buildAnchorIndices(), buildArticleBatchStatements() (+19 more)
-
-### Community 9 - "Admin Pipeline APIs"
-Cohesion: 0.21
-Nodes (8): GET(), jsonResponse(), RunRow, StatusError, StatusSuccess, LogEvent, LogLevel, LogRecord
-
-### Community 10 - "Digest History Interactions"
-Cohesion: 0.31
-Nodes (12): ArticleBodyResult, extractArticleText(), fetchArticleBodies(), fetchArticleBodiesWithQuality(), fetchArticleBody(), fetchArticleBodyWithQuality(), isHighConfidenceLandingOrPortalUrl(), isLikelyLandingOrPortalUrl() (+4 more)
-
-### Community 11 - "OAuth Callback Flow"
-Cohesion: 0.09
-Nodes (33): GITHUB_STATE_COOKIE, ExistingUserRow, DEFAULT_HASHTAGS, providerByName(), ProviderConfig, userIdFor(), clientIp(), CallbackEnv (+25 more)
-
-### Community 12 - "Scrape Finalize Dedup"
-Cohesion: 0.20
-Nodes (17): BgeRunResult, buildEmbeddingInput(), deleteVectorsBatched(), embedTexts(), readCosineThreshold(), readHighConfidenceCosine(), readSameVendorPenalty(), readTimeWindowSeconds() (+9 more)
-
-### Community 13 - "LLM Model JSON"
-Cohesion: 0.11
-Nodes (29): narrowBatchPayload(), AIRunResponse, escapeControlCharsInJsonStrings(), extractFirstJsonObject(), extractResponsePayload(), extractTokensIn(), extractTokensOut(), LLMPayload (+21 more)
-
-### Community 14 - "Embedding Backfill Admin"
-Cohesion: 0.29
-Nodes (13): POST(), ADMIN_USER_ROW, adminCookieJwt(), buildContextAndCall(), BuildContextOpts, DbFixture, makeAi(), makeDb() (+5 more)
-
-### Community 15 - "TypeScript Compiler Config"
-Cohesion: 0.09
-Nodes (21): compilerOptions, allowJs, baseUrl, esModuleInterop, exactOptionalPropertyTypes, forceConsistentCasingInFileNames, jsx, jsxImportSource (+13 more)
-
-### Community 16 - "Scrape Coordinator Chunking"
-Cohesion: 0.12
-Nodes (28): loadExistingCanonicalToIdMap(), loadExistingCanonicalUrls(), updateChunkCount(), SourceAdapter, applyPreferDirectOverGoogleNews(), buildCandidates(), capChunks(), chunkAndEnqueue() (+20 more)
-
-### Community 17 - "Settings Stars Auth Fixtures"
-Cohesion: 0.10
-Nodes (10): KNOWN_ARTICLE_IDS, sessionCookieFor(), UserRow, signSession(), authedRequest(), AuthedRequestOpts, formPostRequest(), SettingsRow (+2 more)
-
-### Community 18 - "Article Star Logging"
-Cohesion: 0.14
-Nodes (14): DayGroup, GET(), loadStarredPayload(), StarredResponse, StarredRow, WireArticle, ArticleRow, computeNextScrapeAt() (+6 more)
-
-### Community 19 - "Admin Pipeline Run API"
-Cohesion: 0.19
-Nodes (16): AdminAuthOk, GET(), KickResult, parseModeFromBody(), POST(), runKick(), ADMIN_USER_ROW, adminCookieJwt() (+8 more)
-
-### Community 20 - "Astro Layout Error Pages"
-Cohesion: 0.16
-Nodes (8): ~/components/ThemeIcon.astro, ~/components/ThemeToggle.astro, ~/components/UserMenu.astro, ~/lib/json-ld, ~/scripts/card-interactions, ~/styles/global.css, ~/layouts/Base.astro, safeJsonLd()
-
-### Community 21 - "Dev Trigger Crypto"
-Cohesion: 0.17
-Nodes (12): base64UrlDecode(), base64UrlEncode(), enc, AccessJwtClaims, audMatches(), decodeAccessJwt(), isAccessJwtClaims(), FakeContext (+4 more)
-
-### Community 22 - "Discovery Retry Admin"
-Cohesion: 0.16
-Nodes (18): DedupRow, GET(), jsonResponse(), PipelineRunRow, ScrapeRow, StatusError, StatusSuccess, executeRetryBulk() (+10 more)
-
-### Community 23 - "Theme Toggle Script"
-Cohesion: 0.23
-Nodes (11): applyHtmlBgInlineStyle(), applyMetaThemeColor(), applyTheme(), BG_BY_THEME, nextTheme(), persistTheme(), persistThemeCookie(), readStoredTheme() (+3 more)
-
-### Community 24 - "Curated Source Assembly"
-Cohesion: 0.17
-Nodes (15): BRAND_ONLY_TAGS, CURATED_SOURCES, CURATED_TAGS, CuratedSource, CuratedSourceKind, GOOGLE_NEWS_CURATED_TAGS, googleNewsSourceForTag(), hasCuratedGoogleNews() (+7 more)
-
-### Community 25 - "Dedup Diagnostics API"
-Cohesion: 0.20
-Nodes (13): ArticleRow, ArticleSide, buildSide(), DiagError, DiagSuccess, GET(), jsonResponse(), selectArticle() (+5 more)
-
-### Community 26 - "Historical Dedup Routing"
-Cohesion: 0.18
-Nodes (11): BypassEnv, devBypassEnabled(), POST(), DevEnv, POST(), verifyHmacSignature(), encodeRandom(), encodeTime() (+3 more)
-
-### Community 27 - "Settings Gate Page"
-Cohesion: 0.15
-Nodes (7): ~/components/InstallPrompt.astro, ~/lib/curated-sources, ~/lib/default-hashtags, ~/lib/json-string-array, ~/lib/models, redirect(), requireSettingsComplete()
-
-### Community 28 - "Dedup Rerank Batches"
-Cohesion: 0.16
-Nodes (11): BatchPayload, BatchVerdictEntry, buildBatchUser(), readRerankFloor(), RERANK_SYSTEM, RerankArticle, RerankBatchOptions, rerankBorderlinePairsBatch() (+3 more)
-
-### Community 29 - "Digest Starred Pages"
-Cohesion: 0.12
-Nodes (17): ~/components/DigestCard.astro, ~/components/TagStrip.astro, ~/lib/alt-source-label, ~/lib/digest-today, ~/lib/hashtags, ~/lib/slug, ~/middleware/settings-gate, ~/pages/api/history (+9 more)
-
-### Community 30 - "Session JWT Verification"
-Cohesion: 0.03
-Nodes (62): AD10: Atomic conditional UPDATE as the once-per-run idempotency gate, AD11: Keep `style-src 'unsafe-inline'`; runtime `.style.X` writes are intentional, AD12: Integration env: separate Cloudflare resources, manual trigger from develop, crons disabled, AD13: No non-essential cookies (analytics gate), AD14: History-page perf-comparability test permanently skipped, AD15: Test pool exercises worker.ts directly; production runs through the Astro-merged entry, AD16: Single-writer invariant for KV `sources:{tag}` enforced via centralised helper, AD17: Reject `dedupe-groups.ts` extraction (+54 more)
-
-### Community 31 - "Page Transition Effects"
-Cohesion: 0.17
-Nodes (9): BeforeSwapEvent, clearAllVtNames(), findPromotableCard(), KEY(), promoteIncomingCardForReturnMorph(), promoteSourceCardForOutgoingMorph(), restoreScroll(), saveScroll() (+1 more)
-
-### Community 32 - "Feed Health Rediscovery"
-Cohesion: 0.22
-Nodes (7): KvStub, makeEnv(), makeKv(), clearHealth(), FeedHealthResult, healthKey(), recordFetchResult()
-
-### Community 33 - "LLM Response Parsing"
-Cohesion: 0.26
-Nodes (9): BatchHandlerOptions, NonRetryableError, QueueMessageContext, readMaxQueueAttempts(), FakeBody, fakeEnv, makeBatch(), makeMessage() (+1 more)
-
-### Community 34 - "Card Interaction Script"
-Cohesion: 0.27
-Nodes (13): makeCapturingButton(), makeClassList(), makeDisclosurePair(), makeStarButton(), bindStarDelegation(), closeAllTagPopovers(), getBindFlags(), handleStarClick() (+5 more)
-
-### Community 35 - "History Hashtag API"
-Cohesion: 0.20
-Nodes (3): QueueMock, SqlCall, scheduled()
-
-### Community 36 - "Today Digest Payload"
-Cohesion: 0.12
-Nodes (18): ArticleRow, GET(), HistoryResponse, ScrapeRunRow, upsertDay(), WireTick, CountRow, SumRow (+10 more)
-
-### Community 37 - "OAuth Provider Config"
+### Community 1 - "settings.astro"
 Cohesion: 0.05
-Nodes (56): envWith(), formatCountdown(), init(), pollScrapeStatus(), refetchAndReplace(), saveTags(), tickCountdown(), wireCountdown() (+48 more)
+Nodes (58): AD57: AI Gateway dynamic route for pipeline model control, Props, AIRunResponse, escapeControlCharsInJsonStrings(), extractFirstJsonObject(), extractResponsePayload(), extractTokensIn(), extractTokensOut() (+50 more)
 
-### Community 38 - "Scrape Status API"
-Cohesion: 0.26
-Nodes (12): GET(), ScrapeRunRow, authedRequest(), authedRequestWithRunId(), baseUser(), envFrom(), makeContext(), makeDb() (+4 more)
+### Community 2 - "worker.ts"
+Cohesion: 0.13
+Nodes (20): handleBatch(), addChunkStats(), ChunkStats, finishRun(), nowSeconds(), ScrapeRunSeed, startRun(), handleDedupSweepBatch() (+12 more)
 
-### Community 40 - "Article Feed Tests"
-Cohesion: 0.15
-Nodes (7): authedRequest(), MockOpts, RawArticle, ScrapeRunRow, UserRow, WireArticle, WireResponse
+### Community 3 - "[provider]/login.ts"
+Cohesion: 0.06
+Nodes (47): RFC-7517, Admin endpoint cross-site guards, Admin gate and JWT exp validation, Auth cookie policy, Content-Security-Policy, Contents, Dev-bypass prod guard, Google id_token RS256 verification (+39 more)
 
-### Community 41 - "Discovery Bulk Retry Tests"
-Cohesion: 0.17
-Nodes (4): KvHandles, SqlBinding, UserRow, validSessionCookie()
+### Community 4 - "discovery.ts"
+Cohesion: 0.06
+Nodes (31): asArray(), contentTypeMatches(), discoverTag(), hasJsonItem(), hasXmlItem(), itemHasTitleAndLink(), LLMDiscoveryPayload, narrowDiscoveryPayload() (+23 more)
 
-### Community 42 - "History API Tests"
-Cohesion: 0.17
-Nodes (4): ArticleRow, authedToken(), ScrapeRunRow, UserRow
+### Community 5 - "devDependencies"
+Cohesion: 0.14
+Nodes (14): devDependencies, @astrojs/check, @cloudflare/vitest-pool-workers, @cloudflare/workers-types, esbuild, knip, oxlint, @playwright/test (+6 more)
 
-### Community 43 - "History Stats Tests"
-Cohesion: 0.18
-Nodes (6): authedRequest(), Binding, formatInt(), formatReadOfTotal(), Responses, UserRow
+### Community 6 - "Decision Index"
+Cohesion: 0.04
+Nodes (49): AD10: Atomic conditional UPDATE as the once-per-run idempotency gate, AD11: Keep `style-src 'unsafe-inline'`; runtime `.style.X` writes are intentional, AD12: Integration env: separate Cloudflare resources, manual trigger from develop, crons disabled, AD13: No non-essential cookies (analytics gate), AD14: History-page perf-comparability test permanently skipped, AD17: Reject `dedupe-groups.ts` extraction, AD18: Reject `deferred-candidates.ts`; chunk-overflow path stays log-only, AD19: Reject `tag-railing-flip-core.ts`; FLIP measurements are not separable from DOM (+41 more)
 
-### Community 44 - "Pipeline Dedupe Clustering"
-Cohesion: 0.27
-Nodes (10): Candidate, Cluster, clusterByCanonical(), mergeClusters(), mergeClustersByLlmHints(), normaliseRawDedupGroups(), pickEarliest(), clusterOf() (+2 more)
-
-### Community 45 - "Google JWKS Verification"
-Cohesion: 0.67
-Nodes (4): isIpv4Literal(), isPrivateIpv4(), isPrivateIpv6(), isUrlSafe()
-
-### Community 46 - "OAuth Login Flow"
-Cohesion: 0.70
-Nodes (3): mapOAuthError(), OAUTH_ERROR_CODES, OAuthErrorCode
-
-### Community 47 - "Force Refresh Tests"
-Cohesion: 0.18
-Nodes (7): ADMIN_USER_ROW, adminCookieJwt(), AdminSessionFixture, DbFixture, PreparedStmt, QueueFixture, refreshRequest()
-
-### Community 48 - "Astro Pattern Checker"
-Cohesion: 0.20
-Nodes (10): allOffenders, componentDir, componentOffenders, isTypeOnlyImport(), listAstroFiles(), pageOffenders, REPO_ROOT, report (+2 more)
-
-### Community 49 - "Dedup Diagnostic Tests"
-Cohesion: 0.24
-Nodes (10): ADMIN_USER_ROW, adminCookieJwt(), ArticleRow, callGet(), CallOpts, DbFixture, makeDb(), makeVectorize() (+2 more)
-
-### Community 51 - "Historical Dedup Batch Tests"
-Cohesion: 0.24
-Nodes (9): ArticleRow, callBatch(), CallOpts, DbFixture, ExistenceGuardEntry, KvStore, makeDb(), makeKv() (+1 more)
-
-### Community 52 - "Alt Sources Modal"
-Cohesion: 0.30
-Nodes (10): DIALOG, VIEWPORT, applyAnchorOrCentre(), getDialog(), initModal(), onCloseClick(), onDialogClick(), onTriggerClick() (+2 more)
-
-### Community 53 - "Requirement Backlink Checker"
-Cohesion: 0.22
-Nodes (10): findAllRefs(), findSddIds(), orphans, refs, ROOT, SCAN_DIRS, sdd, SKIP_PATHS (+2 more)
-
-### Community 54 - "Historical Dedup Admin Tests"
-Cohesion: 0.29
-Nodes (9): POST(), ADMIN_USER_ROW, adminCookieJwt(), CallOpts, callRoute(), DbCalls, makeDb(), makeQueue() (+1 more)
-
-### Community 56 - "Google Callback Tests"
-Cohesion: 0.15
-Nodes (7): GOOGLE_STATE_COOKIE, getHmacKey(), HEADER_B64, isSessionClaims(), SessionClaims, baseClaims, verifySession()
-
-### Community 57 - "OAuth Login Tests"
-Cohesion: 0.40
-Nodes (4): hours, minutes, rawSeconds, url
-
-### Community 59 - "Dedup Sweep Consumer"
-Cohesion: 0.15
-Nodes (13): ParsedBody, SyncBatchResult, readWatermark(), writeWatermark(), ArticleRow, DedupBatchResult, DedupCursor, runHistoricalDedupBatch() (+5 more)
-
-### Community 60 - "Sources Cache Eviction"
-Cohesion: 0.27
-Nodes (7): key(), serialize(), sourcesCacheRawEqual(), writeSourcesCache(), DiscoveredFeed, SourcesCacheValue, applyEvictions()
-
-### Community 61 - "Article Detail Page"
-Cohesion: 0.25
-Nodes (7): ~/components/AltSourcesModal.astro, ~/lib/paragraph-split, ~/lib/safe-href, ~/lib/tz, formatIngestedAt(), safeHref(), localeForTz()
-
-### Community 63 - "Install Prompt Script"
-Cohesion: 0.31
-Nodes (7): IosNavigatorLike, isIos(), BeforeInstallPromptEvent, initInstallPrompt(), IosNavigator, isIos(), isStandalone()
-
-### Community 64 - "Finalize Vectorize Tests"
-Cohesion: 0.25
-Nodes (6): DbCall, makeEnv(), makeMockSweepQueue(), MockDb, MockSweepQueue, MockVectorize
-
-### Community 65 - "Wrangler Vars Parity"
-Cohesion: 0.22
-Nodes (7): here, integ, onlyInInteg, onlyInProd, prod, text, tomlPath
-
-### Community 66 - "PWA Icon Generator"
-Cohesion: 0.22
-Nodes (7): iconsDir, repoRoot, scriptDir, sizes, svgFlat, svgPath, svgRaw
-
-### Community 67 - "Timezone Set Tests"
-Cohesion: 0.29
-Nodes (3): env(), makeKvStub(), UserRow
-
-### Community 68 - "Bidirectional Dedup Classifier"
-Cohesion: 0.36
-Nodes (8): ClassifierParams, classifyMatchPair(), ClassifyOutcome, MatchInput, SelfArticle, match(), PARAMS, self()
-
-### Community 69 - "Finalize Merge Logic"
-Cohesion: 0.44
-Nodes (7): buildMergeStatements(), FinalizeRow, mergeAsAltSource(), pickWinner(), CapturedStatement, makeRecordingDb(), row()
-
-### Community 70 - "Chunk Consumer Tests"
-Cohesion: 0.16
-Nodes (10): CHUNK_LLM_PARAMS, compactChunkBodySnippetForPrompt(), DISCOVERY_LLM_PARAMS, discoveryUserPrompt(), LLM_BASE_PARAMS, processChunkUserPrompt(), sanitizePromptField(), KvState (+2 more)
-
-### Community 72 - "Initial Settings Delete Tests"
+### Community 7 - "API Reference"
 Cohesion: 0.04
 Nodes (45): API Reference, Authentication, Contents, Conventions, DELETE /api/articles/:id/star (Unstar article), DELETE /api/auth/account (Delete account, JSON path), Developer Tools, Digests (+37 more)
 
-### Community 73 - "Discovery Status Tests"
-Cohesion: 0.29
-Nodes (3): env(), makeKvStub(), UserRow
+### Community 8 - "signSession"
+Cohesion: 0.05
+Nodes (15): signSession(), KNOWN_ARTICLE_IDS, sessionCookieFor(), UserRow, UserRow, validSessionCookie(), authedRequest(), authedRequestWithRunId() (+7 more)
 
-### Community 76 - "Articles Repository Persistence"
-Cohesion: 0.08
-Nodes (25): 1. Overview, 2. Components, 3. Repository Layout, 4.1 Middleware, 4.2 Libraries (`src/lib/`), 4.3 Pages and API Routes, 4.4 Layouts, Components, and Client Scripts, 4.5 Worker, Queue, and Migrations (+17 more)
+### Community 9 - "errors.ts"
+Cohesion: 0.09
+Nodes (28): 7. Cross-cutting Concerns, ArticleRow, computeNextScrapeAt(), loadTodayPayload(), ScrapeRunRow, TodayResponse, WireArticle, DEFAULT_STATUS (+20 more)
 
-### Community 77 - "Global Feed Schema"
-Cohesion: 0.46
-Nodes (7): article_reads, article_sources, article_stars, article_tags, articles, scrape_runs, users
+### Community 10 - "scrape-coordinator.ts"
+Cohesion: 0.11
+Nodes (30): loadExistingCanonicalToIdMap(), loadExistingCanonicalUrls(), updateChunkCount(), SourceAdapter, SNIPPET_FLOOR, applyPreferDirectOverGoogleNews(), buildCandidates(), capChunks() (+22 more)
 
-### Community 79 - "Landing OAuth Page"
-Cohesion: 0.33
-Nodes (5): ~/lib/oauth-providers, ~/middleware/auth, errorCode, errorProvider, providers
+### Community 11 - "auth/refresh.ts"
+Cohesion: 0.15
+Nodes (24): hexEncode(), readCookie(), clientIp(), buildClearRefreshCookie(), deviceFingerprint(), findRefreshToken(), generateRefreshTokenValue(), generateRowId() (+16 more)
 
-### Community 80 - "Web Manifest Tests"
-Cohesion: 0.33
-Nodes (3): manifest, ManifestIcon, WebManifest
+### Community 12 - "digest-page.ts"
+Cohesion: 0.12
+Nodes (28): animateStripScrollTo(), armScrollDownReveal(), FlipChipOptions, flipChipToFront(), flipChipToPosition(), isFlipLocked(), formatCountdown(), init() (+20 more)
 
-### Community 83 - "Shell End To End Script"
-Cohesion: 0.60
-Nodes (3): e2e-test.sh script, check(), check_body()
+### Community 13 - "callback.ts"
+Cohesion: 0.12
+Nodes (29): ExistingUserRow, verifyHmacSignature(), mapOAuthError(), OAUTH_ERROR_CODES, OAuthErrorCode, ProviderConfig, userIdFor(), buildRefreshCookie() (+21 more)
 
-### Community 84 - "Canonical URL Normalization"
-Cohesion: 0.47
-Nodes (4): canonicalize(), isTrackingParam(), TRACKING_PARAM_EXACT, TRACKING_PARAM_PREFIXES
+### Community 14 - "scrape-chunk-consumer.ts"
+Cohesion: 0.12
+Nodes (29): normaliseRawDedupGroups(), sanitizeText(), normalizeHashtag(), previewRawResponse(), splitIntoParagraphs(), alignLlmArticlesToInputs(), attachEmbeddings(), buildAnchorIndices() (+21 more)
 
-### Community 85 - "Security Headers Middleware"
-Cohesion: 0.62
-Nodes (4): SECURITY_HEADERS, securityHeadersMiddleware(), makeCtx(), run()
+### Community 15 - "compilerOptions"
+Cohesion: 0.09
+Nodes (21): astro/tsconfigs/strict, compilerOptions, allowJs, baseUrl, esModuleInterop, exactOptionalPropertyTypes, forceConsistentCasingInFileNames, jsx (+13 more)
 
-### Community 86 - "Initial Database Schema"
-Cohesion: 0.70
-Nodes (4): articles, digests, pending_discoveries, users
+### Community 16 - "cleanup.test.ts"
+Cohesion: 0.11
+Nodes (22): errMsg(), purgeOldRefreshTokens(), loadOwnedTags(), runArticleRetention(), runChunkCompletionsPurge(), runCleanup(), runOrphanScrapeRunSweep(), runOrphanTagSweep() (+14 more)
 
-### Community 87 - "Worker Handler Merger"
-Cohesion: 0.40
-Nodes (4): astroEntry, __dirname, distWorkerDir, root
+### Community 17 - "errorResponse"
+Cohesion: 0.16
+Nodes (21): errorResponse(), RATE_LIMIT_RULES, rateLimitResponse(), RateLimitResult, RateLimitRule, SetTzBodySchema, applyRefreshCookie(), requireSession() (+13 more)
 
-### Community 89 - "Auth Links Schema"
-Cohesion: 0.50
-Nodes (3): auth_links, _merge_email_winners, _merge_user_merges
+### Community 18 - "lib/historical-dedup.ts"
+Cohesion: 0.11
+Nodes (24): AD35: Operator historical-dedup sweep self-chains via Cloudflare Queue, AD36: Lower dedup auto-merge threshold to 0.78 and remove the per-batch rerank cap, readWatermark(), writeWatermark(), ArticleRow, DedupBatchResult, DedupCursor, DEFAULT_BATCH (+16 more)
 
-### Community 90 - "Fixture Generator Script"
-Cohesion: 0.50
-Nodes (3): repoRoot, scriptDir, sources
+### Community 20 - "Base.astro"
+Cohesion: 0.06
+Nodes (23): AD20: Idempotency tokens for client scripts loaded BOTH as Pattern B IIFE AND via page-level import must live on `window`, Props, Props, normalizedEmail, Props, cookieTheme, Props, safeJsonLd() (+15 more)
 
-### Community 91 - "Runtime Env Types"
-Cohesion: 0.67
-Nodes (3): Env, Locals, Runtime
+### Community 21 - "enforceRateLimit"
+Cohesion: 0.15
+Nodes (23): astro, sanitizeErrorDetail(), enforceRateLimit(), AccessJwtClaims, AdminAuthResult, audMatches(), requireAdminSession(), GET() (+15 more)
 
-### Community 133 - "Digest Generation Requirements"
+### Community 22 - "auth.ts"
+Cohesion: 0.13
+Nodes (23): findUnrevokedChild(), revokeAllForUser(), AuthenticatedUser, AuthEnv, CLEAR_BOTH_COOKIES, handleRevokedReplayPath(), loadSession(), loadSessionForPage() (+15 more)
+
+### Community 23 - "Digest Generation"
 Cohesion: 0.08
 Nodes (25): Digest Generation, Out of Scope, REQ-PIPE-001: Global scrape-and-summarise pipeline on a fixed cadence, REQ-PIPE-002: Chunked LLM output content contract, REQ-PIPE-003: Same-story dedupe — core matching contract, REQ-PIPE-004: Curated source registry with ≥50 feeds spanning the 21 system tags, REQ-PIPE-005: Fourteen-day retention with starred-exempt cleanup, REQ-PIPE-006: scrape_runs aggregation surfaces stats, history, and in-flight progress (+17 more)
 
-### Community 134 - "Admin API Reference"
-Cohesion: 0.08
-Nodes (23): Admin / Operator API Reference, Bearer / Origin bypass, Canonical vocabulary, Contents, Conventions, Endpoints, Error envelope, GET /api/admin/dedup-diag (+15 more)
+### Community 24 - "[slug].astro"
+Cohesion: 0.09
+Nodes (18): MONTHS, primaryFormatted, primaryIso, Props, safeHref(), AltSourceRow, altSources, altSourcesResult (+10 more)
 
-### Community 135 - "Spec Change Log"
+### Community 25 - "rediscovery-lifecycle.test.ts"
+Cohesion: 0.11
+Nodes (10): clearHealth(), CONSECUTIVE_FETCH_FAILURE_LIMIT, FeedHealthResult, healthKey(), recordFetchResult(), E2E_USER_ID, SYSTEM_USER_ID, KvStub (+2 more)
+
+### Community 26 - "originOf"
+Cohesion: 0.15
+Nodes (15): clearDiscoveryFailure(), DiscoveryRetryBodySchema, checkDevEndpointOrigin(), forbiddenOriginResponse(), OriginCheckResult, originOf(), UNSAFE_METHODS, executeRetryBulk() (+7 more)
+
+### Community 27 - "integration.test.ts"
 Cohesion: 0.08
+Nodes (8): dispatchDailyEmails(), SendEmailParams, SqlCall, TzRow, UserRow, CapturedCall, DispatchUserRow, PreparedCall
+
+### Community 28 - "Spec Changes"
+Cohesion: 0.09
 Nodes (23): 2026-04-27, 2026-04-28, 2026-04-29, 2026-05-03, 2026-05-04, 2026-05-05, 2026-05-06, 2026-05-07 (+15 more)
 
-### Community 136 - "Deployment Runbooks"
-Cohesion: 0.10
-Nodes (20): Admin-only routes (Cloudflare Access gating), Browser invocation pattern for Access-gated endpoints, Cloudflare Resources, Contents, Dependency Automation, Deployment, Dev-bypass runbook (integration only), Environment-specific configuration (+12 more)
+### Community 29 - "dedup-diag.ts"
+Cohesion: 0.17
+Nodes (20): BgeRunResult, cosineSimilarity(), DEFAULT_COSINE_THRESHOLD, DEFAULT_HIGH_CONFIDENCE_COSINE, DEFAULT_SAME_VENDOR_PENALTY, DEFAULT_TIME_WINDOW_SECONDS, deleteVectorsBatched(), EMBEDDING_MODEL_ID (+12 more)
 
-### Community 137 - "Configuration Reference"
+### Community 30 - "log"
+Cohesion: 0.17
+Nodes (17): Event envelope, clearWatermark(), MAX_BATCH, log(), LogEvent, LogLevel, LogRecord, hasBearerAuth() (+9 more)
+
+### Community 31 - "digest.astro"
+Cohesion: 0.11
+Nodes (14): Props, redirect(), requireSettingsComplete(), gated, rawSelectedTags, selectedTagSet, sortedUserTags, tagCounts (+6 more)
+
+### Community 32 - "session-jwt.ts"
+Cohesion: 0.14
+Nodes (11): base64UrlDecode(), MIN_JWT_SECRET_BYTES, requireStrongJwtSecret(), getHmacKey(), HEADER_B64, isSessionClaims(), JWT_CLOCK_SKEW_SECONDS, SessionClaims (+3 more)
+
+### Community 33 - "email.ts"
+Cohesion: 0.16
+Nodes (16): EmailHeadline, HeadlineRow, TagTally, TallyRow, TotalRow, DigestReadyEmailParams, escapeHtml(), headlineRow() (+8 more)
+
+### Community 34 - "Architecture"
+Cohesion: 0.10
+Nodes (21): 1. Overview, 2. Components, 3. Repository Layout, 4.1 Middleware, 4.3 Pages and API Routes, 4.4 Layouts, Components, and Client Scripts, 4. Source Module Map, 5.2 Operator force-refresh (+13 more)
+
+### Community 35 - "cron.test.ts"
+Cohesion: 0.20
+Nodes (3): scheduled(), QueueMock, SqlCall
+
+### Community 36 - "dedup-rerank.ts"
+Cohesion: 0.14
+Nodes (15): BatchPayload, BatchVerdictEntry, buildBatchUser(), DEFAULT_RERANK_FLOOR, narrowBatchPayload(), readRerankFloor(), RERANK_BATCH_SIZE, RERANK_SYSTEM (+7 more)
+
+### Community 37 - "main"
+Cohesion: 0.21
+Nodes (11): AD15: Test pool exercises worker.ts directly; production runs through the Astro-merged entry, AD49: `workflow_run` deploy gate hardened against fork pwn-request vector, Environment-specific configuration, Playwright E2E (live), Production Deployment, Deploy your own, __dirname, main() (+3 more)
+
+### Community 38 - "4.2 Libraries (`src/lib/`)"
+Cohesion: 0.16
+Nodes (16): 4.2 Libraries (`src/lib/`), BRAND_ONLY_TAGS, CURATED_SOURCES, CURATED_TAGS, CuratedSource, CuratedSourceKind, GOOGLE_NEWS_CURATED_TAGS, googleNewsSourceForTag() (+8 more)
+
+### Community 39 - "email-dispatch.ts"
+Cohesion: 0.22
+Nodes (16): selectUnreadHeadlinesForUser(), tagTallySinceMidnight(), dispatchForTz(), DispatchUserRow, loadDispatchUsers(), processOneUser(), TzRow, sendEmail() (+8 more)
+
+### Community 41 - "api/settings.ts"
+Cohesion: 0.21
+Nodes (14): HASHTAG_REGEX, MAX_HASHTAGS, SettingsPutBodySchema, TagsPostBodySchema, checkOrigin(), findTagsNeedingDiscovery(), GET(), isIntegerInRange() (+6 more)
+
+### Community 42 - "bundled/theme-toggle.ts"
+Cohesion: 0.20
+Nodes (13): applyHtmlBgInlineStyle(), applyMetaThemeColor(), applyTheme(), BG_BY_THEME, DATA_ATTR, nextTheme(), persistTheme(), persistThemeCookie() (+5 more)
+
+### Community 43 - "Configuration"
 Cohesion: 0.11
 Nodes (18): AI Gateway setup, Compatibility, Configuration, Configuration Files, Contents, Cron, DEV_BYPASS_USER_ID override, GitHub Actions Secrets (+10 more)
 
-### Community 138 - "Pipeline Consumer Phases"
+### Community 44 - "history.astro"
+Cohesion: 0.13
+Nodes (13): slugify(), stripHyphens(), data, DayGroup, filteredArticles, HistoryResponse, initialSelectedTagSet, rawDateParam (+5 more)
+
+### Community 45 - "cloudflare-test.ts"
 Cohesion: 0.18
-Nodes (21): countRemaining(), runOneBackfillBatch(), findRecentRunningRun(), kickCoordinator(), RecentRun, tryClaimDispatch(), advancePhase(), markFailed() (+13 more)
+Nodes (8): applyD1Migrations, env, insertArticle(), insertUser(), now(), insertArticle(), now(), UserRow
 
-### Community 139 - "Force Refresh Trigger"
-Cohesion: 0.15
-Nodes (19): CumulativeResult, GET(), handle(), GET(), POST(), rateLimited(), redirectToSettings(), handle() (+11 more)
+### Community 46 - "pipeline-consumer.ts"
+Cohesion: 0.24
+Nodes (15): countChunkCompletions(), recordChunkCompletion(), advancePhase(), markFailed(), PipelineRunRow, processOnePipelineMessage(), runDedupKick(), runDedupWait() (+7 more)
 
-### Community 140 - "Headline Source Preference"
-Cohesion: 0.23
+### Community 47 - "bidirectional-dedup.ts"
+Cohesion: 0.20
+Nodes (11): AD43: Shared per-match dedup classifier; outer control flow stays per-consumer, ClassifierParams, classifyMatchPair(), ClassifyOutcome, MatchInput, SelfArticle, AGGREGATOR_HOSTS, etldPlusOne() (+3 more)
+
+### Community 48 - "check-no-page-pattern-b.mjs"
+Cohesion: 0.21
+Nodes (10): allOffenders, componentDir, componentOffenders, isTypeOnlyImport(), listAstroFiles(), pageOffenders, REPO_ROOT, report (+2 more)
+
+### Community 51 - "types.ts"
+Cohesion: 0.24
 Nodes (10): isGoogleNewsUrl(), preferDirectOverGoogleNews(), sharedTitleTokenCount(), SourceFetchResult, TITLE_STOPWORDS, titlesShareAnyToken(), tokenizeTitle(), Headline (+2 more)
 
-### Community 141 - "Legacy Discovery Requirements"
+### Community 52 - "page-effects.ts"
+Cohesion: 0.17
+Nodes (11): BeforeSwapEvent, bindBrandLinkScrollToTop(), clearAllVtNames(), findPromotableCard(), KEY(), promoteIncomingCardForReturnMorph(), promoteSourceCardForOutgoingMorph(), restoreScroll() (+3 more)
+
+### Community 53 - "check-req-backlinks.mjs"
+Cohesion: 0.20
+Nodes (10): findAllRefs(), findSddIds(), orphans, refs, ROOT, SCAN_DIRS, sdd, SKIP_PATHS (+2 more)
+
+### Community 54 - "mergeAsAltSource"
+Cohesion: 0.20
+Nodes (10): AD32: Same-story dedup uses Workers AI embeddings + Vectorize, not LLM finalize call, AD34: LLM same-event rerank for borderline cosine pairs, AD39: Raise dedup auto-merge threshold to 0.88 and gate merges to a 72h news-cycle window, AD41: Bidirectional finalize merge + automatic post-tick dedup sweep, POST /api/admin/historical-dedup, buildMergeStatements(), FinalizeRow, mergeAsAltSource() (+2 more)
+
+### Community 55 - "scripts"
+Cohesion: 0.14
+Nodes (14): scripts, build, deploy, dev, fixtures, icons, knip, lint (+6 more)
+
+### Community 56 - "Reading Experience"
+Cohesion: 0.14
+Nodes (14): Reading Experience, REQ-READ-001: Overview grid of today's digest, REQ-READ-002: Article detail view rendering, REQ-READ-003: Read tracking, REQ-READ-005: Empty dashboard state, REQ-READ-006: Empty, error, and offline pages, REQ-READ-007: Tag railing reorder animation, REQ-READ-008: Tag railing scroll, wrap, and fallback (+6 more)
+
+### Community 57 - "generateUlid"
+Cohesion: 0.24
+Nodes (9): findRecentRunningRun(), kickCoordinator(), RecentRun, tryClaimDispatch(), encodeRandom(), encodeTime(), generateUlid(), DevEnv (+1 more)
+
+### Community 58 - "SESSION_COOKIE_NAME"
+Cohesion: 0.21
+Nodes (9): base64UrlEncode(), enc, RFC-6265, SESSION_COOKIE_NAME, FakeContext, makeAccessJwt(), makeContext(), makeDb() (+1 more)
+
+### Community 59 - "security-headers.ts"
+Cohesion: 0.26
+Nodes (10): CSP_HEADER_VALUE, HSTS_HEADER_VALUE, PERMISSIONS_POLICY_VALUE, REFERRER_POLICY_VALUE, SECURITY_HEADERS, securityHeadersMiddleware(), X_CONTENT_TYPE_OPTIONS_VALUE, X_FRAME_OPTIONS_VALUE (+2 more)
+
+### Community 60 - "feed.test.ts"
+Cohesion: 0.15
+Nodes (7): authedRequest(), MockOpts, RawArticle, ScrapeRunRow, UserRow, WireArticle, WireResponse
+
+### Community 61 - "sources-cache.ts"
+Cohesion: 0.29
+Nodes (8): AD16: Single-writer invariant for KV `sources:{tag}` enforced via centralised helper, key(), serialize(), sourcesCacheRawEqual(), writeSourcesCache(), DiscoveredFeed, SourcesCacheValue, applyEvictions()
+
+### Community 62 - "sdd/README.md"
+Cohesion: 0.20
+Nodes (4): Glossary, Rate Limits, REQ-RATE-001: Application-layer rate limits on the auth and mutation surface, Review Queue
+
+### Community 64 - "Authentication"
+Cohesion: 0.17
+Nodes (12): Authentication, REQ-AUTH-001: Sign in with a federated identity provider, REQ-AUTH-002: Access token + refresh token, instant revocation, REQ-AUTH-003: CSRF defense for state-changing endpoints, REQ-AUTH-004: OAuth error surfacing, REQ-AUTH-005: Account deletion, REQ-AUTH-006: Admin surface gating, REQ-AUTH-007: Cross-provider account dedup (+4 more)
+
+### Community 65 - "check-wrangler-vars-parity.mjs"
+Cohesion: 0.22
+Nodes (7): here, integ, onlyInInteg, onlyInProd, prod, text, tomlPath
+
+### Community 66 - "generate-pwa-icons.mjs"
+Cohesion: 0.20
+Nodes (8): @resvg/resvg-js, iconsDir, repoRoot, scriptDir, sizes, svgFlat, svgPath, svgRaw
+
+### Community 67 - "Observability"
+Cohesion: 0.17
+Nodes (12): Observability, REQ-OPS-001: Structured JSON logging, REQ-OPS-002: Sanitized error surfaces, REQ-OPS-003: Content-Security-Policy on every response, REQ-OPS-004: Crawler policy and public-surface discoverability, REQ-OPS-005: Admin force-refresh endpoint, REQ-OPS-006: Integration deployment target, REQ-OPS-007: Public sitemap for crawler discovery (+4 more)
+
+### Community 68 - "dedupe.ts"
+Cohesion: 0.30
+Nodes (10): Candidate, Cluster, clusterByCanonical(), isDefined(), mergeClusters(), mergeClustersByLlmHints(), pickEarliest(), Survivor (+2 more)
+
+### Community 69 - "delete-initial.test.ts"
+Cohesion: 0.21
+Nodes (4): DEFAULT_HASHTAGS, DELETE_ALL_TAGS_LABEL, signedCookie(), UserRow
+
+### Community 70 - "queue-handler.ts"
+Cohesion: 0.18
+Nodes (7): BatchHandlerOptions, NonRetryableError, QueueMessageContext, readMaxQueueAttempts(), FakeBody, fakeEnv, { mockLog }
+
+### Community 71 - "embed-backfill.test.ts"
+Cohesion: 0.26
+Nodes (11): POST(), ADMIN_USER_ROW, adminCookieJwt(), buildContextAndCall(), BuildContextOpts, DbFixture, makeAi(), makeDb() (+3 more)
+
+### Community 72 - "alt-sources-modal.ts"
+Cohesion: 0.38
+Nodes (10): applyAnchorOrCentre(), getDialog(), initModal(), onCloseClick(), onDialogClick(), onTriggerClick(), positionAnchored(), teardownModal() (+2 more)
+
+### Community 73 - "retry-bulk-endpoint.test.ts"
+Cohesion: 0.17
+Nodes (4): KvHandles, SqlBinding, UserRow, validSessionCookie()
+
+### Community 74 - "history/api.test.ts"
+Cohesion: 0.17
+Nodes (4): ArticleRow, authedToken(), ScrapeRunRow, UserRow
+
+### Community 75 - "stats.test.ts"
+Cohesion: 0.18
+Nodes (6): authedRequest(), Binding, formatInt(), formatReadOfTotal(), Responses, UserRow
+
+### Community 76 - "force-refresh.test.ts"
+Cohesion: 0.18
+Nodes (7): ADMIN_USER_ROW, adminCookieJwt(), AdminSessionFixture, DbFixture, PreparedStmt, QueueFixture, refreshRequest()
+
+### Community 77 - "0001_initial.sql"
+Cohesion: 0.09
+Nodes (33): articles, digests, idx_articles_digest_rank, idx_articles_digest_slug, idx_articles_read, idx_digests_status, idx_digests_user_date, idx_digests_user_generated (+25 more)
+
+### Community 78 - "Non-Functional Requirements"
+Cohesion: 0.18
+Nodes (11): CON-A11Y-001: Accessibility minimum, CON-AUTH-001: Custom federated OAuth/OIDC + HMAC-SHA256 JWT, CON-COST-001: Target monthly cost ≈ $42 at 100 users, CON-DATA-001: Strong consistency in D1, edge cache in KV, CON-LLM-001: Centralized deterministic prompts, CON-PERF-001: 100-user thundering-herd target, CON-SEC-001: Strict content security policy, CON-SEC-002: Outbound article-body fetches flow through the SSRF-guarded helper (+3 more)
+
+### Community 79 - "design.md"
+Cohesion: 0.18
+Nodes (9): Design System, REQ-DES-001: Swiss-minimal visual language, REQ-DES-002: Light and dark mode with no flash, REQ-DES-003: Deliberate motion system, REQ-DES-004: Mobile and PWA no-flash chrome, PWA & Mobile, REQ-PWA-001: Installable PWA manifest, REQ-PWA-003: Mobile-first responsive layout (+1 more)
+
+### Community 80 - "Onboarding & Settings"
+Cohesion: 0.18
+Nodes (11): Onboarding & Settings, REQ-SET-001: Unified first-run and edit flow, REQ-SET-002: Hashtag curation strip UX, REQ-SET-003: Scheduled digest time with timezone, REQ-SET-004: Model selection, REQ-SET-005: Email notification preference, REQ-SET-006: Settings-incomplete gate, REQ-SET-007: Timezone change detection (+3 more)
+
+### Community 81 - "DigestCard.astro"
+Cohesion: 0.22
+Nodes (7): altLabel, displaySourceName, Props, stagger, tagAttr, AltSourceLabel, formatAltSourceLabel()
+
+### Community 82 - "lib/embed-backfill.ts"
+Cohesion: 0.24
+Nodes (7): ArticleRow, BATCH_SIZE, BatchResult, countRemaining(), runOneBackfillBatch(), embedTexts(), DbCalls
+
+### Community 83 - "e2e-test.sh"
+Cohesion: 0.70
+Nodes (4): check(), check_body(), curl_status(), e2e-test.sh script
+
+### Community 84 - "dedup-diag.test.ts"
+Cohesion: 0.24
+Nodes (10): ADMIN_USER_ROW, adminCookieJwt(), ArticleRow, callGet(), CallOpts, DbFixture, makeDb(), makeVectorize() (+2 more)
+
+### Community 85 - "Endpoints"
+Cohesion: 0.20
+Nodes (10): Endpoints, GET /api/admin/dedup-diag, GET /api/admin/dedup-status, GET /api/admin/discovery/retry-bulk, GET /api/admin/embed-backfill, GET /api/admin/force-refresh, GET /api/admin/pipeline-status, POST /api/admin/discovery/retry-bulk (+2 more)
+
+### Community 86 - "Deployment"
+Cohesion: 0.20
+Nodes (10): Cloudflare Resources, Contents, Dependency Automation, Deployment, Local Development, PR Checks — CI gates (`test.yml`), Prerequisites, Related Documentation (+2 more)
+
+### Community 87 - "ref_node_path"
+Cohesion: 0.14
+Nodes (10): @cloudflare/vitest-pool-workers, esbuild, entries, repoRoot, scriptDir, sources, astroEntry, __dirname (+2 more)
+
+### Community 88 - "Source Discovery"
+Cohesion: 0.20
+Nodes (10): REQ-DISC-001: Per-tag feed discovery queueing and pickup, REQ-DISC-002: Discovery progress visibility, REQ-DISC-003: Self-healing feed health tracking, REQ-DISC-004: Manual re-discover UI surface, REQ-DISC-005: Discovery prompt injection protection, REQ-DISC-006: Stuck-tag retention, REQ-DISC-007: Per-tag feed discovery execution and persistence, REQ-DISC-008: Manual re-discover endpoint contract (+2 more)
+
+### Community 89 - "stats.ts"
+Cohesion: 0.24
+Nodes (7): defaultStats, formatInt(), formatReadOfTotal(), StatsResponse, CountRow, GET(), SumRow
+
+### Community 90 - "set-tz.test.ts"
+Cohesion: 0.22
+Nodes (3): env(), makeKvStub(), UserRow
+
+### Community 91 - "src/env.d.ts"
+Cohesion: 0.40
+Nodes (4): App, Env, Locals, Runtime
+
+### Community 92 - "install-prompt.ts"
+Cohesion: 0.31
+Nodes (7): IosNavigatorLike, isIos(), BeforeInstallPromptEvent, initInstallPrompt(), IosNavigator, isIos(), isStandalone()
+
+### Community 94 - "callback-google.test.ts"
+Cohesion: 0.24
+Nodes (4): GOOGLE_STATE_COOKIE, googleClaims(), makeIdToken(), mockGoogleFetch()
+
+### Community 95 - "Conventions"
+Cohesion: 0.22
+Nodes (9): Admin / Operator API Reference, Bearer / Origin bypass, Canonical vocabulary, Contents, Conventions, Error envelope, Related Documentation, Sec-Fetch-Site guard on admin GET callbacks (+1 more)
+
+### Community 96 - "Observability"
+Cohesion: 0.22
+Nodes (9): Contents, Digest generation chunk status fields, Error detail field, Event enum, Observability, Rate-limiter atomicity and the WAF backstop, Refresh rate-limit fail-mode fields, Related Documentation (+1 more)
+
+### Community 97 - "auth/account.ts"
+Cohesion: 0.33
+Nodes (6): zod, AccountDeleteBodySchema, DELETE(), deleteAccountCore(), deleteUserKvEntries(), POST()
+
+### Community 98 - "blocked-publishers.ts"
+Cohesion: 0.42
+Nodes (6): BLOCKED_HOSTS, BLOCKED_NAME_TOKENS, filterBlockedPublishers(), hostIsBlocked(), isBlockedPublisher(), textHasBlockedToken()
+
+### Community 99 - "scrape-finalize-consumer.ts"
+Cohesion: 0.14
+Nodes (16): AD45: Accepted orchestration-file sizes (coordinator, chunk-consumer, settings.astro), applyForeignKeysPragma(), ArticleRow, AutoCandidate, autoSweepLookbackSeconds(), BorderCandidate, enqueueAutoSweep(), FinalizeJobMessage (+8 more)
+
+### Community 100 - "historical-dedup.test.ts"
+Cohesion: 0.31
+Nodes (8): ADMIN_USER_ROW, adminCookieJwt(), CallOpts, callRoute(), DbCalls, makeDb(), makeQueue(), QueueSends
+
+### Community 101 - "package.json"
+Cohesion: 0.11
+Nodes (17): config, name, private, type, version, @astrojs/check, @astrojs/cloudflare, @cloudflare/workers-types (+9 more)
+
+### Community 111 - "finalize-vectorize.test.ts"
+Cohesion: 0.25
+Nodes (6): DbCall, makeEnv(), makeMockSweepQueue(), MockDb, MockSweepQueue, MockVectorize
+
+### Community 113 - "fetch"
+Cohesion: 0.25
+Nodes (8): AD38: CF Access-protected admin endpoints must be invoked via top-level navigation, not fetch(), GET /api/admin/pipeline-run, POST /api/admin/discovery/retry, Integration deployment, Boundaries, Constraints, Technology Stack, fetch()
+
+### Community 114 - "pipeline-status.ts"
+Cohesion: 0.29
+Nodes (7): DedupRow, GET(), jsonResponse(), PipelineRunRow, ScrapeRow, StatusError, StatusSuccess
+
+### Community 115 - "chunk-consumer.test.ts"
+Cohesion: 0.25
+Nodes (3): ChunkJobMessage, KvState, SqlRecord
+
+### Community 116 - "discovery-status.test.ts"
+Cohesion: 0.29
+Nodes (3): env(), makeKvStub(), UserRow
+
+### Community 117 - "rules"
+Cohesion: 0.29
+Nodes (6): ignorePatterns, rules, no-console, no-unused-vars, typescript/no-explicit-any, $schema
+
+### Community 118 - "dependencies"
+Cohesion: 0.29
+Nodes (7): dependencies, astro, @astrojs/cloudflare, fast-xml-parser, tailwindcss, @tailwindcss/vite, zod
+
+### Community 119 - "manifest.test.ts"
+Cohesion: 0.29
+Nodes (3): manifest, ManifestIcon, WebManifest
+
+### Community 122 - "ref_node_fs"
+Cohesion: 0.10
+Nodes (9): @playwright/test, StorageStateShape, StorageStateShape, ensureDir(), globalSetup(), StorageStateShape, StorageStateShape, StorageStateShape (+1 more)
+
+### Community 124 - "pipeline-run.test.ts"
+Cohesion: 0.43
+Nodes (6): ADMIN_USER_ROW, adminCookieJwt(), callRoute(), DbCalls, makeDb(), makeQueue()
+
+### Community 126 - "buildEmbeddingInput"
+Cohesion: 0.33
+Nodes (6): AD33: Embed source-text and apply a same-vendor cosine penalty, AD42: Bidirectional historical-dedup + sweep cursor aligned with time window + multi-rerank, POST /api/admin/embed-backfill, 4.5 Worker, Queue, and Migrations, buildEmbeddingInput(), self()
+
+### Community 127 - "Admin-only routes (Cloudflare Access gating)"
+Cohesion: 0.33
+Nodes (6): Admin-only routes (Cloudflare Access gating), Browser invocation pattern for Access-gated endpoints, Dev-bypass runbook (integration only), Paths to gate, Setting `CF_ACCESS_AUD` and the `*.workers.dev` perimeter (production), Setup (one-time, operator console)
+
+### Community 128 - "Spec Changes — Archive (April 2026)"
+Cohesion: 0.33
+Nodes (6): 2026-04-22, 2026-04-23, 2026-04-24, 2026-04-25, 2026-04-26, Spec Changes — Archive (April 2026)
+
+### Community 129 - "canonical-url.ts"
+Cohesion: 0.47
+Nodes (4): canonicalize(), isTrackingParam(), TRACKING_PARAM_EXACT, TRACKING_PARAM_PREFIXES
+
+### Community 131 - "PWA icons"
+Cohesion: 0.50
+Nodes (3): Current assets, PWA icons, Updating the icon
+
+### Community 132 - "CF-003 at `src/pages/api/admin/embed-backfill.ts:69`, `src/pages/api/admin/historical-dedup.ts:118`, `src/pages/api/admin/discovery/retry.ts:93`, `src/pages/api/admin/discovery/retry-bulk.ts:155` (Missing rate limiting / cost amplification)"
+Cohesion: 0.50
+Nodes (3): CF-003 at `src/pages/api/admin/embed-backfill.ts:69`, `src/pages/api/admin/historical-dedup.ts:118`, `src/pages/api/admin/discovery/retry.ts:93`, `src/pages/api/admin/discovery/retry-bulk.ts:155` (Missing rate limiting / cost amplification), Cycle 1 - 2026-06-15, Review Decisions
+
+### Community 133 - "Email Notifications"
+Cohesion: 0.50
+Nodes (4): Email Notifications, REQ-MAIL-001: Digest-ready email content, REQ-MAIL-002: Non-blocking email failure, REQ-MAIL-003: Digest-ready email send policy
+
+### Community 134 - "History & Stats"
+Cohesion: 0.50
+Nodes (4): History & Stats, REQ-HIST-001: Day-grouped article history, REQ-HIST-002: User stats widget, REQ-HIST-003: Search, tag filter, and deep-link on /history
+
+### Community 141 - "Content sources"
 Cohesion: 0.13
 Nodes (15): Content sources, Cron/queue race prevention, Discovery flow, Dynamic tag-specific source discovery, Error handling, First digest after adding a new tag, `generateDigest(user, trigger, digestId?)` — the one function, Generic sources — run for every hashtag (+7 more)
 
-### Community 142 - "Constraint Guardrails"
-Cohesion: 0.13
-Nodes (14): Boundaries, CON-A11Y-001: Accessibility minimum, CON-AUTH-001: Custom federated OAuth/OIDC + HMAC-SHA256 JWT, CON-COST-001: Target monthly cost ≈ $42 at 100 users, CON-DATA-001: Strong consistency in D1, edge cache in KV, CON-LLM-001: Centralized deterministic prompts, CON-PERF-001: 100-user thundering-herd target, CON-SEC-001: Strict content security policy (+6 more)
-
-### Community 143 - "Reading Requirements Spec"
-Cohesion: 0.13
-Nodes (14): Reading Experience, REQ-READ-001: Overview grid of today's digest, REQ-READ-002: Article detail view rendering, REQ-READ-003: Read tracking, REQ-READ-005: Empty dashboard state, REQ-READ-006: Empty, error, and offline pages, REQ-READ-007: Tag railing reorder animation, REQ-READ-008: Tag railing scroll, wrap, and fallback (+6 more)
-
-### Community 144 - "Security Documentation"
-Cohesion: 0.15
-Nodes (12): Admin endpoint cross-site guards, Admin gate and JWT exp validation, Auth cookie policy, Content-Security-Policy, Contents, Dev-bypass prod guard, Google id_token RS256 verification, HSTS (+4 more)
-
-### Community 145 - "Authentication Requirements Spec"
-Cohesion: 0.15
-Nodes (12): Authentication, REQ-AUTH-001: Sign in with a federated identity provider, REQ-AUTH-002: Access token + refresh token, instant revocation, REQ-AUTH-003: CSRF defense for state-changing endpoints, REQ-AUTH-004: OAuth error surfacing, REQ-AUTH-005: Account deletion, REQ-AUTH-006: Admin surface gating, REQ-AUTH-007: Cross-provider account dedup (+4 more)
-
-### Community 146 - "Observability Requirements Spec"
-Cohesion: 0.15
-Nodes (12): Observability, REQ-OPS-001: Structured JSON logging, REQ-OPS-002: Sanitized error surfaces, REQ-OPS-003: Content-Security-Policy on every response, REQ-OPS-004: Crawler policy and public-surface discoverability, REQ-OPS-005: Admin force-refresh endpoint, REQ-OPS-006: Integration deployment target, REQ-OPS-007: Public sitemap for crawler discovery (+4 more)
-
-### Community 147 - "Settings Requirements Spec"
-Cohesion: 0.17
-Nodes (11): Onboarding & Settings, REQ-SET-001: Unified first-run and edit flow, REQ-SET-002: Hashtag curation strip UX, REQ-SET-003: Scheduled digest time with timezone, REQ-SET-004: Model selection, REQ-SET-005: Email notification preference, REQ-SET-006: Settings-incomplete gate, REQ-SET-007: Timezone change detection (+3 more)
-
-### Community 148 - "Observability Documentation"
-Cohesion: 0.18
-Nodes (10): Contents, Digest generation chunk status fields, Error detail field, Event enum, Event envelope, Observability, Rate-limiter atomicity and the WAF backstop, Refresh rate-limit fail-mode fields (+2 more)
-
-### Community 149 - "Scrape Run Repository"
-Cohesion: 0.28
-Nodes (9): addChunkStats(), ChunkStats, finishRun(), nowSeconds(), ScrapeRunSeed, startRun(), Call, makeDb() (+1 more)
-
-### Community 150 - "Historical Requirements Overview"
-Cohesion: 0.18
+### Community 150 - "news-digest — requirements (historical)"
+Cohesion: 0.20
 Nodes (10): Cost and time transparency, Deployment, History pagination, How it works, news-digest — requirements (historical), Observability, Scaffolding order, Security headers (+2 more)
 
-### Community 151 - "Discovery Requirements Spec"
-Cohesion: 0.18
-Nodes (10): REQ-DISC-001: Per-tag feed discovery queueing and pickup, REQ-DISC-002: Discovery progress visibility, REQ-DISC-003: Self-healing feed health tracking, REQ-DISC-004: Manual re-discover UI surface, REQ-DISC-005: Discovery prompt injection protection, REQ-DISC-006: Stuck-tag retention, REQ-DISC-007: Per-tag feed discovery execution and persistence, REQ-DISC-008: Manual re-discover endpoint contract (+2 more)
+### Community 152 - "News Digest — curated by an LLM"
+Cohesion: 0.25
+Nodes (8): Built with Codeflare's spec-driven development framework, License, Local dev, News Digest — curated by an LLM, Stack, What's in it, What's *not* in it, Why
 
-### Community 152 - "Project Root Readme"
-Cohesion: 0.20
-Nodes (9): Built with Codeflare's spec-driven development framework, Deploy your own, License, Local dev, News Digest — curated by an LLM, Stack, What's in it, What's *not* in it (+1 more)
-
-### Community 153 - "Product Spec Index"
-Cohesion: 0.20
+### Community 153 - "news-digest — Product Specification"
+Cohesion: 0.22
 Nodes (9): Actors, Canonical Spec Layout, Design Principles, Documentation, news-digest — Product Specification, Out of Scope, Requirement Domains, Support Files (+1 more)
 
-### Community 155 - "Blocked Publisher Filtering"
-Cohesion: 0.42
-Nodes (7): BLOCKED_HOSTS, BLOCKED_NAME_TOKENS, filterBlockedPublishers(), hostIsBlocked(), isBlockedPublisher(), mkHeadline(), textHasBlockedToken()
-
-### Community 156 - "Pending Work Tracker"
+### Community 156 - "Operational TODOs"
 Cohesion: 0.25
 Nodes (7): 12 curated source URLs currently 4xx, Hardcoded sitemap origin in robots.txt / llms.txt, Operational TODOs, Partial REQs with deferred scope, Pending Work, REQ-SET-008 AC 4 — `POST /api/tags/restore` server behaviour, Test-name migration after auth domain split
 
-### Community 157 - "Legacy Motion Requirements"
+### Community 157 - "Motion & polish"
 Cohesion: 0.25
 Nodes (8): Cascading content reveals, Cut from scope (previously specified, removed as decorative), First-run choreography, Foundations, Micro-interactions, Motion & polish, Page transitions, Skeleton loaders (LLM generation)
 
-### Community 159 - "Documentation Index"
-Cohesion: 0.29
+### Community 159 - "news-digest — Documentation"
+Cohesion: 0.33
 Nodes (6): Canonical Documentation Layout, Decision and Support Files, Glossary, Implementation Lanes, news-digest — Documentation, Related Documentation
 
-### Community 160 - "April Change Archive"
-Cohesion: 0.29
-Nodes (6): 2026-04-22, 2026-04-23, 2026-04-24, 2026-04-25, 2026-04-26, Spec Changes — Archive (April 2026)
-
-### Community 161 - "Legacy HTTP API Requirements"
+### Community 161 - "HTTP API"
 Cohesion: 0.33
 Nodes (6): Auth, Client-side polling during generation, Digest and refresh, History and stats, HTTP API, Settings
 
-### Community 162 - "Legacy Email Requirements"
+### Community 162 - "Email notifications (Resend)"
 Cohesion: 0.33
 Nodes (6): Email notifications (Resend), Email template, Resend call, Secrets, Sender domain, When it fires
 
 ### Community 163 - "Security Policy"
-Cohesion: 0.33
+Cohesion: 0.40
 Nodes (5): Reporting a Vulnerability, Security Policy, Supported Versions, What's in scope, What's out of scope
 
-### Community 164 - "Design Requirements Spec"
-Cohesion: 0.33
-Nodes (5): Design System, REQ-DES-001: Swiss-minimal visual language, REQ-DES-002: Light and dark mode with no flash, REQ-DES-003: Deliberate motion system, REQ-DES-004: Mobile and PWA no-flash chrome
-
-### Community 165 - "Migration Index"
+### Community 165 - "Migrations"
 Cohesion: 0.40
 Nodes (4): Adding a new migration, Historical context (CF-020 reverted), Migration index, Migrations
 
-### Community 166 - "Legacy Prompt Requirements"
+### Community 166 - "LLM prompts"
 Cohesion: 0.40
 Nodes (5): Digest generation prompt, Inference parameters (shared), LLM prompts, Source discovery prompt, Why a single file
 
-### Community 167 - "Email Requirements Spec"
-Cohesion: 0.40
-Nodes (4): Email Notifications, REQ-MAIL-001: Digest-ready email content, REQ-MAIL-002: Non-blocking email failure, REQ-MAIL-003: Digest-ready email send policy
-
-### Community 168 - "History Requirements Spec"
-Cohesion: 0.40
-Nodes (4): History & Stats, REQ-HIST-001: Day-grouped article history, REQ-HIST-002: User stats widget, REQ-HIST-003: Search, tag filter, and deep-link on /history
-
-### Community 169 - "PWA Requirements Spec"
-Cohesion: 0.40
-Nodes (4): PWA & Mobile, REQ-PWA-001: Installable PWA manifest, REQ-PWA-003: Mobile-first responsive layout, REQ-PWA-004: Brand link interaction contract
-
-### Community 170 - "PWA Icon Assets"
-Cohesion: 0.50
-Nodes (3): Current assets, PWA icons, Updating the icon
-
-### Community 171 - "Legacy Stats Requirements"
+### Community 171 - "User stats widget"
 Cohesion: 0.50
 Nodes (4): My take on this requirement, Tracking "read", User stats widget, Widget implementation
 
-### Community 173 - "Legacy Scale Tradeoffs"
+### Community 173 - "Scale and tradeoffs"
 Cohesion: 0.67
 Nodes (3): Known tradeoffs (accepted), Scale and tradeoffs, What's sized for 100-user scale
 
 ## Knowledge Gaps
-- **752 isolated node(s):** `validate-app-url.sh script`, `config`, `articles`, `scrape_runs`, `auth_links` (+747 more)
-  These have ≤1 connection - possible missing edges or undocumented components.
+- **800 isolated node(s):** `validate-app-url.sh script`, `config`, `_merge_email_winners`, `_merge_user_merges`, `$schema` (+795 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1104 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **33 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `log()` connect `Request Errors Rate Limits` to `Feed Source Fetching`, `Email Digest Dispatch`, `Pipeline Queue Worker`, `Cleanup Refresh Tests`, `Feed Discovery Workflow`, `Session Auth Middleware`, `Scrape Chunk Processing`, `Admin Pipeline APIs`, `Pipeline Consumer Phases`, `Force Refresh Trigger`, `OAuth Callback Flow`, `Scrape Finalize Dedup`, `Embedding Backfill Admin`, `Digest History Interactions`, `Scrape Coordinator Chunking`, `Article Star Logging`, `Admin Pipeline Run API`, `Dev Trigger Crypto`, `Discovery Retry Admin`, `Scrape Run Repository`, `Curated Source Assembly`, `Dedup Diagnostics API`, `Historical Dedup Routing`, `Dedup Rerank Batches`, `Feed Health Rediscovery`, `LLM Response Parsing`, `History Hashtag API`, `Today Digest Payload`, `Dedup Sweep Consumer`, `Sources Cache Eviction`?**
-  _High betweenness centrality (0.153) - this node is a cross-community bridge._
-- **Why does `fetch()` connect `OAuth Provider Config` to `Feed Source Fetching`, `Email Digest Dispatch`, `Card Interaction Script`, `Pipeline Queue Worker`, `Feed Discovery Workflow`, `Digest History Interactions`, `OAuth Callback Flow`, `Page Transition Effects`?**
-  _High betweenness centrality (0.031) - this node is a cross-community bridge._
-- **Why does `~/layouts/Base.astro` connect `Astro Layout Error Pages` to `Landing OAuth Page`, `Article Detail Page`, `OAuth Login Tests`, `Settings Gate Page`, `Digest Starred Pages`?**
-  _High betweenness centrality (0.019) - this node is a cross-community bridge._
-- **What connects `validate-app-url.sh script`, `config`, `articles` to the rest of the system?**
-  _752 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Feed Source Fetching` be split into smaller, more focused modules?**
-  _Cohesion score 0.0971322849213691 - nodes in this community are weakly interconnected._
-- **Should `Email Digest Dispatch` be split into smaller, more focused modules?**
-  _Cohesion score 0.05687645687645688 - nodes in this community are weakly interconnected._
-- **Should `Cleanup Refresh Tests` be split into smaller, more focused modules?**
-  _Cohesion score 0.06196078431372549 - nodes in this community are weakly interconnected._
+- **Why does `vitest` connect `vitest` to `sources.ts`, `settings.astro`, `canonical-url.ts`, `[provider]/login.ts`, `discovery.ts`, `worker.ts`, `dedup-sweep-consumer.test.ts`, `refresh-gone.test.ts`, `signSession`, `errors.ts`, `rate-limited.ts`, `auth/refresh.ts`, `data.test.ts`, `callback.ts`, `scrape-chunk-consumer.ts`, `scrape-coordinator.ts`, `cleanup.test.ts`, `errorResponse`, `lib/historical-dedup.ts`, `Base.astro`, `auth.ts`, `[slug].astro`, `rediscovery-lifecycle.test.ts`, `originOf`, `integration.test.ts`, `dedup-diag.ts`, `log`, `digest.astro`, `session-jwt.ts`, `email.ts`, `cron.test.ts`, `dedup-rerank.ts`, `4.2 Libraries (`src/lib/`)`, `email-dispatch.ts`, `bundled/theme-toggle.ts`, `history.astro`, `cloudflare-test.ts`, `bidirectional-dedup.ts`, `crawler-policy.test.ts`, `types.ts`, `mergeAsAltSource`, `generateUlid`, `SESSION_COOKIE_NAME`, `security-headers.ts`, `feed.test.ts`, `sources-cache.ts`, `tag-railing-flip.test.ts`, `dedupe.ts`, `delete-initial.test.ts`, `queue-handler.ts`, `embed-backfill.test.ts`, `alt-sources-modal.ts`, `retry-bulk-endpoint.test.ts`, `history/api.test.ts`, `stats.test.ts`, `force-refresh.test.ts`, `DigestCard.astro`, `lib/embed-backfill.ts`, `dedup-diag.test.ts`, `ref_node_path`, `set-tz.test.ts`, `install-prompt.ts`, `account.test.ts`, `callback-google.test.ts`, `blocked-publishers.ts`, `scrape-finalize-consumer.ts`, `historical-dedup.test.ts`, `package.json`, `coordinator.test.ts`, `finalize-vectorize.test.ts`, `chunk-consumer.test.ts`, `discovery-status.test.ts`, `manifest.test.ts`, `pipeline-run.test.ts`, `logout.test.ts`?**
+  _High betweenness centrality (0.265) - this node is a cross-community bridge._
+- **Why does `log()` connect `log` to `sources.ts`, `worker.ts`, `discovery.ts`, `errors.ts`, `scrape-coordinator.ts`, `auth/refresh.ts`, `callback.ts`, `scrape-chunk-consumer.ts`, `cleanup.test.ts`, `errorResponse`, `lib/historical-dedup.ts`, `enforceRateLimit`, `auth.ts`, `rediscovery-lifecycle.test.ts`, `originOf`, `integration.test.ts`, `dedup-diag.ts`, `session-jwt.ts`, `email.ts`, `cron.test.ts`, `dedup-rerank.ts`, `4.2 Libraries (`src/lib/`)`, `email-dispatch.ts`, `api/settings.ts`, `pipeline-consumer.ts`, `generateUlid`, `sources-cache.ts`, `queue-handler.ts`, `lib/embed-backfill.ts`, `stats.ts`, `Observability`, `auth/account.ts`, `scrape-finalize-consumer.ts`, `pipeline-status.ts`?**
+  _High betweenness centrality (0.200) - this node is a cross-community bridge._
+- **Why does `Observability` connect `Observability` to `architecture.md`, `log`?**
+  _High betweenness centrality (0.084) - this node is a cross-community bridge._
+- **Are the 2 inferred relationships involving `log()` (e.g. with `Event envelope` and `Related Documentation`) actually correct?**
+  _`log()` has 2 INFERRED edges - model-reasoned connections that need verification._
+- **What connects `validate-app-url.sh script`, `config`, `_merge_email_winners` to the rest of the system?**
+  _800 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `sources.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.06506849315068493 - nodes in this community are weakly interconnected._
+- **Should `settings.astro` be split into smaller, more focused modules?**
+  _Cohesion score 0.050724637681159424 - nodes in this community are weakly interconnected._
