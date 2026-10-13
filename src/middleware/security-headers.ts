@@ -58,12 +58,13 @@
  * `frame-ancestors 'none'` is the modern equivalent of `X-Frame-
  * Options: DENY`; both are still emitted as defense-in-depth for older
  * UAs that don't respect `frame-ancestors`. */
-// CF-019: this exact string is pinned by `tests/e2e/csp-policy.spec.ts`.
+// CF-019: this response-header contract is pinned by
+// `tests/observability/security-headers.test.ts`.
 // `'unsafe-inline'` in `style-src` is intentional per AD11 (FLIP
 // transforms + view-transition-name pre-flight write inline styles
 // at runtime). Do NOT remove `'unsafe-inline'` without proposing a
 // concrete alternative for those two patterns AND updating both AD11
-// and the e2e spec; a "just drop it" PR will fail the e2e gate.
+// and the response-header tests; the runtime style policy is unchanged.
 export const CSP_HEADER_VALUE =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.gravatar.com https://secure.gravatar.com; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
 

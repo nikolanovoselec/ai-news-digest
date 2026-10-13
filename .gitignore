@@ -21,7 +21,7 @@ coverage/
 .vscode/
 .idea/
 
-# Playwright (live-site e2e suite — see playwright.config.ts)
+# Retired browser-test artifacts may contain session credentials; never commit.
 playwright-report/
 test-results/
 .playwright/

@@ -783,7 +783,7 @@ POST /api/dev/login
 
 **Notes**
 
-Used by `scripts/e2e-test.sh` and local Playwright runs.
+Available for operator-authorized integration checks with the synthetic user. Automated E2E runners have been removed.
 
 ---
 
