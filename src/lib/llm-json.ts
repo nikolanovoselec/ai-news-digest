@@ -192,6 +192,9 @@ function gatewayModelParams(model: string): Record<string, unknown> {
   if (model.startsWith('google-ai-studio/gemini-2.5-')) {
     return { reasoning_effort: 'none' };
   }
+  if (model === 'openai/gpt-6-luna') {
+    return { reasoning_effort: 'low' };
+  }
   return {};
 }
 
