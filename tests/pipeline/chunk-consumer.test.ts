@@ -14,6 +14,7 @@ import {
 } from '~/queue/scrape-chunk-consumer';
 import type { ChunkJobMessage } from '~/queue/scrape-chunk-consumer';
 import { PROCESS_CHUNK_SYSTEM } from '~/lib/prompts';
+import { NonRetryableError } from '~/lib/queue-handler';
 
 // Aggregated recording of D1 statement execution through both the
 // `prepare().bind().run()` and `db.batch([...])` surfaces. Tests assert
@@ -228,12 +229,10 @@ function makeEnv(
   } as unknown as Env;
 }
 
-/** CF-030 - chunk consumer enforces a 120-word floor on `details`
- *  per REQ-PIPE-015 AC6. Test fixtures used to ship single-sentence
- *  bodies which now get dropped by the guard. Use this constant when
- *  the test isn't specifically about the word-count contract. */
+/** Valid 131-word summary for tests not targeting the length contract.
+ *  Clears the REQ-PIPE-015 AC6 backstop and fits REQ-PIPE-002 AC5. */
 const LONG_BODY =
-  'This is a representative article body that easily clears the 120-word floor. '.repeat(14) +
+  'This is a representative article body that easily clears the 120-word floor. '.repeat(10) +
   'It crosses two natural paragraph boundaries with explicit periods between sentences.';
 
 function makeChunk(
@@ -1694,7 +1693,7 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
     const tooShort = 'Short body sentence one. Sentence two. Sentence three.';
     const longBody =
       'This is a long-enough article body that easily clears the 80-word floor. '
-        .repeat(14) +
+        .repeat(10) +
       'It crosses two paragraph boundaries with explicit periods between sentences.';
     const aiResponse = {
       response: JSON.stringify({
@@ -1720,12 +1719,9 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
     expect(articleInserts[0]!.params).not.toContain('Title B - also long enough headline');
   });
 
-  it('REQ-PIPE-015 AC6: keeps articles in the 80-130 natural-distribution range that the prompt asks for but the model often undershoots', async () => {
-    // Workers AI models often produce 90-130-word summaries when source
-    // snippets are thin. The 80-word floor is a backstop, not a contract
-    // - bodies above 80 must pass. Pinning the boundary here so a future
-    // tightening (back to 120) is caught by CI rather than discovered via
-    // a 75% drop in daily ingestion.
+  it('REQ-PIPE-015 AC6: keeps an exactly 100-word summary at the prompt contract minimum', async () => {
+    // Pin the 100-word boundary so restoring a 120-word floor cannot
+    // silently drop a summary that meets the prompt's minimum.
     const exactly100Words = Array.from({ length: 100 }, (_, i) => `word${i}`).join(' ');
     const aiResponse = {
       response: JSON.stringify({
@@ -1763,7 +1759,7 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
     // the wild.
     const longBody =
       'This is a long-enough article body that easily clears the 120-word floor. '
-        .repeat(14) +
+        .repeat(10) +
       'It crosses two paragraph boundaries with explicit periods between sentences.';
     const aiResponse = {
       response: JSON.stringify({
@@ -2187,5 +2183,48 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
         r.sql.includes("embedding_status = 'failed'"),
     );
     expect(failedLog).toBeDefined();
+  });
+});
+
+describe('REQ-PIPE-002 AC5 / CON-LLM-001: bounded summary correction', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('an overlong correction is retryable, not another shortening pass or a successful drop', async () => {
+    const overlong = Array.from({ length: 13 }, () =>
+      'Cloudflare announced new infrastructure tools for developers building reliable artificial intelligence applications.'
+    ).join(' '); // 156 words
+    const output = (details: string) => ({
+      response: JSON.stringify({
+        articles: [{ index: 0, title: 'Cloudflare expands infrastructure tools for developers', details, tags: ['cloudflare'] }],
+      }),
+      usage: { input_tokens: 41, output_tokens: 23 },
+    });
+    // A later valid answer deliberately exists: an unbounded correction
+    // loop would incorrectly resolve instead of releasing this job to retry.
+    const replies = [output(overlong), output(overlong), output(LONG_BODY)][Symbol.iterator]();
+    const { db } = makeDb();
+    const { kv } = makeKv();
+    const env = makeEnv(db, kv, output(overlong));
+    vi.stubGlobal('fetch', async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url !== TEST_AI_GATEWAY_URL) throw new Error(`unexpected fetch: ${url}`);
+      const reply = replies.next();
+      if (reply.done) throw new Error('Gateway fixture exhausted');
+      return Response.json(reply.value);
+    });
+    const chunk = makeChunk({ candidates: [{
+      canonical_url: 'https://example.com/news/cloudflare-tools',
+      source_url: 'https://example.com/news/cloudflare-tools',
+      source_name: 'Cloudflare news',
+      title: 'Cloudflare expands infrastructure tools for developers',
+      published_at: 1_713_900_000,
+      body_snippet: overlong,
+    }] });
+    const outcome: unknown = await processOneChunk(env, chunk).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(outcome).toBeInstanceOf(Error);
+    expect(outcome).not.toBeInstanceOf(NonRetryableError);
   });
 });
