@@ -2,7 +2,7 @@
 
 Application-layer rate-limit policy that applies across the auth surface, authenticated mutations, polling endpoints, and admin side-effecting endpoints. Feature REQs in other domains reference this policy rather than restating its rules.
 
-Mechanism detail (per-bucket sizes, refresh-middleware/explicit-endpoint shared bucket, fail-mode asymmetry) lives in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#rate-limiting).
+Mechanism detail (per-bucket sizes, refresh-middleware/explicit-endpoint shared bucket, per-route failure policy) lives in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#rate-limiting).
 
 ---
 
@@ -16,10 +16,10 @@ Mechanism detail (per-bucket sizes, refresh-middleware/explicit-endpoint shared 
 
 1. Every authentication route, every authenticated mutation route, every authenticated endpoint that legitimate clients poll on a sub-minute cadence, and every admin side-effecting endpoint is rate-limited. An exhausted limit returns `HTTP 429` with a `Retry-After` header. <!-- @impl: src/lib/rate-limit.ts::enforceRateLimit -->
 2. Buckets are keyed by IP for unauthenticated paths, by user id for authenticated mutations, and by operator id for admin side-effecting endpoints, so a successfully-authenticated admin session is still bounded. <!-- @impl: src/lib/rate-limit.ts::enforceRateLimit -->
-3. Sign-in and OAuth callback rules fail open on a backing-store outage so a transient outage cannot lock users out. Refresh-token rules fail closed so a stolen refresh cookie cannot exploit the outage. <!-- @impl: src/lib/rate-limit.ts::enforceRateLimit -->
+3. Sign-in, OAuth callback, and refresh-token rules fail closed on a backing-store outage so an outage cannot remove authentication rate limits. <!-- @impl: src/lib/rate-limit.ts::RATE_LIMIT_RULES --> <!-- @impl: src/lib/rate-limit.ts::enforceRateLimit -->
 4. A rate-limited admin force-refresh or pipeline-run click surfaces the throttled state to the operator's settings surface with a retry-after value rather than silently dropping the action. <!-- @impl: src/lib/rate-limit.ts::enforceRateLimit -->
 
-**Notes:** Per-bucket sizes, the refresh middleware/explicit-endpoint shared bucket, and the fail-open/fail-closed asymmetry are documented in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#rate-limiting).
+**Notes:** Per-bucket sizes, the refresh middleware/explicit-endpoint shared bucket, and the per-route failure policy are documented in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#rate-limiting).
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 

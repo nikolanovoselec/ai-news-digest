@@ -94,7 +94,7 @@ The workflow builds `AI_GATEWAY_URL` as `https://gateway.ai.cloudflare.com/v1/<a
 
 For production deploys that DO bind Access, set this var and follow AD30 - bind Access on every public hostname the worker serves OR disable the unbound hostnames:
 1. **Set `CF_ACCESS_AUD`** - the audience tag of the Access application fronting the custom domain. The Worker enforces Layer 0 (assertion presence + `aud` claim match) before the baseline session + `ADMIN_EMAIL` checks run.
-2. **Bind Access on `*.workers.dev` too OR disable that subdomain** - Workers & Pages → your worker → Settings → Domains & Routes. Unbound `*.workers.dev` bypasses the perimeter; baseline session + `ADMIN_EMAIL` still gates, but the perimeter promise is broken (AD30).
+2. **Bind Access on `*.workers.dev` or disable it** - Workers & Pages → your worker → Settings → Domains & Routes. Unbound `*.workers.dev` bypasses the perimeter; baseline session + `ADMIN_EMAIL` still gates, but the perimeter promise is broken (AD30).
 
 The deploy job also runs `wrangler secret delete DEV_BYPASS_USER_ID` (idempotent, silenced on not-found) on each deploy so any stray value cannot defeat the synthetic `__e2e__` sandbox. The workflow does not propagate this secret; operators who need it must set it manually via `wrangler secret put`.
 
@@ -195,7 +195,7 @@ The `auth_refresh_*` buckets are shared between `POST /api/auth/refresh` (`src/p
 
 `set_tz` and `discovery_status` cover authenticated endpoints that legitimate clients poll on a sub-minute cadence. They key by user id and fail open so a KV outage does not degrade the settings UX.
 
-The fail-mode split exists because sign-in must remain reachable during a KV outage - locking everyone out is worse than letting through a brief burst - while a stolen refresh cookie must not benefit from the same outage to bypass its limit.
+Login, callback, and refresh rules fail closed on KV errors. Other rules retain their declared fail-open policy. An outage must not lift authentication throttles; [AD23](../decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop) records the accepted availability tradeoff.
 
 ## Compatibility
 

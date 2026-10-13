@@ -107,7 +107,7 @@ Structured JSON logging as the single operational surface - no external observab
 
 ### REQ-OPS-005: Admin force-refresh endpoint
 
-**Intent:** The owner can trigger an out-of-band scrape tick when the regular every-four-hours cron has not yet fired and a manual top-up is wanted. Same work as the cron, no per-user state, no LLM cost difference. Behind the three-layer admin gate so other signed-in users cannot trigger it.
+**Intent:** The owner can trigger an out-of-band scrape tick when the regular every-four-hours cron has not yet fired and a manual top-up is wanted. Same work as the cron, no per-user state, no LLM cost difference. Behind the worker-session and operator-email gate, with an optional Cloudflare Access perimeter, so other signed-in users cannot trigger it.
 
 **Applies To:** Admin
 
@@ -116,9 +116,9 @@ Structured JSON logging as the single operational surface - no external observab
 2. Triggering the endpoint starts a fresh scrape run with status running and sends one coordinator message - the same work the every-four-hours cron does. <!-- @impl: src/pages/api/admin/force-refresh.ts::GET -->
 3. If a run started by an earlier cron tick or a previous manual trigger is still running and started within the last two minutes, the endpoint reuses that run rather than starting a new one. This protects against accidental double-clicks and tab-restore replays. <!-- @impl: src/pages/api/admin/force-refresh.ts::rateLimited -->
 4. The response is content-negotiated so browser callers land back on the settings surface with the run id visible and scripted callers can read the run id and reuse flag programmatically. <!-- @impl: src/pages/api/admin/force-refresh.ts::redirectToSettings -->
-5. The endpoint is gated by all three admin layers per [REQ-AUTH-006](authentication.md#req-auth-006-admin-surface-gating): Cloudflare Access at the zone level (optionally audience-pinned), a valid worker session, and the session email matching the configured operator email; failure at any layer returns that layer's native deny response. <!-- @impl: src/pages/api/admin/force-refresh.ts::rateLimited -->
+5. The endpoint requires a valid worker session and the configured operator email per [REQ-AUTH-006](authentication.md#req-auth-006-admin-surface-gating). When `CF_ACCESS_AUD` is configured, it also requires a valid Access assertion. Failure at an applicable gate denies the action. <!-- @impl: src/middleware/admin-auth.ts::requireAdminSession --> <!-- @impl: src/pages/api/admin/force-refresh.ts::POST --> <!-- @impl: src/pages/api/admin/force-refresh.ts::GET -->
 
-**Notes:** The mandatory three-layer gate conflicts with the conditional perimeter contract in REQ-AUTH-006.
+**Notes:** Full per-criterion behavioral evidence for the force-refresh surface remains incomplete.
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 

@@ -85,15 +85,12 @@ The `__Host-` prefix (RFC 6265bis) enforces Secure, Path=/, and no Domain attrib
 
 ## Rate limiting
 
-**Status:** Partial
-**Notes:** The fail-closed introductory claim and AD23 conflict with this section's fail-open mitigation, REQ-RATE-001, and the current auth bucket definitions; the competing claims are retained pending policy reconciliation.
-
-Auth endpoints (login, callback, refresh) use a fail-closed KV-backed sliding-window rate limiter. See `src/lib/rate-limit.ts` for bucket definitions and [`configuration.md`](configuration.md) for the `KV` namespace binding and key conventions.
+Auth endpoints (login, callback, refresh) use a fail-closed KV-backed fixed-window rate limiter. See `src/lib/rate-limit.ts` for bucket definitions and [`configuration.md`](configuration.md) for the `KV` namespace binding and key conventions.
 
 Admin side-effecting endpoints (force-refresh, pipeline-run) carry their own per-operator hourly buckets (REQ-AUTH-001 AC 9g). A rate-limited admin click surfaces a `429` with `Retry-After` back to the operator's settings surface rather than silently dropping the request.
 
 **Threat:** Brute-force credential stuffing on `/api/auth/*`, runaway loops by a compromised admin session, or refresh-token replay flooding.
-**Mitigation:** Per-bucket sliding-window counter in KV; unauthenticated buckets keyed by IP, mutation buckets by user id, admin buckets by operator id; exhaustion returns 429 with `Retry-After`. Auth-login fails open on KV outage (so a backing-store hiccup never locks legitimate users out); refresh-token rules fail closed (so a stolen refresh cookie cannot exploit the outage). See [AD23](../decisions/README.md#ad23-rate-limit-fail-policy-asymmetry).
+**Mitigation:** Per-bucket fixed-window counter in KV; unauthenticated buckets keyed by IP, mutation buckets by user id, admin buckets by operator id; exhaustion returns 429 with `Retry-After`. Login, callback, and refresh-token rules fail closed on KV errors so an outage cannot lift authentication rate limits. Other rules use their declared failure policy. See [AD23](../decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop).
 **Verification:** `tests/lib/rate-limit.test.ts`, `tests/auth/rate-limited-format.test.ts`, plus the `tests/auth/*` suite that exercises each bucket boundary.
 **Implements:** [REQ-RATE-001](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface)
 
@@ -101,12 +98,9 @@ Admin side-effecting endpoints (force-refresh, pipeline-run) carry their own per
 
 ## Admin gate and JWT exp validation
 
-**Status:** Partial
-**Notes:** REQ-OPS-005 describes three mandatory layers, while REQ-AUTH-006 and the current admin gate make the Access perimeter conditional; both contract versions are retained for reconciliation.
+The admin gate in `src/middleware/admin-auth.ts` checks an optional perimeter followed by mandatory session and operator-email authorization:
 
-The admin gate in `src/middleware/admin-auth.ts` enforces two layers in order:
-
-1. **Optional Layer 0** (when `CF_ACCESS_AUD` set): request must carry a Cloudflare Access assertion whose `aud` and `exp` claims are valid. Expired assertions are rejected server-side. Signature stays at the Access perimeter ([AD29](../decisions/README.md#ad29-cloudflare-access-as-opt-in-additive-perimeter-not-security-boundary), [AD44](../decisions/README.md#ad44-cloudflare-access-jwt-exp-validation-signature-still-trusted-from-the-perimeter)).
+1. **Optional Layer 0** (when `CF_ACCESS_AUD` set): request must carry a Cloudflare Access assertion whose `aud` and `exp` claims are valid. Expired assertions are rejected server-side. Signature stays at the Access perimeter ([AD29](../decisions/README.md#ad29-cloudflare-access-is-opt-in-additive-perimeter-admin_email-gates-admin-alone), [AD44](../decisions/README.md#ad44-cloudflare-access-jwt-exp-validation-signature-still-trusted-from-the-perimeter)).
 2. **Baseline** (always): valid session cookie + `ADMIN_EMAIL` match (case-insensitive).
 
 **Threat:** Privileged action by a non-operator - either a stolen Access assertion that has since expired, a synthetic non-Access payload spoofing the header, or an authenticated non-admin user reaching an admin route.
