@@ -91,7 +91,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 2. Every input candidate gets exactly one article entry whose `index` echoes the bracketed input index. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
 3. Unusable candidates return empty title/details/tags drop records instead of being omitted. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
 4. Titles are NYT-style headlines, 45 to 80 characters, active voice, and rewritten rather than copied from the source feed. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
-5. `details` is plaintext body of 100 to 150 words split into 2 or 3 paragraphs, with no lists, HTML, or Markdown. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
+5. `details` targets 150 words within the requested 100-to-150-word range, split into 2 or 3 plaintext paragraphs with no lists, HTML, or Markdown. Server-side validation retains the existing 80-word floor and accepts otherwise-valid summaries through 200 normalized words; only summaries above 200 are rejected for exceeding the upper length backstop, without rejecting valid sibling articles. No extra shortening call is made. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::validateAndSanitizeArticle -->
 6. `tags` values come exclusively from the system-approved allowlist supplied to the chunk prompt. <!-- @impl: src/lib/prompts.ts::PROCESS_CHUNK_SYSTEM -->
 7. Chunk-response parsing accepts common model JSON deviations, including fenced or prose-wrapped objects, trailing commas, and raw newline characters inside string values. <!-- @impl: src/lib/generate.ts::parseJsonWithRepairs -->
 
