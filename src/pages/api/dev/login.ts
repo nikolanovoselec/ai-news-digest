@@ -54,7 +54,7 @@ function devBypassEnabled(env: { IS_PRODUCTION?: string }): boolean {
 }
 
 export async function POST(context: APIContext): Promise<Response> {
-  const env = context.locals.runtime.env as typeof context.locals.runtime.env &
+  const env = context.locals.env as typeof context.locals.env &
     BypassEnv;
 
   // CF-017 (replacing CF-019-R substring guard): fail-closed check on

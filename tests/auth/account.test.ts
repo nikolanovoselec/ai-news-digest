@@ -119,7 +119,7 @@ async function deleteRequest(
 function makeContext(request: Request, e: Partial<Env>): unknown {
   return {
     request,
-    locals: { runtime: { env: e as Env } },
+    locals: { env: e as Env },
     url: new URL(request.url),
   };
 }

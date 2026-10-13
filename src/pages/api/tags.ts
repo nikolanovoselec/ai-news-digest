@@ -33,7 +33,7 @@ import { parseHashtags as parseHashtagsJson } from '~/lib/hashtags';
 import { TagsPostBodySchema } from '~/lib/schemas/tags';
 
 export async function POST(context: APIContext): Promise<Response> {
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
     return errorResponse('app_not_configured');
   }

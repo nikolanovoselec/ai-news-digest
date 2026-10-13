@@ -111,7 +111,7 @@ function makeContext(
 ): unknown {
   return {
     request,
-    locals: { runtime: { env: env as Env } },
+    locals: { env: env as Env },
     url: new URL(request.url),
     params: { provider },
   };

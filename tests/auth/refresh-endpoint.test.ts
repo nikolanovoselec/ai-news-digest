@@ -78,13 +78,11 @@ function makeContext(request: Request): unknown {
   return {
     request,
     locals: {
-      runtime: {
-        env: {
-          ...env,
-          APP_URL,
-          OAUTH_JWT_SECRET: JWT_SECRET,
-        } as unknown as Env,
-      },
+      env: {
+        ...env,
+        APP_URL,
+        OAUTH_JWT_SECRET: JWT_SECRET,
+      } as unknown as Env,
     },
     url: new URL(request.url),
   };

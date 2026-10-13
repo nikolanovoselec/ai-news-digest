@@ -2,6 +2,8 @@
 // Pins the exact header values required by AC 1-4 byte-for-byte.
 
 import { describe, it, expect } from 'vitest';
+import type { APIContext } from 'astro';
+import { onRequest } from '~/middleware/index';
 import {
   securityHeadersMiddleware,
   CSP_HEADER_VALUE,
@@ -28,6 +30,20 @@ async function run(upstream: Response): Promise<Response> {
 }
 
 describe('security-headers middleware', () => {
+  it('CON-TECH-001 / REQ-OPS-003: platform-bound route data retains security headers', async () => {
+    const context = makeCtx() as APIContext;
+    const response = await onRequest(context, async () => {
+      const value = await context.locals.env.DB
+        .prepare("SELECT 'platform-binding' AS value")
+        .first<string>('value');
+      return Response.json({ value });
+    });
+
+    expect(await response.json()).toEqual({ value: 'platform-binding' });
+    expect(response.headers.get('Content-Security-Policy')).toBe(CSP_HEADER_VALUE);
+    expect(response.headers.get('X-Frame-Options')).toBe('DENY');
+  });
+
   // CF-022 (Cycle 1 review): the former `describe('constants', ...)`
   // block asserted that exported string constants equaled hardcoded
   // literals. Those tests passed iff someone typed both sides of the

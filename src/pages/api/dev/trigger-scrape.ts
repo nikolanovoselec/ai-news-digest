@@ -36,7 +36,7 @@ interface DevEnv {
 // `timingSafeEqualHmac`.
 
 export async function POST(context: APIContext): Promise<Response> {
-  const env = context.locals.runtime.env as typeof context.locals.runtime.env &
+  const env = context.locals.env as typeof context.locals.env &
     DevEnv;
 
   // CF-017 (replacing CF-019-R substring guard): fail-closed check on

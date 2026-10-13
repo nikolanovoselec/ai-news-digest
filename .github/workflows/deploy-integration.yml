@@ -70,13 +70,6 @@ jobs:
       - name: Install dependencies
         run: npm install --no-fund --no-audit
 
-      - name: Build
-        run: npm run build
-
-      - name: Create .assetsignore (exclude _worker.js from asset upload)
-        run: |
-          printf '_worker.js\n_routes.json\n' > dist/.assetsignore
-
       # Provision Cloudflare resources idempotently before deploy.
       # Same pattern as deploy.yml. Integration env uses suffixed names
       # so production resources are never touched. D1 + KV ids are
@@ -422,6 +415,17 @@ jobs:
           printf 'y\n' | npx --yes wrangler secret delete CF_ACCESS_AUD --env integration \
             || echo "CF_ACCESS_AUD delete returned non-zero (likely already absent)"
 
+      # The build serializes resolved integration IDs and variables.
+      - name: Build (integration)
+        env:
+          CLOUDFLARE_ENV: integration
+        run: npm run build
+
+      - name: Verify built deployment target (integration)
+        env:
+          CLOUDFLARE_ENV: integration
+        run: node scripts/check-deploy-config.mjs
+
       - name: Deploy (integration)
         id: deploy
         env:
@@ -431,7 +435,7 @@ jobs:
           set -o pipefail
           # Same duplicate-key warning filter as deploy.yml — Astro's
           # bundled `entities` dependency emits harmless dup-key warnings.
-          npx --yes wrangler deploy --env integration 2>&1 | tee deploy.log | \
+          npx --yes wrangler deploy 2>&1 | tee deploy.log | \
             awk '
               /^▲ \[WARNING\] Duplicate key ".*" in object literal \[duplicate-object-key\]/ { skip=1; next }
               skip && /^$/ { skip=0; next }

@@ -114,7 +114,7 @@ export async function findTagsNeedingDiscovery(
 }
 
 export async function GET(context: APIContext): Promise<Response> {
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
     return errorResponse('app_not_configured');
   }
@@ -173,7 +173,7 @@ export async function GET(context: APIContext): Promise<Response> {
 }
 
 export async function PUT(context: APIContext): Promise<Response> {
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
     return errorResponse('app_not_configured');
   }
@@ -380,7 +380,7 @@ export async function PUT(context: APIContext): Promise<Response> {
  * redirect back to /settings so the page reloads with the new values.
  */
 export async function POST(context: APIContext): Promise<Response> {
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   // Native form submissions can't render JSON error bodies - the browser
   // would navigate to the JSON and show raw text. Every error path here
   // 303-redirects back to /settings?error=<code> so the page can render

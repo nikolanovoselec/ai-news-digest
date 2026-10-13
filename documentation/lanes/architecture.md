@@ -393,7 +393,7 @@ Articles are the central entity in the article pool. Each article belongs to a `
 
 ## 8. Build and Deploy
 
-PWA icons render from `public/icons/app-icon.svg` via `scripts/generate-pwa-icons.mjs` (192×192 and 512×512 PNGs, regenerated on every build). Astro produces `dist/_worker.js/index.js`; `scripts/merge-worker-handlers.mjs` post-processes by bundling `src/worker.ts` and writing `dist/_worker.js/_merged.mjs`, which Wrangler deploys. See [`deployment.md`](deployment.md) for the full pipeline.
+PWA icons render from `public/icons/app-icon.svg` via [`scripts/generate-pwa-icons.mjs`](../../scripts/generate-pwa-icons.mjs) (192×192 and 512×512 PNGs, regenerated on every build). [`src/app-worker.ts`](../../src/app-worker.ts) composes the adapter's HTTP handler with cron/queue exports; Astro emits client/server output and generated deployment configuration. [`scripts/pwa-integration.mjs`](../../scripts/pwa-integration.mjs) generates the service worker after the client assets are complete. See [`deployment.md`](deployment.md) for deployment sequencing.
 
 ### Client-script convention
 

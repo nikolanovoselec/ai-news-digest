@@ -31,8 +31,8 @@
 //   - `dedup-sweep`        → handleDedupSweepBatch (REQ-PIPE-003 AC 9).
 //   - `pipeline-jobs`      → handlePipelineJobsBatch (REQ-OPS-008).
 //
-// The Astro Cloudflare adapter's generated `_worker.js` owns the HTTP
-// fetch handler in production (`main` in wrangler.toml). This file's
+// src/app-worker.ts composes the adapter's HTTP handler with this module's
+// scheduled and queue exports in production. This file's
 // `fetch` export exists so the Module-Worker type contract is
 // satisfied; the test pool (which points `main` at this file) never
 // calls `fetch` - API routes are imported and called directly.
@@ -238,8 +238,8 @@ export async function queue(
 }
 
 /**
- * HTTP handler. In production the Astro Cloudflare adapter's generated
- * worker is the real entry point. This export satisfies the Module-
+ * HTTP handler. In production src/app-worker.ts uses the Astro adapter's
+ * handler instead. This export satisfies the Module-
  * Worker type contract and supports the test pool's direct entry into
  * this file - tests always call API routes directly so this branch is
  * only reached for a stray request.

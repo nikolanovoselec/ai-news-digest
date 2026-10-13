@@ -63,7 +63,7 @@ async function authorize(
       cookiesToSet: string[];
     }
 > {
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
     return { kind: 'reject', response: errorResponse('app_not_configured') };
   }
@@ -124,7 +124,7 @@ export async function POST(context: APIContext): Promise<Response> {
   const auth = await authorize(context);
   if (auth.kind === 'reject') return auth.response;
 
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   const nowSec = Math.floor(Date.now() / 1000);
 
   // CF-012 — refuse to insert a star row for an article that does not
@@ -176,7 +176,7 @@ export async function DELETE(context: APIContext): Promise<Response> {
   const auth = await authorize(context);
   if (auth.kind === 'reject') return auth.response;
 
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
 
   try {
     await env.DB

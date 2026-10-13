@@ -24,7 +24,7 @@ Local development setup and production deployment steps.
 
 ## Prerequisites
 
-- Node.js 22+ (local dev only; production runs on Cloudflare Workers)
+- Node.js 22.22.2+ on the Node 22 line ([npm 12.2.0 engine requirement](https://registry.npmjs.org/npm/12.2.0)); production runs on Cloudflare Workers
 - Cloudflare account with Workers Paid plan enabled
 - Cloudflare AI Gateway with an OpenAI provider key that can call `gpt-6-luna` (the previous `dynamic/news_digest` route may be kept for rollback)
 - At least one OAuth provider configured: GitHub (Settings → Developer Settings → OAuth Apps) and/or Google (console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client IDs)
@@ -66,10 +66,12 @@ Import `env` and `applyD1Migrations` from `tests/fixtures/cloudflare-test.ts` (n
 **When:** Automatic on merge to `main` (gated on PR Checks success). Manual re-run via Actions → Deploy → Run workflow. The `workflow_run` trigger additionally requires `event == 'push'` and `head_repository.full_name == github.repository`; fork PRs whose head branch is named `main` do not trigger deploy regardless of PR Checks outcome (see AD49).
 **Command:**
 ```bash
-npx wrangler d1 migrations apply DB --remote
+npx wrangler d1 migrations apply DB --remote --config wrangler.toml
+npm run build
+node scripts/check-deploy-config.mjs
 npx wrangler deploy
 ```
-**Verifies:** AI Gateway preflight succeeds, then smoke test `GET /` against `APP_URL` returns `200` or `303` (step 7 of the deploy job).
+**Verifies:** AI Gateway preflight succeeds, then smoke test `GET /` against `APP_URL` returns `200` or `303` (the deploy job's final smoke step).
 **Rollback:** Cloudflare Workers supports instant rollback via the dashboard or CLI. To revert to the previous Worker version:
 ```bash
 # List recent deployments and find the previous version ID
@@ -91,11 +93,13 @@ The deploy job:
 
 4. Pushes Worker secrets via `wrangler secret put` (file-redirect form). Conditional secrets are pushed only when the matching GitHub Actions secret is non-empty.
 
-5. Deploys the Worker.
+5. Builds after resource IDs are patched, then verifies the generated target's name, production guard, resources and cron policy ([workflow](../../.github/workflows/deploy.yml), [validator](../../scripts/check-deploy-config.mjs)).
 
-6. Binds the custom domain extracted from `APP_URL` via the Workers Custom Domains API. Idempotent.
+6. Deploys the plugin-generated Worker configuration ([workflow](../../.github/workflows/deploy.yml)).
 
-7. Smoke-tests `GET /` against `APP_URL`. Accepts `200` or `303`.
+7. Binds the custom domain extracted from `APP_URL` through the Workers Custom Domains API, idempotently ([workflow](../../.github/workflows/deploy.yml)).
+
+8. Smoke-tests `GET /` against `APP_URL`, accepting `200` or `303` ([workflow](../../.github/workflows/deploy.yml)).
 
 `scripts/e2e-test.sh` is manual only (`bash scripts/e2e-test.sh --force-prod`) and not part of CI deploy — running it triggers a full LLM-cost scrape and mutates the owner's account.
 
@@ -139,7 +143,9 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 
 **Workflow file:** `.github/workflows/deploy-integration.yml`
 
-**Cloudflare resources** (integration-owned resources use `-integration`; AI Gateway uses the configured Gateway name and is shared by default unless `AI_GATEWAY_NAME` points at an integration-specific Gateway):
+The [integration workflow](../../.github/workflows/deploy-integration.yml) resolves resource IDs before building with `CLOUDFLARE_ENV=integration`. The [deployment validator](../../scripts/check-deploy-config.mjs) checks the generated target against those source bindings; Wrangler then deploys that generated configuration without selecting another environment at publish time. The adapter owns `dist/client`, `dist/server` and asset-ignore generation; no post-build merge is used ([entry](../../src/app-worker.ts), [Cloudflare migration guide](https://docs.astro.build/en/guides/integrations-guide/cloudflare/#upgrading-to-v13-and-astro-6)).
+
+**Cloudflare resources (integration-owned resources use `-integration`; AI Gateway uses the configured Gateway name and is shared by default unless `AI_GATEWAY_NAME` points at an integration-specific Gateway):
 
 | Resource | Name |
 |---|---|

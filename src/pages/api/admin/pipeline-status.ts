@@ -75,7 +75,7 @@ interface StatusError {
 }
 
 export async function GET(context: APIContext): Promise<Response> {
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   const adminAuth = await requireAdminSession(context);
   if (!adminAuth.ok) return adminAuth.response;
 

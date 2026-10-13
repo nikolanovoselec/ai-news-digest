@@ -3,11 +3,17 @@
 
 declare namespace App {
   interface Locals extends Runtime {
+    env: Env;
     user?: import('./lib/types').AuthenticatedUser;
   }
 }
 
-type Runtime = import('@astrojs/cloudflare').Runtime<Env>;
+type Runtime = import('@astrojs/cloudflare').Runtime;
+
+type WorkerBindings = Env;
+declare namespace Cloudflare {
+  interface Env extends WorkerBindings {}
+}
 
 interface Env {
   // Bindings

@@ -115,7 +115,7 @@ async function callRoute(opts: {
   } as unknown as Env;
   const context = {
     request: req,
-    locals: { runtime: { env } },
+    locals: { env },
     url: new URL(req.url),
     params: {},
   } as never;

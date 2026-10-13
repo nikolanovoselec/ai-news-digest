@@ -84,13 +84,6 @@ jobs:
       - name: npm audit (production deps, critical+ — blocking)
         run: npm audit --omit=dev --audit-level=critical
 
-      - name: Build
-        run: npm run build
-
-      - name: Create .assetsignore (exclude _worker.js from asset upload)
-        run: |
-          printf '_worker.js\n_routes.json\n' > dist/.assetsignore
-
       # Provision Cloudflare resources idempotently before deploy.
       # Pattern: look up by name; create if missing; for D1 + KV,
       # patch wrangler.toml in the ephemeral CI workspace with the
@@ -453,6 +446,14 @@ jobs:
             echo "::warning title=CF_ACCESS_AUD unset::Cloudflare Access aud-claim validation disabled. Set CF_ACCESS_AUD to the Access application's audience tag for production deploys, OR confirm Cloudflare Access is not bound on this fork. See documentation/configuration.md#setting-cf_access_aud."
           fi
 
+      # Build after resource IDs and secrets are resolved: adapter 14 emits
+      # a deployment configuration containing the selected bindings.
+      - name: Build
+        run: npm run build
+
+      - name: Verify built deployment target
+        run: node scripts/check-deploy-config.mjs
+
       - name: Deploy
         id: deploy
         env:
@@ -460,7 +461,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail
-          # Wrangler's esbuild pass re-bundles dist/_worker.js/ and
+          # Wrangler uploads the plugin-generated Worker bundle and
           # emits "Duplicate key" warnings for legitimate HTML5 entity
           # aliases in Astro's bundled `entities` dependency (nrarr,
           # acute, euro, Vdash). They're harmless — later-declared

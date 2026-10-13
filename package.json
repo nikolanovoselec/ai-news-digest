@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/generate-pwa-icons.mjs && node scripts/build-client-scripts.mjs && astro dev",
-    "build": "node scripts/generate-pwa-icons.mjs && node scripts/build-client-scripts.mjs && astro build && node scripts/merge-worker-handlers.mjs",
+    "build": "node scripts/generate-pwa-icons.mjs && node scripts/build-client-scripts.mjs && astro build",
     "preview": "wrangler dev",
     "deploy": "node scripts/generate-pwa-icons.mjs && node scripts/build-client-scripts.mjs && astro build && wrangler deploy",
     "icons": "node scripts/generate-pwa-icons.mjs",
@@ -19,9 +19,9 @@
     "knip": "knip"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "^12.6.13",
+    "@astrojs/cloudflare": "^14.3.4",
     "@tailwindcss/vite": "^4.2.4",
-    "astro": "^5.18.1",
+    "astro": "^7.3.8",
     "fast-xml-parser": "^5.0.9",
     "tailwindcss": "^4.2.4",
     "zod": "^3.23.8"
@@ -33,12 +33,12 @@
     "@cloudflare/workers-types": "^5.20261013.1",
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^25.6.0",
-    "@vite-pwa/astro": "^1.2.0",
+    "vite-plugin-pwa": "^2.0.0",
     "esbuild": "^0.28.0",
     "knip": "^6.6.1",
     "oxlint": "^1.61.0",
     "typescript": "^5.7.1",
     "vitest": "^4.1.5",
-    "wrangler": "^4.84.1"
+    "wrangler": "^4.150.0"
   }
 }

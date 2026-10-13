@@ -51,7 +51,7 @@ The result: 60+ written requirements across 10 product domains (authentication, 
 
 | Layer | Choice |
 |---|---|
-| Framework | [Astro 5](https://astro.build) on [Cloudflare Workers](https://workers.cloudflare.com) |
+| Framework | [Astro 7](https://astro.build) on [Cloudflare Workers](https://workers.cloudflare.com) |
 | DB / Cache / Queues | [D1](https://developers.cloudflare.com/d1/) · [KV](https://developers.cloudflare.com/kv/) · [Queues](https://developers.cloudflare.com/queues/) |
 | LLM | [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) OpenAI provider model `openai/gpt-6-luna`; Workers AI embeddings for dedup |
 | Email | [Resend](https://resend.com) |

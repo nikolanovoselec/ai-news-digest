@@ -160,7 +160,7 @@ async function callRoute(opts: CallOpts) {
   } as unknown as Env;
   const context = {
     request: req,
-    locals: { runtime: { env } },
+    locals: { env },
     url: new URL(req.url),
     params: {},
   } as never;
@@ -284,7 +284,7 @@ describe('POST /api/admin/historical-dedup — REQ-PIPE-014 operator sweep kicke
     } as unknown as Env;
     const context = {
       request: req,
-      locals: { runtime: { env } },
+      locals: { env },
       url: new URL(req.url),
       params: {},
     } as never;
