@@ -27,7 +27,7 @@ A personalized daily tech news digest. Users sign in with a federated identity p
 
 This file is the root spec index. The `sdd/` tree intentionally contains this README plus `sdd/spec/`. All requirement domains and support files live under `sdd/spec/`; root-level `sdd/*.md` domain files are not canonical and should not exist.
 
-Current layout count: `sdd/README.md` + 17 files under `sdd/spec/` = 18 tracked spec-tree files.
+The canonical tree contains this index, requirement domains, and the support files listed below. The root-level review-decision ledger is historical support, not a requirement domain.
 
 ## Requirement Domains
 
@@ -49,7 +49,7 @@ These 11 files contain REQ-* requirements.
 
 ## Support Files
 
-These 6 files are canonical support files, not product-domain requirement files.
+These 8 files are support files, not product-domain requirement files.
 
 | File | Purpose |
 |---|---|
@@ -57,6 +57,8 @@ These 6 files are canonical support files, not product-domain requirement files.
 | [`spec/glossary.md`](spec/glossary.md) | Canonical terms used by specs and documentation |
 | [`spec/changes.md`](spec/changes.md) | Current specification changelog |
 | [`spec/changes-archive-2026-04.md`](spec/changes-archive-2026-04.md) | Archived April 2026 changelog entries |
+| [`spec/changes-archive-2026-10.md`](spec/changes-archive-2026-10.md) | Complete changelog before product-only normalization |
+| [`.review-decisions.md`](.review-decisions.md) | Historical risk-acceptance decisions; not a live findings queue |
 | [`spec/config.yml`](spec/config.yml) | SDD enforcement configuration |
 | [`spec/.review-queue.md`](spec/.review-queue.md) | SDD review queue; should say `No open findings.` when clean |
 
