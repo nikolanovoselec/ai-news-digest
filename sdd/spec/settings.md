@@ -192,14 +192,14 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 ### REQ-SET-006: Settings-incomplete gate
 
-**Intent:** Users who have not yet chosen a scheduled digest time cannot navigate to the reading surface, preventing empty-state confusion. Hashtags are NOT part of the gate because they are edited on the reading surface itself — a user with no tags yet still reaches the digest page and is prompted there to add their first one.
+**Intent:** Users who have not yet chosen a scheduled digest time cannot navigate to the reading surface, preventing empty-state confusion. Hashtags are NOT part of the gate because they are edited on the reading surface itself - a user with no tags yet still reaches the digest page and is prompted there to add their first one.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
 1. Any authenticated request to a path other than the settings page and the authentication/settings APIs, made by a user whose scheduled-digest time is not yet set, is redirected to the first-run settings view. <!-- @impl: src/middleware/settings-gate.ts::SETTINGS_PATH -->
 2. Once the scheduled-digest time is set, visiting the first-run settings view redirects to the steady-state settings view. <!-- @impl: src/middleware/settings-gate.ts::SETTINGS_PATH -->
-3. The gate keys only on "scheduled time not yet set" — having no hashtags selected does NOT trip the gate, and a user whose first digest fails is not trapped. <!-- @impl: src/middleware/settings-gate.ts::is -->
+3. The gate keys only on "scheduled time not yet set" - having no hashtags selected does NOT trip the gate, and a user whose first digest fails is not trapped. <!-- @impl: src/middleware/settings-gate.ts::is -->
 4. While the gate is active, the global navigation hides entries that lead to gated routes so the user sees only the Settings destination and cannot tap into a dead-end redirect. <!-- @impl: src/middleware/settings-gate.ts::is -->
 5. Discovery-progress polling is per-user rate-limited to allow normal few-second polling but bound client loops; 429 includes `Retry-After`, and settings shows the pause without blocking the form. <!-- @impl: src/middleware/settings-gate.ts::SETTINGS_PATH -->
 

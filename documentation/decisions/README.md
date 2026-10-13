@@ -61,7 +61,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD44](#ad44-cloudflare-access-jwt-exp-validation-signature-still-trusted-from-the-perimeter) | Cloudflare Access JWT `exp` validation; signature still trusted from the perimeter | Reject expired or missing Access expiry claims while continuing to trust signature verification at the perimeter. | Security | Active |
 | [AD45](#ad45-accepted-orchestration-file-sizes-coordinator-chunk-consumer-settingsastro) | Accepted orchestration-file sizes (coordinator, chunk-consumer, settings.astro) exceed | Accept large orchestration files until an extraction demonstrates a concrete testing, bundle, or review benefit. | Architecture | Active |
 | [AD46](#ad46-documentation-file-size-hatches-and-hybrid-renderings-deployment-colocation-architecture-diagrams-adr-index-deployment-hybrid-shape) | Documentation file-size hatches and hybrid renderings (deployment colocation, | Retain documented lane colocation and hybrid renderings rather than fragment operational lookup to satisfy line budgets. | Documentation | Active |
-| [AD46e](#ad46e-api-referencemd-completeness-exemption) | `api-reference.md` completeness exemption — ~90 endpoint sections cannot decompose without | Retain one complete public API reference so authentication and response details remain discoverable in one lookup. | Documentation | Active |
+| [AD46e](#ad46e-api-referencemd-completeness-exemption) | `api-reference.md` completeness exemption - ~90 endpoint sections cannot decompose without | Retain one complete public API reference so authentication and response details remain discoverable in one lookup. | Documentation | Active |
 | [AD47](#ad47-storage-shape-allowlist-promoted-to-spec-discipline-ad9-superseded) | Storage-shape allowlist promoted to spec-discipline; AD9 superseded | Move the persistence-name exception into the shared spec allowlist instead of maintaining AD9 as a local override. | Storage | Active |
 | [AD48](#ad48-dedup-cost-reduction-borderline-rerank-watermark--batched-rerank-call--pipeline-wide-gpt-oss-20b) | Dedup cost reduction: borderline-rerank watermark + batched rerank call + | Batch borderline reranks and remember judged pairs to reduce repeat spend, retaining the same-day model rollback. | Architecture | Active |
 | [AD49](#ad49-workflow_run-deploy-gate-hardened-against-fork-pwn-request-vector) | `workflow_run` deploy gate hardened against fork pwn-request vector | Check push provenance and repository identity before workflow_run deploys so a fork branch named main cannot publish. | Security | Active |
@@ -143,7 +143,7 @@ The prior labels and dates are retained verbatim as compatibility history; the c
 | [AD44](#ad44-cloudflare-access-jwt-exp-validation-signature-still-trusted-from-the-perimeter) | Cloudflare Access JWT `exp` validation; signature still trusted from the perimeter | Security | 2026-05-12 |
 | [AD45](#ad45-accepted-orchestration-file-sizes-coordinator-chunk-consumer-settingsastro) | Accepted orchestration-file sizes (coordinator, chunk-consumer, settings.astro) exceed 800-line cap | Architecture | 2026-05-11 |
 | [AD46](#ad46-documentation-file-size-hatches-and-hybrid-renderings-deployment-colocation-architecture-diagrams-adr-index-deployment-hybrid-shape) | Documentation file-size hatches and hybrid renderings (deployment colocation, architecture diagrams, ADR index, deployment hybrid shape, api-reference completeness) | Documentation | 2026-05-12 |
-| [AD46e](#ad46e-api-referencemd-completeness-exemption) | `api-reference.md` completeness exemption — ~90 endpoint sections cannot decompose without fragmenting the reader's lookup path | Documentation | 2026-05-13 |
+| [AD46e](#ad46e-api-referencemd-completeness-exemption) | `api-reference.md` completeness exemption - ~90 endpoint sections cannot decompose without fragmenting the reader's lookup path | Documentation | 2026-05-13 |
 | [AD47](#ad47-storage-shape-allowlist-promoted-to-spec-discipline-ad9-superseded) | Storage-shape allowlist promoted to spec-discipline; AD9 superseded | Storage | 2026-05-13 |
 | [AD48](#ad48-dedup-cost-reduction-borderline-rerank-watermark--batched-rerank-call--pipeline-wide-gpt-oss-20b) | Dedup cost reduction: borderline-rerank watermark + batched rerank call + pipeline-wide gpt-oss-20b | Architecture | 2026-05-14 |
 | [AD49](#ad49-workflow_run-deploy-gate-hardened-against-fork-pwn-request-vector) | `workflow_run` deploy gate hardened against fork pwn-request vector | Security | 2026-05-19 |
@@ -311,11 +311,11 @@ KV's eventual consistency made both races effectively undetectable via testing i
 - Durable Object for serialized counter updates - correct, but adds a DO dependency to a pipeline that runs without one today.
 - KV with Compare-And-Swap (`getWithMetadata` + `put` with `expirationTtl` as a CAS surrogate) - fragile; KV has no native CAS and the surrogate is not atomic.
 
-**Rationale:** AD5's own principle applies directly: completion counting needs transactional semantics. `INSERT OR IGNORE` into a table keyed by `(scrape_run_id, chunk_index)` is idempotent under redelivery and gives an exact count via `SELECT COUNT(*)` - no race. The finalize-enqueue gate is collapsed into a single atomic `UPDATE … WHERE finalize_enqueued = 0`; D1 returns `meta.changes` for exactly one consumer. At acceptance time, the KV counter (`scrape_run:{id}:chunks_remaining`) was retained as a derived mirror for the `/api/scrape-status` progress display but was no longer authoritative; AD56 later retired that mirror. Implements [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract) and the same-story finalize gate now in [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract) (the prior LLM-finalize-dedup REQ that owned this gate was retired in the 2026-05-13 same-story matching consolidation).
+**Rationale:** AD5's own principle applies directly: completion counting needs transactional semantics. `INSERT OR IGNORE` into a table keyed by `(scrape_run_id, chunk_index)` is idempotent under redelivery and gives an exact count via `SELECT COUNT(*)` - no race. The finalize-enqueue gate is collapsed into a single atomic `UPDATE … WHERE finalize_enqueued = 0`; D1 returns `meta.changes` for exactly one consumer. At acceptance time, the KV counter (`scrape_run:{id}:chunks_remaining`) was retained as a derived mirror for the `/api/scrape-status` progress display but was no longer authoritative; AD56 later retired that mirror. Implements [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract) and the same-story finalize gate now in [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract) (the prior LLM-finalize-dedup REQ that owned this gate was retired in the 2026-05-13 same-story matching consolidation).
 
 **Consequences:** The `scrape_chunk_completions` table grows one row per chunk per run; the retention cron (03:00 UTC) must cover this table or it will grow unbounded. At acceptance time, the KV mirror was best-effort and could lag behind D1 by up to one propagation window - consumers could not rely on it for correctness, only for display. AD56 later removed that propagation window by deriving progress from D1 only.
 
-**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract)
+**Related requirements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract)
 
 ---
 
@@ -398,7 +398,7 @@ KV's eventual consistency made both races effectively undetectable via testing i
 - The third gate that would warrant the keyed-table refactor is treated as the trigger; this ADR is the artifact future readers find when they look for "why isn't there an `acquireOnceLock` helper?".
 - New gate sites MUST copy the pattern verbatim and document the meta.changes semantics inline. When a fourth gate site lands, this ADR is reopened and the trigger refactor proposed in the Alternatives section becomes mandatory rather than deferred.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-018](../../sdd/spec/generation.md#req-pipe-018-same-story-collapse-mechanics--survivor-selection-and-data-merge)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract), [REQ-PIPE-018](../../sdd/spec/generation.md#req-pipe-018-same-story-collapse-mechanics---survivor-selection-and-data-merge)
 
 ---
 
@@ -592,7 +592,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 - The chunk consumer's `normaliseDedupGroups` stays as-is, slightly looser than the finalize variant. This is documented in the chunk consumer's source comment.
 - If future canonical-URL dedup is loosened (e.g., a feature lets two canonical URLs survive within one cluster), revisit this decision and land the extraction.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract)
+**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract)
 
 ---
 
@@ -959,7 +959,7 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 - **Discovery owns GN, coordinator skips tags already having a GN entry.** Rejected: discovery runs once at settings save; the KV cache drifts as tag needs change. Coordinator ownership recomputes the baseline every tick from the live tag union.
 - **Both paths coexist permanently** - rejected as a stable end-state. The redundant fan-out wastes a small amount of LLM and fetch budget and complicates future debugging when a GN URL turns out to be wrong (which path produced it?).
 
-**Rationale:** The coordinator already owns the per-tick source list; making it the single owner of the GN baseline matches the "coordinator decides which sources fan out" concept. Discovery's job becomes "find first-party feeds for this tag" — a narrower prompt focused on publisher sources. Re-evaluating discovery prompt quality post-narrowing belongs in a future audit, not in this ADR. Keeping the legacy LLM-emitted GN fallback as a transitional state avoids a same-PR rewrite of the discovery prompt and its tests.
+**Rationale:** The coordinator already owns the per-tick source list; making it the single owner of the GN baseline matches the "coordinator decides which sources fan out" concept. Discovery's job becomes "find first-party feeds for this tag" - a narrower prompt focused on publisher sources. Re-evaluating discovery prompt quality post-narrowing belongs in a future audit, not in this ADR. Keeping the legacy LLM-emitted GN fallback as a transitional state avoids a same-PR rewrite of the discovery prompt and its tests.
 
 **Consequences:**
 
@@ -989,14 +989,14 @@ The `source_health:{url}` family was already centralised in `src/lib/feed-health
 
 **Consequences:**
 
-- The prior LLM finalize dedup contract was retired on 2026-05-06 and removed on 2026-05-13; same-story behavior now lives in [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract) + [REQ-PIPE-018](../../sdd/spec/generation.md#req-pipe-018-same-story-collapse-mechanics--survivor-selection-and-data-merge).
+- The prior LLM finalize dedup contract was retired on 2026-05-06 and removed on 2026-05-13; same-story behavior now lives in [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract) + [REQ-PIPE-018](../../sdd/spec/generation.md#req-pipe-018-same-story-collapse-mechanics---survivor-selection-and-data-merge).
 - The retention sweep (REQ-PIPE-005) MUST dual-delete: D1 row drop plus `VECTORIZE.deleteByIds`. Single-side deletes leak vectors that future articles will match against, producing phantom merges into rows that no longer exist.
 - Forks must provision their own Vectorize index (`ai-news-embeddings` for production, `ai-news-embeddings-integration` for the integration env). Index creation is wired into both deploy workflows via `wrangler vectorize create`, idempotent on subsequent deploys.
 - The 0.85 threshold is validated against the current corpus and model. Re-validate before relying on it after a model bump or major corpus shift. Operators tune via `DEDUP_COSINE_THRESHOLD` without a code change.
 - Vectorize cold-start lag on the first query of a new index (≈30 s) means the first scrape tick after a fresh deploy may produce duplicates; the historical-dedup admin route resolves them on demand.
 - Embedding-model drift: bge-base-en-v1.5 is pinned by id in `src/lib/embeddings.ts`. A future Cloudflare catalogue upgrade does not silently change the vector space.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-005](../../sdd/spec/generation.md#req-pipe-005-article-pool-retention-sweep)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract), [REQ-PIPE-005](../../sdd/spec/generation.md#req-pipe-005-article-pool-retention-sweep)
 
 ---
 
@@ -1117,7 +1117,7 @@ Both clusters were entirely below the 0.85 auto-merge bar; the larger valuation 
 - If false-merges surface in the new band, the lever is the `DEDUP_COSINE_THRESHOLD` env var (no code change). The dedup-diag diagnostic and per-run rerank counters are the observation surfaces.
 - The rerank prompt loosening is the smaller knob: a future tightening (back toward "exact same announcement only") is a drop-in env-or-prompt change without revisiting the threshold.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract) AC 1, AC 2, [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 2 (same-vendor penalty), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates).
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract) AC 1, AC 2, [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 2 (same-vendor penalty), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates).
 
 ---
 
@@ -1241,7 +1241,7 @@ External-LLM and Opus-ultrathink critique of the initial fix proposal (multi-rer
 
 **Rationale:** Diagnose first, retune second. The ULID tie-break is a 1-line correctness fix with no calibration risk. The high-confidence band has a deterministic semantic story (`raw cosine >= 0.92 means the headlines and bodies are restating each other`) and sits above AD39's empirical false-positive floor of 0.86 with margin; it catches near-duplicate-headline pairs where the same-vendor penalty would otherwise drop a 0.93 cosine into the rerank band.
 
-The AD39 threshold raise widened the rerank band from 8 cosine points (0.70-0.78) to 18 (0.70-0.88); in dense-theme periods the 5 nearest neighbours can be consumed by topical noise above 0.80, starving the loop of the actual same-event candidate at rank 6+ — hence the topK bump as cheap insurance. The diagnostic log gives operators the cosine numbers needed to tune the rerank prompt or threshold from real production data instead of speculation. Together these recover the under-merge cases the AD39 fix did not anticipate while preserving the 13-source false-merge protection.
+The AD39 threshold raise widened the rerank band from 8 cosine points (0.70-0.78) to 18 (0.70-0.88); in dense-theme periods the 5 nearest neighbours can be consumed by topical noise above 0.80, starving the loop of the actual same-event candidate at rank 6+ - hence the topK bump as cheap insurance. The diagnostic log gives operators the cosine numbers needed to tune the rerank prompt or threshold from real production data instead of speculation. Together these recover the under-merge cases the AD39 fix did not anticipate while preserving the 13-source false-merge protection.
 
 **Consequences:**
 
@@ -1293,7 +1293,7 @@ The bidirectional merge is a 1-direction-to-2-direction generalisation of code a
 - Per-article diagnostic log volume in `wrangler tail` doubles for ticks where the sweep also matches a window-overlapping article - the same finalize_dedup_diag shape now appears for the sweep walk too.
 - Forward-only fix. The next auto-sweep after deploy catches existing visible duplicates from the 2026-05-09 corpus, which fall within the 48h lookback at deploy time.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) (threshold raise + rerank cap removal)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates) (threshold raise + rerank cap removal)
 
 ---
 
@@ -1365,7 +1365,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - Future tuning of the scoring rules (e.g., adding a tertiary penalty) happens in one place.
 - CF-029 (cache the comparator secondary key) is satisfied naturally - each match is classified exactly once and reuses the result.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
 
 ---
 
@@ -1426,22 +1426,22 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Decision:** Three documentation files exceed the per-file soft budgets from `documentation-discipline.md` Pass 2 and carry intentional `doc-allow-large` hatches. This AD formalizes the three carve-outs so the hatch markers point at a discoverable decision rather than at bare prose.
 
-- **AD46a — `deployment.md` colocation.** Deploy runbook, dev-bypass, and admin-routes contract colocate in `deployment.md`. Splitting them (admin-routes to `api-reference.md`, dev-bypass to `troubleshooting.md`) fragments the operator's linear deploy workflow across three files.
+- **AD46a - `deployment.md` colocation.** Deploy runbook, dev-bypass, and admin-routes contract colocate in `deployment.md`. Splitting them (admin-routes to `api-reference.md`, dev-bypass to `troubleshooting.md`) fragments the operator's linear deploy workflow across three files.
 
   The three sections form one operational document: a contributor executing a deploy needs all of them in a single scroll without context-switching between files.
-- **AD46b — `architecture.md` diagram-section exemption.** Two ASCII data-flow diagrams (component map and pipeline flow) are load-bearing reference art. Each must sit beside its surrounding prose in one scroll; splitting diagram from caption breaks the reader's model.
+- **AD46b - `architecture.md` diagram-section exemption.** Two ASCII data-flow diagrams (component map and pipeline flow) are load-bearing reference art. Each must sit beside its surrounding prose in one scroll; splitting diagram from caption breaks the reader's model.
 
   The file's total line count is dominated by these diagrams and their immediate context, not by prose drift elsewhere in the file.
-- **AD46c — `decisions/README.md` single-file design.** All ADRs colocate here rather than one-file-per-ADR. Per-file ADR storage fragments cross-references: ADR-A frequently cites ADR-B via section anchor; separate files make anchor stability fragile.
+- **AD46c - `decisions/README.md` single-file design.** All ADRs colocate here rather than one-file-per-ADR. Per-file ADR storage fragments cross-references: ADR-A frequently cites ADR-B via section anchor; separate files make anchor stability fragile.
 
   The chronological reading path (`AD1 → AD46`) works as a single document. The file IS the index.
-- **AD46d — `deployment.md` hybrid runbook-and-registry rendering.** `deployment.md` may mix runbook sections (`**When:** / **Command:** / **Verifies:** / **Rollback:**`) with registry tables for resources, envs, gates, and route layers.
+- **AD46d - `deployment.md` hybrid runbook-and-registry rendering.** `deployment.md` may mix runbook sections (`**When:** / **Command:** / **Verifies:** / **Rollback:**`) with registry tables for resources, envs, gates, and route layers.
 
   `documentation-discipline.md` Pass 6 (file-level shape consistency) treats hybrid files as a soft signal because the first-section-wins tiebreak would force one shape across the entire file. For `deployment.md`, that conversion would either bloat the registry tables into per-item sections (15+ rows × 4 fields each) or strip the runbook scaffolding from the deploy procedures. AD46d formalizes the hybrid rendering: Pass 6 findings against `deployment.md` are accepted under this ADR and not re-flagged on subsequent runs.
 
-**Context:** `documentation-discipline.md` Pass 6 (hatch audit) flags bare `doc-allow-large` markers as MEDIUM and prose-justification-without-ADR markers as the same shape the rule was written to prevent. Cycle 3 review (CF-006) flagged four markers across `deployment.md`, `architecture.md` (×2), and `decisions/README.md` that all carried the same root justification but no ADR backlink. The cycle 5 follow-up surfaced AD46d as a co-occurring concern: Pass 6 shape consistency fires against `deployment.md` in the same way Pass 2 file-size budgets fire against the AD46a-c targets — a structural rule firing on a section the discipline's content-preservation guarantees would refuse to mechanically convert.
+**Context:** `documentation-discipline.md` Pass 6 (hatch audit) flags bare `doc-allow-large` markers as MEDIUM and prose-justification-without-ADR markers as the same shape the rule was written to prevent. Cycle 3 review (CF-006) flagged four markers across `deployment.md`, `architecture.md` (×2), and `decisions/README.md` that all carried the same root justification but no ADR backlink. The cycle 5 follow-up surfaced AD46d as a co-occurring concern: Pass 6 shape consistency fires against `deployment.md` in the same way Pass 2 file-size budgets fire against the AD46a-c targets - a structural rule firing on a section the discipline's content-preservation guarantees would refuse to mechanically convert.
 
-**Rationale:** The hatch was designed to surface design tradeoffs as ADRs — a decision the reader can discover, revisit, and supersede. A bare or prose-only marker hides the decision in the marker itself. This AD pulls the decisions into the discoverable ADR ledger; the markers become referential, not load-bearing.
+**Rationale:** The hatch was designed to surface design tradeoffs as ADRs - a decision the reader can discover, revisit, and supersede. A bare or prose-only marker hides the decision in the marker itself. This AD pulls the decisions into the discoverable ADR ledger; the markers become referential, not load-bearing.
 
 **Consequences:**
 
@@ -1450,7 +1450,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - If `deployment.md` grows to the point where the operator workflow itself becomes hard to follow, the split should be a deliberate workflow redesign (e.g., a master deploy runbook with linked sub-pages), not a lane-discipline split.
 - Pass 6 shape findings against `deployment.md` are accepted only under AD46d's runbook-or-registry carve-out; unrelated shape mismatches still require standard conversion.
 
-**Related requirements:** none direct — operational/documentation concern.
+**Related requirements:** none direct - operational/documentation concern.
 
 ---
 
@@ -1460,9 +1460,9 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Extends:** AD46
 
-**Decision:** `documentation/api-reference.md` carries a permanent `doc-allow-large: AD46e api-reference completeness` hatch. The file documents the public HTTP surface across 13 `##` named sections — endpoint count measured via `grep -c '^### ' documentation/api-reference.md` on 2026-05-13. Each endpoint requires at minimum a method/path block, Authentication field, Origin-check field, Response table, and Implements field — 8-12 lines of structured content per endpoint, derived from the binding endpoint template in `documentation-discipline.md` Pass 7. The resulting floor is the endpoint count times the per-endpoint cost before any prose explanation. The per-file soft budget of 600 lines reflects a general-purpose file; an API reference for a non-trivial application necessarily exceeds it.
+**Decision:** `documentation/api-reference.md` carries a permanent `doc-allow-large: AD46e api-reference completeness` hatch. The file documents the public HTTP surface across 13 `##` named sections - endpoint count measured via `grep -c '^### ' documentation/api-reference.md` on 2026-05-13. Each endpoint requires at minimum a method/path block, Authentication field, Origin-check field, Response table, and Implements field - 8-12 lines of structured content per endpoint, derived from the binding endpoint template in `documentation-discipline.md` Pass 7. The resulting floor is the endpoint count times the per-endpoint cost before any prose explanation. The per-file soft budget of 600 lines reflects a general-purpose file; an API reference for a non-trivial application necessarily exceeds it.
 
-**Context:** Pass 2 of `documentation-discipline.md` flagged `api-reference.md` at 1.16x the 600-line budget (697 lines) as a LOW finding in the 2026-05-13 clean run. The corresponding Pass 10 cold-read found PARTIAL — session-auth endpoints had no copy-pasteable curl example. Both findings were deferred in that run. The user rejected the deferral on 2026-05-13 and mandated: (a) a formal AD46 sub-decision backlink, and (b) a curl example covering the session-cookie auth shape so a cold reader can test any session-auth endpoint without consulting other documentation. The curl example adds approximately 10 lines to the file, reinforcing that the 600-line budget is structurally unachievable for this file's mandate.
+**Context:** Pass 2 of `documentation-discipline.md` flagged `api-reference.md` at 1.16x the 600-line budget (697 lines) as a LOW finding in the 2026-05-13 clean run. The corresponding Pass 10 cold-read found PARTIAL - session-auth endpoints had no copy-pasteable curl example. Both findings were deferred in that run. The user rejected the deferral on 2026-05-13 and mandated: (a) a formal AD46 sub-decision backlink, and (b) a curl example covering the session-cookie auth shape so a cold reader can test any session-auth endpoint without consulting other documentation. The curl example adds approximately 10 lines to the file, reinforcing that the 600-line budget is structurally unachievable for this file's mandate.
 
 **Rationale:**
 
@@ -1477,7 +1477,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - The `## Conventions` curl example covers the session-cookie shape. Dev-bypass token endpoints are covered separately in `documentation/deployment.md` under the dev-bypass runbook. The two examples together close Pass 10 for this file.
 - Future endpoint additions to `api-reference.md` do not require a new ADR amendment unless the file crosses the MEDIUM threshold.
 
-**Related requirements:** none direct — documentation structure concern.
+**Related requirements:** none direct - documentation structure concern.
 
 ---
 
@@ -1487,14 +1487,14 @@ Three reasons the AD41 fix did not collapse this cluster:
 
 **Supersedes:** AD9
 
-**Decision:** Retire AD9 as a load-bearing override. `spec-discipline.md`'s forbidden-content allowlist now contains a first-class carveout for "Database column / KV key names when the storage shape IS the persistence contract" — the same rationale AD9 was created to apply on a per-REQ basis. The eight REQs listed in AD9's `Overrides:` line (`REQ-DISC-001`, `REQ-DISC-002`, `REQ-AUTH-002`, `REQ-AUTH-008`, `REQ-SET-001`, `REQ-SET-005`, `REQ-MAIL-001`, `REQ-MAIL-003`) pass the allowlist by default and no longer need an ADR-anchored override.
+**Decision:** Retire AD9 as a load-bearing override. `spec-discipline.md`'s forbidden-content allowlist now contains a first-class carveout for "Database column / KV key names when the storage shape IS the persistence contract" - the same rationale AD9 was created to apply on a per-REQ basis. The eight REQs listed in AD9's `Overrides:` line (`REQ-DISC-001`, `REQ-DISC-002`, `REQ-AUTH-002`, `REQ-AUTH-008`, `REQ-SET-001`, `REQ-SET-005`, `REQ-MAIL-001`, `REQ-MAIL-003`) pass the allowlist by default and no longer need an ADR-anchored override.
 
 **Context:** AD9 was added on 2026-05-03 to override the mechanism-leakage rule for storage-shape names that are the contract noun shared between UI controls, persisted rows, and dispatcher predicates. As the same pattern recurred across eight REQs in three domains, the override mechanism was promoted to a first-class allowlist rule on 2026-05-13. `sdd/spec/config.yml`'s `forbidden_content_overrides:` field was already empty (`[]`); AD9's `Overrides:` line was documentation-only and not driving enforcement. With the allowlist in place, the override mechanism is fully redundant.
 
 **Rationale:**
 
 - One global allowlist rule is easier to reason about than an ADR-anchored per-REQ override list. A new storage-shape REQ no longer needs an ADR amendment to pass spec-reviewer.
-- The contract-noun framing from AD9 carries over verbatim to the allowlist rule, so no behavioral change occurs — the same REQs that AD9 covered are the ones the allowlist covers.
+- The contract-noun framing from AD9 carries over verbatim to the allowlist rule, so no behavioral change occurs - the same REQs that AD9 covered are the ones the allowlist covers.
 - AD9's body is preserved as historical artifact under `Status: Superseded by AD47`. Readers tracing the lineage of the storage-shape carveout land on AD9 first and follow the supersession pointer to AD47 and the allowlist rule itself.
 
 **Consequences:**
@@ -1502,7 +1502,7 @@ Three reasons the AD41 fix did not collapse this cluster:
 - AD9 is marked `Status: Superseded by AD47 (2026-05-13)`. AD9's decision/consequences sections stay untouched per ADR immutability.
 - The eight REQs listed in AD9's `Overrides:` line continue to render verbatim. No spec edits are needed.
 - Future storage-shape REQs (D1 columns, KV key shapes) pass automatically; no new ADR required for the same pattern.
-- If a future audit ever wants to tighten the carveout — e.g., to only cover column names appearing in user-facing settings UIs — the allowlist is the place to scope, not a new ADR.
+- If a future audit ever wants to tighten the carveout - e.g., to only cover column names appearing in user-facing settings UIs - the allowlist is the place to scope, not a new ADR.
 
 **Related requirements:** [REQ-DISC-001](../../sdd/spec/discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-002](../../sdd/spec/discovery.md#req-disc-002-discovery-progress-visibility), [REQ-AUTH-002](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../../sdd/spec/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout), [REQ-SET-001](../../sdd/spec/settings.md#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-005](../../sdd/spec/settings.md#req-set-005-email-notification-preference), [REQ-MAIL-001](../../sdd/spec/email.md#req-mail-001-digest-ready-email-content), [REQ-MAIL-003](../../sdd/spec/email.md#req-mail-003-digest-ready-email-send-policy)
 
@@ -1537,7 +1537,7 @@ The 7-day window and 4-hour cadence are non-negotiable: PANW-cluster spans valid
 - Operator-triggered `/api/admin/historical-dedup` and `?reembed=1` invalidate the watermark (the latter via `clearWatermark`, the former via a `bypassWatermark: true` flag propagated through every continuation queue message) so a manual sweep after a threshold or prompt change re-judges everything.
 - Test fixtures that previously mocked single-pair `{"same_event": ...}` responses now mock the batched `{"verdicts":[{"i":N,"same_event":...}]}` shape; a no-verdicts response degrades to "all false" per pair, preserving the conservative default.
 
-**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-PIPE-023](../../sdd/spec/generation.md#req-pipe-023-llm-re-rank-cost-controls), [REQ-PIPE-024](../../sdd/spec/generation.md#req-pipe-024-recurring-sweep-watermark-and-manual-bypass), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection)
+**Related requirements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-PIPE-023](../../sdd/spec/generation.md#req-pipe-023-llm-re-rank-cost-controls), [REQ-PIPE-024](../../sdd/spec/generation.md#req-pipe-024-recurring-sweep-watermark-and-manual-bypass), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection)
 
 ---
 
@@ -1547,16 +1547,16 @@ The 7-day window and 4-hour cadence are non-negotiable: PANW-cluster spans valid
 
 **Decision:** The deploy job's `if:` expression requires two guards beyond `conclusion == 'success'` on every `workflow_run` path:
 
-- `github.event.workflow_run.event == 'push'` — only post-merge runs trigger deploy; pull_request runs do not.
-- `github.event.workflow_run.head_repository.full_name == github.repository` — only runs originating from this repo, never from a fork.
+- `github.event.workflow_run.event == 'push'` - only post-merge runs trigger deploy; pull_request runs do not.
+- `github.event.workflow_run.head_repository.full_name == github.repository` - only runs originating from this repo, never from a fork.
 
 **Context:** The outer `workflow_run` trigger filter `branches: [main]` matches the PR head ref name, not the source repository. A fork contributor who opens a PR with a head branch literally named `main` passes that filter. Without the two extra guards, the deploy job would check out the fork's untrusted SHA with `actions:write` permissions and access to all deploy secrets (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `OAUTH_JWT_SECRET`, OAuth client secrets, Resend API key). This is the standard `workflow_run` pwn-request vector for public repos documented in GitHub's security hardening guide. Mirror of codeflare#385 (commit `1dfc042`). <!-- @impl: .github/workflows/deploy.yml::workflow_run.event -->
 
 **Alternatives considered:**
 
-- *Remove `workflow_run` trigger entirely; use `push` to main directly.* Rejected — a direct `push` trigger on the deploy workflow cannot gate on PR Checks passing; it fires on every merge regardless of test outcome.
-- *Pin with `pull_request_target` restrictions only.* Not applicable — the deploy workflow does not use `pull_request_target`; the vector is the upstream `workflow_run` consumer, not the triggering event.
-- *Repository visibility set to private.* Rejected — the repo is intentionally public; access restriction would break that model.
+- *Remove `workflow_run` trigger entirely; use `push` to main directly.* Rejected - a direct `push` trigger on the deploy workflow cannot gate on PR Checks passing; it fires on every merge regardless of test outcome.
+- *Pin with `pull_request_target` restrictions only.* Not applicable - the deploy workflow does not use `pull_request_target`; the vector is the upstream `workflow_run` consumer, not the triggering event.
+- *Repository visibility set to private.* Rejected - the repo is intentionally public; access restriction would break that model.
 
 **Consequences:**
 
@@ -1580,7 +1580,7 @@ The 7-day window and 4-hour cadence are non-negotiable: PANW-cluster spans valid
 
 - *Keep 120B and only pursue pre-LLM pruning / prompt compaction.* Safest for quality, but it does not answer whether the cheapest operational lever is viable again on current Workers AI infrastructure.
 - *Shadow/canary per-call model routing while production remains 120B.* Safer for production, but it violates the project's current single-model simplicity and requires a larger code change before the cheapest experiment can start.
-- *Switch directly in production.* Rejected — prior Gemma evidence included chunk cancellations, and the project requires unchanged summary/dedup quality before promotion.
+- *Switch directly in production.* Rejected - prior Gemma evidence included chunk cancellations, and the project requires unchanged summary/dedup quality before promotion.
 
 **Consequences:**
 
@@ -1708,7 +1708,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - The single-file ledger remains accepted while chronological reading and cross-ADR anchors are clearer in one file.
 - Crossing either threshold requires a new ADR or a deliberate ledger split.
 
-**Related requirements:** none direct — documentation structure concern.
+**Related requirements:** none direct - documentation structure concern.
 
 ---
 
@@ -1772,7 +1772,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - Summary quality gates stay where they were: the chunk prompt still requires 100-150 words, server validation still drops short bodies, and semantic dedup still runs after ingestion.
 - Future cost reductions should prefer pre-LLM candidate elimination or input compaction before changing the summary contract.
 
-**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-019](../../sdd/spec/generation.md#req-pipe-019-google-news-query-rss-long-tail-backstop), [REQ-PIPE-022](../../sdd/spec/generation.md#req-pipe-022-chunk-prompt-input-compaction), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract)
+**Related requirements:** [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-019](../../sdd/spec/generation.md#req-pipe-019-google-news-query-rss-long-tail-backstop), [REQ-PIPE-022](../../sdd/spec/generation.md#req-pipe-022-chunk-prompt-input-compaction), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract)
 
 ---
 
@@ -1823,7 +1823,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - Luna's zero catalog prices are provisional; displayed estimates do not represent actual spend. The configured 128K budget is an assumption, not a verified provider limit. <!-- @impl: src/lib/models.ts::MODELS -->
 - Release acceptance for [PR #293](https://github.com/nikolanovoselec/ai-news-digest/pull/293) requires green review/CI and a deployed integration scrape before production promotion; request/response compatibility alone is insufficient.
 
-**Related requirements:** [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection), [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
+**Related requirements:** [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection), [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
 
 ---
 

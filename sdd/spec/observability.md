@@ -1,6 +1,6 @@
 # Observability
 
-Structured JSON logging as the single operational surface — no external observability service, no Analytics Engine. Every error code surfaced to users is sanitized. Security headers are applied uniformly on every response.
+Structured JSON logging as the single operational surface - no external observability service, no Analytics Engine. Every error code surfaced to users is sanitized. Security headers are applied uniformly on every response.
 
 ---
 
@@ -113,7 +113,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Acceptance Criteria:**
 1. The endpoint accepts both POST and GET. Both methods do the same work, so callers can pick whichever fits their context (form submissions, JSON fetches, and direct URL visits all reach the same coordinator dispatch). <!-- @impl: src/pages/api/admin/force-refresh.ts::POST -->
-2. Triggering the endpoint starts a fresh scrape run with status running and sends one coordinator message — the same work the every-four-hours cron does. <!-- @impl: src/pages/api/admin/force-refresh.ts::GET -->
+2. Triggering the endpoint starts a fresh scrape run with status running and sends one coordinator message - the same work the every-four-hours cron does. <!-- @impl: src/pages/api/admin/force-refresh.ts::GET -->
 3. If a run started by an earlier cron tick or a previous manual trigger is still running and started within the last two minutes, the endpoint reuses that run rather than starting a new one. This protects against accidental double-clicks and tab-restore replays. <!-- @impl: src/pages/api/admin/force-refresh.ts::rateLimited -->
 4. The response is content-negotiated so browser callers land back on the settings surface with the run id visible and scripted callers can read the run id and reuse flag programmatically. <!-- @impl: src/pages/api/admin/force-refresh.ts::redirectToSettings -->
 5. The endpoint is gated by all three admin layers per [REQ-AUTH-006](authentication.md#req-auth-006-admin-surface-gating): Cloudflare Access at the zone level (optionally audience-pinned), a valid worker session, and the session email matching the configured operator email; failure at any layer returns that layer's native deny response. <!-- @impl: src/pages/api/admin/force-refresh.ts::rateLimited -->
@@ -160,15 +160,15 @@ Structured JSON logging as the single operational surface — no external observ
 
 ### REQ-OPS-006: Integration deployment target
 
-**Intent:** Risky changes — major dependency bumps, schema migrations, security-policy tightening, animation rewrites — can be smoke-tested on the live Cloudflare edge before they reach the production domain. Production traffic stays on a deploy-from-main pipeline; integration runs the same code on a parallel set of resources, on a different domain, with manual gating.
+**Intent:** Risky changes - major dependency bumps, schema migrations, security-policy tightening, animation rewrites - can be smoke-tested on the live Cloudflare edge before they reach the production domain. Production traffic stays on a deploy-from-main pipeline; integration runs the same code on a parallel set of resources, on a different domain, with manual gating.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
-1. The integration environment is reachable at a separate, stable hostname distinct from production. Production and integration share no Cloudflare resources — D1, KV, queues are each provisioned twice with the integration copies suffixed `-integration`.
+1. The integration environment is reachable at a separate, stable hostname distinct from production. Production and integration share no Cloudflare resources - D1, KV, queues are each provisioned twice with the integration copies suffixed `-integration`.
 2. Integration deploys fire only on operator-initiated manual dispatch from GitHub Actions; no push to any branch auto-deploys to integration.
 3. The manual trigger always deploys the current `develop` branch HEAD, regardless of which branch the dispatch was fired from in the GitHub UI.
-4. The integration worker has no cron triggers — the scrape pipeline runs only when the operator hits the admin force-refresh endpoint. Production crons (every-four-hours scrape, daily cleanup, every-five-minutes email) do not fire on integration.
+4. The integration worker has no cron triggers - the scrape pipeline runs only when the operator hits the admin force-refresh endpoint. Production crons (every-four-hours scrape, daily cleanup, every-five-minutes email) do not fire on integration.
 5. Schema migrations apply to a fresh D1 database on first deploy. No production data is copied across; integration starts empty and accumulates only what manual force-refresh runs produce.
 6. Worker secrets come from the repo-level GitHub Actions secrets used by production, with Environment overrides winning. Public `APP_URL` stays in the deploy manifest, not secrets.
 7. Promotion path is one-way: develop → integration smoke (manual) → develop merged to main → production auto-deploy. There is no path that pushes integration changes back to develop.
@@ -199,7 +199,7 @@ Structured JSON logging as the single operational surface — no external observ
 3. Each entry advertises a location, a last-modified date stamped to the day of the request, an update-frequency hint, and a relative priority per the sitemap protocol. <!-- @impl: src/pages/sitemap.xml.ts::GET -->
 4. The response is cacheable by intermediate caches and crawlers for at least one hour. <!-- @impl: src/pages/sitemap.xml.ts::GET -->
 5. The sitemap URL is advertised in the robots policy so crawlers find it without guessing. <!-- @impl: src/pages/sitemap.xml.ts::GET -->
-6. The sitemap origin follows the request hostname, not a hardcoded one — a fork or staging deploy emits its own URLs, never the production origin. <!-- @impl: src/pages/sitemap.xml.ts::GET -->
+6. The sitemap origin follows the request hostname, not a hardcoded one - a fork or staging deploy emits its own URLs, never the production origin. <!-- @impl: src/pages/sitemap.xml.ts::GET -->
 
 **Constraints:** None.
 
@@ -229,7 +229,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Priority:** P2
 
-**Dependencies:** [REQ-OPS-005](#req-ops-005-admin-force-refresh-endpoint), [REQ-PIPE-003](generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Dependencies:** [REQ-OPS-005](#req-ops-005-admin-force-refresh-endpoint), [REQ-PIPE-003](generation.md#req-pipe-003-same-story-dedupe---core-matching-contract), [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
 **Verification:** Automated test
 

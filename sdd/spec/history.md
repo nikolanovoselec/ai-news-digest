@@ -1,6 +1,6 @@
 # History & Stats
 
-Past digests paginated on `/history`, 30 per page. A four-tile stats widget on `/settings` shows digests generated, articles read / total, tokens consumed, and cost to date — pulled from D1 with user-scoped SQL (IDOR-safe by construction through JOINs).
+Past digests paginated on `/history`, 30 per page. A four-tile stats widget on `/settings` shows digests generated, articles read / total, tokens consumed, and cost to date - pulled from D1 with user-scoped SQL (IDOR-safe by construction through JOINs).
 
 ---
 

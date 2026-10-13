@@ -489,7 +489,7 @@ Nodes (4): canonicalize(), isTrackingParam(), TRACKING_PARAM_EXACT, TRACKING_PAR
 ## Knowledge Gaps
 - **442 isolated node(s):** `validate-app-url.sh script`, `config`, `_merge_email_winners`, `_merge_user_merges`, `$schema` (+437 more)
   These have ≤1 connection - possible missing edges. (Counts symbols only; 740 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **30 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **30 thin communities (<3 nodes) omitted from report** - run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_

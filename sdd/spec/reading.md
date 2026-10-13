@@ -66,7 +66,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 1. `/digest/:id/:slug` renders the article title, the detail paragraphs as long-form reading prose, a small-caps metadata line (source · publish date · ingestion time), and a prominent "Read at source" affordance. <!-- @impl: src/pages/digest/[id]/[slug].astro::formatDate -->
 2. The ingestion time in the metadata line is wall-clock only (hour:minute, no date) rendered in the user's IANA timezone, with the publish date right beside it in the same line so a duplicate ingestion date would read as redundant noise. <!-- @impl: src/pages/digest/[id]/[slug].astro::formatDate -->
 3. The first paragraph carries a drop-cap initial and the reading column is capped around 62 characters with hyphenation. <!-- @impl: src/pages/digest/[id]/[slug].astro::session -->
-4. All text is rendered with `textContent` — no markdown parsing, no HTML sanitizer, no `innerHTML`. <!-- @impl: src/components/DigestCard.astro::stagger -->
+4. All text is rendered with `textContent` - no markdown parsing, no HTML sanitizer, no `innerHTML`. <!-- @impl: src/components/DigestCard.astro::stagger -->
 5. The slug is derived from the title and enforced unique per article. <!-- @impl: src/components/DigestCard.astro::stagger -->
 
 **Constraints:** [CON-SEC-003](constraints.md#con-sec-003-plaintext-only-llm-output), [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum)
@@ -116,9 +116,9 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Acceptance Criteria:**
 1. On first view of an article's detail page, the page loader atomically records that this user has read this article. Articles are global and shared across users; the read mark is scoped per (user, article) pair, never per digest. <!-- @impl: src/pages/digest/[id]/[slug].astro::env -->
-2. A user can only mark their own reads — one user's read activity never appears under another user's account, and one user cannot cause another user's article to be marked read. <!-- @impl: src/pages/digest/[id]/[slug].astro::formatDate -->
+2. A user can only mark their own reads - one user's read activity never appears under another user's account, and one user cannot cause another user's article to be marked read. <!-- @impl: src/pages/digest/[id]/[slug].astro::formatDate -->
 3. Clicking the source link does not record a read; only opening the detail view counts. <!-- @impl: src/pages/digest/[id]/[slug].astro::env -->
-4. Re-visiting an already-read detail page is idempotent — the original read timestamp is preserved and no duplicate read is recorded. <!-- @impl: src/pages/digest/[id]/[slug].astro::env -->
+4. Re-visiting an already-read detail page is idempotent - the original read timestamp is preserved and no duplicate read is recorded. <!-- @impl: src/pages/digest/[id]/[slug].astro::env -->
 
 **Constraints:** [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
 
@@ -164,7 +164,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 1. Low-yield or empty digest states use the `/digest` empty-state contract from [REQ-READ-005](#req-read-005-empty-dashboard-state), not a separate LLM-failure page. <!-- @impl: src/pages/digest.astro::digest-page__empty -->
 2. When the digest has `status='failed'`, the page shows "We couldn't build your digest" with a Try-again control and a Go-to-settings link; the raw `error_code` appears in a muted monospace footer, never prose from the error. <!-- @impl: src/pages/404.astro::error-page__code -->
 3. Try-again submits in place and updates an inline status (`Retrying…`, rate-limit countdown, or network error). The failure page remains until a new generation is accepted. <!-- @impl: src/pages/rate-limited.astro::url -->
-4. When `navigator.onLine` is false, a top-of-page banner reads "You're offline — showing the last digest you viewed"; the Refresh button is disabled with a tooltip. <!-- @impl: src/pages/offline.astro::offline-page__banner -->
+4. When `navigator.onLine` is false, a top-of-page banner reads "You're offline - showing the last digest you viewed"; the Refresh button is disabled with a tooltip. <!-- @impl: src/pages/offline.astro::offline-page__banner -->
 5. 404 and 500 responses have dedicated pages with a calm headline and at least one clear action. <!-- @impl: src/pages/404.astro::error-page -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
@@ -263,12 +263,12 @@ The heart of the product. Overview grid of the freshest articles read from the s
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. Every card that lists an article — the dashboard grid, the article detail page, the starred-articles page, and the day-expanded and search-result grids on `/history` — shows a star toggle; activating it stars the article when unstarred and unstars it when starred. <!-- @impl: src/scripts/card-interactions.ts::bindStarDelegation -->
+1. Every card that lists an article - the dashboard grid, the article detail page, the starred-articles page, and the day-expanded and search-result grids on `/history` - shows a star toggle; activating it stars the article when unstarred and unstars it when starred. <!-- @impl: src/scripts/card-interactions.ts::bindStarDelegation -->
 2. Starring POSTs to the article-star endpoint; unstarring DELETEs the same endpoint; both flip the icon optimistically on click before the server response returns. <!-- @impl: src/pages/api/articles/[id]/star.ts::readArticleId -->
-3. Star state is user-scoped — starring an article in one account never reveals the star in any other account's view. <!-- @impl: src/pages/api/articles/[id]/star.ts::readArticleId -->
+3. Star state is user-scoped - starring an article in one account never reveals the star in any other account's view. <!-- @impl: src/pages/api/articles/[id]/star.ts::readArticleId -->
 4. State-changing star requests are protected by the Origin check from REQ-AUTH-003; unauthenticated requests receive HTTP 401. <!-- @impl: src/pages/api/articles/[id]/star.ts::readArticleId -->
 5. A successful star/unstar response confirms the new state and the UI reconciles with the server value if the optimistic flip disagreed. <!-- @impl: src/scripts/card-interactions.ts::bindStarDelegation -->
-6. On every page that lists articles, each card renders its initial starred / unstarred state on first paint — articles the user has already starred appear filled and `aria-pressed` from the server-rendered HTML, without needing a hard refresh after a toggle on another page. <!-- @impl: src/pages/digest/[id]/[slug].astro::formatIngestedAt -->
+6. On every page that lists articles, each card renders its initial starred / unstarred state on first paint - articles the user has already starred appear filled and `aria-pressed` from the server-rendered HTML, without needing a hard refresh after a toggle on another page. <!-- @impl: src/pages/digest/[id]/[slug].astro::formatIngestedAt -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy), [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
 

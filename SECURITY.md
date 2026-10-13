@@ -9,15 +9,15 @@ attributes, rate limits, auth flow), see
 
 Only the deployed `main` branch is supported. The repo's `develop`
 branch is the staging line for the next deploy and may carry unfixed
-issues. There are no semver releases — production is whatever
+issues. There are no semver releases - production is whatever
 `main` currently points to.
 
 ## Reporting a Vulnerability
 
-If you find something that looks security-relevant — a way to read
+If you find something that looks security-relevant - a way to read
 another user's data, bypass auth, escape rate limits, or have the LLM
 backend produce output that didn't come from one of the user's
-sources — please **do not** open a public GitHub issue.
+sources - please **do not** open a public GitHub issue.
 
 Instead, email the owner directly via
 [GitHub's private vulnerability reporting](https://github.com/nikolanovoselec/ai-news-digest/security/advisories/new).
@@ -51,7 +51,7 @@ listed on [graymatter.ch](https://graymatter.ch).
   ADRs and `sdd/spec/.review-queue.md` track the project's stance on those.
 - DoS via legitimate traffic shapes. Cloudflare's edge handles those.
 - Third-party scanners flagging "GitHub-owned action not pinned by
-  hash" — see ADR / scorecard policy in repo for rationale.
+  hash" - see ADR / scorecard policy in repo for rationale.
 - Issues that require an authenticated session AND a separate
   privilege escalation we already document as the operator's
   responsibility (e.g. an attacker with the operator's GitHub creds).

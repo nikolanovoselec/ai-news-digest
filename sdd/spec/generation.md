@@ -6,7 +6,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ### REQ-PIPE-001: Global scrape-and-summarise pipeline on a fixed cadence
 
-**Intent:** One shared scrape per cadence feeds every user's dashboard, so adding users does not multiply LLM spend — the system runs the LLM the same number of times whether 10 people are signed up or 10,000. The pipeline is independent of individual user accounts: it runs once per tick regardless of how many users are signed up.
+**Intent:** One shared scrape per cadence feeds every user's dashboard, so adding users does not multiply LLM spend - the system runs the LLM the same number of times whether 10 people are signed up or 10,000. The pipeline is independent of individual user accounts: it runs once per tick regardless of how many users are signed up.
 
 **Applies To:** Admin
 
@@ -33,7 +33,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ### REQ-PIPE-019: Google News query-RSS long-tail backstop
 
-**Intent:** Every interest tag is guaranteed baseline coverage by a per-tag Google News query-RSS source added to each scrape tick. The aggregator-vs-direct dedup pass in [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract) makes the wide fan-out safe — direct publisher copies always win over Google News copies that land in the same tick, so the backstop produces baseline coverage without polluting the pool with aggregator duplicates.
+**Intent:** Every interest tag is guaranteed baseline coverage by a per-tag Google News query-RSS source added to each scrape tick. The aggregator-vs-direct dedup pass in [REQ-PIPE-003](#req-pipe-003-same-story-dedupe---core-matching-contract) makes the wide fan-out safe - direct publisher copies always win over Google News copies that land in the same tick, so the backstop produces baseline coverage without polluting the pool with aggregator duplicates.
 
 **Applies To:** Admin
 
@@ -48,7 +48,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P1
 
-**Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags)
+**Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-003](#req-pipe-003-same-story-dedupe---core-matching-contract), [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags)
 
 **Verification:** Automated test
 
@@ -185,7 +185,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ---
 
-### REQ-PIPE-003: Same-story dedupe — core matching contract
+### REQ-PIPE-003: Same-story dedupe - core matching contract
 
 **Intent:** The same story published by five outlets appears as one primary card with four alternative-source links rather than five duplicate cards. Two outlets that paraphrase the same event under different headlines collapse to a single card even when they share almost no surface vocabulary, and the collapse holds across scrape ticks so a story discovered today never produces a second card when a different outlet covers the same event tomorrow.
 
@@ -212,7 +212,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ---
 
-### REQ-PIPE-018: Same-story collapse mechanics — survivor selection and data merge
+### REQ-PIPE-018: Same-story collapse mechanics - survivor selection and data merge
 
 **Intent:** Once two articles are recognised as the same story, deterministic rules pick the surviving primary card, fold the loser's per-user data and source attribution onto the survivor, prefer direct publisher copies over aggregator wrappers, and persist single-source articles with no alternative-source rows so the data shape is always consistent.
 
@@ -231,7 +231,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe---core-matching-contract)
 
 **Verification:** Automated test
 
@@ -364,16 +364,16 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 ### REQ-PIPE-007: Orphan-tag source cleanup
 
-**Intent:** When the last user who selected a tag removes it (or deletes their account), the discovered-feed cache for that tag becomes orphan: no user sees its articles, but the scrape coordinator keeps fetching its feeds and the LLM keeps summarising them on every tick — wasted work and quiet article-pool bloat. The daily cleanup pass deletes those orphan caches so cost scales only with tags that at least one user still cares about.
+**Intent:** When the last user who selected a tag removes it (or deletes their account), the discovered-feed cache for that tag becomes orphan: no user sees its articles, but the scrape coordinator keeps fetching its feeds and the LLM keeps summarising them on every tick - wasted work and quiet article-pool bloat. The daily cleanup pass deletes those orphan caches so cost scales only with tags that at least one user still cares about.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 1. The same daily cron that prunes old articles also enumerates the discovered-feed cache, identifies entries whose tag does not appear in any user's saved tag list, and deletes them. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
-2. Tags configured by at least one user are preserved regardless of how stale their feed list is — the self-healing eviction loop is the only path that mutates an actively-owned tag's cache. <!-- @impl: src/queue/cleanup.ts::runRefreshTokenPurge -->
+2. Tags configured by at least one user are preserved regardless of how stale their feed list is - the self-healing eviction loop is the only path that mutates an actively-owned tag's cache. <!-- @impl: src/queue/cleanup.ts::runRefreshTokenPurge -->
 3. The cleanup pass is idempotent: a second immediate run is a no-op because the first run already removed every orphan. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
 4. The pass logs the number of orphan caches deleted so operators can watch for unexpected churn (a sudden mass deletion would indicate a bad tag-list write rather than legitimate user de-selection). <!-- @impl: src/queue/cleanup.ts::runCleanup -->
-5. A failure in the orphan sweep never blocks the article-retention sweep that runs in the same cron, and vice versa — the two halves succeed or fail independently. <!-- @impl: src/queue/cleanup.ts::runOrphanScrapeRunSweep -->
+5. A failure in the orphan sweep never blocks the article-retention sweep that runs in the same cron, and vice versa - the two halves succeed or fail independently. <!-- @impl: src/queue/cleanup.ts::runOrphanScrapeRunSweep -->
 
 **Constraints:** [CON-DATA-001](constraints.md#con-data-001-strong-consistency-in-d1-edge-cache-in-kv)
 
@@ -399,14 +399,14 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 3. Pairs below the rerank floor stay distinct without an LLM call. <!-- @impl: src/lib/dedup-rerank.ts::readRerankFloor -->
 4. The same-event judgment receives only the two articles' titles and short body excerpts. <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
 5. An unparseable, ambiguous, or failed same-event response is treated as "different events". <!-- @impl: src/lib/dedup-rerank.ts::rerankBorderlinePairsBatch -->
-6. A pair the model marks as the same event is merged using the same first-source-wins rule as [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract). <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch --> <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize -->
+6. A pair the model marks as the same event is merged using the same first-source-wins rule as [REQ-PIPE-003](#req-pipe-003-same-story-dedupe---core-matching-contract). <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch --> <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize -->
 7. The same borderline gate runs on both the per-tick cross-tick pass and the operator-initiated historical re-run sweep. <!-- @impl: src/queue/scrape-finalize-consumer.ts::processOneFinalize --> <!-- @impl: src/lib/historical-dedup.ts::runHistoricalDedupBatch -->
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
 **Priority:** P1
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe---core-matching-contract)
 
 **Verification:** Automated test
 
@@ -432,7 +432,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P1
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-009](#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe---core-matching-contract), [REQ-PIPE-009](#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
 
 **Verification:** Automated test
 
@@ -500,7 +500,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 1. Each candidate's published-at timestamp uses a parsed source feed publish date when one is present and plausible. <!-- @impl: src/lib/sources.ts::parseFeedDate --> <!-- @impl: src/queue/scrape-coordinator.ts::buildCandidates -->
 2. Missing, pre-2000, or more-than-one-day-future feed dates fall back to ingestion time. <!-- @impl: src/lib/sources.ts::parseFeedDate --> <!-- @impl: src/queue/scrape-coordinator.ts::buildCandidates -->
 3. Candidates with parsed publish dates more than 48 hours before the tick are dropped before LLM summarisation. <!-- @impl: src/queue/scrape-coordinator.ts::buildCandidates -->
-4. Headlines from publishers that an AI tech news product would never surface — primarily financial / stock-pump aggregators that Google News routes into tech tags when a vendor's ticker matches — are dropped at the coordinator before clustering, embedding, or LLM summarisation. <!-- @impl: src/lib/blocked-publishers.ts::isBlockedPublisher --> <!-- @impl: src/queue/scrape-coordinator.ts::runCoordinator -->
+4. Headlines from publishers that an AI tech news product would never surface - primarily financial / stock-pump aggregators that Google News routes into tech tags when a vendor's ticker matches - are dropped at the coordinator before clustering, embedding, or LLM summarisation. <!-- @impl: src/lib/blocked-publishers.ts::isBlockedPublisher --> <!-- @impl: src/queue/scrape-coordinator.ts::runCoordinator -->
 5. The blocklist is matched against the article URL's host, per-item publisher name, and headline title, so aggregator-wrapped items and title-only wrappers such as Show HN are still recognised. <!-- @impl: src/lib/blocked-publishers.ts::isBlockedPublisher -->
 6. The blocklist is a single project-wide source-maintained list, not a personal mute list. <!-- @impl: src/lib/blocked-publishers.ts::BLOCKED_HOSTS --> <!-- @impl: src/lib/blocked-publishers.ts::BLOCKED_NAME_TOKENS -->
 7. Candidates identified as landing/listing noise before prompting cannot be summarised or persisted. <!-- @impl: src/lib/article-fetch.ts::fetchArticleBodyWithQuality --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::fetchAndBuildPromptCandidates --> <!-- @impl: src/queue/scrape-chunk-consumer.ts::alignLlmArticlesToInputs -->
@@ -534,7 +534,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe---core-matching-contract)
 
 **Verification:** Automated test
 
@@ -559,7 +559,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-005](#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe---core-matching-contract), [REQ-PIPE-005](#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-PIPE-012](#req-pipe-012-same-story-matching-policy-variants)
 
 **Verification:** Automated test
 
@@ -586,7 +586,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract)
+**Dependencies:** [REQ-PIPE-003](#req-pipe-003-same-story-dedupe---core-matching-contract)
 
 **Verification:** Automated test
 

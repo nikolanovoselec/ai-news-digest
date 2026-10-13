@@ -36,7 +36,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 ### REQ-AUTH-002: Access token + refresh token, instant revocation
 
-**Intent:** Users stay signed in for at least 30 days of inactivity without re-authenticating, while logout or account deletion invalidates every outstanding session instantly. Sessions feel like every consumer-grade webapp — closing the tab and coming back next month does not log the user out.
+**Intent:** Users stay signed in for at least 30 days of inactivity without re-authenticating, while logout or account deletion invalidates every outstanding session instantly. Sessions feel like every consumer-grade webapp - closing the tab and coming back next month does not log the user out.
 
 **Applies To:** User
 
@@ -169,7 +169,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 ### REQ-AUTH-007: Cross-provider account dedup
 
-**Intent:** A person who signs in via two providers with the same verified email lands in one account, not two — the daily digest goes out once and starred articles, read marks, and interests are shared across both sign-in paths.
+**Intent:** A person who signs in via two providers with the same verified email lands in one account, not two - the daily digest goes out once and starred articles, read marks, and interests are shared across both sign-in paths.
 
 **Applies To:** User
 
@@ -178,7 +178,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 1. The first sign-in via any provider creates an account and records the (provider, provider-id) pair so subsequent sign-ins via the same provider land in the same account. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::errorRedirect -->
 2. A sign-in via a provider not yet linked to any account, but with a verified email matching an existing account, links the new (provider, provider-id) pair to that account instead of creating a duplicate row. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::errorRedirect -->
 3. The daily digest is sent once per real person. Duplicate-email accounts that pre-date this requirement are merged in a one-time pass; their stars, read marks, and pending discoveries re-point to the surviving account so no user-visible state is lost. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::errorRedirect -->
-4. Removing one sign-in path at the OAuth provider does not delete the account or other linked sign-in paths — the account remains reachable via the other provider. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::errorRedirect -->
+4. Removing one sign-in path at the OAuth provider does not delete the account or other linked sign-in paths - the account remains reachable via the other provider. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::errorRedirect -->
 
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt)
 

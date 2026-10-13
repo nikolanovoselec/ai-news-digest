@@ -1,4 +1,4 @@
-# News Digest — curated by an LLM
+# News Digest - curated by an LLM
 
 Keeping up with tech news was a part-time job I didn't sign up for, didn't get paid for, and couldn't quit. So I fired myself and hired an LLM. 99% pay cut, zero complaints. Pick your hashtags: it does the reading, you take the credit. You're welcome.
 
@@ -22,16 +22,16 @@ News Digest hires the LLM. It remembers so you don't. This isn't enlightenment. 
 
 ## What's in it
 
-- **A curated default tag set preloaded** (`#cloudflare`, `#ai-agents`, `#mcp`, `#zero-trust`, `#supply-chain-security`, `#graymatter`…). My opinions, helpfully pre-formed for you. Add a tag the registry doesn't know and it goes feed-hunting in the background — finds sources or admits it couldn't, so you're never waiting on a ghost.
+- **A curated default tag set preloaded** (`#cloudflare`, `#ai-agents`, `#mcp`, `#zero-trust`, `#supply-chain-security`, `#graymatter`…). My opinions, helpfully pre-formed for you. Add a tag the registry doesn't know and it goes feed-hunting in the background - finds sources or admits it couldn't, so you're never waiting on a ghost.
 - **Composable filters on Search & History**: tag + search + date AND together, all in the URL.
-- **Two-stage dedupe** — URL-canonical clustering, then semantic. Every article gets a 768-dim embedding the moment it lands; near-duplicates collapse into a single card with the alternate publishers attached as alt-sources. One Anthropic launch should not become six articles just because six sites found the publish button. Same-publisher pairs get a small cosine penalty so two genuinely different stories from the same outlet don't get glued together by house style.
+- **Two-stage dedupe** - URL-canonical clustering, then semantic. Every article gets a 768-dim embedding the moment it lands; near-duplicates collapse into a single card with the alternate publishers attached as alt-sources. One Anthropic launch should not become six articles just because six sites found the publish button. Same-publisher pairs get a small cosine penalty so two genuinely different stories from the same outlet don't get glued together by house style.
 - **Summaries that earn their word count**: 100-150 words, *what happened, how it works, why you care*.
 - **Hallucinations dropped on sight**: every LLM output has to point back to a real source, or it doesn't touch the database. Ask me how I learned that.
 - **Daily digest email** (optional): when there's news, you get headlines; when there isn't, your inbox stays quiet. Once per day in your timezone, never zero-content. Push notifications were considered. Pushed back.
 - **Starred articles outlive the cron**: 14-day retention, unless you starred it. Your saved list is forever; your unread list was a lie anyway.
-- **Federated sign-in**: GitHub or Google. Wire up one, both, or neither — the app tells the truth either way. A verified email shared across providers maps to a single account, so stars, read marks, pending discoveries, and the daily digest all live in one place no matter which button you signed in with.
-- **Looks like a real product when shared**: paste the URL into iMessage, WhatsApp, Slack, LinkedIn, or Discord — you get a brand card, not a naked URL. Surprisingly hard. Don't ask.
-- **One Worker, no servers**: Cloudflare D1 + KV + Queues + AI Gateway + Workers AI + Vectorize. The vector index is the new arrival — 768 dimensions of cosine-flavoured opinion about whether two articles are secretly the same article. It's been right enough times that I no longer fight it. Ships in 30 seconds. Rollback is `wrangler rollback`, which I've used more times than I'd like to admit.
+- **Federated sign-in**: GitHub or Google. Wire up one, both, or neither - the app tells the truth either way. A verified email shared across providers maps to a single account, so stars, read marks, pending discoveries, and the daily digest all live in one place no matter which button you signed in with.
+- **Looks like a real product when shared**: paste the URL into iMessage, WhatsApp, Slack, LinkedIn, or Discord - you get a brand card, not a naked URL. Surprisingly hard. Don't ask.
+- **One Worker, no servers**: Cloudflare D1 + KV + Queues + AI Gateway + Workers AI + Vectorize. The vector index is the new arrival - 768 dimensions of cosine-flavoured opinion about whether two articles are secretly the same article. It's been right enough times that I no longer fight it. Ships in 30 seconds. Rollback is `wrangler rollback`, which I've used more times than I'd like to admit.
 
 ## What's *not* in it
 
@@ -77,7 +77,7 @@ Four steps. The Deploy workflow handles D1, KV, queues, migrations, Gateway pref
    - `CLOUDFLARE_API_TOKEN`: see [token scopes](#api-token-scopes) below
    - `CLOUDFLARE_ACCOUNT_ID`: find it on any zone overview in the Cloudflare dashboard
    - `AI_GATEWAY_API_TOKEN`: least-privilege runtime token for AI Gateway inference through the Gateway from step 2
-   - `OAUTH_JWT_SECRET`: HMAC key for the 5-minute access token JWT. Generate: `openssl rand -base64 32`. If you use the word "password" here, you get what you deserve. (The 30-day refresh token is opaque and stored in D1, not signed — this secret only signs the short-lived access half.)
+   - `OAUTH_JWT_SECRET`: HMAC key for the 5-minute access token JWT. Generate: `openssl rand -base64 32`. If you use the word "password" here, you get what you deserve. (The 30-day refresh token is opaque and stored in D1, not signed - this secret only signs the short-lived access half.)
    - `APP_URL`: canonical custom-domain origin whose zone is in the same Cloudflare account (for example, `https://news.example.com`)
 
 4. **Run the Deploy workflow.** `Actions` > `Deploy` > `Run workflow` > Branch: `main` > **Run workflow**. Takes ~2 minutes. Future pushes to `main` deploy automatically. When you break it, see `wrangler rollback` above.

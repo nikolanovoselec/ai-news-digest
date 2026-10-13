@@ -40,10 +40,10 @@ Content-Security-Policy:
 
 Notable choices (see [AD11](../decisions/README.md#ad11-keep-style-src-unsafe-inline-runtime-stylex-writes-are-intentional) for rationale):
 
-- `style-src 'unsafe-inline'` — Astro emits component-scoped styles as inline `<style>` blocks; runtime FLIP animations write `.style.transform` directly. Both are intentional.
-- `script-src 'self'` only — no eval, no inline scripts. Every client script is served as a static asset.
+- `style-src 'unsafe-inline'` - Astro emits component-scoped styles as inline `<style>` blocks; runtime FLIP animations write `.style.transform` directly. Both are intentional.
+- `script-src 'self'` only - no eval, no inline scripts. Every client script is served as a static asset.
 - `img-src` narrowed to Gravatar (the only external image origin).
-- `form-action 'self'` — OAuth redirects are server-side; browsers never POST to a third party.
+- `form-action 'self'` - OAuth redirects are server-side; browsers never POST to a third party.
 
 **Threat:** Reflected or stored XSS that injects an inline `<script>` or loads a malicious third-party script tag.
 **Mitigation:** Browser refuses to execute scripts outside the listed sources, refuses inline scripts entirely, and refuses to load images / fonts / form posts outside the named origins.
@@ -74,7 +74,7 @@ Two-year max-age with subdomain coverage and HSTS preload list eligibility.
 | `__Host-session` | `HttpOnly; Secure; SameSite=Lax; Path=/` |
 | `__Host-refresh` | `HttpOnly; Secure; SameSite=Lax; Path=/` |
 
-The `__Host-` prefix (RFC 6265bis) enforces Secure, Path=/, and no Domain attribute at the browser level — prevents subdomain hijacking of the session.
+The `__Host-` prefix (RFC 6265bis) enforces Secure, Path=/, and no Domain attribute at the browser level - prevents subdomain hijacking of the session.
 
 **Threat:** Session theft via XSS reading `document.cookie`, or a malicious subdomain setting a cookie that shadows the production session.
 **Mitigation:** `HttpOnly` makes the cookie unreadable from JS; `__Host-` prefix forbids `Domain=` so a subdomain cannot scope a cookie to the parent; `SameSite=Lax` blocks cross-site sub-resource sends of the cookie.
@@ -109,7 +109,7 @@ The admin gate in `src/middleware/admin-auth.ts` enforces two layers in order:
 1. **Optional Layer 0** (when `CF_ACCESS_AUD` set): request must carry a Cloudflare Access assertion whose `aud` and `exp` claims are valid. Expired assertions are rejected server-side. Signature stays at the Access perimeter ([AD29](../decisions/README.md#ad29-cloudflare-access-as-opt-in-additive-perimeter-not-security-boundary), [AD44](../decisions/README.md#ad44-cloudflare-access-jwt-exp-validation-signature-still-trusted-from-the-perimeter)).
 2. **Baseline** (always): valid session cookie + `ADMIN_EMAIL` match (case-insensitive).
 
-**Threat:** Privileged action by a non-operator — either a stolen Access assertion that has since expired, a synthetic non-Access payload spoofing the header, or an authenticated non-admin user reaching an admin route.
+**Threat:** Privileged action by a non-operator - either a stolen Access assertion that has since expired, a synthetic non-Access payload spoofing the header, or an authenticated non-admin user reaching an admin route.
 **Mitigation:** Layer 0 rejects assertions whose `aud` does not match or whose `exp` is missing/past; baseline rejects any session cookie whose user email differs from `ADMIN_EMAIL`. A request that fails either layer is rejected before any side effect.
 **Verification:** `tests/auth/middleware.test.ts` (baseline gate + email match), `tests/admin/*` (per-endpoint admin gate enforcement).
 **Implements:** [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating), [AC 8a](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
@@ -131,7 +131,7 @@ The destructive wipe-and-re-embed pipeline mode (`mode=wipe`) is only reachable 
 
 The Google OAuth callback verifies the `id_token` signature using RS256 against Google's published JWKS endpoint (`https://www.googleapis.com/oauth2/v3/certs`). Implemented in `src/lib/google-jwks.ts`. The keys are cached for 1 hour in KV under `oidc:jwks:google` so a stale-key scenario after a Google JWKS rotation self-heals within the hour. Prior to this (CF-013), claims were decoded without signature verification, relying solely on the TLS channel to the token endpoint.
 
-The gate is fail-closed in production: if KV is unbound or the JWKS endpoint is unreachable, the `id_token` claims are discarded and the callback falls through to the userinfo endpoint as the authoritative source. On integration and test deployments (`IS_PRODUCTION = "false"`) the skip path is tolerated so a stubbed KV does not block sign-in. The `isProduction` flag is derived from `IS_PRODUCTION` in `callback.ts` and threaded into `ProfileFetcher` — see [`configuration.md`](configuration.md#worker-vars-non-secret).
+The gate is fail-closed in production: if KV is unbound or the JWKS endpoint is unreachable, the `id_token` claims are discarded and the callback falls through to the userinfo endpoint as the authoritative source. On integration and test deployments (`IS_PRODUCTION = "false"`) the skip path is tolerated so a stubbed KV does not block sign-in. The `isProduction` flag is derived from `IS_PRODUCTION` in `callback.ts` and threaded into `ProfileFetcher` - see [`configuration.md`](configuration.md#worker-vars-non-secret).
 
 **Threat:** Forged `id_token` from a man-in-the-middle on the token-endpoint TLS path, or a Google JWKS-rotation lag that lets an attacker re-use a retired key signature.
 **Mitigation:** RS256 signature verified against the live JWKS for every callback; KV cache TTL kept short (1 hour) so a real rotation self-heals; production fails closed to the userinfo fallback rather than trusting unverified claims.
@@ -142,7 +142,7 @@ The gate is fail-closed in production: if KV is unbound or the JWKS endpoint is 
 
 ## Admin endpoint cross-site guards
 
-Admin POST endpoints (`embed-backfill`, `force-refresh`, `historical-dedup`) enforce an Origin check on browser-driven calls. Requests presenting an `Authorization: Bearer ...` header bypass the Origin check — scripted curl flows and dev-bypass sessions carry no session cookie and are not a CSRF surface. A browser-driven POST without a Bearer header must present an `Origin` matching `APP_URL` or receive `403 forbidden_origin`.
+Admin POST endpoints (`embed-backfill`, `force-refresh`, `historical-dedup`) enforce an Origin check on browser-driven calls. Requests presenting an `Authorization: Bearer ...` header bypass the Origin check - scripted curl flows and dev-bypass sessions carry no session cookie and are not a CSRF surface. A browser-driven POST without a Bearer header must present an `Origin` matching `APP_URL` or receive `403 forbidden_origin`.
 
 The GET `/api/admin/force-refresh` endpoint additionally enforces a `Sec-Fetch-Site` guard (defense-in-depth): `same-origin` and `none` are allowed; any other value (cross-site or cross-origin initiator) receives `403 "Cross-site request denied"`. This preserves the AD38 top-level-navigation pattern (post-SSO redirects from `cloudflareaccess.com` carry `Sec-Fetch-Site: none`) while closing the same-browser CSRF gap on the GET path. See [`api-reference-admin.md`](api-reference-admin.md) for per-endpoint auth notes.
 

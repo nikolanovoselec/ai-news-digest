@@ -115,7 +115,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 4. The counter is stored in a shared cache with a seven-day expiry so stale entries never accumulate. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
 5. A URL is evicted on the next scrape tick after 30 consecutive failed fetches, matching roughly five days at six scrapes/day so day-long outages do not thrash feeds. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
 6. If eviction empties a tag's feed list, the tag is enqueued for the same discovery cron path used by default-seeded and user-added tags. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
-7. Hard-coded curated feeds (the operator-maintained global registry) participate in the same counter so operators see failing URLs in logs, but they are never mutated at runtime — their replacement is a code change, not a runtime eviction. <!-- @impl: src/lib/sources.ts::fetchFromSourceWithResult -->
+7. Hard-coded curated feeds (the operator-maintained global registry) participate in the same counter so operators see failing URLs in logs, but they are never mutated at runtime - their replacement is a code change, not a runtime eviction. <!-- @impl: src/lib/sources.ts::fetchFromSourceWithResult -->
 
 **Constraints:** None.
 
@@ -192,7 +192,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 1. The discovery prompt fences the user-supplied tag with triple backticks so the model treats it as data, not instructions. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
 2. The system prompt forbids guessing URLs and instructs the model to return fewer entries over unverified ones. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
 3. Every suggested URL passes SSRF validation (HTTPS-only, no private IPs) before any network call is made. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
-4. URL validation is applied independently of the LLM response — a malicious suggestion cannot bypass it. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
+4. URL validation is applied independently of the LLM response - a malicious suggestion cannot bypass it. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper), [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
