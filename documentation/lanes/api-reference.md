@@ -60,7 +60,7 @@ GET /
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -82,7 +82,7 @@ GET /404
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -103,7 +103,7 @@ GET /500
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -133,7 +133,7 @@ GET  /api/auth/{provider}/login
 |---|---|---|---|
 | `provider` | string | yes | One of: `github`, `google` |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -165,7 +165,7 @@ GET /api/auth/{provider}/callback
 | `code` | string | yes | Authorization code from provider |
 | `state` | string | yes | Must match the `state` cookie |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -197,7 +197,7 @@ POST /api/auth/refresh
 **Authentication:** refresh cookie (access JWT need not be valid)
 **Origin check:** applies
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -228,7 +228,7 @@ POST /api/auth/logout
 **Authentication:** session
 **Origin check:** applies
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -264,7 +264,7 @@ POST /api/auth/set-tz
 |---|---|---|---|
 | `tz` | string | yes | IANA timezone (e.g. `Europe/Zurich`) |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -297,7 +297,7 @@ DELETE /api/auth/account
 |---|---|---|---|
 | `confirm` | string | yes | Must equal `"DELETE"` |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -328,7 +328,7 @@ POST /api/auth/account
 |---|---|---|---|
 | `confirm` | string | yes | Must equal `"DELETE"` |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -355,7 +355,7 @@ GET /api/settings
 **Authentication:** session
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -387,7 +387,7 @@ PUT /api/settings
 | `model_id` | string | yes | Validated against `MODELS` |
 | `email_enabled` | bool | yes | Daily email opt-in |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -428,7 +428,7 @@ POST /api/settings
 | `model_id` | string | yes | Validated against `MODELS` |
 | `email_enabled` | string (`"on"`) | no | Present when checked, absent when unchecked |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -452,7 +452,7 @@ GET /api/discovery/status
 **Authentication:** session
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -479,7 +479,7 @@ GET /api/digest/today
 **Authentication:** session
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -545,7 +545,7 @@ GET /api/scrape-status
 |---|---|---|---|
 | `run_id` | string (ULID) | no | Pin to a specific run; absent returns most-recent |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -597,7 +597,7 @@ POST /api/articles/:id/star
 |---|---|---|---|
 | `id` | string | yes | Article id |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -630,7 +630,7 @@ DELETE /api/articles/:id/star
 |---|---|---|---|
 | `id` | string | yes | Article id |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -657,7 +657,7 @@ GET /api/starred
 **Authentication:** session
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -688,7 +688,7 @@ PUT /api/tags
 | `tag` | string | yes | Tag to add or remove (normalised server-side) |
 | `action` | string | yes | `"add"` or `"remove"` |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -715,7 +715,7 @@ POST /api/tags/restore
 **Authentication:** session
 **Origin check:** applies
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -740,7 +740,7 @@ POST /api/tags/delete-initial
 **Authentication:** session
 **Origin check:** applies
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -771,7 +771,7 @@ POST /api/dev/login
 **Authentication:** dev-bypass token (`Authorization: Bearer <DEV_BYPASS_TOKEN>`)
 **Origin check:** exempt
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -779,7 +779,7 @@ POST /api/dev/login
 | `401` | Missing Bearer header | `{ error, code: "unauthorized" }` |
 | `404` | Token unset, token mismatch, or `IS_PRODUCTION=true` | Empty |
 
-**Implements:** [REQ-AUTH-001 AC 10](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-AUTH-010](../../sdd/spec/authentication.md#req-auth-010-dev-bypass-production-guard)
 
 **Notes**
 
@@ -798,7 +798,7 @@ POST /api/dev/trigger-scrape
 **Authentication:** dev-bypass token (`Authorization: Bearer <DEV_BYPASS_TOKEN>`)
 **Origin check:** exempt
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -806,7 +806,7 @@ POST /api/dev/trigger-scrape
 | `404` | Token unset, token mismatch, or `IS_PRODUCTION=true` | Empty |
 | `500` | Run insert or enqueue failed | `{ ok: false, error: "start_run_failed" \| "enqueue_failed" }` |
 
-**Implements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-AUTH-001 AC 10](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-AUTH-010](../../sdd/spec/authentication.md#req-auth-010-dev-bypass-production-guard)
 
 **Notes**
 
@@ -827,7 +827,7 @@ GET /sitemap.xml
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -852,7 +852,7 @@ GET /robots.txt
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -873,7 +873,7 @@ GET /llms.txt
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -894,7 +894,7 @@ GET /llms-full.txt
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -923,7 +923,7 @@ GET /api/history
 |---|---|---|---|
 | `date` | string (`YYYY-MM-DD`) | no | Filter to a single local day (used for the "see today" deep-link) |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -969,7 +969,7 @@ GET /api/stats
 **Authentication:** session
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|

@@ -56,17 +56,17 @@ Implements [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrap
 
 ## 2. Components
 
-| Component | Role |
-|---|---|
-| Astro Worker | Serves all HTML pages and JSON APIs in the Cloudflare Workers runtime |
-| Cron Triggers | 4-hour scrape, daily 03:00 UTC retention, 5-minute email, 10-minute discovery |
-| Queue Consumers | `SCRAPE_COORDINATOR`, `SCRAPE_CHUNKS`, `SCRAPE_FINALIZE`, `DEDUP_SWEEP`, `PIPELINE_JOBS` |
-| D1 | Strongly-consistent storage: users, articles, scrape_runs, refresh_tokens, pending_discoveries |
-| KV | Edge-cached `sources:{tag}`, headline cache, per-URL fetch-health counters, rate-limit counters |
-| AI Gateway + Workers AI | Gateway-backed LLM calls for summaries/discovery/rerank; Workers AI embeddings for same-story dedup |
-| Vectorize | 768-dim cosine index over every surviving article's embedding; queried per article on ingest and on operator-driven historical sweeps |
-| Resend | Transactional email transport for digest-ready notifications |
-| Federated OAuth | GitHub and Google sign-in (at least one provider must be configured) |
+| Component | Responsibility | Inputs | Outputs | Source |
+|---|---|---|---|---|
+| Astro Worker | Serves all HTML pages and JSON APIs in the Cloudflare Workers runtime | HTTP requests | HTML and API responses | `src/app-worker.ts`, `src/middleware/index.ts`, `src/pages/` |
+| Cron Triggers | 4-hour scrape, daily 03:00 UTC retention, 5-minute email, 10-minute discovery | Scheduled events | Scrape, retention, email and discovery work | `src/worker.ts` |
+| Queue Consumers | `SCRAPE_COORDINATOR`, `SCRAPE_CHUNKS`, `SCRAPE_FINALIZE`, `DEDUP_SWEEP`, `PIPELINE_JOBS` | Bound queue messages | Persisted phase results and continuation messages | `src/queue/` |
+| D1 | Strongly-consistent storage: users, articles, scrape_runs, refresh_tokens, pending_discoveries | Application queries and mutations | Consistent rows and query results | `migrations/`, `src/lib/db.ts` |
+| KV | Edge-cached `sources:{tag}`, headline cache, per-URL fetch-health counters, rate-limit counters | Cache and counter operations | Edge-replicated cache and limit state | `src/lib/kv/`, `src/lib/rate-limit.ts` |
+| AI Gateway + Workers AI | Gateway-backed LLM calls for summaries/discovery/rerank; Workers AI embeddings for same-story dedup | Prompts and embedding input | LLM output and vectors | `src/lib/llm-json.ts`, `src/lib/embeddings.ts` |
+| Vectorize | 768-dim cosine index over every surviving article's embedding; queried per article on ingest and on operator-driven historical sweeps | Article vectors and similarity queries | Nearest-neighbor matches | `src/lib/embeddings.ts` |
+| Resend | Transactional email transport for digest-ready notifications | Digest-ready email content | Email delivery result | `src/lib/email.ts` |
+| Federated OAuth | GitHub and Google sign-in (at least one provider must be configured) | Authorization code and provider profile | Application identity and session | `src/lib/oauth-providers.ts`, `src/pages/api/auth/` |
 
 ## 3. Repository Layout
 
@@ -98,7 +98,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `src/middleware/auth.ts` | `loadSession` - access JWT verify and refresh-token rotation; cookie helpers | [REQ-AUTH-002](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../../sdd/spec/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout) |
 | `src/middleware/origin-check.ts` | Rejects state-changing requests whose `Origin` does not match `APP_URL` | [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints) |
 | `src/middleware/security-headers.ts` | Stamps CSP, HSTS, and related headers on every response | [REQ-OPS-003](../../sdd/spec/observability.md#req-ops-003-content-security-policy-on-every-response) |
-| `src/middleware/admin-auth.ts` | Admin gate for `/api/admin/*`: valid session cookie + `ADMIN_EMAIL`, with optional CF Access `aud`/`exp` checks when `CF_ACCESS_AUD` is set (AD29, AD44). | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8, AC 8a |
+| `src/middleware/admin-auth.ts` | Admin gate for `/api/admin/*`: valid session cookie + `ADMIN_EMAIL`, with optional CF Access `aud`/`exp` checks when `CF_ACCESS_AUD` is set (AD29, AD44). | [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating), AC 8a |
 
 ### 4.2 Libraries (`src/lib/`)
 
@@ -125,7 +125,7 @@ Every source file annotates the REQ-IDs it implements via `// Implements REQ-X-N
 | `oauth-providers.ts` | GitHub + Google adapters with id_token validation | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `oauth-errors.ts` | OAuth error code allowlist and sanitizer | [REQ-AUTH-004](../../sdd/spec/authentication.md#req-auth-004-oauth-error-surfacing) |
 | `prompts.ts` | LLM system prompts for chunk processing and source discovery; compacts long article bodies into extractive high-signal prompt context before summary calls | [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-022](../../sdd/spec/generation.md#req-pipe-022-chunk-prompt-input-compaction), [REQ-DISC-007](../../sdd/spec/discovery.md#req-disc-007-per-tag-feed-discovery-execution-and-persistence) |
-| `rate-limit.ts` | KV window-counter rate limiter for auth routes, mutation routes, and authenticated polling endpoints | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9 |
+| `rate-limit.ts` | KV window-counter rate limiter for auth routes, mutation routes, and authenticated polling endpoints | [REQ-RATE-001](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface) |
 | `session-jwt.ts` | HMAC-SHA256 sign/verify for the access-token JWT | [REQ-AUTH-002](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation) |
 | `refresh-tokens.ts` | 30-day opaque refresh-token storage in D1 with rotation and reuse detection | [REQ-AUTH-002](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../../sdd/spec/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout) |
 | `digest-today.ts` | Dashboard payload loader (`loadTodayPayload`) and next-cron-tick calculator (`computeNextScrapeAt`); factored out of the API route so server-rendered pages call it directly without cross-module route imports | [REQ-READ-001](../../sdd/spec/reading.md#req-read-001-overview-grid-of-todays-digest) |
@@ -385,11 +385,11 @@ Articles are the central entity in the article pool. Each article belongs to a `
 |---|---|---|
 | Authentication | 5-minute access JWT + 30-day rotating refresh token | [REQ-AUTH-002](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../../sdd/spec/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout) |
 | CSRF defence | `Origin` header check on every state-changing request | [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints) |
-| Rate limiting | KV window-counter, applied to auth routes, mutation routes, and authenticated polling endpoints | `src/lib/rate-limit.ts`, [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9 |
+| Rate limiting | KV window-counter, applied to auth routes, mutation routes, and authenticated polling endpoints | `src/lib/rate-limit.ts`, [REQ-RATE-001](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface) |
 | Security headers | CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `X-Frame-Options` | [REQ-OPS-003](../../sdd/spec/observability.md#req-ops-003-content-security-policy-on-every-response) |
 | Observability | Structured JSON logs via closed `LogEvent` enum | [REQ-OPS-001](../../sdd/spec/observability.md#req-ops-001-structured-json-logging) |
 | Error surfaces | Closed `ErrorCode` enum, sanitised user-facing messages | [REQ-OPS-002](../../sdd/spec/observability.md#req-ops-002-sanitized-error-surfaces) |
-| Admin gate | Worker-side baseline: signed-in session + `ADMIN_EMAIL` match. Optional perimeter when `CF_ACCESS_AUD` is set: Cloudflare Access assertion + `aud` claim match (AD29 + AD30); `exp` claim validated server-side (AD44). | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8, AC 8a |
+| Admin gate | Worker-side baseline: signed-in session + `ADMIN_EMAIL` match. Optional perimeter when `CF_ACCESS_AUD` is set: Cloudflare Access assertion + `aud` claim match (AD29 + AD30); `exp` claim validated server-side (AD44). | [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating), AC 8a |
 
 ## 8. Build and Deploy
 

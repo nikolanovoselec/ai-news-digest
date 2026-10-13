@@ -72,7 +72,10 @@ POST /api/admin/force-refresh
 
 **Request:** none.
 
-**Response**
+**Errors:** Failure statuses and their response bodies are listed in the Response table below.
+**Source:** `src/pages/api/admin/force-refresh.ts`.
+
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -84,7 +87,7 @@ POST /api/admin/force-refresh
 
 **Rate limit:** per-operator hourly bucket `admin_force_refresh`; exhausted returns `429` with `Retry-After`.
 
-**Implements:** [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 1), [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
+**Implements:** [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 1), [REQ-RATE-001](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface)
 
 **Notes**
 
@@ -105,7 +108,10 @@ GET /api/admin/force-refresh
 
 **Request:** none.
 
-**Response**
+**Errors:** Failure statuses and their response bodies are listed in the Response table below.
+**Source:** `src/pages/api/admin/force-refresh.ts`.
+
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -119,7 +125,7 @@ GET /api/admin/force-refresh
 
 **Rate limit:** per-operator hourly bucket `admin_force_refresh`; exhausted returns `429` with `Retry-After`.
 
-**Implements:** [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 1), [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
+**Implements:** [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 1), [REQ-RATE-001](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface)
 
 ---
 
@@ -140,7 +146,7 @@ POST /api/admin/discovery/retry
 |---|---|---|---|
 | `tag` | string | yes | Tag to re-queue |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -174,7 +180,10 @@ POST /api/admin/discovery/retry-bulk
 
 **Request:** none.
 
-**Response**
+**Errors:** Failure statuses and their response bodies are listed in the Response table below.
+**Source:** `src/pages/api/admin/discovery/retry-bulk.ts`.
+
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -203,7 +212,12 @@ GET /api/admin/discovery/retry-bulk
 **Authentication:** session + admin email
 **Origin check:** n/a (post-SSO browser callback target)
 
-**Response**
+**Request:** none; the callback uses the signed-in operator's stored tags.
+
+**Errors:** Failure statuses and their response bodies are listed in the Response table below.
+**Source:** `src/pages/api/admin/discovery/retry-bulk.ts`.
+
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -238,7 +252,10 @@ POST /api/admin/embed-backfill
 
 **Request:** empty body.
 
-**Response**
+**Errors:** Failure statuses and their response bodies are listed in the Response table below.
+**Source:** `src/pages/api/admin/embed-backfill.ts`.
+
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -268,7 +285,10 @@ GET /api/admin/embed-backfill
 
 **Request:** none. `?reembed=1` is rejected.
 
-**Response**
+**Errors:** Failure statuses and their response bodies are listed in the Response table below.
+**Source:** `src/pages/api/admin/embed-backfill.ts`.
+
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -302,7 +322,7 @@ POST /api/admin/historical-dedup
 
 Sending no body invokes the kicker path; sending any of the fields above invokes the synchronous batch path.
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -341,7 +361,7 @@ GET /api/admin/dedup-status
 |---|---|---|---|
 | `run_id` | string | Yes | ULID returned by the kicker call to `POST /api/admin/historical-dedup`. |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -378,7 +398,7 @@ POST /api/admin/pipeline-run
 |---|---|---|---|
 | `mode` | `"full"` \| `"wipe"` | `"full"` | `"wipe"` invalidates every article's embedding before scraping; `"full"` keeps existing embeddings and starts at the scrape phase. |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -391,7 +411,7 @@ POST /api/admin/pipeline-run
 
 **Rate limit:** per-operator hourly bucket `admin_pipeline_run`; exhausted returns `429` with `Retry-After`.
 
-**Implements:** [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
+**Implements:** [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-RATE-001](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface)
 
 **Notes**
 
@@ -416,7 +436,7 @@ GET /api/admin/pipeline-run
 |---|---|---|---|
 | `mode` | `full` \| `wipe` | `full` | `wipe` invalidates all embeddings before scraping; `full` keeps them. `wipe` via GET is rejected with `405` to block cross-origin GET vectors from triggering a corpus-wide re-embed. |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -425,7 +445,7 @@ GET /api/admin/pipeline-run
 | `405` | `mode=wipe` via GET | body `Use POST for mode=wipe`, header `Allow: POST` |
 | `500` | Configuration error | plain text |
 
-**Implements:** [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8d
+**Implements:** [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating)
 
 **Notes**
 
@@ -450,7 +470,7 @@ GET /api/admin/pipeline-status
 |---|---|---|---|
 | `id` | string | No | ULID of the pipeline run. When omitted, the most recent row is returned (so reopening `/settings` after closing the tab restores progress). |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -487,7 +507,7 @@ GET /api/admin/dedup-diag
 | `a` | string | Yes | Article ID of the first article. |
 | `b` | string | Yes | Article ID of the second article. Must differ from `a`. |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|

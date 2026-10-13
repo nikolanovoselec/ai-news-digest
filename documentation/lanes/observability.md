@@ -107,7 +107,7 @@ For fail-open routes (every limiter rule except `AUTH_REFRESH_IP` and `AUTH_REFR
 
 For the two fail-closed rules (`AUTH_REFRESH_IP`, `AUTH_REFRESH_USER`) protecting refresh-token spray attacks, the in-Worker limiter is still defence-in-depth, not the primary gate. The primary gate for production deployments is Cloudflare zone-level Rate Limiting (WAF), which is atomic. Without WAF in front of `/api/auth/refresh`, a coordinated burst above approximately `2 × limit` can succeed during the propagation window. This is tracked as CF-034 and is the reason fail-closed alone is insufficient for refresh-token spray.
 
-**Implements:** [REQ-AUTH-001 AC 9](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-RATE-001](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface)
 
 ---
 

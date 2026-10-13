@@ -85,6 +85,9 @@ The `__Host-` prefix (RFC 6265bis) enforces Secure, Path=/, and no Domain attrib
 
 ## Rate limiting
 
+**Status:** Partial
+**Notes:** The fail-closed introductory claim and AD23 conflict with this section's fail-open mitigation, REQ-RATE-001, and the current auth bucket definitions; the competing claims are retained pending policy reconciliation.
+
 Auth endpoints (login, callback, refresh) use a fail-closed KV-backed sliding-window rate limiter. See `src/lib/rate-limit.ts` for bucket definitions and [`configuration.md`](configuration.md) for the `KV` namespace binding and key conventions.
 
 Admin side-effecting endpoints (force-refresh, pipeline-run) carry their own per-operator hourly buckets (REQ-AUTH-001 AC 9g). A rate-limited admin click surfaces a `429` with `Retry-After` back to the operator's settings surface rather than silently dropping the request.
@@ -92,11 +95,14 @@ Admin side-effecting endpoints (force-refresh, pipeline-run) carry their own per
 **Threat:** Brute-force credential stuffing on `/api/auth/*`, runaway loops by a compromised admin session, or refresh-token replay flooding.
 **Mitigation:** Per-bucket sliding-window counter in KV; unauthenticated buckets keyed by IP, mutation buckets by user id, admin buckets by operator id; exhaustion returns 429 with `Retry-After`. Auth-login fails open on KV outage (so a backing-store hiccup never locks legitimate users out); refresh-token rules fail closed (so a stolen refresh cookie cannot exploit the outage). See [AD23](../decisions/README.md#ad23-rate-limit-fail-policy-asymmetry).
 **Verification:** `tests/lib/rate-limit.test.ts`, `tests/auth/rate-limited-format.test.ts`, plus the `tests/auth/*` suite that exercises each bucket boundary.
-**Implements:** [REQ-AUTH-001 AC 9](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-RATE-001](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface)
 
 ---
 
 ## Admin gate and JWT exp validation
+
+**Status:** Partial
+**Notes:** REQ-OPS-005 describes three mandatory layers, while REQ-AUTH-006 and the current admin gate make the Access perimeter conditional; both contract versions are retained for reconciliation.
 
 The admin gate in `src/middleware/admin-auth.ts` enforces two layers in order:
 
@@ -106,7 +112,7 @@ The admin gate in `src/middleware/admin-auth.ts` enforces two layers in order:
 **Threat:** Privileged action by a non-operator — either a stolen Access assertion that has since expired, a synthetic non-Access payload spoofing the header, or an authenticated non-admin user reaching an admin route.
 **Mitigation:** Layer 0 rejects assertions whose `aud` does not match or whose `exp` is missing/past; baseline rejects any session cookie whose user email differs from `ADMIN_EMAIL`. A request that fails either layer is rejected before any side effect.
 **Verification:** `tests/auth/middleware.test.ts` (baseline gate + email match), `tests/admin/*` (per-endpoint admin gate enforcement).
-**Implements:** [REQ-AUTH-001 AC 8](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [AC 8a](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating), [AC 8a](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
 ---
 
@@ -117,7 +123,7 @@ The destructive wipe-and-re-embed pipeline mode (`mode=wipe`) is only reachable 
 **Threat:** A logged-in operator opening an attacker-controlled page whose `<img src=".../pipeline-run?mode=wipe">` or similar GET vector triggers a corpus-wide re-embed (cost-amplification + temporary corpus rebuild).
 **Mitigation:** The wipe branch enforces `request.method === 'POST'` before any side effect; GET-with-wipe returns 405. Browsers cannot send a same-site POST from a cross-origin context without a form submission, which the Origin check (next section) then catches.
 **Verification:** `tests/queue/pipeline-consumer.test.ts` + admin-route tests covering the 405 branch.
-**Implements:** [REQ-AUTH-001 AC 8d](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating)
 
 ---
 
@@ -143,7 +149,7 @@ The GET `/api/admin/force-refresh` endpoint additionally enforces a `Sec-Fetch-S
 **Threat:** Same-browser CSRF where an authenticated operator opens an attacker-controlled page that issues a state-changing fetch (POST embed-backfill, GET force-refresh) using ambient cookies.
 **Mitigation:** POST endpoints reject any browser-driven request whose `Origin` does not match `APP_URL` (Bearer callers bypass since they carry no cookies); admin GETs additionally reject `Sec-Fetch-Site` values outside `same-origin` and `none`. AD38 preserves the top-level-navigation case so SSO callbacks and operator bookmarks still work.
 **Verification:** `tests/pipeline/force-refresh.test.ts` (POST Origin gate, GET Sec-Fetch-Site matrix including the AD38 `none` case), plus the admin-route tests for each endpoint.
-**Implements:** [REQ-AUTH-001 AC 8](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider), [AC 8e](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating), [AC 8e](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
 ---
 
@@ -154,7 +160,7 @@ Routes under `/api/dev/*` return `404` on any deployment where the `IS_PRODUCTIO
 **Threat:** A `DEV_BYPASS_TOKEN` accidentally promoted from integration to production (via shared `wrangler.toml`, `gh secret set` typo, or environment-variable inheritance) exposes the test-only authentication backdoor on a public production hostname.
 **Mitigation:** Every `/api/dev/*` handler short-circuits to a 404 when `IS_PRODUCTION === "true"`, before any token comparison. Missing or unrecognised `IS_PRODUCTION` values are treated as production (fail-closed), so an unset variable cannot accidentally enable the surface.
 **Verification:** `tests/auth/*` covers the production-hostname 404 path; the dev-bypass runbook in `deployment.md` documents the integration-only usage shape.
-**Implements:** [REQ-AUTH-001 AC 10](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-AUTH-010](../../sdd/spec/authentication.md#req-auth-010-dev-bypass-production-guard)
 
 ---
 

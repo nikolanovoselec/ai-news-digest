@@ -34,13 +34,13 @@ Local development setup and production deployment steps.
 ## Local Development
 
 **When:** Initial setup or after pulling new migrations.
-**Command:**
+**Action:**
 ```bash
 npm install
 npx wrangler d1 migrations apply DB --local
 npm run dev
 ```
-**Verifies:** Dev server reachable at `http://localhost:4321`.
+**Verify:** Dev server reachable at `http://localhost:4321`.
 **Rollback:** Stop the dev server (`Ctrl+C`). No production state is affected.
 
 The dev server runs at `http://localhost:4321`.
@@ -64,14 +64,14 @@ Import `env` and `applyD1Migrations` from `tests/fixtures/cloudflare-test.ts` (n
 ## Production Deployment
 
 **When:** Automatic on merge to `main` (gated on PR Checks success). Manual re-run via Actions → Deploy → Run workflow. The `workflow_run` trigger additionally requires `event == 'push'` and `head_repository.full_name == github.repository`; fork PRs whose head branch is named `main` do not trigger deploy regardless of PR Checks outcome (see AD49).
-**Command:**
+**Action:**
 ```bash
 npx wrangler d1 migrations apply DB --remote --config wrangler.toml
 npm run build
 node scripts/check-deploy-config.mjs
 npx wrangler deploy
 ```
-**Verifies:** AI Gateway preflight succeeds, then smoke test `GET /` against `APP_URL` returns `200` or `303` (the deploy job's final smoke step).
+**Verify:** AI Gateway preflight succeeds, then smoke test `GET /` against `APP_URL` returns `200` or `303` (the deploy job's final smoke step).
 **Rollback:** Cloudflare Workers supports instant rollback via the dashboard or CLI. To revert to the previous Worker version:
 ```bash
 # List recent deployments and find the previous version ID
@@ -120,8 +120,8 @@ Dev-bypass endpoints remain available for operator-authorized integration checks
 ## Integration deployment
 
 **When:** Manually triggered via Actions → "Deploy Integration" → Run workflow. Triggered from `develop` branch only.
-**Command:** Actions tab → `Deploy Integration` → Run workflow. No CLI command needed.
-**Verifies:** Open `APP_URL` (integration hostname) in a browser. CI smoke step is absent (GHA runner IPs return `403` from Cloudflare bot management); `wrangler deploy` exit code is the success signal.
+**Action:** Actions tab → `Deploy Integration` → Run workflow. No CLI command needed.
+**Verify:** Open `APP_URL` (integration hostname) in a browser. CI smoke step is absent (GHA runner IPs return `403` from Cloudflare bot management); `wrangler deploy` exit code is the success signal.
 **Rollback:** Re-trigger the workflow from the previous `develop` commit. Integration has no production traffic; redeploying is safe.
 
 **Purpose:** Smoke-test risky changes (major dependency bumps, schema migrations, CSP tightening, animation rewrites) on the live Cloudflare edge before they reach production. Implements [REQ-OPS-006](../../sdd/spec/observability.md#req-ops-006-integration-deployment-target). Architectural decision: [AD12](../decisions/README.md#ad12-integration-env-separate-cloudflare-resources-manual-trigger-from-develop-crons-disabled).
@@ -230,7 +230,7 @@ A handful of operator endpoints drive LLM calls or queue work on demand — budg
 
 | Layer | Role | Implementation |
 |---|---|---|
-| **Worker-side gate** (`src/middleware/admin-auth.ts`) | **Security boundary.** Always enforced; sufficient on its own. | Baseline: session cookie + `ADMIN_EMAIL` match. Optional Layer 0 (AD29): `aud`-claim check when `CF_ACCESS_AUD` is set. Implements [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8. |
+| **Worker-side gate** (`src/middleware/admin-auth.ts`) | **Security boundary.** Always enforced; sufficient on its own. | Baseline: session cookie + `ADMIN_EMAIL` match. Optional Layer 0 (AD29): `aud`-claim check when `CF_ACCESS_AUD` is set. Implements [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating). |
 | **Cloudflare Access** (zone-level) | **Optional UX + perimeter layer.** When bound, redirects unauthenticated browsers to the Access login page. | Not required for the Worker gate to function. Forks and integration deploys without Access bound use the baseline Worker gate alone (AD29). |
 
 The Worker gate enforces checks in order: when `CF_ACCESS_AUD` is set, the request must carry a Cloudflare Access assertion whose `aud` claim matches before the baseline session check runs; returns at the first failing layer with no observable side effect.
