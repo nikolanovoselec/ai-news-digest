@@ -94,7 +94,7 @@ Four steps. The Deploy workflow handles D1, KV, queues, migrations, Gateway pref
 | `GOOGLE_OAUTH_CLIENT_SECRET` | with the id | Generated alongside the Google client id. Server-side only. |
 | `RESEND_API_KEY` | optional | [Resend](https://resend.com) key for the daily "your digest is ready" email. When unset, digests still generate in the app; only the email step is skipped. |
 | `RESEND_FROM` | optional | Sender address (e.g. `News Digest <hello@yourdomain.com>`). Required when `RESEND_API_KEY` is set. |
-| `DEV_BYPASS_TOKEN` | optional | Enables `/api/dev/login` for `scripts/e2e-test.sh`. When unset, the endpoint returns 404. |
+| `DEV_BYPASS_TOKEN` | optional | Enables dev-only synthetic sessions through `/api/dev/login` for authorized integration checks. When unset or in production, the endpoint returns 404. |
 
 A pair with only one field set is rejected by the deploy workflow so a half-configured provider never reaches runtime. The workflow builds `AI_GATEWAY_URL` from `CLOUDFLARE_ACCOUNT_ID` and the optional repository variable `AI_GATEWAY_NAME` (default `ai-news-digest`), then preflights `openai/gpt-6-luna` against that Gateway before publishing the Worker.
 
