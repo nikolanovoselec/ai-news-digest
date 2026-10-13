@@ -47,6 +47,7 @@ function fakeRequest(opts: {
   return new Request('https://example.com/', { headers });
 }
 
+// REQ-AUTH-011: Refresh-token reuse detection and device fingerprint policy.
 describe('refresh-tokens — REQ-AUTH-008', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.DB_MIGRATIONS ?? []);
@@ -229,6 +230,7 @@ describe('refresh-tokens — REQ-AUTH-008', () => {
   });
 });
 
+// REQ-AUTH-011: Refresh-token reuse detection and device fingerprint policy.
 describe('loadSession — refresh-token flow — REQ-AUTH-002, REQ-AUTH-008', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.DB_MIGRATIONS ?? []);

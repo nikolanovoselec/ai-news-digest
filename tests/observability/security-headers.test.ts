@@ -29,6 +29,7 @@ async function run(upstream: Response): Promise<Response> {
   return securityHeadersMiddleware(makeCtx(), async () => upstream);
 }
 
+// REQ-OPS-011: Transport and feature-policy headers on every response.
 describe('security-headers middleware', () => {
   it('CON-TECH-001 / REQ-OPS-003: platform-bound route data retains security headers', async () => {
     const context = makeCtx() as APIContext;

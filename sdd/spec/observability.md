@@ -11,8 +11,8 @@ Structured JSON logging as the single operational surface — no external observ
 **Applies To:** User (via operator investigation)
 
 **Acceptance Criteria:**
-1. Log lines are emitted via `console.log(JSON.stringify({ ts, level, event, user_id?, ...fields }))` so Cloudflare Logs parses them as structured records. <!-- @impl: src/lib/log.ts::log -->
-2. The following events are logged: `auth.login`, `digest.generation`, `source.fetch.failed`, `refresh.rejected`, `email.send.failed`. <!-- @impl: src/lib/log.ts::LogEvent -->
+1. Log lines are emitted via `console.log(JSON.stringify({ ts, level, event, user_id?, ...fields }))` so Cloudflare Logs parses them as structured records. <!-- @impl: src/lib/log.ts::log --> <!-- @test: tests/observability/log.test.ts (log) -->
+2. The following events are logged: `auth.login`, `digest.generation`, `source.fetch.failed`, `refresh.rejected`, `email.send.failed`. <!-- @impl: src/lib/log.ts::LogEvent --> <!-- @test: tests/observability/log.test.ts (REQ-OPS-001: accepts every documented LogEvent value) -->
 3. Each event carries a fixed set of fields documented in the observability implementation notes; new events are added by extending this enum.
 4. Raw exception messages and external API response bodies are logged at `level: 'error'` but never stored in D1 and never returned to clients.
 
@@ -86,10 +86,10 @@ Structured JSON logging as the single operational surface — no external observ
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. Every response includes `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS -->
-2. Every response includes `X-Content-Type-Options: nosniff`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS -->
-3. Every response includes `Referrer-Policy: strict-origin-when-cross-origin`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS -->
-4. Every response includes `Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), clipboard-read=()`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS -->
+1. Every response includes `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS --> <!-- @test: tests/observability/security-headers.test.ts (REQ-OPS-003: adds Strict-Transport-Security) -->
+2. Every response includes `X-Content-Type-Options: nosniff`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS --> <!-- @test: tests/observability/security-headers.test.ts (REQ-OPS-003: adds X-Content-Type-Options: nosniff) -->
+3. Every response includes `Referrer-Policy: strict-origin-when-cross-origin`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS --> <!-- @test: tests/observability/security-headers.test.ts (REQ-OPS-003: adds Referrer-Policy: strict-origin-when-cross-origin) -->
+4. Every response includes `Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), clipboard-read=()`. <!-- @impl: src/middleware/security-headers.ts::SECURITY_HEADERS --> <!-- @test: tests/observability/security-headers.test.ts (REQ-OPS-003: adds Permissions-Policy locking down all five features) -->
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
