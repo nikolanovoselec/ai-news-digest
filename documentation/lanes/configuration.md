@@ -210,7 +210,7 @@ Security headers (CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `Permi
 | File | Purpose |
 |---|---|
 | `wrangler.toml` | Cloudflare Worker config: name, compatibility date, D1/KV/Queue/AI bindings, cron triggers |
-| `astro.config.mjs` | Astro adapter (`@astrojs/cloudflare`), integrations (`@vite-pwa/astro`, `@tailwindcss/vite`) |
+| `astro.config.mjs` | Astro adapter (`@astrojs/cloudflare`), [local PWA bridge](../../scripts/pwa-integration.mjs) (`vite-plugin-pwa`), Tailwind Vite plugin (`@tailwindcss/vite`) |
 | `sdd/spec/config.yml` | SDD workflow config: mode, `enforce_tdd`, test globs, allowlists |
 
 ---
