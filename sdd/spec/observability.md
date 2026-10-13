@@ -11,8 +11,8 @@ Structured JSON logging as the single operational surface — no external observ
 **Applies To:** User (via operator investigation)
 
 **Acceptance Criteria:**
-1. Log lines are emitted via `console.log(JSON.stringify({ ts, level, event, user_id?, ...fields }))` so Cloudflare Logs parses them as structured records.
-2. The following events are logged: `auth.login`, `digest.generation`, `source.fetch.failed`, `refresh.rejected`, `email.send.failed`.
+1. Log lines are emitted via `console.log(JSON.stringify({ ts, level, event, user_id?, ...fields }))` so Cloudflare Logs parses them as structured records. <!-- @impl: src/lib/log.ts::log -->
+2. The following events are logged: `auth.login`, `digest.generation`, `source.fetch.failed`, `refresh.rejected`, `email.send.failed`. <!-- @impl: src/lib/log.ts::LogEvent -->
 3. Each event carries a fixed set of fields documented in the observability implementation notes; new events are added by extending this enum.
 4. Raw exception messages and external API response bodies are logged at `level: 'error'` but never stored in D1 and never returned to clients.
 
