@@ -124,7 +124,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Priority:** P1
 
-**Dependencies:** [REQ-READ-002](#req-read-002-article-detail-view)
+**Dependencies:** [REQ-READ-002](#req-read-002-article-detail-view-rendering)
 
 **Verification:** Integration test
 
@@ -142,7 +142,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 2. The empty state does not include a link or redirect to the settings page. <!-- @impl: src/pages/digest.astro::env -->
 3. The countdown header continues to render above the empty-state copy so users still see when the pool will next refresh. <!-- @impl: src/pages/digest.astro::env -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P1
 
@@ -274,7 +274,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Priority:** P1
 
-**Dependencies:** [REQ-AUTH-002](authentication.md#req-auth-002-access-token-refresh-token-instant-revocation), [REQ-AUTH-003](authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
+**Dependencies:** [REQ-AUTH-002](authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-003](authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
 **Verification:** Integration test
 
@@ -326,3 +326,5 @@ The heart of the product. Overview grid of the freshest articles read from the s
 **Verification:** Integration test
 
 **Status:** Implemented
+
+---

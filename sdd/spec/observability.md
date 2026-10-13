@@ -20,7 +20,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Priority:** P1
 
-**Dependencies:** None
+**Dependencies:** None.
 
 **Verification:** Manual check
 
@@ -71,7 +71,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Priority:** P0
 
-**Dependencies:** None
+**Dependencies:** None.
 
 **Verification:** Integration test
 
@@ -97,7 +97,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Priority:** P0
 
-**Dependencies:** None
+**Dependencies:** None.
 
 **Verification:** Integration test
 
@@ -118,7 +118,7 @@ Structured JSON logging as the single operational surface — no external observ
 4. The response is content-negotiated so browser callers land back on the settings surface with the run id visible and scripted callers can read the run id and reuse flag programmatically. <!-- @impl: src/pages/api/admin/force-refresh.ts::redirectToSettings -->
 5. The endpoint is gated by all three admin layers per [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8: Cloudflare Access at the zone level (optionally audience-pinned), a valid worker session, and the session email matching the configured operator email; failure at any layer returns that layer's native deny response. <!-- @impl: src/pages/api/admin/force-refresh.ts::rateLimited -->
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P2
 
@@ -148,7 +148,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Priority:** P2
 
-**Dependencies:** None
+**Dependencies:** None.
 
 **Verification:** Integration test
 
@@ -171,6 +171,8 @@ Structured JSON logging as the single operational surface — no external observ
 6. Worker secrets come from the repo-level GitHub Actions secrets used by production, with Environment overrides winning. Public `APP_URL` stays in the deploy manifest, not secrets.
 7. Promotion path is one-way: develop → integration smoke (manual) → develop merged to main → production auto-deploy. There is no path that pushes integration changes back to develop.
 
+**Notes:** Verification is the manual promotion checklist (develop -> integration smoke -> main). The deployment topology is exercised by [`.github/workflows/deploy-integration.yml`](../../.github/workflows/deploy-integration.yml); the workflow's header comment carries the REQ-OPS-006 backlink for traceability.
+
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P2
@@ -180,8 +182,6 @@ Structured JSON logging as the single operational surface — no external observ
 **Verification:** Manual check
 
 **Status:** Implemented
-
-**Notes:** Verification is the manual promotion checklist (develop -> integration smoke -> main). The deployment topology is exercised by [`.github/workflows/deploy-integration.yml`](../../.github/workflows/deploy-integration.yml); the workflow's header comment carries the REQ-OPS-006 backlink for traceability.
 
 ---
 
@@ -199,11 +199,11 @@ Structured JSON logging as the single operational surface — no external observ
 5. The sitemap URL is advertised in the robots policy so crawlers find it without guessing. <!-- @impl: src/pages/sitemap.xml.ts::GET -->
 6. The sitemap origin follows the request hostname, not a hardcoded one — a fork or staging deploy emits its own URLs, never the production origin. <!-- @impl: src/pages/sitemap.xml.ts::GET -->
 
-**Constraints:** —
+**Constraints:** None.
 
 **Priority:** P3
 
-**Dependencies:** —
+**Dependencies:** None.
 
 **Verification:** Unit test
 
@@ -223,7 +223,7 @@ Structured JSON logging as the single operational surface — no external observ
 3. Each phase only begins after the previous phase reports done; no phase fires speculatively or in parallel with its predecessor. <!-- @impl: src/pages/api/admin/pipeline-status.ts::GET -->
 4. Every phase is gated by the same admin authentication used elsewhere in the admin surface ([REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)). An unauthenticated tab where the admin gate has lapsed surfaces the auth failure as a user-readable failed-status line rather than silently no-op'ing. <!-- @impl: src/pages/api/admin/pipeline-run.ts::POST -->
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P2
 
@@ -248,7 +248,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt)
 
 **Priority:** P2
 
@@ -277,7 +277,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P2
 
@@ -286,3 +286,5 @@ Structured JSON logging as the single operational surface — no external observ
 **Verification:** Integration test
 
 **Status:** Partial
+
+---

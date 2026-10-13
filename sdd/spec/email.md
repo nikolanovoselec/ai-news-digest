@@ -19,7 +19,7 @@ Resend-backed notification sent after every successful digest — whether genera
 6. The brand footer reads "Built with Codeflare © 2026 Gray Matter GmbH" and matches the in-app site footer (uppercase, tracked, muted), with both "Codeflare" and "Gray Matter GmbH" rendered as hyperlinks. <!-- @impl: src/lib/email.ts::renderDigestReadyEmail -->
 7. The From header reads "News Digest <noreply@graymatter.ch>" (display name "News Digest" plus the configured sender address) so inbox lists show the brand instead of the bare email. <!-- @impl: src/lib/email.ts::withSenderDisplayName -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P1
 
@@ -44,7 +44,7 @@ Resend-backed notification sent after every successful digest — whether genera
 4. The reading surfaces stay fully usable regardless of email outcome. <!-- @impl: src/lib/email.ts::sendEmail -->
 5. On send failure, the per-user "last emailed date" marker is NOT advanced, so the next cron tick retries the same user naturally. <!-- @impl: src/lib/email-dispatch.ts::loadDispatchUsers -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P1
 
@@ -69,7 +69,7 @@ Resend-backed notification sent after every successful digest — whether genera
 4. When the recipient has zero unread articles for the local day, no email is sent so an empty inbox produces silence rather than a noisy zero-article notification. <!-- @impl: src/lib/email-dispatch.ts::processOneUser -->
 5. The per-user "last emailed date" marker is not stamped on a zero-article day, so the user is naturally retried at their next configured digest time the following local day. <!-- @impl: src/lib/email-dispatch.ts::processOneUser -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P1
 
@@ -78,3 +78,5 @@ Resend-backed notification sent after every successful digest — whether genera
 **Verification:** Integration test
 
 **Status:** Implemented
+
+---

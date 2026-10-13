@@ -90,7 +90,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 2. `/digest` displays a subtle banner "Discovering sources for #{tag1}, #{tag2}… Your next digest will include them." while the returned list is non-empty. <!-- @impl: src/pages/api/discovery/status.ts::GET -->
 3. The banner hides automatically when the returned list becomes empty (no manual refresh required on the user's side). <!-- @impl: src/pages/api/discovery/status.ts::GET -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P1
 
@@ -117,7 +117,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 6. If eviction empties a tag's feed list, the tag is enqueued for the same discovery cron path used by default-seeded and user-added tags. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
 7. Hard-coded curated feeds (the operator-maintained global registry) participate in the same counter so operators see failing URLs in logs, but they are never mutated at runtime — their replacement is a code change, not a runtime eviction. <!-- @impl: src/lib/sources.ts::fetchFromSourceWithResult -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P2
 
@@ -141,7 +141,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 3. Transient cache-read errors fall back to "not stuck" so a flaky read does not light up every tag at once. <!-- @impl: src/lib/discovery.ts::has -->
 4. The Stuck tags section is absent entirely from the page when no tag is stuck. <!-- @impl: src/pages/api/admin/discovery/retry-bulk.ts::userHashtags -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P2
 
@@ -170,7 +170,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P2
 
@@ -218,7 +218,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 3. Removal does not block other passes: a transient failure of the prune step still lets article retention and orphan-tag cleanup complete. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
 4. The 7-day window resets the moment discovery succeeds: a tag whose feeds come back online before the cutoff stays in the user's interests with no further action. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P2
 
@@ -227,3 +227,5 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Verification:** Automated test
 
 **Status:** Implemented
+
+---

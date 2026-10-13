@@ -22,11 +22,11 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 6. A brand-new account is seeded with a curated default hashtag list (covering cloud platforms, AI/LLM, security, identity, and infrastructure) where every default tag has at least one curated source, so the first digest has meaningful input before the user touches the strip. <!-- @impl: src/lib/default-hashtags.ts::DEFAULT_HASHTAGS -->
 7. New accounts are seeded with digest time 08:00, UTC timezone until browser correction, and email notifications enabled, so first sign-in can land on populated reading without forced onboarding. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::step6UpsertUserRow -->
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt)
 
 **Priority:** P0
 
-**Dependencies:** None
+**Dependencies:** None.
 
 **Verification:** Integration test
 
@@ -50,7 +50,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Notes:** Cookie attribute set (`__Host-` prefix, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`) and the signing algorithm are documented in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#auth-cookie-policy).
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P0
 
@@ -128,7 +128,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 4. Both session cookies are cleared and the user is redirected to the landing page with a one-time confirmation banner. <!-- @impl: src/pages/api/auth/account.ts::DELETE -->
 5. Any KV entries keyed by the user's id are deleted in the same handler. <!-- @impl: src/pages/api/auth/account.ts::deleteUserKvEntries -->
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt)
 
 **Priority:** P1
 
@@ -155,7 +155,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Notes:** Layered-defense mechanism is documented in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#admin-gate-and-jwt-exp-validation).
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P0
 
@@ -180,7 +180,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 3. The daily digest is sent once per real person. Duplicate-email accounts that pre-date this requirement are merged in a one-time pass; their stars, read marks, and pending discoveries re-point to the surviving account so no user-visible state is lost. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::errorRedirect -->
 4. Removing one sign-in path at the OAuth provider does not delete the account or other linked sign-in paths — the account remains reachable via the other provider. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::errorRedirect -->
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt)
 
 **Priority:** P1
 
@@ -205,11 +205,11 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Notes:** Grace-window length and the parent-link pointer are documented at [`documentation/lanes/security.md`](../../documentation/lanes/security.md#auth-cookie-policy).
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P0
 
-**Dependencies:** [REQ-AUTH-002](#req-auth-002-access-token-refresh-token-instant-revocation)
+**Dependencies:** [REQ-AUTH-002](#req-auth-002-access-token--refresh-token-instant-revocation)
 
 **Verification:** Automated test
 
@@ -233,7 +233,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P0
 
@@ -257,7 +257,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt)
 
 **Priority:** P1
 
@@ -290,3 +290,5 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 **Verification:** Integration test
 
 **Status:** Partial
+
+---

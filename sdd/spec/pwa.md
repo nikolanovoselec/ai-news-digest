@@ -19,7 +19,7 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 6. iOS Safari users (detected via user agent with `!navigator.standalone`) see a one-time instructional note: "Tap the share icon, then Add to Home Screen."
 7. Android and desktop Chrome users see an "Install app" button in `/settings`; click triggers the `beforeinstallprompt` event's prompt.
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P1
 
@@ -82,3 +82,5 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 **Verification:** Integration test
 
 **Status:** Partial
+
+---

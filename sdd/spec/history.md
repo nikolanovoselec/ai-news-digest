@@ -77,3 +77,5 @@ Past digests paginated on `/history`, 30 per page. A four-tile stats widget on `
 **Verification:** Integration test
 
 **Status:** Implemented
+
+---

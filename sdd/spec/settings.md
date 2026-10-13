@@ -17,7 +17,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 4. A successful first-run save redirects the user to `/digest`, where the shared article pool is already populated so real cards render immediately. <!-- @impl: src/pages/api/settings.ts::validateHashtags -->
 5. The first-run save also kicks the global scrape pipeline as a best-effort nudge so any tags newly added during onboarding can begin discovery on the next cron tick. <!-- @impl: src/pages/settings.astro::teardownScrapeProgress -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P0
 
@@ -45,7 +45,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P0
 
@@ -72,7 +72,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 6. An add affordance at the end of the strip expands inline into a single text input; submitting the input appends a new tag to the selection. <!-- @impl: src/lib/hashtags.ts::parseHashtags -->
 7. When tags are selected, reading surfaces show only articles whose stored tags intersect the selection; an empty result names selected tags and invites deselection. <!-- @impl: src/lib/default-hashtags.ts::DEFAULT_HASHTAGS -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P0
 
@@ -98,7 +98,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 5. The settings page exposes two paired actions side-by-side: "Restore initial tags" replaces the current list with the full default seed; "Delete all tags" clears the user's tag list entirely so they can build a completely custom set without removing default chips one-by-one. <!-- @impl: src/pages/api/tags/delete-initial.ts::POST -->
 6. Restore appears only when default tags are missing; Delete appears only when at least one tag exists, so no-op paired actions stay hidden. <!-- @impl: src/pages/api/tags/delete-initial.ts::POST -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P0
 
@@ -124,7 +124,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 5. The saved time is interpreted in the user's stored timezone; DST transitions are handled correctly using `Intl.DateTimeFormat`. <!-- @impl: src/lib/tz.ts::localeForTz -->
 6. Changing the scheduled time never creates a duplicate digest for a day that has already generated. <!-- @impl: src/pages/api/settings.ts::isIntegerInRange -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P0
 
@@ -177,7 +177,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 3. When the toggle is off, scheduled digests still generate and appear in the app; no email is sent for that user. <!-- @impl: src/pages/settings.astro::submitSettings -->
 4. Manual refresh never sends email, regardless of toggle state. <!-- @impl: src/pages/settings.astro::submitSettings -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P1
 
@@ -202,11 +202,11 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 4. While the gate is active, the global navigation hides entries that lead to gated routes so the user sees only the Settings destination and cannot tap into a dead-end redirect. <!-- @impl: src/middleware/settings-gate.ts::is -->
 5. Discovery-progress polling is per-user rate-limited to allow normal few-second polling but bound client loops; 429 includes `Retry-After`, and settings shows the pause without blocking the form. <!-- @impl: src/middleware/settings-gate.ts::SETTINGS_PATH -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P0
 
-**Dependencies:** [REQ-SET-001](#req-set-001-unified-first-run-and-edit-flow), [REQ-AUTH-002](authentication.md#req-auth-002-access-token-refresh-token-instant-revocation)
+**Dependencies:** [REQ-SET-001](#req-set-001-unified-first-run-and-edit-flow), [REQ-AUTH-002](authentication.md#req-auth-002-access-token--refresh-token-instant-revocation)
 
 **Verification:** Integration test
 
@@ -228,7 +228,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 5. Once stored timezone differs from the seeded default, silent correction stops, so manual or earlier browser choices are never overwritten by privacy-masked or stale browser zones. <!-- @impl: src/scripts/page-effects.ts::syncBrowserTz -->
 6. The timezone-update endpoint is rate-limited per authenticated user per [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9a; an exhausted limit returns HTTP 429 with `Retry-After` and is non-fatal per AC 4 above. <!-- @impl: src/pages/api/auth/set-tz.ts::POST -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P2
 
@@ -253,7 +253,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P2
 
@@ -262,3 +262,5 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 **Verification:** Integration test
 
 **Status:** Partial
+
+---

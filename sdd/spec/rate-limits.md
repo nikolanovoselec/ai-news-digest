@@ -21,7 +21,7 @@ Mechanism detail (per-bucket sizes, refresh-middleware/explicit-endpoint shared 
 
 **Notes:** Per-bucket sizes, the refresh middleware/explicit-endpoint shared bucket, and the fail-open/fail-closed asymmetry are documented in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#rate-limiting).
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P0
 

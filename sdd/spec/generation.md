@@ -256,7 +256,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Priority:** P0
 
-**Dependencies:** None
+**Dependencies:** None.
 
 **Verification:** Automated test
 
