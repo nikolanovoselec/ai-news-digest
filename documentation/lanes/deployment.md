@@ -145,7 +145,7 @@ Manually-triggered browser-side coverage that complements the curl-driven `e2e-t
 
 The [integration workflow](../../.github/workflows/deploy-integration.yml) resolves resource IDs before building with `CLOUDFLARE_ENV=integration`. The [deployment validator](../../scripts/check-deploy-config.mjs) checks the generated target against those source bindings; Wrangler then deploys that generated configuration without selecting another environment at publish time. The adapter owns `dist/client`, `dist/server` and asset-ignore generation; no post-build merge is used ([entry](../../src/app-worker.ts), [Cloudflare migration guide](https://docs.astro.build/en/guides/integrations-guide/cloudflare/#upgrading-to-v13-and-astro-6)).
 
-**Cloudflare resources (integration-owned resources use `-integration`; AI Gateway uses the configured Gateway name and is shared by default unless `AI_GATEWAY_NAME` points at an integration-specific Gateway):
+**Cloudflare resources** (integration-owned resources use `-integration`; AI Gateway uses the configured Gateway name and is shared by default unless `AI_GATEWAY_NAME` points at an integration-specific Gateway):
 
 | Resource | Name |
 |---|---|

@@ -10,7 +10,7 @@ import type { MiddlewareHandler } from 'astro';
 import { env } from 'cloudflare:workers';
 import { securityHeadersMiddleware } from './security-headers';
 
-export const onRequest: MiddlewareHandler = async (context, next) => {
+export const onRequest = (async (context, next) => {
   context.locals.env = env;
   return securityHeadersMiddleware(context, next);
-};
+}) satisfies MiddlewareHandler;
