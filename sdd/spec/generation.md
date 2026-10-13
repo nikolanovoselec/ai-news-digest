@@ -25,7 +25,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -50,7 +50,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-003](#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-004](#req-pipe-004-curated-source-registry-with-50-feeds-spanning-the-21-system-tags)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -74,7 +74,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -101,7 +101,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -125,7 +125,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-PIPE-002](#req-pipe-002-chunked-llm-output-content-contract)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -152,7 +152,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-002](#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -179,7 +179,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-002](#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-006](#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress), [REQ-PIPE-015](#req-pipe-015-chunk-processing-robustness)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -282,7 +282,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-STAR-001](reading.md#req-star-001-star-and-unstar-articles)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -308,7 +308,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -334,7 +334,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-006](#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -356,7 +356,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-016](#req-pipe-016-scrape_runs-idempotency-and-stuck-run-cleanup)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -381,7 +381,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-005](#req-pipe-005-fourteen-day-retention-with-starred-exempt-cleanup), [REQ-DISC-001](discovery.md#req-disc-001-per-tag-feed-discovery-queueing-and-pickup)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -484,7 +484,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -511,7 +511,7 @@ A global scrape-and-summarise pipeline that runs every 4 hours: one cron-trigger
 
 **Dependencies:** [REQ-PIPE-001](#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 

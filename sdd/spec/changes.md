@@ -7,6 +7,7 @@ The complete prior changelog is preserved in [changes-archive-2026-10.md](change
 ## 2026-10-13
 
 - REQ-OPS-006 is Partial: integration deployment criteria retain unresolved automated-verification gaps; deployed behavior is unchanged.
+- REQ-OPS-005 is Partial: its mandatory three-layer gate conflicts with the conditional Access perimeter contract; endpoint behavior is unchanged.
 
 ## 2026-06-12
 

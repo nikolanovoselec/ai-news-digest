@@ -25,7 +25,7 @@ Resend-backed notification sent after every successful digest — whether genera
 
 **Dependencies:** [REQ-PIPE-001](generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-MAIL-003](#req-mail-003-digest-ready-email-send-policy)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -50,7 +50,7 @@ Resend-backed notification sent after every successful digest — whether genera
 
 **Dependencies:** [REQ-MAIL-001](#req-mail-001-digest-ready-email-content), [REQ-MAIL-003](#req-mail-003-digest-ready-email-send-policy)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -75,7 +75,7 @@ Resend-backed notification sent after every successful digest — whether genera
 
 **Dependencies:** [REQ-SET-005](settings.md#req-set-005-email-notification-preference)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 

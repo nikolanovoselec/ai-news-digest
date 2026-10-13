@@ -28,7 +28,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Dependencies:** None.
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -83,7 +83,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -108,7 +108,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -134,7 +134,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -161,7 +161,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-003](#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
@@ -186,7 +186,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -287,7 +287,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 

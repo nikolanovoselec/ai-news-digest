@@ -23,7 +23,7 @@ Past digests paginated on `/history`, 30 per page. A four-tile stats widget on `
 
 **Dependencies:** [REQ-PIPE-006](generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -48,7 +48,7 @@ Past digests paginated on `/history`, 30 per page. A four-tile stats widget on `
 
 **Dependencies:** [REQ-HIST-001](#req-hist-001-day-grouped-article-history)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -74,7 +74,7 @@ Past digests paginated on `/history`, 30 per page. A four-tile stats widget on `
 
 **Dependencies:** [REQ-HIST-001](#req-hist-001-day-grouped-article-history), [REQ-READ-003](reading.md#req-read-003-read-tracking), [REQ-PIPE-006](generation.md#req-pipe-006-scrape_runs-aggregation-surfaces-stats-history-and-in-flight-progress)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 

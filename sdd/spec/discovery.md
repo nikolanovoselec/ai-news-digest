@@ -25,7 +25,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 **Dependencies:** [REQ-SET-002](settings.md#req-set-002-hashtag-curation-strip-ux)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -51,7 +51,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 **Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -73,7 +73,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 **Dependencies:** [REQ-DISC-007](#req-disc-007-per-tag-feed-discovery-execution-and-persistence)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -96,7 +96,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 **Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -123,7 +123,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 **Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -147,7 +147,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 **Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-003](#req-disc-003-self-healing-feed-health-tracking), [REQ-DISC-008](#req-disc-008-manual-re-discover-endpoint-contract)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -176,7 +176,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 **Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-003](#req-disc-003-self-healing-feed-health-tracking)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 

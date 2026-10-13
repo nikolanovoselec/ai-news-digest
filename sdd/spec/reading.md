@@ -25,7 +25,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Dependencies:** [REQ-PIPE-001](generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-SET-002](settings.md#req-set-002-hashtag-curation-strip-ux)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -50,7 +50,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Dependencies:** [REQ-READ-001](#req-read-001-overview-grid-of-todays-digest), [REQ-PIPE-001](generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
@@ -75,7 +75,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Dependencies:** [REQ-READ-001](#req-read-001-overview-grid-of-todays-digest)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -102,7 +102,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Dependencies:** [REQ-READ-002](#req-read-002-article-detail-view-rendering)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
@@ -126,7 +126,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Dependencies:** [REQ-READ-002](#req-read-002-article-detail-view-rendering)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -148,7 +148,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Dependencies:** [REQ-READ-001](#req-read-001-overview-grid-of-todays-digest)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -173,7 +173,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Dependencies:** [REQ-READ-001](#req-read-001-overview-grid-of-todays-digest)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -200,7 +200,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Dependencies:** [REQ-READ-001](#req-read-001-overview-grid-of-todays-digest), [REQ-HIST-001](history.md#req-hist-001-day-grouped-article-history)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -225,7 +225,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Dependencies:** [REQ-READ-007](#req-read-007-tag-railing-reorder-animation)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
@@ -250,7 +250,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Dependencies:** [REQ-READ-007](#req-read-007-tag-railing-reorder-animation)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -276,7 +276,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Dependencies:** [REQ-AUTH-002](authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-003](authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -300,7 +300,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Dependencies:** [REQ-STAR-001](#req-star-001-star-and-unstar-articles)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -323,7 +323,7 @@ The heart of the product. Overview grid of the freshest articles read from the s
 
 **Dependencies:** [REQ-STAR-002](#req-star-002-starred-articles-page)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 

@@ -46,7 +46,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Dependencies:** [REQ-OPS-001](#req-ops-001-structured-json-logging)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -73,7 +73,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Dependencies:** None.
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -99,7 +99,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Dependencies:** None.
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
@@ -118,15 +118,17 @@ Structured JSON logging as the single operational surface — no external observ
 4. The response is content-negotiated so browser callers land back on the settings surface with the run id visible and scripted callers can read the run id and reuse flag programmatically. <!-- @impl: src/pages/api/admin/force-refresh.ts::redirectToSettings -->
 5. The endpoint is gated by all three admin layers per [REQ-AUTH-006](authentication.md#req-auth-006-admin-surface-gating): Cloudflare Access at the zone level (optionally audience-pinned), a valid worker session, and the session email matching the configured operator email; failure at any layer returns that layer's native deny response. <!-- @impl: src/pages/api/admin/force-refresh.ts::rateLimited -->
 
+**Notes:** The mandatory three-layer gate conflicts with the conditional perimeter contract in REQ-AUTH-006.
+
 **Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P2
 
 **Dependencies:** [REQ-PIPE-001](generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
-**Status:** Implemented
+**Status:** Partial
 
 ---
 
@@ -150,7 +152,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Dependencies:** None.
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -229,7 +231,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Dependencies:** [REQ-OPS-005](#req-ops-005-admin-force-refresh-endpoint), [REQ-PIPE-003](generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -254,7 +256,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Dependencies:** [REQ-OPS-008](#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
@@ -283,7 +285,7 @@ Structured JSON logging as the single operational surface — no external observ
 
 **Dependencies:** [REQ-OPS-008](#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 

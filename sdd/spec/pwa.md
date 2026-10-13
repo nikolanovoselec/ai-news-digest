@@ -52,7 +52,7 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 
 **Dependencies:** [REQ-DES-001](design.md#req-des-001-swiss-minimal-visual-language)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -79,7 +79,7 @@ The app is installable on iOS, Android, and desktop via a standards web manifest
 
 **Dependencies:** [REQ-PWA-003](#req-pwa-003-mobile-first-responsive-layout)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 

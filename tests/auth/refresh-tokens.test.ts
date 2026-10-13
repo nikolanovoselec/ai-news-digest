@@ -48,7 +48,7 @@ function fakeRequest(opts: {
 }
 
 // REQ-AUTH-011: Refresh-token reuse detection and device fingerprint policy.
-describe('refresh-tokens — REQ-AUTH-008', () => {
+describe('refresh-tokens — REQ-AUTH-008 / REQ-AUTH-011 (reuse and fingerprint policy)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.DB_MIGRATIONS ?? []);
   });

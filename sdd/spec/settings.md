@@ -23,7 +23,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Dependencies:** [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -51,7 +51,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Dependencies:** [REQ-SET-001](#req-set-001-unified-first-run-and-edit-flow), [REQ-AUTH-003](authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
@@ -78,7 +78,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Dependencies:** [REQ-SET-001](#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-008](#req-set-008-hashtag-persistence-validation-and-defaults)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -104,7 +104,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Dependencies:** [REQ-SET-001](#req-set-001-unified-first-run-and-edit-flow)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -130,7 +130,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Dependencies:** [REQ-SET-002](#req-set-002-hashtag-curation-strip-ux)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -159,7 +159,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Dependencies:** [REQ-SET-003](#req-set-003-scheduled-digest-time-with-timezone)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
@@ -183,7 +183,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Dependencies:** [REQ-SET-001](#req-set-001-unified-first-run-and-edit-flow)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -208,7 +208,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Dependencies:** [REQ-SET-001](#req-set-001-unified-first-run-and-edit-flow), [REQ-AUTH-002](authentication.md#req-auth-002-access-token--refresh-token-instant-revocation)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -234,7 +234,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Dependencies:** [REQ-SET-003](#req-set-003-scheduled-digest-time-with-timezone)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -259,7 +259,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Dependencies:** [REQ-SET-007](#req-set-007-timezone-change-detection)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
