@@ -101,26 +101,11 @@ The deploy job:
 
 8. Smoke-tests `GET /` against `APP_URL`, accepting `200` or `303` ([workflow](../../.github/workflows/deploy.yml)).
 
-`scripts/e2e-test.sh` is manual only (`bash scripts/e2e-test.sh --force-prod`) and not part of CI deploy — running it triggers a full LLM-cost scrape and mutates the owner's account.
+### Verification scope
 
-### Playwright E2E (live)
+Automated browser and shell E2E suites, the Playwright workflow/configuration, and the dedicated Playwright dependency have been removed at operator request. PR Checks retain unit/integration tests, type checking, lint and security audits. The deployment reachability smoke is retained; it proves that the endpoint responds, not complete application functionality.
 
-Manually-triggered browser-side coverage that complements the curl-driven `e2e-test.sh`. Workflow file: `.github/workflows/playwright-e2e.yml`.
-
-**What it covers:**
-- View-transition snapshots
-- Per-path scroll save / restore
-- Navigation correctness on `/digest` and `/history` back-nav (URL transitions cleanly, originating card remains in DOM)
-
-**What it does NOT cover:**
-- The morph-pair structural contract lives in `tests/layouts/base.test.ts` — Playwright cannot observe Astro lifecycle timing from outside the browser, so a static source-grep is the right layer for that class.
-- The history-vs-digest perf-comparability test is permanently skipped (see [AD14](../decisions/README.md#ad14-history-page-perf-comparability-test-permanently-skipped)).
-
-**How to run:** Actions tab → `Playwright E2E (live)` → Run workflow against the reviewed branch. The target defaults to the integration environment's `vars.APP_URL`; an optional `base_url` must have the same HTTPS origin. Target validation runs before the secret-bearing test step.
-
-**Required secret:** Integration-environment `DEV_BYPASS_TOKEN` (with GitHub's standard repository fallback), matching the integration Worker secret. The live workflow disables traces so session cookies cannot enter downloadable failure traces; failure artifacts contain screenshots and available reports instead.
-
-**Sandbox:** Mutations are scoped to the synthetic `__e2e__` user. Implements [REQ-READ-002](../../sdd/spec/reading.md#req-read-002-article-detail-view-rendering), [REQ-HIST-001](../../sdd/spec/history.md#req-hist-001-day-grouped-article-history).
+Dev-bypass endpoints remain available for operator-authorized integration checks with the synthetic user. Runtime authentication, Origin checks, production guards and security headers are unchanged. Browser-only behavior is no longer covered by an automated E2E gate.
 
 > **Fork-friendly:** set `APP_URL` to a custom-domain hostname whose apex is a zone in the same Cloudflare account. The deploy binds it automatically.
 

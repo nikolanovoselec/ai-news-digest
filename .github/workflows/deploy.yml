@@ -416,8 +416,8 @@ jobs:
             echo "Resend not configured — daily digest emails disabled (digest generation continues)."
           fi
 
-          # Optional: DEV_BYPASS_TOKEN enables the /api/dev/login endpoint
-          # used by scripts/e2e-test.sh. If the repo secret is unset,
+          # Optional: DEV_BYPASS_TOKEN enables dev-only synthetic-session
+          # checks through /api/dev/login. If the repo secret is unset,
           # skip — the endpoint will return 404 at runtime.
           if [ -n "${DEV_BYPASS_TOKEN:-}" ]; then
             TMP=$(mktemp)
@@ -596,10 +596,5 @@ jobs:
           echo "Smoke test failed for APP_URL"
           exit 1
 
-      # End-to-end API smoke step intentionally removed. scripts/e2e-test.sh
-      # still exists in the repo for manual invocation when needed, but
-      # running it on every deploy triggers a full-cycle scrape (LLM cost
-      # and ~10 min wall-clock) and mutates the owner's account state
-      # (tags/stars/settings). The reachability smoke above plus
-      # PR Checks on the preceding commit are enough to confirm a deploy
-      # is healthy. Manual run-once: `bash scripts/e2e-test.sh --force-prod`.
+      # Automated E2E runners were removed at operator request.
+      # The smoke above checks reachability, not full application behavior.

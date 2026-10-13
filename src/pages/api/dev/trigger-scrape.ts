@@ -2,7 +2,7 @@
 // DEV-ONLY pipeline trigger. Gated by DEV_BYPASS_TOKEN the same way
 // /api/dev/login is, and 404s when the secret isn't set.
 //
-// Purpose: give scripts/e2e-test.sh a way to drive a REAL scrape
+// Purpose: give authorized integration checks a way to drive a REAL scrape
 // end-to-end and verify that articles land in D1 with the expected
 // shape, without waiting for the 4-hour cron tick or needing
 // Cloudflare Access for /api/admin/force-refresh.

@@ -47,7 +47,7 @@ Notable choices (see [AD11](../decisions/README.md#ad11-keep-style-src-unsafe-in
 
 **Threat:** Reflected or stored XSS that injects an inline `<script>` or loads a malicious third-party script tag.
 **Mitigation:** Browser refuses to execute scripts outside the listed sources, refuses inline scripts entirely, and refuses to load images / fonts / form posts outside the named origins.
-**Verification:** `tests/observability/security-headers.test.ts` + `tests/e2e/csp-policy.spec.ts` + `tests/e2e/csp-violation.spec.ts` (Playwright listener catches violations in production-shape pages).
+**Verification:** `tests/observability/security-headers.test.ts` checks response-header contracts. Automated browser E2E coverage has been removed; this test does not establish browser navigation or runtime CSP-violation coverage.
 **Implements:** [REQ-OPS-003 AC 1](../../sdd/spec/observability.md#req-ops-003-content-security-policy-on-every-response)
 
 ---

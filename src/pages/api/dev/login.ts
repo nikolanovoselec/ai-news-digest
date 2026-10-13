@@ -2,10 +2,10 @@
 // DEV-ONLY auth bypass. Gated by the `DEV_BYPASS_TOKEN` Worker secret —
 // if unset, the endpoint returns 404 and is effectively disabled.
 //
-// Purpose: scripts/e2e-test.sh can acquire a session for the synthetic
+// Purpose: authorized integration checks can acquire a session for the synthetic
 // `__e2e__` user (provisioned by migrations/0006_e2e_user.sql) without
 // driving GitHub OAuth, so a full API + page smoke run can execute from
-// a headless shell after every deploy without touching the operator's
+// an operator-controlled client without touching the operator's
 // real account.
 //
 // Security model:

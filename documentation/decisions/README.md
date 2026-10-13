@@ -4,6 +4,8 @@
 
 Decisions made during implementation, with rationale.
 
+**Current testing note (2026-10-13):** Automated browser and shell E2E tooling was retired at operator request. Earlier Playwright-specific verification and merge-gate statements in AD11, AD13, AD14 and AD19 are historical, not current automation requirements. Runtime security policies and unit/integration tests remain; see [current verification scope](../lanes/deployment.md#verification-scope).
+
 **Audience:** Developers
 
 Each ADR documents a non-obvious design choice and the trade-offs considered. Decisions cite related requirements via REQ-X-N format.
