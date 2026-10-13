@@ -1,7 +1,7 @@
 // Integration test for src/lib/scrape-run.ts finishRun status-flap guard
 // — REQ-PIPE-006.
 //
-// Uses @cloudflare/vitest-pool-workers + miniflare-backed D1 so the
+// Uses @cloudflare/vitest-plugin + miniflare-backed D1 so the
 // `WHERE status = 'running'` predicate is actually evaluated. The unit
 // tests in scrape-run.test.ts use a vi.fn() mock that does not execute
 // SQL, so they cannot catch a regression that drops the guard.

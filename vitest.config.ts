@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config';
-import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-pool-workers';
+import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-plugin';
 import { fileURLToPath } from 'node:url';
 
 // Read the D1 migration SQL at config-load time so integration tests

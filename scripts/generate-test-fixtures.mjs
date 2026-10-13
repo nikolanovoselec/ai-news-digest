@@ -3,7 +3,7 @@
  * Generate TypeScript fixtures that embed raw source-file contents
  * as string constants. Used by tests that need to assert on the
  * literal text of `src/styles/global.css` (the `?raw` / `?raw-css`
- * import suffixes don't survive the @cloudflare/vitest-pool-workers
+ * import suffixes don't survive the @cloudflare/vitest-plugin
  * bundle for .css files).
  *
  * Run via `npm run fixtures` or automatically as a `pretest` /

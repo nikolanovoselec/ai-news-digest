@@ -17,7 +17,7 @@ const config: KnipConfig = {
   project: ['src/**/*.{ts,astro}'],
   ignoreDependencies: [
     'tailwindcss', // resolved transitively via @tailwindcss/vite plugin
-    'cloudflare' // `cloudflare:test` virtual module shipped by @cloudflare/vitest-pool-workers
+    'cloudflare' // `cloudflare:test` virtual module shipped by @cloudflare/vitest-plugin
   ],
   ignoreExportsUsedInFile: true,
   ignore: []

@@ -1,4 +1,4 @@
-# Test-only wrangler config for @cloudflare/vitest-pool-workers.
+# Test-only wrangler config for @cloudflare/vitest-plugin.
 # Omits the `[ai]` binding (workerd can't construct it in tests) and the
 # `assets.directory` (no build artifacts needed). The production
 # wrangler.toml remains the source of truth for deployment.

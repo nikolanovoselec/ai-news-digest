@@ -213,6 +213,7 @@ Every push to `develop` (and every PR targeting `main`) runs the following gates
 | Install | `npm install --no-fund --no-audit` | Dependency resolution |
 | Security audit (advisory) | `npm audit --omit=dev --audit-level=high` (continue-on-error) | HIGH+ advisories surface in the CI log for operator triage via Dependabot but never block the build — the Worker runtime is `workerd`, not Node.js, so most HIGH findings live in build tooling that never reaches the deployed bundle. |
 | Security audit (blocking) | `npm audit --omit=dev --audit-level=critical` | Blocks on CRITICAL CVEs in the production-dep tree. |
+| Full-tree audit (advisory) | `npm audit` (continue-on-error) | Reports vulnerabilities in runtime and development dependencies without changing the production blocking gate. |
 | Lint | `npm run lint` | Oxlint rules |
 | REQ backlink coverage | `node scripts/check-req-backlinks.mjs` | Every `REQ-X-NNN` reference in `src/`, `tests/`, `documentation/`, and `migrations/` resolves to a header in `sdd/`. Fails the build if any reference points at a REQ ID that does not exist in the spec (CF-069). |
 | Wrangler vars parity | `node scripts/check-wrangler-vars-parity.mjs` | Every `[vars]` key declared in the top-level `wrangler.toml` also exists in `[env.integration.vars]` and vice versa, so production and integration never drift apart silently (CF-016). Operator-facing: a missing var on either side surfaces here before the deploy workflow runs. |

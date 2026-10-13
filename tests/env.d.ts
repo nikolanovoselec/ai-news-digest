@@ -1,5 +1,5 @@
-/// <reference types="@cloudflare/vitest-pool-workers" />
-/// <reference types="@cloudflare/vitest-pool-workers/types" />
+/// <reference types="@cloudflare/vitest-plugin" />
+/// <reference types="@cloudflare/vitest-plugin/types" />
 
 // The `env` binding exported by `cloudflare:test` is typed as
 // `Cloudflare.Env`. We augment that namespace with the project's
@@ -32,7 +32,7 @@ declare namespace Cloudflare {
     DEV_BYPASS_TOKEN?: string;
     DEV_BYPASS_USER_ID?: string;
 
-    // Test-only: migrations list injected by @cloudflare/vitest-pool-workers
+    // Test-only: migrations list injected by @cloudflare/vitest-plugin
     // when `[[d1_databases]].migrations_dir` is set in wrangler.test.toml.
     DB_MIGRATIONS?: import('cloudflare:test').D1Migration[];
   }
