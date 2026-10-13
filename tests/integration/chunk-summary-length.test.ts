@@ -1,7 +1,6 @@
-// Behavioral coverage for REQ-PIPE-002 AC5 / CON-LLM-001.
-// Initial generation aims for 110-130 words within
-// 100-150; otherwise-valid overshoots get one targeted details-only
-// correction, not article loss. The existing 80-word backstop stays.
+// Behavioral coverage for REQ-PIPE-002 AC5 / REQ-PIPE-015 AC6.
+// Generation targets 150 words; otherwise-valid summaries through 200
+// are retained unchanged. The existing 80-word backstop stays.
 // Real D1/KV; only Gateway, embeddings, Vectorize and queues are stubbed.
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { applyD1Migrations, env } from '../fixtures/cloudflare-test';
@@ -11,12 +10,9 @@ import { generateUlid } from '~/lib/ulid';
 
 const GATEWAY = 'https://gateway.ai.cloudflare.com/v1/summary-test/account/compat/chat/completions';
 const INITIAL_USAGE = { input_tokens: 211, output_tokens: 173 };
-const CORRECTION_USAGE = { input_tokens: 89, output_tokens: 67 };
-const REDELIVERY_USAGE = { input_tokens: 307, output_tokens: 227 };
 
-// Controlled word boundaries in article prose, rather than truncation
-// performed by the consumer. Each paragraph has a distinctive final
-// word so exact persisted paragraphs also detect clipping or replacement.
+// Controlled word boundaries, with distinctive paragraph endings so
+// exact persisted prose also detects unwanted clipping or rewriting.
 const PROSE = 'Cloudflare introduced infrastructure that helps developers deploy artificial intelligence applications securely across distributed networks. The platform provides monitoring tools and predictable routing while teams evaluate reliability and measure latency under realistic workloads. Engineers retain control over deployments and review operational results before expanding availability to additional customers.';
 function paragraph(count: number, ending: string): string {
   const words = PROSE.split(/\s+/);
@@ -31,26 +27,15 @@ interface OutputArticle { index: number; title: string; details: Details; tags: 
 function article(index: number, details: Details): OutputArticle {
   return { index, title: `Cloudflare expands developer infrastructure in region ${index}`, details, tags: [index % 2 === 0 ? 'cloudflare' : 'generative-ai'] };
 }
-interface GatewayReply {
-  content: string; usage: typeof INITIAL_USAGE; status?: number;
-  observeRequest?: (request: { messages: Array<{ content: string }> }) => void;
-}
+interface GatewayReply { content: string; usage: typeof INITIAL_USAGE }
 function reply(articles: unknown[], usage = INITIAL_USAGE): GatewayReply {
   return { content: JSON.stringify({ articles }), usage };
 }
-function correction(index: number, details: Details) {
-  // A correction must not replace the original title/tags or sources.
-  return { index, details, title: 'Conflicting unrelated replacement headline', tags: ['robotics'] };
-}
-function runtime(replies: GatewayReply[]): Env {
-  const iterator = replies[Symbol.iterator]();
-  vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+function runtime(response: GatewayReply): Env {
+  vi.stubGlobal('fetch', async (input: string | URL | Request) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (url !== GATEWAY) throw new Error(`unexpected outbound fetch: ${url}`);
-    const next = iterator.next();
-    if (next.done) throw new Error('Gateway fixture exhausted');
-    next.value.observeRequest?.(JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> });
-    return Response.json({ response: next.value.content, usage: next.value.usage }, { status: next.value.status ?? 200 });
+    return Response.json({ response: response.content, usage: response.usage });
   });
   const queue = { send: async () => undefined, sendBatch: async () => undefined };
   return {
@@ -86,7 +71,7 @@ async function seed(count: number): Promise<ChunkJobMessage> {
       source_name: `Primary publisher ${index}`,
       title: article(index, '').title,
       published_at: 1_713_900_000 + index,
-      body_snippet: PROSE.repeat(4), // long enough to avoid article fetch
+      body_snippet: PROSE.repeat(4),
       alternatives: [{
         source_url: `https://secondary.example.com/news/${id}/article-${index}`,
         source_name: `Alternative publisher ${index}`,
@@ -96,14 +81,14 @@ async function seed(count: number): Promise<ChunkJobMessage> {
 }
 
 enum Disposition { Pending = 'pending', Ack = 'ack', Retry = 'retry', Invalid = 'invalid' }
-async function deliver(runtimeEnv: Env, body: ChunkJobMessage, attempts = 1): Promise<Disposition> {
+async function deliver(runtimeEnv: Env, body: ChunkJobMessage): Promise<Disposition> {
   let disposition = Disposition.Pending;
   const settle = (next: Disposition) => {
     disposition = disposition === Disposition.Pending ? next : Disposition.Invalid;
   };
   const batch = {
     queue: 'scrape-chunks',
-    messages: [{ id: `${body.scrape_run_id}:0`, timestamp: new Date(), body, attempts,
+    messages: [{ id: `${body.scrape_run_id}:0`, timestamp: new Date(), body, attempts: 1,
       ack: () => settle(Disposition.Ack), retry: () => settle(Disposition.Retry) }],
     ackAll: () => settle(Disposition.Ack), retryAll: () => settle(Disposition.Retry),
   } as unknown as MessageBatch<ChunkJobMessage>;
@@ -130,19 +115,17 @@ async function state(runId: string) {
   expect(run).not.toBeNull();
   return { articles: articles.results, sources: sources.results, tags: tags.results, completions: completions.results, run: run! };
 }
-function expectUsage(run: RunRow, usages: Array<typeof INITIAL_USAGE>) {
-  const tokensIn = usages.reduce((total, usage) => total + usage.input_tokens, 0);
-  const tokensOut = usages.reduce((total, usage) => total + usage.output_tokens, 0);
-  expect(run.tokens_in).toBe(tokensIn);
-  expect(run.tokens_out).toBe(tokensOut);
-  // Model price contract, not a fabricated positive cost: Luna's
-  // provisional catalog prices are zero. Token totals still expose spend.
+function expectUsage(run: RunRow) {
+  expect(run.tokens_in).toBe(INITIAL_USAGE.input_tokens);
+  expect(run.tokens_out).toBe(INITIAL_USAGE.output_tokens);
+  // Catalog price contract: provisional Luna prices are zero, not
+  // evidence of zero billed spend. Persisted tokens remain observable.
   const model = MODELS.find((entry) => entry.id === DEFAULT_MODEL_ID)!;
   expect(model).toBeDefined();
-  const cost = (tokensIn * model.inputPricePerMtok + tokensOut * model.outputPricePerMtok) / 1_000_000;
+  const cost = (INITIAL_USAGE.input_tokens * model.inputPricePerMtok + INITIAL_USAGE.output_tokens * model.outputPricePerMtok) / 1_000_000;
   expect(run.estimated_cost_usd).toBeCloseTo(cost, 12);
 }
-async function expectPersisted(chunk: ChunkJobMessage, expected: string[][], usages: Array<typeof INITIAL_USAGE>) {
+async function expectPersisted(chunk: ChunkJobMessage, expected: string[][]) {
   const saved = await state(chunk.scrape_run_id);
   expect(saved.articles).toHaveLength(expected.length);
   chunk.candidates.forEach((candidate, index) => {
@@ -166,20 +149,7 @@ async function expectPersisted(chunk: ChunkJobMessage, expected: string[][], usa
   expect(saved.run.finalize_enqueued).toBe(1);
   expect(saved.run.articles_ingested).toBe(expected.length);
   expect(saved.run.articles_deduped).toBe(0);
-  expectUsage(saved.run, usages);
-}
-async function expectRetryState(chunk: ChunkJobMessage, usages: Array<typeof INITIAL_USAGE>) {
-  const saved = await state(chunk.scrape_run_id);
-  expect(saved.articles).toEqual([]);
-  expect(saved.sources).toEqual([]);
-  expect(saved.tags).toEqual([]);
-  expect(saved.completions).toEqual([]);
-  expect(saved.run.status).toBe('running');
-  expect(saved.run.finished_at).toBeNull();
-  expect(saved.run.finalize_enqueued).toBe(0);
-  expect(saved.run.articles_ingested).toBe(0);
-  expect(saved.run.articles_deduped).toBe(0);
-  expectUsage(saved.run, usages);
+  expectUsage(saved.run);
 }
 
 beforeAll(async () => {
@@ -188,145 +158,76 @@ beforeAll(async () => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe('REQ-PIPE-002 AC5 / CON-LLM-001: preserve legitimate articles through targeted shortening', () => {
+describe('REQ-PIPE-002 AC5 / REQ-PIPE-015 AC6: 150-word target with a 200-word backstop', () => {
   const overshoots = [
     { words: 151, format: 'string' }, { words: 153, format: 'legacy array' },
     { words: 154, format: 'literal newlines' }, { words: 155, format: 'string' },
     { words: 156, format: 'legacy array' }, { words: 160, format: 'literal newlines' },
   ];
-  it.each(overshoots)('corrects $words words in $format without clipping, losing siblings, or replacing metadata', async ({ words, format }) => {
+  it.each(overshoots)('retains $words words in $format unchanged with siblings and metadata', async ({ words, format }) => {
     const chunk = await seed(3);
-    const long = paragraphs(words, 'original'); // neither paragraph alone exceeds 150
-    const corrected = paragraphs(120, 'corrected');
+    const original = paragraphs(words, 'original');
     const sibling = paragraphs(130, 'valid');
     const backstopSibling = paragraphs(90, 'backstop');
-    const details: Details = format === 'legacy array' ? [long.join('\n')] : long.join('\n\n');
-    const initial = reply([article(0, details), article(1, sibling.join('\n')), article(2, backstopSibling)], INITIAL_USAGE);
-    if (format === 'literal newlines') initial.content = initial.content.replace(/\\n/g, '\n');
-    let shorteningInput = '';
-    const shortening = reply([correction(0, corrected.join('\n\n'))], CORRECTION_USAGE);
-    shortening.observeRequest = (request) => {
-      shorteningInput = request.messages.map((message) => message.content).join('\n');
-    };
-    const runtimeEnv = runtime([initial, shortening]);
-    expect(await deliver(runtimeEnv, chunk)).toBe(Disposition.Ack);
-    // Gateway input-content contract: only overlong details are sent for
-    // shortening. These markers are article prose fixtures, not prompt
-    // wording or implementation text, and never select a fake outcome.
-    expect(shorteningInput).toContain('originallead');
-    expect(shorteningInput).toContain('originalconclusion');
-    expect(shorteningInput).not.toContain('validlead');
-    expect(shorteningInput).not.toContain('validconclusion');
-    expect(shorteningInput).not.toContain('backstoplead');
-    expect(shorteningInput).not.toContain('backstopconclusion');
-    await expectPersisted(chunk, [corrected, sibling, backstopSibling], [INITIAL_USAGE, CORRECTION_USAGE]);
+    const details: Details = format === 'legacy array' ? [original.join('\n')] : original.join('\n\n');
+    const output = reply([article(0, details), article(1, sibling.join('\n')), article(2, backstopSibling)]);
+    if (format === 'literal newlines') output.content = output.content.replace(/\\n/g, '\n');
+    expect(await deliver(runtime(output), chunk)).toBe(Disposition.Ack);
+    await expectPersisted(chunk, [original, sibling, backstopSibling]);
   });
 
-  it('maps reversed correction indices to the original candidates while preserving an untouched sibling', async () => {
+  it('maps reordered responses to the original candidates without rewriting tolerated summaries', async () => {
     const chunk = await seed(3);
-    const first = paragraphs(110, 'firstcorrected');
-    const second = paragraphs(130, 'secondcorrected');
+    const first = paragraphs(151, 'first');
+    const second = paragraphs(160, 'second');
     const sibling = paragraphs(99, 'untouched');
-    const runtimeEnv = runtime([
-      reply([article(2, sibling), article(1, paragraphs(160, 'secondoriginal')), article(0, paragraphs(151, 'firstoriginal'))]),
-      reply([correction(1, second), correction(0, first)], CORRECTION_USAGE),
-    ]);
+    const runtimeEnv = runtime(reply([article(2, sibling), article(1, second), article(0, first)]));
     await expect(processOneChunk(runtimeEnv, chunk)).resolves.toBeUndefined();
-    await expectPersisted(chunk, [first, second, sibling], [INITIAL_USAGE, CORRECTION_USAGE]);
+    await expectPersisted(chunk, [first, second, sibling]);
   });
 
-  it.each([100, 150])('accepts a correction at the inclusive %i-word contract boundary', async (words) => {
-    const chunk = await seed(1);
-    const corrected = paragraphs(words, 'boundary');
-    const runtimeEnv = runtime([reply([article(0, paragraphs(153, 'overshoot'))]), reply([correction(0, corrected)], CORRECTION_USAGE)]);
-    expect(await deliver(runtimeEnv, chunk)).toBe(Disposition.Ack);
-    await expectPersisted(chunk, [corrected], [INITIAL_USAGE, CORRECTION_USAGE]);
+  it.each([201, 250])('rejects only a %i-word summary while persisting its valid sibling and completing the chunk', async (words) => {
+    const chunk = await seed(2);
+    const sibling = paragraphs(150, 'retained');
+    expect(await deliver(runtime(reply([article(0, paragraphs(words, 'oversize')), article(1, sibling)])), chunk)).toBe(Disposition.Ack);
+    const saved = await state(chunk.scrape_run_id);
+    const candidate = chunk.candidates[1]!;
+    expect(saved.articles).toEqual([expect.objectContaining({
+      canonical_url: candidate.canonical_url,
+      title: article(1, '').title,
+      details_json: JSON.stringify(sibling),
+      tags_json: JSON.stringify(article(1, '').tags),
+      primary_source_url: candidate.source_url,
+      primary_source_name: candidate.source_name,
+      published_at: candidate.published_at,
+      source_snippet: candidate.body_snippet,
+    })]);
+    expect(saved.sources).toEqual(candidate.alternatives!.map((alt) => ({
+      canonical_url: candidate.canonical_url, source_name: alt.source_name, source_url: alt.source_url, published_at: candidate.published_at,
+    })));
+    expect(saved.tags).toEqual(article(1, '').tags.map((tag) => ({ canonical_url: candidate.canonical_url, tag })));
+    expect(saved.completions).toEqual([{ chunk_index: 0 }]);
+    expect(saved.run.status).toBe('ready');
+    expect(saved.run.finished_at).not.toBeNull();
+    expect(saved.run.finalize_enqueued).toBe(1);
+    expect(saved.run.articles_ingested).toBe(1);
+    expect(saved.run.articles_deduped).toBe(1);
+    expectUsage(saved.run);
   });
 
-  it.each(['plaintext', 'mixed whitespace and HTML'])('persists exactly 150 normalized words unchanged: %s regression control', async (format) => {
+  it.each(['plaintext', 'mixed whitespace and HTML'])('persists exactly 200 normalized words unchanged: %s', async (format) => {
     const chunk = await seed(1);
-    const expected = paragraphs(150, 'exact');
+    const expected = paragraphs(200, 'exact');
     const details = format === 'plaintext' ? expected.join('\n\n') : expected.map((part) =>
       `<p>${part.split(' ').join(' \t  ')}</p>`).join('\r\n\r\n');
-    // An unnecessary correction receives a valid but different body,
-    // exposing it through persisted content and usage, not request counts.
-    const runtimeEnv = runtime([reply([article(0, details)]), reply([correction(0, paragraphs(120, 'unwanted'))], CORRECTION_USAGE)]);
-    expect(await deliver(runtimeEnv, chunk)).toBe(Disposition.Ack);
-    await expectPersisted(chunk, [expected], [INITIAL_USAGE]);
+    expect(await deliver(runtime(reply([article(0, details)])), chunk)).toBe(Disposition.Ack);
+    await expectPersisted(chunk, [expected]);
   });
 
-  it.each([80, 90, 99])('preserves a normal %i-word backstop summary without correction', async (words) => {
+  it.each([80, 90, 99])('preserves the existing %i-word lower-backstop behavior', async (words) => {
     const chunk = await seed(1);
     const expected = paragraphs(words, 'backstop');
-    const runtimeEnv = runtime([reply([article(0, expected)]), reply([correction(0, paragraphs(120, 'unwanted'))], CORRECTION_USAGE)]);
-    expect(await deliver(runtimeEnv, chunk)).toBe(Disposition.Ack);
-    await expectPersisted(chunk, [expected], [INITIAL_USAGE]);
-  });
-});
-
-const failures: Array<{ name: string; response: GatewayReply; usageAvailable: boolean; secondOvershoot?: boolean }> = [
-  { name: 'malformed JSON', response: { content: 'Not a JSON answer', usage: CORRECTION_USAGE }, usageAvailable: true },
-  { name: 'missing requested row', response: reply([], CORRECTION_USAGE), usageAvailable: true },
-  { name: 'partial correction missing one of two requested rows', response: reply([correction(0, paragraphs(120, 'partial'))], CORRECTION_USAGE), usageAvailable: true, secondOvershoot: true },
-  { name: 'missing index', response: reply([{ details: paragraphs(120, 'missingindex') }], CORRECTION_USAGE), usageAvailable: true },
-  { name: 'duplicate index', response: reply([correction(0, paragraphs(120, 'duplicateone')), correction(0, paragraphs(120, 'duplicatetwo'))], CORRECTION_USAGE), usageAvailable: true },
-  { name: 'unknown index', response: reply([correction(0, paragraphs(120, 'requested')), correction(99, paragraphs(120, 'unknown'))], CORRECTION_USAGE), usageAvailable: true },
-  { name: 'unsolicited valid sibling index', response: reply([correction(0, paragraphs(120, 'requested')), correction(1, paragraphs(120, 'unsolicited'))], CORRECTION_USAGE), usageAvailable: true },
-  { name: 'still over 150 combined words', response: reply([correction(0, paragraphs(151, 'stilllong'))], CORRECTION_USAGE), usageAvailable: true },
-  { name: 'below 100 despite clearing the normal backstop', response: reply([correction(0, paragraphs(99, 'undershoot'))], CORRECTION_USAGE), usageAvailable: true },
-  { name: 'below the normal backstop too', response: reply([correction(0, paragraphs(79, 'truncated'))], CORRECTION_USAGE), usageAvailable: true },
-  { name: 'provider error without available correction usage', response: { content: 'Provider unavailable', usage: { input_tokens: 0, output_tokens: 0 }, status: 503 }, usageAvailable: false },
-];
-describe('REQ-PIPE-002 AC5 / CON-LLM-001: atomic failure, spend and redelivery', () => {
-  it.each(failures)('$name retries with no articles, sources, tags or completion and records available spend', async ({ response, usageAvailable, secondOvershoot }) => {
-    const chunk = await seed(secondOvershoot ? 3 : 2);
-    const initialArticles = [article(0, paragraphs(156, 'initial')), article(1, paragraphs(90, 'sibling'))];
-    if (secondOvershoot) initialArticles.push(article(2, paragraphs(154, 'secondovershoot')));
-    const runtimeEnv = runtime([
-      reply(initialArticles),
-      response,
-      // A second shortening pass must not consume this rescuing output.
-      reply([correction(0, paragraphs(120, 'forbiddenrescue'))], REDELIVERY_USAGE),
-    ]);
-    expect(await deliver(runtimeEnv, chunk)).toBe(Disposition.Retry);
-    await expectRetryState(chunk, usageAvailable ? [INITIAL_USAGE, CORRECTION_USAGE] : [INITIAL_USAGE]);
-  });
-
-  it.each(['corrected', 'full output'])('redelivery after a failed correction acks %s, persists all articles, and combines failed and successful spend', async (mode) => {
-    const chunk = await seed(2);
-    const sibling = paragraphs(90, 'sibling');
-    const initial = reply([article(0, paragraphs(155, 'initial')), article(1, sibling)]);
-    const failed = runtime([initial, reply([correction(0, paragraphs(151, 'failed'))], CORRECTION_USAGE)]);
-    expect(await deliver(failed, chunk)).toBe(Disposition.Retry);
-    await expectRetryState(chunk, [INITIAL_USAGE, CORRECTION_USAGE]);
-
-    const corrected = paragraphs(120, 'redelivered');
-    const replies = mode === 'corrected'
-      ? [reply([article(0, paragraphs(154, 'retryovershoot')), article(1, sibling)], REDELIVERY_USAGE), reply([correction(0, corrected)], CORRECTION_USAGE)]
-      : [reply([article(0, corrected), article(1, sibling)], REDELIVERY_USAGE)];
-    expect(await deliver(runtime(replies), chunk, 2)).toBe(Disposition.Ack);
-    await expectPersisted(chunk, [corrected, sibling], mode === 'corrected'
-      ? [INITIAL_USAGE, CORRECTION_USAGE, REDELIVERY_USAGE, CORRECTION_USAGE]
-      : [INITIAL_USAGE, CORRECTION_USAGE, REDELIVERY_USAGE]);
-  });
-
-  it('exhausted uncorrectable delivery retains the existing retry/DLQ disposition without completion or persistence', async () => {
-    const chunk = await seed(2);
-    const runtimeEnv = runtime([
-      reply([article(0, paragraphs(160, 'initial')), article(1, paragraphs(90, 'sibling'))]),
-      reply([correction(0, paragraphs(151, 'stilllong'))], CORRECTION_USAGE),
-    ]);
-    expect(await deliver(runtimeEnv, chunk, 3)).toBe(Disposition.Retry);
-    const saved = await state(chunk.scrape_run_id);
-    expect(saved.articles).toEqual([]);
-    expect(saved.sources).toEqual([]);
-    expect(saved.tags).toEqual([]);
-    expect(saved.completions).toEqual([]);
-    expect(saved.run.status).toBe('failed');
-    expect(saved.run.finished_at).not.toBeNull();
-    expect(saved.run.articles_ingested).toBe(0);
-    expect(saved.run.articles_deduped).toBe(0);
-    expect(saved.run.finalize_enqueued).toBe(0);
-    expectUsage(saved.run, [INITIAL_USAGE, CORRECTION_USAGE]);
+    expect(await deliver(runtime(reply([article(0, expected)])), chunk)).toBe(Disposition.Ack);
+    await expectPersisted(chunk, [expected]);
   });
 });

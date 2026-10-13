@@ -14,7 +14,6 @@ import {
 } from '~/queue/scrape-chunk-consumer';
 import type { ChunkJobMessage } from '~/queue/scrape-chunk-consumer';
 import { PROCESS_CHUNK_SYSTEM } from '~/lib/prompts';
-import { NonRetryableError } from '~/lib/queue-handler';
 
 // Aggregated recording of D1 statement execution through both the
 // `prepare().bind().run()` and `db.batch([...])` surfaces. Tests assert
@@ -2183,48 +2182,5 @@ describe('scrape-chunk-consumer - REQ-PIPE-002 / REQ-PIPE-015 / REQ-PIPE-020', (
         r.sql.includes("embedding_status = 'failed'"),
     );
     expect(failedLog).toBeDefined();
-  });
-});
-
-describe('REQ-PIPE-002 AC5 / CON-LLM-001: bounded summary correction', () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  it('an overlong correction is retryable, not another shortening pass or a successful drop', async () => {
-    const overlong = Array.from({ length: 13 }, () =>
-      'Cloudflare announced new infrastructure tools for developers building reliable artificial intelligence applications.'
-    ).join(' '); // 156 words
-    const output = (details: string) => ({
-      response: JSON.stringify({
-        articles: [{ index: 0, title: 'Cloudflare expands infrastructure tools for developers', details, tags: ['cloudflare'] }],
-      }),
-      usage: { input_tokens: 41, output_tokens: 23 },
-    });
-    // A later valid answer deliberately exists: an unbounded correction
-    // loop would incorrectly resolve instead of releasing this job to retry.
-    const replies = [output(overlong), output(overlong), output(LONG_BODY)][Symbol.iterator]();
-    const { db } = makeDb();
-    const { kv } = makeKv();
-    const env = makeEnv(db, kv, output(overlong));
-    vi.stubGlobal('fetch', async (input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      if (url !== TEST_AI_GATEWAY_URL) throw new Error(`unexpected fetch: ${url}`);
-      const reply = replies.next();
-      if (reply.done) throw new Error('Gateway fixture exhausted');
-      return Response.json(reply.value);
-    });
-    const chunk = makeChunk({ candidates: [{
-      canonical_url: 'https://example.com/news/cloudflare-tools',
-      source_url: 'https://example.com/news/cloudflare-tools',
-      source_name: 'Cloudflare news',
-      title: 'Cloudflare expands infrastructure tools for developers',
-      published_at: 1_713_900_000,
-      body_snippet: overlong,
-    }] });
-    const outcome: unknown = await processOneChunk(env, chunk).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
-    expect(outcome).toBeInstanceOf(Error);
-    expect(outcome).not.toBeInstanceOf(NonRetryableError);
   });
 });
