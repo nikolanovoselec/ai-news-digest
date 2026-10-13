@@ -131,7 +131,7 @@ async function callGet(opts: CallOpts): Promise<Response> {
   } as unknown as Env;
   const context = {
     request: req,
-    locals: { runtime: { env } },
+    locals: { env },
     url: new URL(url),
     params: {},
   } as never;

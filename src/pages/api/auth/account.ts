@@ -60,7 +60,7 @@ async function deleteAccountCore(
   | { ok: true; userId: string; clearCookies: string[] }
   | { ok: false; response: Response }
 > {
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
     return { ok: false, response: errorResponse('app_not_configured') };
   }

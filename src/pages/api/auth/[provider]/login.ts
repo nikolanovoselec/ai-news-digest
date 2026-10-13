@@ -122,7 +122,7 @@ export function buildAuthorizeUrl(
  * misconfigured fork pointing at a partially-configured provider.
  */
 async function startOAuth(context: APIContext): Promise<Response> {
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   const providerName = (context.params.provider ?? '') as string;
   const provider = providerByName(providerName);
   if (provider === null) {

@@ -67,13 +67,11 @@ function makeDb(row: UserRow | null): D1Database {
 interface FakeContext {
   request: Request;
   locals: {
-    runtime: {
-      env: {
-        DB: D1Database;
-        OAUTH_JWT_SECRET: string;
-        ADMIN_EMAIL: string;
-        CF_ACCESS_AUD?: string;
-      };
+    env: {
+      DB: D1Database;
+      OAUTH_JWT_SECRET: string;
+      ADMIN_EMAIL: string;
+      CF_ACCESS_AUD?: string;
     };
   };
 }
@@ -97,13 +95,11 @@ async function makeContext(opts: {
       headers,
     }),
     locals: {
-      runtime: {
-        env: {
-          DB: makeDb(opts.row),
-          OAUTH_JWT_SECRET: SECRET,
-          ADMIN_EMAIL,
-          ...(opts.cfAccessAud !== undefined ? { CF_ACCESS_AUD: opts.cfAccessAud } : {}),
-        },
+      env: {
+        DB: makeDb(opts.row),
+        OAUTH_JWT_SECRET: SECRET,
+        ADMIN_EMAIL,
+        ...(opts.cfAccessAud !== undefined ? { CF_ACCESS_AUD: opts.cfAccessAud } : {}),
       },
     },
   };

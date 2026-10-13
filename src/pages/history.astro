@@ -37,7 +37,7 @@ interface HistoryResponse {
   days: DayGroup[];
 }
 
-const env = Astro.locals.runtime.env;
+const env = Astro.locals.env;
 if (typeof env.OAUTH_JWT_SECRET !== 'string' || env.OAUTH_JWT_SECRET === '') {
   return new Response('Application not configured', { status: 500 });
 }

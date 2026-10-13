@@ -26,7 +26,7 @@ function setCookiesOf(res: Response): string[] {
 function makeContext(provider: string, env: Partial<Env>): unknown {
   return {
     request: new Request(`https://news-digest.example.com/api/auth/${provider}/login`),
-    locals: { runtime: { env: env as Env } },
+    locals: { env: env as Env },
     url: new URL(`https://news-digest.example.com/api/auth/${provider}/login`),
     params: { provider },
   };

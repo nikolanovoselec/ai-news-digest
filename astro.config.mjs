@@ -1,29 +1,22 @@
 import { defineConfig } from 'astro/config';
 import cloudflare from '@astrojs/cloudflare';
 import tailwindcss from '@tailwindcss/vite';
-import AstroPWA from '@vite-pwa/astro';
+import AstroPWA from './scripts/pwa-integration.mjs';
 
 // https://astro.build/config
 export default defineConfig({
   output: 'server',
   adapter: cloudflare({
-    platformProxy: {
-      enabled: true
-    },
     // `imageService: 'compile'` runs sharp only during the build to
     // optimise prerendered images; the deployed Worker never touches
     // sharp, which isn't available in workerd. Silences the "sharp at
     // runtime" adapter warning.
-    imageService: 'compile'
-    // scheduled + queue handlers are merged into the built worker by
-    // scripts/merge-worker-handlers.mjs, which runs after `astro build`
-    // (see the `build` script in package.json). It bundles src/worker.ts
-    // with esbuild and writes dist/_worker.js/_merged.mjs — which is
-    // what wrangler deploys (see `main` in wrangler.toml). The adapter's
-    // workerEntryPoint option produced an invalid merged worker, so we
-    // compose the handlers ourselves instead.
+    imageService: 'compile',
+    sessionKVBindingName: 'KV'
+    // Wrangler's source entry src/app-worker.ts composes the supported
+    // adapter HTTP handler with the existing scheduled + queue handlers.
   }),
-  // Astro 5 Sessions are enabled by default on adapters that support
+  // Astro sessions are enabled by default on adapters that support
   // them (Cloudflare is one). We don't use `Astro.session` anywhere —
   // session state rides on the HMAC-signed __Host-news_digest_session
   // cookie (REQ-AUTH-002). Reusing our existing `KV` binding for

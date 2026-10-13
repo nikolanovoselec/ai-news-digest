@@ -1,8 +1,8 @@
 name = "ai-news-digest"
 compatibility_date = "2026-04-01"
 compatibility_flags = ["nodejs_compat"]
-main = "./dist/_worker.js/_merged.mjs"
-assets = { directory = "./dist", binding = "ASSETS" }
+main = "./src/app-worker.ts"
+assets = { directory = "./dist/client", binding = "ASSETS" }
 # Disable the *.workers.dev subdomain. Cloudflare Access does NOT enforce
 # its policy on the workers.dev URL - leaving it enabled would let an
 # attacker hit the Worker bypassing Access entirely (see AD11 / CF-031).
@@ -204,13 +204,14 @@ DEDUP_HIGH_CONFIDENCE_COSINE = "0.92"
 # the four `*-integration` queues, and the integration Vectorize index
 # by name, creating any that don't exist, and patches the resolved
 # IDs into the env.integration sections of wrangler.toml in the
-# ephemeral CI workspace before `wrangler deploy --env integration`.
+# ephemeral CI workspace before `CLOUDFLARE_ENV=integration npm run build`
+# serializes the integration deployment configuration.
 # ---------------------------------------------------------------------------
 
 [env.integration]
 name = "ai-news-digest-integration"
-main = "./dist/_worker.js/_merged.mjs"
-assets = { directory = "./dist", binding = "ASSETS" }
+main = "./src/app-worker.ts"
+assets = { directory = "./dist/client", binding = "ASSETS" }
 # CF-027: mirror the top-level workers_dev=false so the integration
 # deploy never accidentally exposes a *.workers.dev hostname.
 workers_dev = false

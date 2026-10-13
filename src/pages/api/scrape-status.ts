@@ -35,7 +35,7 @@ interface ScrapeRunRow {
 }
 
 export async function GET(context: APIContext): Promise<Response> {
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   if (typeof env.OAUTH_JWT_SECRET !== 'string' || env.OAUTH_JWT_SECRET === '') {
     return errorResponse('app_not_configured');
   }

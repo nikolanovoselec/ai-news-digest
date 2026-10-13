@@ -90,8 +90,11 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
-      - name: Build (populates dist/ for Workers test pool)
+      - name: Build
         run: npm run build
+
+      - name: Verify built deployment target
+        run: node scripts/check-deploy-config.mjs
 
       - name: Tests
         run: npm test

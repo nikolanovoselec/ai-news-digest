@@ -47,7 +47,7 @@ function redirectToSettings(origin: string, runId: string, reused: boolean): Res
 }
 
 export async function POST(context: APIContext): Promise<Response> {
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
 
   const adminAuth = await requireAdminSession(context);
   if (!adminAuth.ok) return adminAuth.response;
@@ -98,7 +98,7 @@ export async function GET(context: APIContext): Promise<Response> {
   // Three-layer admin auth (CF-001) gates both paths. No Origin check
   // because GET is idempotent in spec — but the underlying coordinator
   // dispatch is not, so we still require admin auth.
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   const wantsJson = (context.request.headers.get('Accept') ?? '').includes('application/json');
 
   const adminAuth = await requireAdminSession(context);

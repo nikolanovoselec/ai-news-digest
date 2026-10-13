@@ -1,19 +1,16 @@
 // Implements REQ-OPS-003
 //
-// Astro auto-discovers `src/middleware/index.ts` and uses its `onRequest`
-// export (or the `sequence(...)` composition) as the app-wide middleware
-// chain. Every HTTP response served by Astro therefore passes through this
-// file before reaching the browser.
-//
-// Today the chain contains only the security-headers middleware
-// (REQ-OPS-003). Other middlewares in this folder — `auth.ts` and
-// `origin-check.ts` — expose helper functions that individual route
-// handlers call directly rather than running app-wide, so they deliberately
-// are NOT registered here.
-//
-// If a future feature needs additional global middleware, compose it with
-// `sequence(...)` from `astro:middleware` and keep `securityHeadersMiddleware`
-// LAST so that it stamps headers onto the final response and no earlier
-// middleware can strip them.
+// Astro discovers this app-wide middleware. Bindings are copied from the
+// platform into application-owned locals so routes and their isolated tests
+// share one dependency-injection contract; adapter 14 removed runtime.env.
+// Authentication and origin checks remain route-owned. Security headers are
+// applied after the route returns, preserving the existing response policy.
 
-export { securityHeadersMiddleware as onRequest } from './security-headers';
+import type { MiddlewareHandler } from 'astro';
+import { env } from 'cloudflare:workers';
+import { securityHeadersMiddleware } from './security-headers';
+
+export const onRequest: MiddlewareHandler = async (context, next) => {
+  context.locals.env = env;
+  return securityHeadersMiddleware(context, next);
+};

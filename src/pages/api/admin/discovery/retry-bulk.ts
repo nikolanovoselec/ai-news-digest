@@ -79,7 +79,7 @@ function isEmptyFeedsEntry(raw: string | null): boolean {
  *  (Cloudflare Access post-auth callback) reach this via different
  *  request shapes; the action body is identical. */
 async function executeRetryBulk(
-  env: APIContext['locals']['runtime']['env'],
+  env: APIContext['locals']['env'],
   userId: string,
   hashtagsJson: string | null,
 ): Promise<{ ok: true; count: number } | { ok: false; error: 'internal_error' }> {
@@ -145,7 +145,7 @@ async function executeRetryBulk(
 }
 
 export async function POST(context: APIContext): Promise<Response> {
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
     return errorResponse('app_not_configured');
   }
@@ -186,7 +186,7 @@ export async function GET(context: APIContext): Promise<Response> {
   //   2. Scripts/curl that explicitly want JSON — they opt in by
   //      sending `Accept: application/json`.
   // Cloudflare Access is the sole authn gate (no Origin check on GET).
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   if (typeof env.APP_URL !== 'string' || env.APP_URL === '') {
     return errorResponse('app_not_configured');
   }

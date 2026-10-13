@@ -252,7 +252,7 @@ interface UpsertedState extends UserResolvedState {
 async function step1ResolveProviderAndRateLimit(
   context: APIContext,
 ): Promise<StepResult<CallbackEnv>> {
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
   const providerName = (context.params.provider ?? '') as string;
   const provider = providerByName(providerName);
   if (provider === null) {

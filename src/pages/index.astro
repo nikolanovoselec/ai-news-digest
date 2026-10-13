@@ -11,7 +11,7 @@ import Base from '~/layouts/Base.astro';
 import { loadSessionForPage } from '~/middleware/auth';
 import { configuredProviders, providerByName } from '~/lib/oauth-providers';
 
-const env = Astro.locals.runtime.env;
+const env = Astro.locals.env;
 if (typeof env.OAUTH_JWT_SECRET === 'string' && env.OAUTH_JWT_SECRET !== '') {
   // CF-010 — loadSessionForPage attaches silent-refresh cookies (or
   // clear-cookie directives on the unauthenticated branch) directly

@@ -13,7 +13,7 @@ Cross-cutting architectural and technology decisions that apply to every domain.
 | LLM | Cloudflare AI Gateway + Workers AI | Single global default model in production; OpenAI `gpt-6-luna` through Cloudflare AI Gateway handles summarisation, discovery, and rerank while the previous `dynamic/news_digest` route is retained for rollback; Workers AI supplies embeddings. Prompts are centralised in one module so all LLM-facing strings flow through one allowlist. |
 | Email | Resend | Transactional "your digest is ready" notifications with verified sending domain. |
 | Auth | Custom federated OAuth/OIDC (GitHub, Google) + HMAC-SHA256 JWT | Pattern adopted from the codeflare repo; no third-party auth library. New providers add a single registry entry plus a `fetchProfile` adapter. |
-| PWA | `@vite-pwa/astro` | Manifest, service worker, install prompt. |
+| PWA | `vite-plugin-pwa` with an Astro client-build bridge | Manifest, service worker, install prompt. |
 | Styling | Tailwind CSS 4 | Utility classes + CSS custom properties for theme tokens. |
 | Base theme | AstroPaper (MIT) | Minimal reading surface; auth/settings UI built on top. |
 

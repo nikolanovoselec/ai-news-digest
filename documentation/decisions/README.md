@@ -28,7 +28,6 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | [AD12](#ad12-integration-env-separate-cloudflare-resources-manual-trigger-from-develop-crons-disabled) | Integration env: separate Cloudflare resources, manual trigger from develop, crons disabled | Operations | 2026-05-04 |
 | [AD13](#ad13-no-non-essential-cookies-analytics-gate) | No non-essential cookies (analytics gate) | Privacy | 2026-05-04 |
 | [AD14](#ad14-history-page-perf-comparability-test-permanently-skipped) | History-page perf-comparability test permanently skipped | Testing | 2026-05-04 |
-| [AD15](#ad15-test-pool-exercises-workerts-directly-production-runs-through-the-astro-merged-entry) | Test pool exercises worker.ts directly; production runs through Astro-merged entry | Architecture | 2026-05-04 |
 | [AD16](#ad16-single-writer-invariant-for-kv-sourcestag-enforced-via-centralised-helper) | Single-writer invariant for KV `sources:{tag}` enforced via centralized helper | Storage | 2026-05-04 |
 | [AD17](#ad17-reject-dedupe-groupsts-extraction) | Reject `dedupe-groups.ts` extraction; finalize within-group dedup is downstream-gated | Architecture | 2026-05-04 |
 | [AD18](#ad18-reject-deferred-candidatests-chunk-overflow-path-stays-log-only) | Reject `deferred-candidates.ts`; chunk-overflow drop path stays log-only until volume justifies persistence | Architecture | 2026-05-04 |
@@ -81,6 +80,13 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 |---|---|---|---|---|
 | [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) | AI Gateway dynamic-route model control | Dynamic-route support and tag guardrails remain; [AD61](#ad61-direct-openai-luna-provider-with-low-reasoning) replaces the dashboard-controlled default. | Architecture | Partially superseded |
 | [AD61](#ad61-direct-openai-luna-provider-with-low-reasoning) | Direct OpenAI Luna with low reasoning | Pipeline inference uses direct OpenAI with explicit low reasoning for the develop canary, retaining the dynamic route for rollback. | Architecture | Active |
+
+### Platform migration
+
+| ID | Decision | Summary | Category | State |
+|---|---|---|---|---|
+| [AD15](#ad15-test-pool-exercises-workerts-directly-production-runs-through-the-astro-merged-entry) | Separate Worker test and production entries | Worker tests retain `src/worker.ts`; [AD62](#ad62-astro-7-cloudflare-source-entry-with-isolated-builds) replaces the production post-build merge with a supported source entry. | Architecture | Partially superseded |
+| [AD62](#ad62-astro-7-cloudflare-source-entry-with-isolated-builds) | Astro 7 Cloudflare source entry with isolated builds | Cloudflare security fixes require a source entry and environment-selected builds; isolated Worker tests and PWA policies remain. | Architecture | Active |
 
 ---
 
@@ -446,7 +452,7 @@ Strict `script-src 'self'` is doing 95% of the XSS-prevention work. The marginal
 
 ### AD15: Test pool exercises worker.ts directly; production runs through the Astro-merged entry
 
-**Status:** Accepted (2026-05-04)
+**Status:** Partially superseded by [AD62](#ad62-astro-7-cloudflare-source-entry-with-isolated-builds) (2026-10-13): the production merged-entry path is replaced. The separate direct Worker test entry remains; the original decision body is retained below.
 
 **Decision:** Vitest's Workers pool loads `src/worker.ts` directly as the test entry. Production loads `dist/_worker.js/_merged.mjs` (the Astro-built bundle) per the `main` field in `wrangler.toml`. The two entry shapes are intentionally NOT unified.
 
@@ -1750,6 +1756,28 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - Release acceptance for [PR #293](https://github.com/nikolanovoselec/ai-news-digest/pull/293) requires green review/CI and a deployed integration scrape before production promotion; request/response compatibility alone is insufficient.
 
 **Related requirements:** [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection), [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract), [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates)
+
+---
+
+### AD62: Astro 7 Cloudflare source entry with isolated builds
+
+**Status:** Accepted for the develop canary (2026-10-13).
+
+**Supersedes:** The production post-build composition portion of [AD15](#ad15-test-pool-exercises-workerts-directly-production-runs-through-the-astro-merged-entry), not its separate test-entry decision.
+
+**Decision:** Upgrade to Astro 7 and Cloudflare adapter 14, using the adapter-supported [source entry](../../src/app-worker.ts). Keep the direct [Worker test entry](../../wrangler.test.toml) and generate the service worker through a [Vite PWA bridge](../../scripts/pwa-integration.mjs).
+
+**Context:** The [exact-head CI audit](https://github.com/nikolanovoselec/ai-news-digest/actions/runs/38398542218) blocked release on vulnerable Astro/adapter production dependencies. Their compatible stable upgrades remove `locals.runtime.env` and the old output topology ([migration guide](https://docs.astro.build/en/guides/integrations-guide/cloudflare/#upgrading-to-v13-and-astro-6)). The published [Astro PWA wrapper](https://registry.npmjs.org/@vite-pwa/astro/1.2.0) supports only Astro 1–5; [Vite PWA 2](https://registry.npmjs.org/vite-plugin-pwa/2.0.0) supports Vite 8.
+
+**Consequences:**
+
+- Common [middleware](../../src/middleware/index.ts) injects platform bindings into application-owned `locals.env`; existing routes keep their dependency-injection model without restoring the removed adapter API.
+- [Production](../../.github/workflows/deploy.yml) and [integration](../../.github/workflows/deploy-integration.yml) resolve resource IDs before the final build. Integration selects `CLOUDFLARE_ENV=integration`; the [validator](../../scripts/check-deploy-config.mjs) checks generated resource identities and production/cron guards before publishing.
+- The [PWA bridge](../../scripts/pwa-integration.mjs) generates the service worker after client assets are complete. [Configuration](../../astro.config.mjs) retains the manifest and cache policies; the [layout](../../src/layouts/Base.astro) loads same-origin registration without weakening CSP.
+- [AD11](#ad11-keep-style-src-unsafe-inline-runtime-stylex-writes-are-intentional) retains its CSP decision; its pinned-Astro-5 constraint is historical. The [security-header policy](../../src/middleware/security-headers.ts) is unchanged.
+- Release acceptance still requires green review/CI and deployed integration tests before promotion ([PR #293](https://github.com/nikolanovoselec/ai-news-digest/pull/293)); a dependency bump alone is not functional acceptance.
+
+**Related requirements:** [REQ-OPS-003](../../sdd/spec/observability.md#req-ops-003-content-security-policy-on-every-response), [REQ-OPS-006](../../sdd/spec/observability.md#req-ops-006-integration-deployment-target), [REQ-PWA-001](../../sdd/spec/pwa.md#req-pwa-001-installable-pwa-manifest), [CON-TECH-001](../../sdd/spec/constraints.md#con-tech-001-cloudflare-workers-runtime).
 
 ---
 

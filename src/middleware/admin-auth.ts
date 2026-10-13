@@ -120,7 +120,7 @@ function audMatches(
 export async function requireAdminSession(
   context: APIContext,
 ): Promise<AdminAuthResult> {
-  const env = context.locals.runtime.env;
+  const env = context.locals.env;
 
   // Optional perimeter (Layer 0): only enforced when CF_ACCESS_AUD is
   // configured. Without it, CF Access is treated as additive security

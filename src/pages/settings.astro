@@ -29,7 +29,7 @@ import { CURATED_SOURCES } from '~/lib/curated-sources';
 import { parseJsonStringArray } from '~/lib/json-string-array';
 
 
-const env = Astro.locals.runtime.env;
+const env = Astro.locals.env;
 if (typeof env.OAUTH_JWT_SECRET !== 'string' || env.OAUTH_JWT_SECRET === '') {
   return new Response('Application not configured', { status: 500 });
 }

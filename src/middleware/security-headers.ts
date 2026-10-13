@@ -6,8 +6,8 @@
 // submission) surfaces as a CSP violation during review rather than silently
 // widening attack surface in production.
 //
-// Registration: this middleware is re-exported from `src/middleware/index.ts`
-// (Astro auto-discovers that file). Order matters in that file — security
+// Registration: `src/middleware/index.ts` invokes this middleware after
+// injecting platform bindings (Astro discovers that file). Order matters — security
 // headers run LAST so that upstream handlers cannot strip or override the
 // headers we add here.
 //
