@@ -25,7 +25,7 @@ Environment variables, secrets, and platform bindings required to run the system
 Stored via `wrangler secret put <name>`. Never committed to git.
 
 | Variable | Purpose | Required | Default | Consumed by | Implements |
-| |---|---|---|---|--- | --- |
+|---|---|---|---|---|---|
 | `GH_OAUTH_CLIENT_ID` | GitHub OAuth application identifier | Conditional (one OAuth pair required) | none | `src/pages/api/auth/[provider]/login.ts`, `callback.ts` | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `GH_OAUTH_CLIENT_SECRET` | GitHub OAuth application client secret | Conditional (when `GH_OAUTH_CLIENT_ID` set) | none | `src/pages/api/auth/[provider]/callback.ts` | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `GOOGLE_OAUTH_CLIENT_ID` | Google OAuth application identifier | Conditional (one OAuth pair required) | none | `src/pages/api/auth/[provider]/login.ts`, `callback.ts` | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
@@ -75,14 +75,14 @@ The deploy job reads these secrets from GitHub Actions. `CLOUDFLARE_API_TOKEN` a
 
 | Variable | Required | Purpose | Default | Consumed by | Implements |
 |---|---|---|---|---|---|
-| `CLOUDFLARE_API_TOKEN` | Yes | Token with Workers Scripts:Edit scope for deployment | none | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` | [REQ-OPS-006](../../sdd/spec/observability.md#req-ops-006-integration-environment) |
-| `CLOUDFLARE_ACCOUNT_ID` | Yes | Target Cloudflare account id; also forms the Worker `AI_GATEWAY_URL` | none | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` | [REQ-OPS-006](../../sdd/spec/observability.md#req-ops-006-integration-environment) |
+| `CLOUDFLARE_API_TOKEN` | Yes | Token with Workers Scripts:Edit scope for deployment | none | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` | [REQ-OPS-006](../../sdd/spec/observability.md#req-ops-006-integration-deployment-target) |
+| `CLOUDFLARE_ACCOUNT_ID` | Yes | Target Cloudflare account id; also forms the Worker `AI_GATEWAY_URL` | none | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` | [REQ-OPS-006](../../sdd/spec/observability.md#req-ops-006-integration-deployment-target) |
 | `AI_GATEWAY_API_TOKEN` | Yes | Dedicated runtime token for Cloudflare AI Gateway inference; not used for deploy/provisioning | none | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` (pushes to `src/lib/llm-json.ts`) | [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract), [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection) |
 | `GH_OAUTH_CLIENT_ID` | Conditional | GitHub OAuth App client ID (required when GitHub sign-in is enabled) | none | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` (pushes to `src/pages/api/auth/[provider]/login.ts`, `callback.ts`) | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `GH_OAUTH_CLIENT_SECRET` | Conditional | GitHub OAuth App client secret (required when `GH_OAUTH_CLIENT_ID` is set) | none | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` (pushes to `src/pages/api/auth/[provider]/callback.ts`) | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `GOOGLE_OAUTH_CLIENT_ID` | Conditional | Google OAuth 2.0 client ID (required when Google sign-in is enabled) | none | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` (pushes to `src/pages/api/auth/[provider]/login.ts`, `callback.ts`) | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Conditional | Google OAuth 2.0 client secret (required when `GOOGLE_OAUTH_CLIENT_ID` is set) | none | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` (pushes to `src/pages/api/auth/[provider]/callback.ts`) | [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) |
-| `OAUTH_JWT_SECRET` | Yes | 32+ char random string used to HMAC-sign session JWTs | none | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` (pushes to `src/pages/api/auth/refresh.ts`, `logout.ts`, `account.ts`, middleware) | [REQ-AUTH-002](../../sdd/spec/authentication.md#req-auth-002-session-lifecycle) |
+| `OAUTH_JWT_SECRET` | Yes | 32+ char random string used to HMAC-sign session JWTs | none | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` (pushes to `src/pages/api/auth/refresh.ts`, `logout.ts`, `account.ts`, middleware) | [REQ-AUTH-002](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation) |
 | `RESEND_API_KEY` | Conditional | Resend API key for digest emails; when absent the runtime silently skips email dispatch | none - email silently skipped when unset | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` (pushes to `src/lib/email.ts`) | [REQ-MAIL-001](../../sdd/spec/email.md#req-mail-001-digest-ready-email-content), [REQ-MAIL-003](../../sdd/spec/email.md#req-mail-003-digest-ready-email-send-policy) |
 | `RESEND_FROM` | Conditional | Sender address for emails; required when `RESEND_API_KEY` is set | none | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` (pushes to `src/lib/email.ts`) | [REQ-MAIL-001](../../sdd/spec/email.md#req-mail-001-digest-ready-email-content) |
 | `APP_URL` | Yes | Canonical origin (e.g., `https://digest.example.com`); used in emails, OAuth redirect URIs, and CSRF checks | none | `.github/workflows/deploy.yml`, `.github/workflows/deploy-integration.yml` (pushes to `src/pages/api/auth/account.ts`, `src/pages/api/tags.ts`, all Origin-check routes) | [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints) |
@@ -144,7 +144,7 @@ The settings form hides the model picker but round-trips the stored `model_id`, 
 Declared in `wrangler.toml` under `[vars]`. Forks may override per-environment via `[env.<name>.vars]`.
 
 | Variable | Purpose | Default | Required | Consumed by | Implements |
-| |---|---|---|---|--- | --- |
+|---|---|---|---|---|---|
 | `QUEUE_MAX_RETRIES` | Queue redelivery budget | `"3"` | Yes | `src/queue/*.ts` consumer batch handlers | [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract) |
 | `DEDUP_COSINE_THRESHOLD` | Automatic same-story cosine threshold | `"0.88"` | Yes | `src/lib/embeddings.ts` (`readCosineThreshold`), `src/queue/scrape-finalize-consumer.ts`, `src/pages/api/admin/dedup-diag.ts` | [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract) |
 | `DEDUP_TIME_WINDOW_SECONDS` | Same-news-cycle matching window | `"604800"` (7d) | Yes | `src/lib/embeddings.ts`, `src/queue/dedup-sweep-consumer.ts` | [REQ-PIPE-012](../../sdd/spec/generation.md#req-pipe-012-same-story-matching-policy-variants) AC 3 (same-news-cycle window), [REQ-PIPE-013](../../sdd/spec/generation.md#req-pipe-013-same-story-cross-tick-automation-and-retention-coupling) AC 3 |
@@ -211,7 +211,7 @@ The `auth_refresh_*` buckets are shared between `POST /api/auth/refresh` (`src/p
 
 `set_tz` and `discovery_status` cover authenticated endpoints that legitimate clients poll on a sub-minute cadence. They key by user id and fail open so a KV outage does not degrade the settings UX.
 
-Login, callback, and refresh rules fail closed on KV errors. Other rules retain their declared fail-open policy. An outage must not lift authentication throttles; [AD23](../decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop) records the accepted availability tradeoff.
+Login, callback, and refresh rules fail closed on KV errors. Other rules retain their declared failure policy. An outage must not lift authentication throttles; [AD23](../decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop) records the accepted availability tradeoff.
 
 ## Compatibility
 
