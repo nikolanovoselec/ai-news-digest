@@ -25,7 +25,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 **Dependencies:** [REQ-SET-002](settings.md#req-set-002-hashtag-curation-strip-ux)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -51,7 +51,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 **Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -73,7 +73,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 
 **Dependencies:** [REQ-DISC-007](#req-disc-007-per-tag-feed-discovery-execution-and-persistence)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -90,13 +90,13 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 2. `/digest` displays a subtle banner "Discovering sources for #{tag1}, #{tag2}… Your next digest will include them." while the returned list is non-empty. <!-- @impl: src/pages/api/discovery/status.ts::GET -->
 3. The banner hides automatically when the returned list becomes empty (no manual refresh required on the user's side). <!-- @impl: src/pages/api/discovery/status.ts::GET -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P1
 
 **Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -115,15 +115,15 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 4. The counter is stored in a shared cache with a seven-day expiry so stale entries never accumulate. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
 5. A URL is evicted on the next scrape tick after 30 consecutive failed fetches, matching roughly five days at six scrapes/day so day-long outages do not thrash feeds. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
 6. If eviction empties a tag's feed list, the tag is enqueued for the same discovery cron path used by default-seeded and user-added tags. <!-- @impl: src/lib/feed-health.ts::CONSECUTIVE_FETCH_FAILURE_LIMIT -->
-7. Hard-coded curated feeds (the operator-maintained global registry) participate in the same counter so operators see failing URLs in logs, but they are never mutated at runtime — their replacement is a code change, not a runtime eviction. <!-- @impl: src/lib/sources.ts::fetchFromSourceWithResult -->
+7. Hard-coded curated feeds (the operator-maintained global registry) participate in the same counter so operators see failing URLs in logs, but they are never mutated at runtime - their replacement is a code change, not a runtime eviction. <!-- @impl: src/lib/sources.ts::fetchFromSourceWithResult -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P2
 
 **Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -141,13 +141,13 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 3. Transient cache-read errors fall back to "not stuck" so a flaky read does not light up every tag at once. <!-- @impl: src/lib/discovery.ts::has -->
 4. The Stuck tags section is absent entirely from the page when no tag is stuck. <!-- @impl: src/pages/api/admin/discovery/retry-bulk.ts::userHashtags -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P2
 
 **Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-003](#req-disc-003-self-healing-feed-health-tracking), [REQ-DISC-008](#req-disc-008-manual-re-discover-endpoint-contract)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -168,15 +168,15 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 6. After the SSO-bounced GET, the browser also lands on the settings page with the same confirmation banner, never on a raw 404. <!-- @impl: src/pages/api/admin/discovery/retry.ts::POST -->
 7. The routes are additionally gated by Cloudflare Access at the zone level so only the admin account can reach them in production; other authenticated users never see a reachable endpoint even if the settings button were to be forged into their page. <!-- @impl: src/pages/api/admin/discovery/retry.ts::POST -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Behavioral evidence is incomplete for some re-discovery acceptance criteria.
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P2
 
 **Dependencies:** [REQ-DISC-001](#req-disc-001-per-tag-feed-discovery-queueing-and-pickup), [REQ-DISC-003](#req-disc-003-self-healing-feed-health-tracking)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
@@ -192,7 +192,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 1. The discovery prompt fences the user-supplied tag with triple backticks so the model treats it as data, not instructions. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
 2. The system prompt forbids guessing URLs and instructs the model to return fewer entries over unverified ones. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
 3. Every suggested URL passes SSRF validation (HTTPS-only, no private IPs) before any network call is made. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
-4. URL validation is applied independently of the LLM response — a malicious suggestion cannot bypass it. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
+4. URL validation is applied independently of the LLM response - a malicious suggestion cannot bypass it. <!-- @impl: src/lib/discovery.ts::narrowDiscoveryPayload -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-outbound-article-body-fetches-flow-through-the-ssrf-guarded-helper), [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
@@ -218,7 +218,7 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 3. Removal does not block other passes: a transient failure of the prune step still lets article retention and orphan-tag cleanup complete. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
 4. The 7-day window resets the moment discovery succeeds: a tag whose feeds come back online before the cutoff stays in the user's interests with no further action. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P2
 
@@ -227,3 +227,5 @@ Per-tag feed discovery is LLM-assisted and SSRF-filtered. Settings save queues n
 **Verification:** Automated test
 
 **Status:** Implemented
+
+---

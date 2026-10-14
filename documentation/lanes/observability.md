@@ -103,11 +103,11 @@ Error-level records carry raw exception messages in a `detail` field. The `detai
 
 The KV-backed rate limiter in `src/lib/rate-limit.ts` does a non-atomic `get`-then-`put`. Concurrent requests racing in the same window can each read the same counter value `N`, decide `N < limit`, and each write `N+1`, allowing up to `concurrency × limit` through during the propagation window. Cloudflare KV is eventually consistent; the propagation window for a `put` is documented as up to 60 seconds globally.
 
-For fail-open routes (every limiter rule except `AUTH_REFRESH_IP` and `AUTH_REFRESH_USER`) the non-atomicity is acceptable - the limiter is defence-in-depth, not the contract. The contract is that ordinary clients see the documented limit; an attacker stretching the propagation window does not change the security shape.
+For fail-open routes (rules without `failClosed: true`) the non-atomicity is acceptable - the limiter is defence-in-depth, not the contract. The contract is that ordinary clients see the documented limit; an attacker stretching the propagation window does not change the security shape.
 
-For the two fail-closed rules (`AUTH_REFRESH_IP`, `AUTH_REFRESH_USER`) protecting refresh-token spray attacks, the in-Worker limiter is still defence-in-depth, not the primary gate. The primary gate for production deployments is Cloudflare zone-level Rate Limiting (WAF), which is atomic. Without WAF in front of `/api/auth/refresh`, a coordinated burst above approximately `2 × limit` can succeed during the propagation window. This is tracked as CF-034 and is the reason fail-closed alone is insufficient for refresh-token spray.
+The fail-closed refresh rules (`AUTH_REFRESH_IP`, `AUTH_REFRESH_USER`) deny requests on KV errors, but healthy concurrent requests can still race the non-atomic counter. Fail-closed behavior does not make these limits atomic. A zone-level WAF rule could provide an additional enforcement layer; [AD23](../decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop) leaves that backstop out of scope, so this documentation does not claim it is deployed. CF-034 tracks the residual refresh-token-spray risk.
 
-**Implements:** [REQ-AUTH-001 AC 9](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-RATE-001](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface)
 
 ---
 
@@ -119,8 +119,8 @@ Refresh-token rate-limit events (`auth.refresh.rate_limited`, `rate.limit.kv_err
 |---|---|---|
 | `bucket` | `"ip"` | Pre-validation `auth_refresh_ip` rule (60 / 60s per IP) |
 | `bucket` | `"user"` | Post-validation `auth_refresh_user` rule (30 / 60s per user) |
-| `decision` | `"fail_open"` | KV outage on a route configured fail-open (every non-refresh route) |
-| `decision` | `"fail_closed"` | KV outage on a refresh-token route (request rejected) |
+| `decision` | `"fail_open"` | KV outage on a rule configured fail-open |
+| `decision` | `"fail_closed"` | KV outage on a fail-closed rule (login, callback, or refresh; request rejected) |
 | `kv_op` | `"get"` | Error on the counter-read path |
 | `kv_op` | `"put"` | Error on the counter-write path |
 

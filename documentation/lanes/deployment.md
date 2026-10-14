@@ -34,13 +34,13 @@ Local development setup and production deployment steps.
 ## Local Development
 
 **When:** Initial setup or after pulling new migrations.
-**Command:**
+**Action:**
 ```bash
 npm install
 npx wrangler d1 migrations apply DB --local
 npm run dev
 ```
-**Verifies:** Dev server reachable at `http://localhost:4321`.
+**Verify:** Dev server reachable at `http://localhost:4321`.
 **Rollback:** Stop the dev server (`Ctrl+C`). No production state is affected.
 
 The dev server runs at `http://localhost:4321`.
@@ -59,29 +59,65 @@ test('REQ-AUTH-003: rejects state-changing requests without matching Origin', ()
 });
 ```
 
-Import `env` and `applyD1Migrations` from `tests/fixtures/cloudflare-test.ts` (not `cloudflare:test` directly) — the fixture strips deprecated-JSDoc warnings.
+Import `env` and `applyD1Migrations` from `tests/fixtures/cloudflare-test.ts` (not `cloudflare:test` directly) - the fixture strips deprecated-JSDoc warnings.
 
 ## Production Deployment
 
 **When:** Automatic on merge to `main` (gated on PR Checks success). Manual re-run via Actions → Deploy → Run workflow. The `workflow_run` trigger additionally requires `event == 'push'` and `head_repository.full_name == github.repository`; fork PRs whose head branch is named `main` do not trigger deploy regardless of PR Checks outcome (see AD49).
-**Command:**
+**Action:**
 ```bash
 npx wrangler d1 migrations apply DB --remote --config wrangler.toml
 npm run build
 node scripts/check-deploy-config.mjs
 npx wrangler deploy
 ```
-**Verifies:** AI Gateway preflight succeeds, then smoke test `GET /` against `APP_URL` returns `200` or `303` (the deploy job's final smoke step).
-**Rollback:** Cloudflare Workers supports instant rollback via the dashboard or CLI. To revert to the previous Worker version:
-```bash
-# List recent deployments and find the previous version ID
-npx wrangler deployments list
-# Roll back to a specific version
-npx wrangler rollback <deployment-id>
-```
-After rollback, verify `GET $APP_URL` returns `200`/`303`. D1 migrations are forward-only — if the bad deploy included a schema migration, coordinate the rollback with a matching reverse migration or restore from a D1 backup before reverting the Worker.
+**Verify:** AI Gateway preflight succeeds, then smoke test `GET /` against `APP_URL` returns `200` or `303` (the deploy job's final smoke step).
+**Rollback:** Requires explicit owner authorization. From the repository root, use the production account, root `wrangler.toml` (not generated integration configuration), and Worker `ai-news-digest`. Do not pass `--env integration`. A deployment is a traffic assignment; its referenced version UUID identifies the code. Rollback takes the **version ID**, not the deployment ID ([Wrangler reference](https://developers.cloudflare.com/workers/wrangler/commands/workers/)).
 
-CI/CD: `.github/workflows/deploy.yml` triggers on a `workflow_run` event — fires only when "PR Checks" on `main` completes with `success`. `workflow_dispatch` is retained for manual re-runs.
+Authenticate Wrangler using an already approved credential. Inspect accounts with `npx wrangler whoami`; compare the production Worker's account in the Cloudflare dashboard and set `CLOUDFLARE_ACCOUNT_ID` explicitly to that account ID. This ID selects the account; it is not an authentication token. Stop if account identity is ambiguous.
+
+Inspect production deployments read-only and identify the intended previous version UUID. In GitHub Actions, locate the successful Deploy run whose Wrangler publish log contains that exact version UUID; use its checkout log to identify the actual deployed commit. Do not substitute the newest run or assume its triggering SHA equals the checkout. If a version cannot be bound to its source commit, stop:
+
+```bash
+env -u CLOUDFLARE_ENV npx wrangler deployments list \
+  --config wrangler.toml --name ai-news-digest
+```
+
+Before changing traffic, collect migration and schema metadata read-only:
+
+```bash
+env -u CLOUDFLARE_ENV npx wrangler d1 execute DB --remote \
+  --config wrangler.toml \
+  --command 'SELECT name, applied_at FROM d1_migrations ORDER BY id;'
+env -u CLOUDFLARE_ENV npx wrangler d1 execute DB --remote \
+  --config wrangler.toml \
+  --command "SELECT name, sql FROM sqlite_schema WHERE type = 'table';"
+git diff --name-status <previous-commit>..<deployed-commit> -- migrations/
+```
+
+Review each changed migration against the returned schema and old code's queries; these commands read metadata, not user rows. Compare the previous version's migrations and code with the applied D1 schema. Confirm the old code still supports every applied change. Worker rollback does not reverse D1, KV, queues, secrets, or provider configuration. If compatibility is unknown or a migration removed/changed required data, stop and use a reviewed forward fix or separately authorized database recovery plan. Do not improvise reverse migrations or restore a database as part of this command.
+
+Only after authorization and compatibility review, roll back and inspect the resulting traffic assignment:
+
+```bash
+# MUTATION: substitute the reviewed previous VERSION UUID.
+env -u CLOUDFLARE_ENV npx wrangler rollback <previous-version-id> \
+  --config wrangler.toml --name ai-news-digest
+env -u CLOUDFLARE_ENV npx wrangler deployments list \
+  --config wrangler.toml --name ai-news-digest
+```
+
+Confirm the intended version is active, then run a non-mutating anonymous smoke check; expect 200 or 303:
+
+```bash
+APP_URL='https://news.graymatter.ch'
+curl --silent --show-error --output /dev/null \
+  --write-out '%{http_code}\n' "$APP_URL/"
+```
+
+A landing-page status does not prove pipeline, authorization, or data compatibility. As a non-mutating auth check, anonymous `GET /api/digest/today` should receive the Worker's 401 response; the same GET with a valid same-deployment `__Host-session` should return 200 JSON with `articles`. Use the [reader API cookie procedure](api-reference.md#conventions). An Access challenge is not evidence that Worker authorization passed. For an incident involving pipeline state, inspect an existing run through the [admin status API](api-reference-admin.md#get-apiadminpipeline-status); do not start another run merely to verify rollback. Other incident-specific checks require their own acceptance criteria. These are operator instructions, not a rollback or database recovery performed by a documentation review.
+
+CI/CD: `.github/workflows/deploy.yml` triggers on a `workflow_run` event - fires only when "PR Checks" on `main` completes with `success`. `workflow_dispatch` is retained for manual re-runs.
 
 The deploy job:
 
@@ -114,14 +150,14 @@ Dev-bypass endpoints remain available for operator-authorized integration checks
 | Environment | Branch | Hostname source | Trigger | Crons |
 |---|---|---|---|---|
 | Development | `develop` | (no deploy) | PR Checks (`test.yml`) fire on every push | n/a |
-| Integration | `develop` | `vars.APP_URL` on the `integration` GitHub Environment | Manual (Actions → Deploy Integration) | OFF (explicit `[env.integration.triggers] crons = []` in `wrangler.toml` — omitting the block would inherit the top-level cron array) |
+| Integration | `develop` | `vars.APP_URL` on the `integration` GitHub Environment | Manual (Actions → Deploy Integration) | OFF (explicit `[env.integration.triggers] crons = []` in `wrangler.toml` - omitting the block would inherit the top-level cron array) |
 | Production | `main` | `secrets.APP_URL` (repo-level) | Auto on merge to main, gated on PR Checks success | ON |
 
 ## Integration deployment
 
 **When:** Manually triggered via Actions → "Deploy Integration" → Run workflow. Triggered from `develop` branch only.
-**Command:** Actions tab → `Deploy Integration` → Run workflow. No CLI command needed.
-**Verifies:** Open `APP_URL` (integration hostname) in a browser. CI smoke step is absent (GHA runner IPs return `403` from Cloudflare bot management); `wrangler deploy` exit code is the success signal.
+**Action:** Actions tab → `Deploy Integration` → Run workflow. No CLI command needed.
+**Verify:** Open `APP_URL` (integration hostname) in a browser. CI smoke step is absent (GHA runner IPs return `403` from Cloudflare bot management); `wrangler deploy` exit code is the success signal.
 **Rollback:** Re-trigger the workflow from the previous `develop` commit. Integration has no production traffic; redeploying is safe.
 
 **Purpose:** Smoke-test risky changes (major dependency bumps, schema migrations, CSP tightening, animation rewrites) on the live Cloudflare edge before they reach production. Implements [REQ-OPS-006](../../sdd/spec/observability.md#req-ops-006-integration-deployment-target). Architectural decision: [AD12](../decisions/README.md#ad12-integration-env-separate-cloudflare-resources-manual-trigger-from-develop-crons-disabled).
@@ -164,13 +200,13 @@ The [integration workflow](../../.github/workflows/deploy-integration.yml) resol
 
 1. Land the change on `develop` (PR-merged or direct push).
 2. GitHub → Actions → "Deploy Integration" → "Run workflow" → green button.
-3. The branch dropdown in the dispatch dialog is irrelevant — the workflow always pulls `develop`'s current HEAD.
+3. The branch dropdown in the dispatch dialog is irrelevant - the workflow always pulls `develop`'s current HEAD.
 4. ~3 minutes for first-deploy (resources provisioned), ~2 minutes for subsequent deploys.
-5. After deploy, open the URL in a browser. No CI smoke step — GHA runner IPs return `403` from Cloudflare bot management regardless of worker health. `wrangler deploy` exit code is the success signal.
+5. After deploy, open the URL in a browser. No CI smoke step - GHA runner IPs return `403` from Cloudflare bot management regardless of worker health. `wrangler deploy` exit code is the success signal.
 
 **Triggering a scrape on integration** (since crons are off):
 
-Use the **Refresh articles** button on `/settings` (Administration section) — the button navigates the browser to `/api/admin/pipeline-run?mode=full` via `window.location.assign()` (top-level navigation is required because CF Access protects `/api/admin/*` and a `fetch()` in CORS mode cannot follow the cross-origin SSO redirect; see [AD38](../decisions/README.md#ad38-cf-access-protected-admin-endpoints-must-be-invoked-via-top-level-navigation-not-fetch)), the endpoint enqueues a `pipeline-jobs` message and `303`s back to `/settings?pipeline=enqueued&pipeline_run_id=...`; the queue consumer then walks the seven phases server-side without depending on the operator's tab ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](../decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)). For scripted or headless runs:
+Use the **Refresh articles** button on `/settings` (Administration section) - the button navigates the browser to `/api/admin/pipeline-run?mode=full` via `window.location.assign()` (top-level navigation is required because CF Access protects `/api/admin/*` and a `fetch()` in CORS mode cannot follow the cross-origin SSO redirect; see [AD38](../decisions/README.md#ad38-cf-access-protected-admin-endpoints-must-be-invoked-via-top-level-navigation-not-fetch)), the endpoint enqueues a `pipeline-jobs` message and `303`s back to `/settings?pipeline=enqueued&pipeline_run_id=...`; the queue consumer then walks the seven phases server-side without depending on the operator's tab ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](../decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)). For scripted or headless runs:
 
 ```bash
 # Sign in at your APP_URL (or use the dev-bypass runbook below), then:
@@ -179,7 +215,7 @@ curl -i ${APP_URL}/api/admin/force-refresh
 
 **Promotion path** is one-way: develop → integration verify → develop merged to main → production auto-deploy. No path pushes integration changes back to develop.
 
-**Secret resolution.** `environment: integration` enables GitHub's standard secret-resolution fallback: env-scoped secret wins when defined, otherwise the repo-level secret is used. Default state with no env-scoped secrets matches running without env scoping at all — which is exactly what you want when reusing prod credentials on integration.
+**Secret resolution.** `environment: integration` enables GitHub's standard secret-resolution fallback: env-scoped secret wins when defined, otherwise the repo-level secret is used. Default state with no env-scoped secrets matches running without env scoping at all - which is exactly what you want when reusing prod credentials on integration.
 
 ## Cloudflare Resources
 
@@ -189,29 +225,29 @@ curl -i ${APP_URL}/api/admin/force-refresh
 | `KV` | KV namespace | `ai-news-digest-kv` (auto-created on first deploy by the deploy workflow's inline `wrangler kv namespace list / create` block; the resolved id is patched into wrangler.toml in CI) | Caches (headlines, sources, health) |
 | `SCRAPE_COORDINATOR` | Queue | `scrape-coordinator` | Every-4-hours coordinator dispatch (00/04/08/12/16/20 UTC) |
 | `SCRAPE_CHUNKS` | Queue | `scrape-chunks` | LLM chunk jobs |
-| `SCRAPE_FINALIZE` | Queue | `scrape-finalize` | Same-story dedup pass; one message enqueued by the last chunk consumer per scrape run ([REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract)) |
+| `SCRAPE_FINALIZE` | Queue | `scrape-finalize` | Same-story dedup pass; one message enqueued by the last chunk consumer per scrape run ([REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract)) |
 | `DEDUP_SWEEP` | Queue | `dedup-sweep` | Self-chaining historical-dedup sweep; the kicker enqueues the first message and the consumer re-enqueues a continuation per batch until the corpus tail is reached ([REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1) |
 | `PIPELINE_JOBS` | Queue | `pipeline-jobs` (`pipeline-jobs-integration` on integration) | Backend-driven full pipeline orchestrator; one consumer walks the seven phases by self-chaining messages ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [AD37](../decisions/README.md#ad37-full-pipeline-run-is-backend-orchestrated-browser-tab-is-display-only)) |
-| — | Queue (DLQ) | `ai-news-dlq` (`ai-news-dlq-integration` on integration) | Dead-letter queue for the finalize and pipeline-jobs consumers. Terminal queue retry exhaustion lands messages here so they are inspectable rather than silently dropped (CF-001). Provisioned by the deploy workflow inline `wrangler queues create` block; no binding needed in `wrangler.toml`. |
+| - | Queue (DLQ) | `ai-news-dlq` (`ai-news-dlq-integration` on integration) | Dead-letter queue for the finalize and pipeline-jobs consumers. Terminal queue retry exhaustion lands messages here so they are inspectable rather than silently dropped (CF-001). Provisioned by the deploy workflow inline `wrangler queues create` block; no binding needed in `wrangler.toml`. |
 | AI Gateway | Cloudflare AI Gateway | configured by `AI_GATEWAY_URL` | OpenAI provider model `openai/gpt-6-luna` for summaries, discovery, and rerank; deploy preflight verifies the Gateway, provider key, model access, and runtime token before publish |
 | `AI` | Workers AI | (account-level) | bge-base-en-v1.5 embedding generation; non-Gateway model fallback |
-| `VECTORIZE` | Vectorize index | `ai-news-embeddings` | 768-dim cosine index for same-story dedup; provisioned by the deploy workflow via `wrangler vectorize create` ([REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract)) |
+| `VECTORIZE` | Vectorize index | `ai-news-embeddings` | 768-dim cosine index for same-story dedup; provisioned by the deploy workflow via `wrangler vectorize create` ([REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract)) |
 
 ## Dependency Automation
 
 Dependabot is configured (`.github/dependabot.yml`) to open weekly PRs every Monday at 06:00 UTC. It covers:
 
-- **npm** — runtime deps get individual PRs; dev deps are grouped into one PR per week to keep review surface manageable.
-- **GitHub Actions** — action pin bumps are PRed automatically, preventing slow-drip deprecation warnings (e.g., Node.js 20 → 22 runner transitions, CodeQL v3 → v4 upgrades).
+- **npm** - runtime deps get individual PRs; dev deps are grouped into one PR per week to keep review surface manageable.
+- **GitHub Actions** - action pin bumps are PRed automatically, preventing slow-drip deprecation warnings (e.g., Node.js 20 → 22 runner transitions, CodeQL v3 → v4 upgrades).
 
-### PR Checks — CI gates (`test.yml`)
+### PR Checks - CI gates (`test.yml`)
 
 Every push to `develop` (and every PR targeting `main`) runs the following gates in order. All must pass before the deploy workflow fires:
 
 | Step | Command | What it enforces |
 |---|---|---|
 | Install | `npm install --no-fund --no-audit` | Dependency resolution |
-| Security audit (advisory) | `npm audit --omit=dev --audit-level=high` (continue-on-error) | HIGH+ advisories surface in the CI log for operator triage via Dependabot but never block the build — the Worker runtime is `workerd`, not Node.js, so most HIGH findings live in build tooling that never reaches the deployed bundle. |
+| Security audit (advisory) | `npm audit --omit=dev --audit-level=high` (continue-on-error) | HIGH+ advisories surface in the CI log for operator triage via Dependabot but never block the build - the Worker runtime is `workerd`, not Node.js, so most HIGH findings live in build tooling that never reaches the deployed bundle. |
 | Security audit (blocking) | `npm audit --omit=dev --audit-level=critical` | Blocks on CRITICAL CVEs in the production-dep tree. |
 | Full-tree audit (advisory) | `npm audit` (continue-on-error) | Reports vulnerabilities in runtime and development dependencies without changing the production blocking gate. |
 | Lint | `npm run lint` | Oxlint rules |
@@ -226,11 +262,11 @@ When the REQ backlink gate fails, either the referenced REQ-ID needs to be added
 
 ## Admin-only routes (Cloudflare Access gating)
 
-A handful of operator endpoints drive LLM calls or queue work on demand — budget-sensitive operations reachable only by the site operator. The Worker gate is the security boundary; Cloudflare Access (when bound) is an additive perimeter that improves UX:
+A handful of operator endpoints drive LLM calls or queue work on demand - budget-sensitive operations reachable only by the site operator. The Worker gate is the security boundary; Cloudflare Access (when bound) is an additive perimeter that improves UX:
 
 | Layer | Role | Implementation |
 |---|---|---|
-| **Worker-side gate** (`src/middleware/admin-auth.ts`) | **Security boundary.** Always enforced; sufficient on its own. | Baseline: session cookie + `ADMIN_EMAIL` match. Optional Layer 0 (AD29): `aud`-claim check when `CF_ACCESS_AUD` is set. Implements [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8. |
+| **Worker-side gate** (`src/middleware/admin-auth.ts`) | **Security boundary.** Always enforced; sufficient on its own. | Baseline: session cookie + `ADMIN_EMAIL` match. Optional Layer 0 (AD29): `aud`-claim check when `CF_ACCESS_AUD` is set. Implements [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating). |
 | **Cloudflare Access** (zone-level) | **Optional UX + perimeter layer.** When bound, redirects unauthenticated browsers to the Access login page. | Not required for the Worker gate to function. Forks and integration deploys without Access bound use the baseline Worker gate alone (AD29). |
 
 The Worker gate enforces checks in order: when `CF_ACCESS_AUD` is set, the request must carry a Cloudflare Access assertion whose `aud` claim matches before the baseline session check runs; returns at the first failing layer with no observable side effect.
@@ -248,14 +284,14 @@ Every admin endpoint sits under `/api/admin/*` so a **single wildcard rule** cov
 | Path | What it does |
 |---|---|
 | `/api/admin/force-refresh` | Manually kicks the global-feed coordinator (every-4-hours cron). Implements [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint). Backs phase 1 of **Refresh articles** ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)) and is reachable directly for scripted callers. |
-| `/api/admin/embed-backfill` | Resumable embedding backfill. `POST ?reembed=1` re-embeds the corpus; plain `POST` drains only `NULL`/`'failed'` rows. Backs phases 0 and 3 of **Refresh articles** ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)). Implements [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract). See [Admin API Reference](api-reference-admin.md#post-apiadminembed-backfill). |
-| `/api/admin/historical-dedup` | Starts the oldest-first same-story sweep on `DEDUP_SWEEP`; no-body `POST` enqueues a run, while JSON `{cursor, batch}` runs one legacy/dev-bypass batch. Implements [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract) AC 3 and [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1/4. See [Admin API Reference](api-reference-admin.md#post-apiadminhistorical-dedup). |
+| `/api/admin/embed-backfill` | Resumable embedding backfill. `POST ?reembed=1` re-embeds the corpus; plain `POST` drains only `NULL`/`'failed'` rows. Backs phases 0 and 3 of **Refresh articles** ([REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface)). Implements [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract). See [Admin API Reference](api-reference-admin.md#post-apiadminembed-backfill). |
+| `/api/admin/historical-dedup` | Starts the oldest-first same-story sweep on `DEDUP_SWEEP`; no-body `POST` enqueues a run, while JSON `{cursor, batch}` runs one legacy/dev-bypass batch. Implements [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract) AC 3 and [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1/4. See [Admin API Reference](api-reference-admin.md#post-apiadminhistorical-dedup). |
 | `/api/admin/dedup-status` | Polls the `dedup_runs` audit row for a queue-driven sweep. GET with `?run_id=<ULID>` returns running counters and terminal status. Backs the operator-surface progress banner. Implements [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1/2. See [Admin API Reference](api-reference-admin.md#get-apiadmindedup-status). |
 | `/api/admin/dedup-diag` | Returns cosine similarity, adjusted score, same-vendor penalty, and merge decision for a given article pair. Diagnostic only; no writes. Implements [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 4. See [Admin API Reference](api-reference-admin.md#get-apiadmindedup-diag). |
 | `/api/admin/pipeline-run` | Kicker for the backend-driven full pipeline run. POST (JSON body) for scripts; GET (`?mode=`) for browser navigation via CF Access (see [AD38](../decisions/README.md#ad38-cf-access-protected-admin-endpoints-must-be-invoked-via-top-level-navigation-not-fetch)). Implements [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface). See [Admin API Reference](api-reference-admin.md#post-apiadminpipeline-run). |
 | `/api/admin/pipeline-status` | Polling endpoint for a backend pipeline run. `?id=<ULID>` returns the `pipeline_runs` row plus nested scrape + dedup snapshots; omit `id` to recover the most recent run. See [Admin API Reference](api-reference-admin.md#get-apiadminpipeline-status). |
 | `/api/admin/discovery/retry` | Re-queues a single tag for LLM-assisted source discovery. |
-| `/api/admin/discovery/retry-bulk` | Re-queues every "stuck" (empty-feeds) tag for the session user in one shot — backs the **Discover missing sources** button on `/settings`. |
+| `/api/admin/discovery/retry-bulk` | Re-queues every "stuck" (empty-feeds) tag for the session user in one shot - backs the **Discover missing sources** button on `/settings`. |
 
 ### Browser invocation pattern for Access-gated endpoints
 
@@ -268,12 +304,12 @@ This pattern is already used by `force-refresh.ts` and `pipeline-run.ts`. Do not
 ### Setup (one-time, operator console)
 
 1. Cloudflare dashboard → Zero Trust → **Access** → Applications → Add an application → Self-hosted.
-2. Application domain: `<your-app-host>` (e.g. `news.example.com`), path: `/api/admin/*` (single wildcard covers all admin endpoints, current and future). Include both `POST` and `GET` — Access gates the whole route.
+2. Application domain: `<your-app-host>` (e.g. `news.example.com`), path: `/api/admin/*` (single wildcard covers all admin endpoints, current and future). Include both `POST` and `GET` - Access gates the whole route.
 3. Identity provider: any already-configured IdP that supports email assertion (Google, GitHub, One-Time PIN).
 4. Access policy: **Include** → Emails → `<admin@example>` (replace with the operator's email). Session lifetime: 24h or shorter per operator preference.
 5. Save. The Access edge now issues a `CF_Authorization` JWT cookie on successful auth; requests to the gated paths without it are redirected to the Access login page.
 
-The pages containing these buttons (`/settings`, the dashboard footer) are **not** gated by Access — every authenticated user can render them. The buttons post to the gated endpoints, so a non-admin clicking one sees the Access login prompt rather than the action succeeding. This matches REQ-DISC-004 AC 5: the surface is shown, but execution is restricted.
+The pages containing these buttons (`/settings`, the dashboard footer) are **not** gated by Access - every authenticated user can render them. The buttons post to the gated endpoints, so a non-admin clicking one sees the Access login prompt rather than the action succeeding. This matches REQ-DISC-004 AC 5: the surface is shown, but execution is restricted.
 
 The dev-bypass endpoint at `/api/dev/login` is gated separately by the `DEV_BYPASS_TOKEN` Worker secret (returns 404 when the secret is unset) and does **not** need a Cloudflare Access policy.
 
@@ -285,10 +321,10 @@ Keep the Cloudflare Access policy in sync with deploys so unauthorized clicks la
 
 **Two secrets, two failure modes the deploy creates:**
 
-1. `DEV_BYPASS_TOKEN` — pushed by the deploy from the GitHub Actions secret. Past deploys have written an empty/encoded value due to CR/LF issues, leaving `/api/dev/login` returning 404 for a token that looks valid locally.
-2. `DEV_BYPASS_USER_ID` — actively **deleted** by the deploy (idempotent). Prevents stale impersonation from outliving its window. Every deploy reverts dev-login to `__e2e__`, which does not match `ADMIN_EMAIL` — admin endpoints return 401/403 even with a valid session.
+1. `DEV_BYPASS_TOKEN` - pushed by the deploy from the GitHub Actions secret. Past deploys have written an empty/encoded value due to CR/LF issues, leaving `/api/dev/login` returning 404 for a token that looks valid locally.
+2. `DEV_BYPASS_USER_ID` - actively **deleted** by the deploy (idempotent). Prevents stale impersonation from outliving its window. Every deploy reverts dev-login to `__e2e__`, which does not match `ADMIN_EMAIL` - admin endpoints return 401/403 even with a valid session.
 
-**After every integration deploy, re-stamp both secrets via the Cloudflare REST API.** Wrangler's `/memberships` preflight fails in this container (token has Workers Scripts edit but not Account Read) — go direct to the secrets endpoint instead:
+**After every integration deploy, re-stamp both secrets via the Cloudflare REST API.** Wrangler's `/memberships` preflight fails in this container (token has Workers Scripts edit but not Account Read) - go direct to the secrets endpoint instead:
 
 <!-- doc-allow-element: AD46 dev-bypass-runbook secret re-stamp block -->
 ```bash
@@ -317,11 +353,11 @@ curl -s -X PUT \
 # table (lookup: SELECT id FROM users WHERE email = '<your-email>').
 ```
 
-Both writes propagate at Cloudflare's secret-store cadence — re-run the `/api/dev/login` mint until it returns 200 rather than relying on a fixed wait. Then mint a session and drive any admin endpoint:
+Both writes propagate at Cloudflare's secret-store cadence - re-run the `/api/dev/login` mint until it returns 200 rather than relying on a fixed wait. Then mint a session and drive any admin endpoint:
 
 <!-- doc-allow-element: AD46 dev-bypass-runbook session-mint and admin-drive block -->
 ```bash
-# Mint a session — Origin header is required (the route enforces same-origin POST).
+# Mint a session - a supplied Origin must match; token-authenticated curl may omit it.
 curl -s -X POST "https://news.novoselec.ch/api/dev/login" \
   -H "Authorization: Bearer $(cat /tmp/.bypass_token)" \
   -H "Origin: https://news.novoselec.ch" \
@@ -367,17 +403,17 @@ curl -s "https://news.novoselec.ch/api/admin/pipeline-status?id=$PIPE_ID" \
 |---|---|---|
 | `/api/dev/login` returns 404 | `DEV_BYPASS_TOKEN` empty/missing on the worker (deploy push truncated it) | Re-push via REST as above |
 | `/api/dev/login` returns 200 but admin route returns 401/403 | `DEV_BYPASS_USER_ID` deleted by deploy → session is `__e2e__`, not admin | Set `DEV_BYPASS_USER_ID` via REST as above |
-| `/api/dev/login` returns 403 with "Cross-site POST forbidden" | Missing `Origin: https://news.novoselec.ch` header | Add it; the route enforces same-origin POST |
+| `/api/dev/login` returns 404 with a supplied wrong Origin | Origin differs from the deployment's APP_URL | Supply the matching Origin; absent Origin is permitted for token-authenticated scripts |
 | Session cookie present but admin still 401 | Session expired (5-minute access-token TTL) | Re-mint via `/api/dev/login` |
 
-The token in `/tmp/.bypass_token` is the canonical local source of truth; treat the GitHub Actions `DEV_BYPASS_TOKEN` secret as derivative — re-push it from `/tmp/.bypass_token` when `/api/dev/login` returns 404 on integration despite a non-empty GitHub Actions secret (deploy push truncated the worker-side value).
+The token in `/tmp/.bypass_token` is the canonical local source of truth; treat the GitHub Actions `DEV_BYPASS_TOKEN` secret as derivative - re-push it from `/tmp/.bypass_token` when `/api/dev/login` returns 404 on integration despite a non-empty GitHub Actions secret (deploy push truncated the worker-side value).
 
 ## Resend domain verification
 
 1. Log in to Resend dashboard.
 2. Add the sending domain under "Domains".
 3. Copy the DNS records (MX, TXT for SPF, DKIM CNAMEs, DMARC TXT) into your DNS provider.
-4. Wait for verification — the Resend dashboard shows the domain row's status flip from `Pending` to `Verified` once DNS propagation completes.
+4. Wait for verification - the Resend dashboard shows the domain row's status flip from `Pending` to `Verified` once DNS propagation completes.
 5. Update the `RESEND_FROM` Worker secret to use an address on the verified domain.
 6. Until verified, Resend's sandbox only delivers to the account owner's verified email; non-owner recipients receive nothing.
 
@@ -385,6 +421,6 @@ The token in `/tmp/.bypass_token` is the canonical local source of truth; treat 
 
 ## Related Documentation
 
-- [Configuration](configuration.md) — Env vars and secrets
-- [Architecture](architecture.md) — System overview
-- [Security Policy](../../SECURITY.md) — Vulnerability reporting scope and contact
+- [Configuration](configuration.md) - Env vars and secrets
+- [Architecture](architecture.md) - System overview
+- [Security Policy](../../SECURITY.md) - Vulnerability reporting scope and contact

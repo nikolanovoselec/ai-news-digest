@@ -69,7 +69,7 @@ Budget expectations: Workers Paid (~$21/mo including Workers AI Neurons) + Resen
 
 ### CON-DATA-001: Strong consistency in D1, edge cache in KV
 
-D1 stores users, digests, articles, and pending_discoveries — anything where a read-after-write race would produce wrong behavior. KV stores caches (discovered sources, headlines, source health) where ~60-second eventual consistency is tolerable.
+D1 stores users, digests, articles, and pending_discoveries - anything where a read-after-write race would produce wrong behavior. KV stores caches (discovered sources, headlines, source health) where ~60-second eventual consistency is tolerable.
 
 **Applies To:** All persistence
 
@@ -83,9 +83,9 @@ All LLM prompts (chunk summarisation, source discovery) live in a single shared 
 
 Things the system intentionally does NOT do:
 
-- **Fetch article page bodies outside the SSRF-guarded helper** — any direct `fetch()` to a user- or LLM-supplied URL must go through that helper; see CON-SEC-002
-- **Use a third-party auth library** — see CON-AUTH-001
-- **Support multiple digests per day per user** — one scheduled + rate-limited manual refreshes
-- **Persist cache state in D1** — caches live in KV; D1 is reserved for consistent state
-- **Render user-generated or LLM-generated markdown / HTML** — plaintext only, rendered via `textContent`
-- **Rely on Durable Objects or WebSockets** — the dashboard reads a populated article pool on every request; in-flight scrape progress is exposed via a lightweight status endpoint polled by the indicator (REQ-PIPE-006 AC 5), not via long-lived sockets
+- **Fetch article page bodies outside the SSRF-guarded helper** - any direct `fetch()` to a user- or LLM-supplied URL must go through that helper; see CON-SEC-002
+- **Use a third-party auth library** - see CON-AUTH-001
+- **Support multiple digests per day per user** - one scheduled + rate-limited manual refreshes
+- **Persist cache state in D1** - caches live in KV; D1 is reserved for consistent state
+- **Render user-generated or LLM-generated markdown / HTML** - plaintext only, rendered via `textContent`
+- **Rely on Durable Objects or WebSockets** - the dashboard reads a populated article pool on every request; in-flight scrape progress is exposed via a lightweight status endpoint polled by the indicator (REQ-PIPE-006 AC 5), not via long-lived sockets

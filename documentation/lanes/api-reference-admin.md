@@ -1,6 +1,6 @@
 # Admin / Operator API Reference
 
-Operator-facing administrative endpoints. Every route below sits behind the three-layer admin gate. The conventions block at the top centralises behaviours that recur across endpoints; per-endpoint sections name only what differs.
+Operator-facing administrative endpoints. Every route below requires a worker session and operator-email match, with a Cloudflare Access perimeter when configured. The conventions block at the top centralises behaviours that recur across endpoints; per-endpoint sections name only what differs.
 
 **Audience:** Operators and developers driving the production pipeline.
 
@@ -36,15 +36,35 @@ Every endpoint in this file authenticates the caller through three layers in ord
 2. A valid session cookie minted by the OAuth flow.
 3. The session email matching `ADMIN_EMAIL`.
 
-Failure at any layer returns the layer's native deny response (Access challenge, `401 unauthorized`, or `403 forbidden`). In the per-endpoint sections below the canonical Authentication value `session + admin email` denotes this complete gate.
+Failure at an applicable layer denies the action. The worker gate returns 401 or 403; endpoint-specific browser redirects can translate these into a deny marker. Cloudflare Access can challenge before the request reaches the worker. In the per-endpoint sections below the canonical Authentication value `session + admin email` denotes this complete gate.
 
 ### Bearer / Origin bypass
 
-Browser `POST` calls require an `Origin` header matching `APP_URL`. Scripted callers that present `Authorization: Bearer <DEV_BYPASS_TOKEN>` bypass the Origin check on `POST`, because Bearer requests carry no session cookie and are not a CSRF surface.
+Browser `POST` calls require an `Origin` header matching `APP_URL`. Bearer syntax is not admin authentication: every admin route still requires session and operator-email checks. Some handlers use `hasBearerAuth` to waive Origin validation based on header syntax without validating `DEV_BYPASS_TOKEN`. Send a valid session cookie and matching Origin for scripted mutations rather than relying on that waiver. Only the developer login route validates the integration bypass token.
 
 ### Sec-Fetch-Site guard on admin GET callbacks
 
-Admin `GET` endpoints used as post-SSO callback targets (AD38) enforce a `Sec-Fetch-Site` guard rather than an Origin check. `same-origin` and `none` (top-level navigation, including the post-SSO redirect chain) are allowed; `cross-site` and `cross-origin` receive `403 "Cross-site request denied"`. `curl` and scripted callers send no `Sec-Fetch-Site` header and are unaffected.
+`GET /api/admin/force-refresh` enforces `Sec-Fetch-Site`: absent, `same-origin`, and `none` are allowed; other supplied values return `403 "Cross-site request denied"`. This is not a universal admin GET guard. Retry-bulk, embed-backfill, and pipeline-run callback GETs do not enforce that header. Authentication still applies, and these GETs can start work; do not use them as read-only smoke checks.
+
+### Acquire a session and start a job
+
+Choose the deployment explicitly: production is `https://news.graymatter.ch`; integration is `https://news.novoselec.ch`. Sign in at its landing page using the identity configured in its `ADMIN_EMAIL`; authenticate at the Access perimeter too if enabled. Copy `__Host-session` from that origin's browser cookie store. When Access protects the endpoint, also copy that origin's current `CF_Authorization` cookie and include it alongside the worker cookie: `Cookie: CF_Authorization=$ACCESS_COOKIE; __Host-session=$SESSION_COOKIE`. The perimeter verifies its cookie and injects the assertion; do not forge an assertion header or substitute the developer token. Never paste credentials into logs or documentation; another deployment's cookie is not interchangeable.
+
+Only after explicit operator authorization, start a full pipeline job:
+
+```bash
+APP_URL='https://news.graymatter.ch' # Change explicitly for integration.
+# Set SESSION_COOKIE privately to this deployment's current session value.
+curl --fail-with-body --silent --show-error -X POST \
+  "$APP_URL/api/admin/pipeline-run" \
+  -H "Cookie: __Host-session=$SESSION_COOKIE" \
+  -H "Origin: $APP_URL" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -d '{"mode":"full"}'
+```
+
+A successful kickoff returns `pipeline_run_id`: this signals acceptance, not completion. Poll `GET /api/admin/pipeline-status?id=<returned-pipeline-run-id>` with the same cookie and JSON Accept header; use its `status`, `done`, `failed`, and `error` fields to distinguish completion from failure. Do not repeat kickoff to poll progress. Integration-only acquisition is described in the [dev-bypass runbook](deployment.md#dev-bypass-runbook-integration-only); a default synthetic session is not an admin session.
 
 ### Canonical vocabulary
 
@@ -53,7 +73,7 @@ Admin `GET` endpoints used as post-SSO callback targets (AD38) enforce a `Sec-Fe
 
 ### Error envelope
 
-All error responses are JSON with shape `{ ok: false, error: <slug> }` unless explicitly noted otherwise. Status codes follow standard HTTP semantics.
+Error bodies are endpoint-specific, not universally JSON. The shared admin gate returns plain `Unauthorized` (401) or `Forbidden` (403); some browser GET handlers redirect to a deny marker instead. Origin-check errors use the JSON error envelope. Consult each handler's response contract before parsing.
 
 ---
 
@@ -61,7 +81,7 @@ All error responses are JSON with shape `{ ok: false, error: <slug> }` unless ex
 
 ### POST /api/admin/force-refresh
 
-Kick the global-feed coordinator on demand: identical work to the every-4-hours cron. Used by scripted callers (curl with `Accept: application/json`) and by phase 1 of the **Refresh articles** orchestrator on `/settings`.
+Kick the global-feed coordinator on demand: identical work to the every-4-hours cron and used by phase 1 of the **Refresh articles** orchestrator on `/settings`. POST redirects on success regardless of Accept; scripted callers needing JSON use the GET variant.
 
 ```
 POST /api/admin/force-refresh
@@ -72,19 +92,24 @@ POST /api/admin/force-refresh
 
 **Request:** none.
 
-**Response**
+**Errors:** Failure statuses and their response bodies are listed in the Response table below.
+**Source:** `src/pages/api/admin/force-refresh.ts`.
+
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
-| `303` | Success | Redirect to `/settings?force_refresh={ok\|reused}` |
-| `401` | No session | `{ error, code: "unauthorized" }` |
-| `403` | Origin mismatch or not admin | `{ error, code: "forbidden" }` or `{ error, code: "forbidden_origin" }` |
-| `429` | Rate limited | `{ error, code: "rate_limit_exceeded" }` |
-| `500` | Dispatch failed | `{ error: "Failed to dispatch coordinator" }` |
+| `303` | Success | Redirect to `/settings?force_refresh={ok\|reused}&run_id=<id>` |
+| `401` | No session or required Access assertion invalid | Plain `Unauthorized` |
+| `403` | Not admin | Plain `Forbidden` |
+| `403` | Origin mismatch | JSON `{ error, code: "forbidden_origin" }` |
+| `429` | Rate limited | Plain `Too Many Requests`; `Retry-After` header |
+| `500` | APP_URL missing | Plain `Application not configured` |
+| `500` | Dispatch failed | Plain `Failed to dispatch coordinator` |
 
 **Rate limit:** per-operator hourly bucket `admin_force_refresh`; exhausted returns `429` with `Retry-After`.
 
-**Implements:** [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 1), [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
+**Implements:** [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 1), [REQ-RATE-001](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface)
 
 **Notes**
 
@@ -101,25 +126,29 @@ GET /api/admin/force-refresh
 ```
 
 **Authentication:** session + admin email
-**Origin check:** n/a (read-only GET; see [Sec-Fetch-Site guard](#sec-fetch-site-guard-on-admin-get-callbacks))
+**Origin check:** exempt (callback GET starts work; see [Sec-Fetch-Site guard](#sec-fetch-site-guard-on-admin-get-callbacks))
 
 **Request:** none.
 
-**Response**
+**Errors:** Failure statuses and their response bodies are listed in the Response table below.
+**Source:** `src/pages/api/admin/force-refresh.ts`.
+
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
 | `200` | Scripted caller (`Accept: application/json`) | `{ ok: true, scrape_run_id, reused }` |
-| `303` | Browser direct | Redirect to `/settings?force_refresh={ok\|reused\|denied}` |
-| `401` | No session | `{ error, code: "unauthorized" }` |
-| `403` | Not admin | `{ error, code: "forbidden" }` |
-| `403` | Cross-site initiator | `{ error: "Cross-site request denied" }` |
-| `429` | Rate limited | `{ error, code: "rate_limit_exceeded" }` |
-| `500` | Dispatch failed | `{ error: "Failed to dispatch coordinator" }` |
+| `303` | Browser direct | `/settings?force_refresh={ok\|reused\|denied\|rate_limited\|error}`; success/reuse includes `run_id` |
+| `401` | JSON caller: no session or required Access assertion invalid | Plain `Unauthorized` |
+| `403` | JSON caller: not admin | Plain `Forbidden` |
+| `403` | Cross-site initiator | Plain `Cross-site request denied` |
+| `429` | JSON caller: rate limited | Plain `Too Many Requests`; `Retry-After` header |
+| `500` | APP_URL missing after successful authentication | Plain `Application not configured` |
+| `500` | JSON caller: dispatch failed | Plain `Failed to dispatch coordinator` |
 
 **Rate limit:** per-operator hourly bucket `admin_force_refresh`; exhausted returns `429` with `Retry-After`.
 
-**Implements:** [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 1), [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
+**Implements:** [REQ-OPS-005](../../sdd/spec/observability.md#req-ops-005-admin-force-refresh-endpoint), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 1), [REQ-RATE-001](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface)
 
 ---
 
@@ -140,7 +169,7 @@ POST /api/admin/discovery/retry
 |---|---|---|---|
 | `tag` | string | yes | Tag to re-queue |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -174,7 +203,10 @@ POST /api/admin/discovery/retry-bulk
 
 **Request:** none.
 
-**Response**
+**Errors:** Failure statuses and their response bodies are listed in the Response table below.
+**Source:** `src/pages/api/admin/discovery/retry-bulk.ts`.
+
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -203,7 +235,12 @@ GET /api/admin/discovery/retry-bulk
 **Authentication:** session + admin email
 **Origin check:** n/a (post-SSO browser callback target)
 
-**Response**
+**Request:** none; the callback uses the signed-in operator's stored tags.
+
+**Errors:** Failure statuses and their response bodies are listed in the Response table below.
+**Source:** `src/pages/api/admin/discovery/retry-bulk.ts`.
+
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -238,7 +275,10 @@ POST /api/admin/embed-backfill
 
 **Request:** empty body.
 
-**Response**
+**Errors:** Failure statuses and their response bodies are listed in the Response table below.
+**Source:** `src/pages/api/admin/embed-backfill.ts`.
+
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -264,11 +304,14 @@ GET /api/admin/embed-backfill
 ```
 
 **Authentication:** session + admin email
-**Origin check:** n/a (read-only GET)
+**Origin check:** exempt (callback GET can start work; not read-only)
 
 **Request:** none. `?reembed=1` is rejected.
 
-**Response**
+**Errors:** Failure statuses and their response bodies are listed in the Response table below.
+**Source:** `src/pages/api/admin/embed-backfill.ts`.
+
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -302,7 +345,7 @@ POST /api/admin/historical-dedup
 
 Sending no body invokes the kicker path; sending any of the fields above invokes the synchronous batch path.
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -314,7 +357,7 @@ Sending no body invokes the kicker path; sending any of the fields above invokes
 | `500` | Kicker insert failed | `{ error: "historical_dedup_kick_failed" }` |
 | `500` | Sync batch threw | `{ error: "historical_dedup_failed" }` |
 
-**Implements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe--core-matching-contract) AC 3, [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1 + AC 4, [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-PIPE-023](../../sdd/spec/generation.md#req-pipe-023-llm-re-rank-cost-controls), [REQ-PIPE-024](../../sdd/spec/generation.md#req-pipe-024-recurring-sweep-watermark-and-manual-bypass), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 4)
+**Implements:** [REQ-PIPE-003](../../sdd/spec/generation.md#req-pipe-003-same-story-dedupe---core-matching-contract) AC 3, [REQ-PIPE-014](../../sdd/spec/generation.md#req-pipe-014-same-story-operator-surfaces) AC 1 + AC 4, [REQ-PIPE-009](../../sdd/spec/generation.md#req-pipe-009-llm-re-rank-pass-for-borderline-same-story-candidates), [REQ-PIPE-023](../../sdd/spec/generation.md#req-pipe-023-llm-re-rank-cost-controls), [REQ-PIPE-024](../../sdd/spec/generation.md#req-pipe-024-recurring-sweep-watermark-and-manual-bypass), [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface) (phase 4)
 
 **Notes**
 
@@ -341,7 +384,7 @@ GET /api/admin/dedup-status
 |---|---|---|---|
 | `run_id` | string | Yes | ULID returned by the kicker call to `POST /api/admin/historical-dedup`. |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -378,7 +421,7 @@ POST /api/admin/pipeline-run
 |---|---|---|---|
 | `mode` | `"full"` \| `"wipe"` | `"full"` | `"wipe"` invalidates every article's embedding before scraping; `"full"` keeps existing embeddings and starts at the scrape phase. |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -391,7 +434,7 @@ POST /api/admin/pipeline-run
 
 **Rate limit:** per-operator hourly bucket `admin_pipeline_run`; exhausted returns `429` with `Retry-After`.
 
-**Implements:** [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9g
+**Implements:** [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-RATE-001](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface)
 
 **Notes**
 
@@ -416,7 +459,7 @@ GET /api/admin/pipeline-run
 |---|---|---|---|
 | `mode` | `full` \| `wipe` | `full` | `wipe` invalidates all embeddings before scraping; `full` keeps them. `wipe` via GET is rejected with `405` to block cross-origin GET vectors from triggering a corpus-wide re-embed. |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -425,7 +468,7 @@ GET /api/admin/pipeline-run
 | `405` | `mode=wipe` via GET | body `Use POST for mode=wipe`, header `Allow: POST` |
 | `500` | Configuration error | plain text |
 
-**Implements:** [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 8d
+**Implements:** [REQ-OPS-008](../../sdd/spec/observability.md#req-ops-008-unified-admin-pipeline-run-trigger-from-the-settings-surface), [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating)
 
 **Notes**
 
@@ -450,7 +493,7 @@ GET /api/admin/pipeline-status
 |---|---|---|---|
 | `id` | string | No | ULID of the pipeline run. When omitted, the most recent row is returned (so reopening `/settings` after closing the tab restores progress). |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -487,7 +530,7 @@ GET /api/admin/dedup-diag
 | `a` | string | Yes | Article ID of the first article. |
 | `b` | string | Yes | Article ID of the second article. Must differ from `a`. |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -536,6 +579,6 @@ GET /api/admin/dedup-diag
 
 ## Related Documentation
 
-- [api-reference.md](api-reference.md) — public + non-admin internal API surface
-- [security.md](security.md) — admin auth model, rate limits, dev-route guard
-- [decisions/README.md](../decisions/README.md) — ADRs for admin-gate decisions (AD29, AD38, AD44)
+- [api-reference.md](api-reference.md) - public + non-admin internal API surface
+- [security.md](security.md) - admin auth model, rate limits, dev-route guard
+- [decisions/README.md](../decisions/README.md) - ADRs for admin-gate decisions (AD29, AD38, AD44)

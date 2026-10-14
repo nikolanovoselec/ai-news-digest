@@ -17,13 +17,13 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 4. A successful first-run save redirects the user to `/digest`, where the shared article pool is already populated so real cards render immediately. <!-- @impl: src/pages/api/settings.ts::validateHashtags -->
 5. The first-run save also kicks the global scrape pipeline as a best-effort nudge so any tags newly added during onboarding can begin discovery on the next cron tick. <!-- @impl: src/pages/settings.astro::teardownScrapeProgress -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P0
 
 **Dependencies:** [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -36,22 +36,23 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The save endpoint accepts both a JSON API request (used when the in-page submit handler is bound) and a native HTML form submission, so clicking the primary button always persists regardless of whether client-side JavaScript has initialised. <!-- @impl: src/pages/api/settings.ts::POST -->
-2. Both transports apply identical server-side validation and the same `Origin` check from [REQ-AUTH-003](authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints). <!-- @impl: src/pages/api/settings.ts::POST -->
-3. On the native-form path, the response is always a redirect back to the settings page on both success and failure, so the user never sees a raw JSON error body. <!-- @impl: src/pages/api/settings.ts::POST -->
-4. After the redirect, a successful save surfaces a confirmation inline next to the Save button; a validation or server error surfaces an inline message naming what went wrong. <!-- @impl: src/pages/api/settings.ts::POST -->
-5. Query parameters carrying the outcome are stripped from the URL after display so a refresh does not re-show stale text. <!-- @impl: src/pages/api/settings.ts::POST -->
-6. Unauthenticated native-form POSTs redirect to the site root rather than persisting state or showing an error message. <!-- @impl: src/pages/api/settings.ts::POST -->
+1. The save endpoint accepts and persists a JSON API request, used when the in-page submit handler is bound. <!-- @impl: src/pages/api/settings.ts::POST -->
+2. The save endpoint accepts and persists a native HTML form submission, so clicking the primary button persists regardless of whether client-side JavaScript has initialised. <!-- @impl: src/pages/api/settings.ts::POST -->
+3. Both transports apply identical server-side validation and the same `Origin` check from [REQ-AUTH-003](authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints). <!-- @impl: src/pages/api/settings.ts::POST -->
+4. On the native-form path, the response is always a redirect back to the settings page on both success and failure, so the user never sees a raw JSON error body. <!-- @impl: src/pages/api/settings.ts::POST -->
+5. After the redirect, a successful save surfaces a confirmation inline next to the Save button; a validation or server error surfaces an inline message naming what went wrong. <!-- @impl: src/pages/api/settings.ts::POST -->
+6. Query parameters carrying the outcome are stripped from the URL after display so a refresh does not re-show stale text. <!-- @impl: src/pages/api/settings.ts::POST -->
+7. Unauthenticated native-form POSTs redirect to the site root rather than persisting state or showing an error message. <!-- @impl: src/pages/api/settings.ts::POST -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Behavioral evidence is incomplete for the save transports and inline outcomes.
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P0
 
 **Dependencies:** [REQ-SET-001](#req-set-001-unified-first-run-and-edit-flow), [REQ-AUTH-003](authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
@@ -72,13 +73,13 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 6. An add affordance at the end of the strip expands inline into a single text input; submitting the input appends a new tag to the selection. <!-- @impl: src/lib/hashtags.ts::parseHashtags -->
 7. When tags are selected, reading surfaces show only articles whose stored tags intersect the selection; an empty result names selected tags and invites deselection. <!-- @impl: src/lib/default-hashtags.ts::DEFAULT_HASHTAGS -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P0
 
 **Dependencies:** [REQ-SET-001](#req-set-001-unified-first-run-and-edit-flow), [REQ-SET-008](#req-set-008-hashtag-persistence-validation-and-defaults)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -98,13 +99,13 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 5. The settings page exposes two paired actions side-by-side: "Restore initial tags" replaces the current list with the full default seed; "Delete all tags" clears the user's tag list entirely so they can build a completely custom set without removing default chips one-by-one. <!-- @impl: src/pages/api/tags/delete-initial.ts::POST -->
 6. Restore appears only when default tags are missing; Delete appears only when at least one tag exists, so no-op paired actions stay hidden. <!-- @impl: src/pages/api/tags/delete-initial.ts::POST -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P0
 
 **Dependencies:** [REQ-SET-001](#req-set-001-unified-first-run-and-edit-flow)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -124,13 +125,13 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 5. The saved time is interpreted in the user's stored timezone; DST transitions are handled correctly using `Intl.DateTimeFormat`. <!-- @impl: src/lib/tz.ts::localeForTz -->
 6. Changing the scheduled time never creates a duplicate digest for a day that has already generated. <!-- @impl: src/pages/api/settings.ts::isIntegerInRange -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P0
 
 **Dependencies:** [REQ-SET-002](#req-set-002-hashtag-curation-strip-ux)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -144,14 +145,14 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Acceptance Criteria:**
 1. Saving settings with an unavailable model choice is rejected before the user's stored model changes. <!-- @impl: src/pages/api/settings.ts::PUT -->
-2. The model catalog carries user-facing descriptions and per-token pricing. <!-- @impl: src/lib/models.ts::MODELS -->
+2. The model catalog carries user-facing descriptions and per-token pricing. <!-- @impl: src/lib/models.ts::MODELS --> <!-- @test: tests/lib/models.test.ts (REQ-SET-004: MODELS entries all have the required shape) -->
 3. When no accepted user setting applies, inference uses the system default model configured in the server-side catalog. <!-- @impl: src/lib/models.ts::DEFAULT_MODEL_ID --> <!-- @impl: src/lib/llm-json.ts::runJson -->
 4. If a model picker is exposed, it lists accepted options with descriptions and cost categories, pre-selecting the active or default choice. <!-- @impl: src/lib/models.ts::MODELS -->
 5. If model selection is hidden, the settings form preserves the active or default choice without requiring user input. <!-- @impl: src/pages/settings.astro::currentModelId = DEFAULT_MODEL_ID -->
-6. Provider-backed defaults fail closed until runtime inference credentials are configured. <!-- @impl: src/lib/llm-json.ts::runModel -->
-7. Cost estimates use the model catalog's pricing data. <!-- @impl: src/lib/models.ts::estimateCost -->
+6. Provider-backed defaults fail closed until runtime inference credentials are configured. <!-- @impl: src/lib/llm-json.ts::runModel --> <!-- @test: tests/lib/llm-json.test.ts (REQ-SET-004 AC6: gateway models fail closed when gateway config is missing) -->
+7. Cost estimates use the model catalog's pricing data. <!-- @impl: src/lib/models.ts::estimateCost --> <!-- @test: tests/lib/models.test.ts (estimateCost) -->
 
-**Notes:** The model-selection UI is hidden from the settings form, but the settings API still accepts and persists a `model_id` field. True removal requires retiring `model_id` from the persistence contract first.
+**Notes:** The legacy model preference and the system-wide inference contract are not fully reconciled.
 
 **Constraints:** [CON-LLM-001](constraints.md#con-llm-001-centralized-deterministic-prompts)
 
@@ -159,7 +160,7 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 **Dependencies:** [REQ-SET-003](#req-set-003-scheduled-digest-time-with-timezone)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
@@ -177,13 +178,13 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 3. When the toggle is off, scheduled digests still generate and appear in the app; no email is sent for that user. <!-- @impl: src/pages/settings.astro::submitSettings -->
 4. Manual refresh never sends email, regardless of toggle state. <!-- @impl: src/pages/settings.astro::submitSettings -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P1
 
 **Dependencies:** [REQ-SET-001](#req-set-001-unified-first-run-and-edit-flow)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -191,24 +192,24 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 
 ### REQ-SET-006: Settings-incomplete gate
 
-**Intent:** Users who have not yet chosen a scheduled digest time cannot navigate to the reading surface, preventing empty-state confusion. Hashtags are NOT part of the gate because they are edited on the reading surface itself — a user with no tags yet still reaches the digest page and is prompted there to add their first one.
+**Intent:** Users who have not yet chosen a scheduled digest time cannot navigate to the reading surface, preventing empty-state confusion. Hashtags are NOT part of the gate because they are edited on the reading surface itself - a user with no tags yet still reaches the digest page and is prompted there to add their first one.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
 1. Any authenticated request to a path other than the settings page and the authentication/settings APIs, made by a user whose scheduled-digest time is not yet set, is redirected to the first-run settings view. <!-- @impl: src/middleware/settings-gate.ts::SETTINGS_PATH -->
 2. Once the scheduled-digest time is set, visiting the first-run settings view redirects to the steady-state settings view. <!-- @impl: src/middleware/settings-gate.ts::SETTINGS_PATH -->
-3. The gate keys only on "scheduled time not yet set" — having no hashtags selected does NOT trip the gate, and a user whose first digest fails is not trapped. <!-- @impl: src/middleware/settings-gate.ts::is -->
+3. The gate keys only on "scheduled time not yet set" - having no hashtags selected does NOT trip the gate, and a user whose first digest fails is not trapped. <!-- @impl: src/middleware/settings-gate.ts::is -->
 4. While the gate is active, the global navigation hides entries that lead to gated routes so the user sees only the Settings destination and cannot tap into a dead-end redirect. <!-- @impl: src/middleware/settings-gate.ts::is -->
 5. Discovery-progress polling is per-user rate-limited to allow normal few-second polling but bound client loops; 429 includes `Retry-After`, and settings shows the pause without blocking the form. <!-- @impl: src/middleware/settings-gate.ts::SETTINGS_PATH -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P0
 
-**Dependencies:** [REQ-SET-001](#req-set-001-unified-first-run-and-edit-flow), [REQ-AUTH-002](authentication.md#req-auth-002-access-token-refresh-token-instant-revocation)
+**Dependencies:** [REQ-SET-001](#req-set-001-unified-first-run-and-edit-flow), [REQ-AUTH-002](authentication.md#req-auth-002-access-token--refresh-token-instant-revocation)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -226,15 +227,15 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 3. The correction runs on every route (not just the settings page), so users who sign up and go straight to the reading surface never miss the update. <!-- @impl: src/pages/settings.astro::submitSettings -->
 4. A failed correction request is non-fatal: the page continues to render and the next page load retries. <!-- @impl: src/pages/settings.astro::wireScrapeProgress -->
 5. Once stored timezone differs from the seeded default, silent correction stops, so manual or earlier browser choices are never overwritten by privacy-masked or stale browser zones. <!-- @impl: src/scripts/page-effects.ts::syncBrowserTz -->
-6. The timezone-update endpoint is rate-limited per authenticated user per [REQ-AUTH-001](authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider) AC 9a; an exhausted limit returns HTTP 429 with `Retry-After` and is non-fatal per AC 4 above. <!-- @impl: src/pages/api/auth/set-tz.ts::POST -->
+6. The timezone-update endpoint is rate-limited per authenticated user per [REQ-RATE-001](rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface); an exhausted limit returns HTTP 429 with `Retry-After` and is non-fatal per AC 4 above. <!-- @impl: src/pages/api/auth/set-tz.ts::POST -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P2
 
 **Dependencies:** [REQ-SET-003](#req-set-003-scheduled-digest-time-with-timezone)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -251,14 +252,16 @@ A single `/settings` route handles both first-run onboarding and steady-state co
 2. The picker is pre-populated with the browser-detected zone, or with the stored zone when the browser's value is unavailable, so the most likely correct value is one click away even when the silent auto-sync has failed. <!-- @impl: src/pages/api/auth/set-tz.ts::POST -->
 3. Saving the form persists the picked zone via the same timezone-update endpoint used by the silent auto-sync path. <!-- @impl: src/pages/api/auth/set-tz.ts::POST -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Behavioral evidence is incomplete for manual timezone selection.
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P2
 
 **Dependencies:** [REQ-SET-007](#req-set-007-timezone-change-detection)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
+
+---

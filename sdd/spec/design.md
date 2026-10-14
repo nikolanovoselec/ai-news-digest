@@ -1,6 +1,6 @@
 # Design System
 
-Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral palette with one accent, no gradients or drop shadows. Light and dark mode toggled with a single click, persisted for the browser, and server-rendered on every request so the first byte always carries the correct theme. Motion is deliberate, single-curve, and always respects `prefers-reduced-motion`.
+Swiss-minimal aesthetic - system fonts, five type sizes, two weights, neutral palette with one accent, no gradients or drop shadows. Light and dark mode toggled with a single click, persisted for the browser, and server-rendered on every request so the first byte always carries the correct theme. Motion is deliberate, single-curve, and always respects `prefers-reduced-motion`.
 
 ---
 
@@ -11,7 +11,7 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The type scale provides 5 sizes from caption to display and 2 weights (body and heading); only system fonts are used — no webfont download is required. <!-- @impl: src/styles/global.css::--font-sans --> <!-- @impl: src/styles/global.css::--text-xs --> <!-- @impl: src/styles/global.css::--text-2xl -->
+1. The type scale provides 5 sizes from caption to display and 2 weights (body and heading); only system fonts are used - no webfont download is required. <!-- @impl: src/styles/global.css::--font-sans --> <!-- @impl: src/styles/global.css::--text-xs --> <!-- @impl: src/styles/global.css::--text-2xl -->
 2. The palette is restricted to neutral grays with a single accent color per theme; no decorative gradients or drop shadows appear on steady-state UI surfaces. Motion-driven gradients required by another REQ (e.g., transient progress affordances) are exempt. <!-- @impl: src/styles/global.css::--color-bg -->
 3. Inputs render with a minimum 16 px font size to prevent iOS zoom-on-focus. <!-- @impl: src/styles/global.css::--text-base -->
 4. Every interactive element shows a visible focus ring on keyboard focus. <!-- @impl: src/styles/global.css:::focus-visible -->
@@ -24,9 +24,9 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 
 **Priority:** P0
 
-**Dependencies:** None
+**Dependencies:** None.
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -52,7 +52,7 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 
 **Dependencies:** [REQ-DES-001](#req-des-001-swiss-minimal-visual-language)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -60,16 +60,16 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 
 ### REQ-DES-004: Mobile and PWA no-flash chrome
 
-**Intent:** When the app runs on a mobile device or as an installed PWA, the system status bar and the document background paint the user's selected theme from the first frame — never the operating-system theme, never a transient flash to the opposite theme on toggle, and never an intermediate white frame between client-side route swaps.
+**Intent:** When the app runs on a mobile device or as an installed PWA, the system status bar and the document background paint the user's selected theme from the first frame - never the operating-system theme, never a transient flash to the opposite theme on toggle, and never an intermediate white frame between client-side route swaps.
 
 **Applies To:** User
 
 **Acceptance Criteria:**
-1. The mobile system status bar (iOS / Android) matches the app's selected theme, not the operating-system theme — a user in the app's dark theme whose device is in light mode still sees a dark status bar above the dark UI, and vice versa. <!-- @impl: src/styles/global.css::view-transition -->
+1. The mobile system status bar (iOS / Android) matches the app's selected theme, not the operating-system theme - a user in the app's dark theme whose device is in light mode still sees a dark status bar above the dark UI, and vice versa. <!-- @impl: src/styles/global.css::view-transition -->
 2. The status bar repaints immediately when the user toggles theme mid-session, and its colour persists across client-side route navigations without a transient flash to the opposite theme. <!-- @impl: src/styles/global.css::view-transition -->
 3. Across client-side route swaps, including installed PWA navigation, the body paints the chosen theme on the first frame and never flashes the opposite or intermediate background. <!-- @impl: src/styles/global.css::view-transition -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Mobile and installed-app first-frame behavior remains incompletely verified.
 
 **Constraints:** [CON-A11Y-001](constraints.md#con-a11y-001-accessibility-minimum), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
@@ -77,7 +77,7 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 
 **Dependencies:** [REQ-DES-002](#req-des-002-light-and-dark-mode-with-no-flash)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
@@ -105,6 +105,8 @@ Swiss-minimal aesthetic — system fonts, five type sizes, two weights, neutral 
 
 **Dependencies:** [REQ-DES-001](#req-des-001-swiss-minimal-visual-language)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
+
+---

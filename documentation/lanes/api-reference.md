@@ -26,16 +26,18 @@ The conventions below apply to every endpoint in this document. They are stated 
 
 - **Error envelope.** Every error response carries the JSON body `{ "error": string, "code": string }`. Additional fields (`detail`, `retry_after`) appear when relevant.
 - **Authentication.** The `Authentication` field on each endpoint uses one of the canonical values listed below.
-  - `none` — public endpoint.
-  - `session` — valid `__Host-session` cookie required.
-  - `refresh cookie` — valid `__Host-refresh` cookie required; access JWT may be absent.
-  - `state cookie` — OAuth `state` cookie required.
-  - `session + admin email` — session cookie plus `ADMIN_EMAIL` match required.
-  - `dev-bypass token` — Bearer `DEV_BYPASS_TOKEN` required.
+  - `none` - public endpoint.
+  - `session` - valid `__Host-session` cookie required.
+  - `refresh cookie` - valid `__Host-refresh` cookie required; access JWT may be absent.
+  - `state cookie` - OAuth `state` cookie required.
+  - `session + admin email` - session cookie plus `ADMIN_EMAIL` match required.
+  - `dev-bypass token` - Bearer `DEV_BYPASS_TOKEN` required.
 - **Origin check.** The `Origin check` field uses `applies` (Origin header must match `APP_URL`, mismatch returns `403 forbidden_origin`), `exempt` (intentionally not checked, justified per endpoint), or `n/a` (non-mutating GET). See [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints).
 - **Rate limit.** Present only on endpoints with a limiter; format is `{count}/{window} per {scope}` plus `fail-open` or `fail-closed`.
 - **Rate-limit failures.** Exhausted buckets return `429` with `Retry-After`; see [REQ-RATE-001 AC 1](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface) and [`security.md`](security.md#rate-limiting).
 - **Implements.** Every endpoint cites the REQ that owns its contract.
+- **Digest timestamp units.** Numeric `published_at`, scrape-run `started_at`/`finished_at`, and `next_scrape_at` in the digest response are Unix seconds, not milliseconds. Nullable timestamps may be `null`; see [`loadTodayPayload`](../../src/lib/digest-today.ts).
+- **Walkthrough scope.** The example below is an authenticated reader API call, not an anonymous endpoint or a traffic ranking. Sign in through the landing page at the same deployment before acquiring its cookie.
 - **Curl pattern.** For any `session`-auth endpoint, copy the cookie value from browser DevTools (Application > Cookies > `__Host-session`) and pass it verbatim. Example against `GET /api/digest/today`:
 
 ```bash
@@ -43,7 +45,7 @@ curl -s https://news.graymatter.ch/api/digest/today \
   -H "Cookie: __Host-session=<paste-cookie-value>" | jq '.articles[0]'
 ```
 
-  The response is a JSON object. A `401` with `"code":"unauthorized"` means the cookie is absent, expired, or was issued by a different deployment (prod cookie sent to integration, or vice versa). Session-auth endpoints in this document share this exact invocation shape — only the path changes.
+  The response is a JSON object. A `401` with `"code":"unauthorized"` means the cookie is absent, expired, or was issued by a different deployment (prod cookie sent to integration, or vice versa). Session-auth endpoints in this document share this exact invocation shape - only the path changes.
 
 ---
 
@@ -60,7 +62,7 @@ GET /
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -82,7 +84,7 @@ GET /404
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -103,7 +105,7 @@ GET /500
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -117,7 +119,7 @@ GET /500
 
 ### POST /api/auth/{provider}/login (Start OAuth flow)
 
-Initiates the OAuth 2.0 / OIDC authorization-code flow. Sets a 10-minute `state` cookie and redirects to the provider's authorize URL. `{provider}` must match the configured registry (`github`, `google`); unknown names return `404`. Both `POST` (preferred — blocks browser link-prefetch races that would otherwise consume the `state` cookie before the user clicks) and `GET` (browser fallback) are accepted. See [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider).
+Initiates the OAuth 2.0 / OIDC authorization-code flow. Sets a 10-minute `state` cookie and redirects to the provider's authorize URL. `{provider}` must match the configured registry (`github`, `google`); unknown names return `404`. Both `POST` (preferred - blocks browser link-prefetch races that would otherwise consume the `state` cookie before the user clicks) and `GET` (browser fallback) are accepted. See [REQ-AUTH-001](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider).
 
 ```
 POST /api/auth/{provider}/login
@@ -133,7 +135,7 @@ GET  /api/auth/{provider}/login
 |---|---|---|---|
 | `provider` | string | yes | One of: `github`, `google` |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -165,7 +167,7 @@ GET /api/auth/{provider}/callback
 | `code` | string | yes | Authorization code from provider |
 | `state` | string | yes | Must match the `state` cookie |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -197,7 +199,7 @@ POST /api/auth/refresh
 **Authentication:** refresh cookie (access JWT need not be valid)
 **Origin check:** applies
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -228,7 +230,7 @@ POST /api/auth/logout
 **Authentication:** session
 **Origin check:** applies
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -264,7 +266,7 @@ POST /api/auth/set-tz
 |---|---|---|---|
 | `tz` | string | yes | IANA timezone (e.g. `Europe/Zurich`) |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -297,7 +299,7 @@ DELETE /api/auth/account
 |---|---|---|---|
 | `confirm` | string | yes | Must equal `"DELETE"` |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -313,7 +315,7 @@ DELETE /api/auth/account
 
 ### POST /api/auth/account (Delete account, form path)
 
-Native form-encoded transport for the same deletion. Used by browsers that do not fire JS-issued `DELETE` requests (Samsung Browser and some in-app webviews — captured live during account-deletion bug-reports; cf. `tests/auth/delete-initial.test.ts`). Same auth, Origin, and confirmation contract as the DELETE path.
+Native form-encoded transport for the same deletion. Used by browsers that do not fire JS-issued `DELETE` requests (Samsung Browser and some in-app webviews - captured live during account-deletion bug-reports; cf. `tests/auth/delete-initial.test.ts`). Same auth, Origin, and confirmation contract as the DELETE path.
 
 ```
 POST /api/auth/account
@@ -328,7 +330,7 @@ POST /api/auth/account
 |---|---|---|---|
 | `confirm` | string | yes | Must equal `"DELETE"` |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -355,7 +357,7 @@ GET /api/settings
 **Authentication:** session
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -387,7 +389,7 @@ PUT /api/settings
 | `model_id` | string | yes | Validated against `MODELS` |
 | `email_enabled` | bool | yes | Daily email opt-in |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -428,7 +430,7 @@ POST /api/settings
 | `model_id` | string | yes | Validated against `MODELS` |
 | `email_enabled` | string (`"on"`) | no | Present when checked, absent when unchecked |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -452,7 +454,7 @@ GET /api/discovery/status
 **Authentication:** session
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -479,7 +481,7 @@ GET /api/digest/today
 **Authentication:** session
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -493,7 +495,7 @@ GET /api/digest/today
   "articles": [{
     "id": "string", "title": "string", "details": ["string"],
     "primary_source_name": "string", "primary_source_url": "string",
-    "published_at": "ISO-8601", "tags": ["string"],
+    "published_at": 1700000000, "tags": ["string"],
     "alt_source_count": 0, "starred": false, "read": false
   }],
   "last_scrape_run": { "id": "string", "started_at": 0, "finished_at": 0, "status": "ready" },
@@ -506,9 +508,9 @@ GET /api/digest/today
 
 **Notes**
 
-`last_scrape_run` and `next_scrape_at` may be `null` before the first cron tick. `next_scrape_at` is derived from the cron schedule (next UTC quadrant-hour boundary `HH:00` where `HH ∈ {0,4,8,12,16,20}`), not from the last run's start time, so a delayed run does not push the next tick out.
+`last_scrape_run` may be `null` before the first ready scrape. `next_scrape_at` is the predicted next tick in Unix seconds. `next_scrape_at` is derived from the cron schedule (next UTC quadrant-hour boundary `HH:00` where `HH ∈ {0,4,8,12,16,20}`), not from the last run's start time, so a delayed run does not push the next tick out.
 
-`scrape_running` is the SSR first-paint indicator for the "Update in progress" banner. It is `true` only when the **most-recent** `scrape_runs` row has `status = 'running'` — the same predicate used by `GET /api/scrape-status`. A stuck older `running` row that coexists with a newer `ready` row does not trigger the banner.
+`scrape_running` is the SSR first-paint indicator for the "Update in progress" banner. It is `true` only when the **most-recent** `scrape_runs` row has `status = 'running'` - the same predicate used by `GET /api/scrape-status`. A stuck older `running` row that coexists with a newer `ready` row does not trigger the banner.
 
 The `alt_source_count` field drives the `+N` suffix on source labels across all card grids.
 
@@ -545,7 +547,7 @@ GET /api/scrape-status
 |---|---|---|---|
 | `run_id` | string (ULID) | no | Pin to a specific run; absent returns most-recent |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -597,7 +599,7 @@ POST /api/articles/:id/star
 |---|---|---|---|
 | `id` | string | yes | Article id |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -630,7 +632,7 @@ DELETE /api/articles/:id/star
 |---|---|---|---|
 | `id` | string | yes | Article id |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -657,7 +659,7 @@ GET /api/starred
 **Authentication:** session
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -688,7 +690,7 @@ PUT /api/tags
 | `tag` | string | yes | Tag to add or remove (normalised server-side) |
 | `action` | string | yes | `"add"` or `"remove"` |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -715,7 +717,7 @@ POST /api/tags/restore
 **Authentication:** session
 **Origin check:** applies
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -740,7 +742,7 @@ POST /api/tags/delete-initial
 **Authentication:** session
 **Origin check:** applies
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -771,7 +773,7 @@ POST /api/dev/login
 **Authentication:** dev-bypass token (`Authorization: Bearer <DEV_BYPASS_TOKEN>`)
 **Origin check:** exempt
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -779,7 +781,7 @@ POST /api/dev/login
 | `401` | Missing Bearer header | `{ error, code: "unauthorized" }` |
 | `404` | Token unset, token mismatch, or `IS_PRODUCTION=true` | Empty |
 
-**Implements:** [REQ-AUTH-001 AC 10](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-AUTH-010](../../sdd/spec/authentication.md#req-auth-010-dev-bypass-production-guard)
 
 **Notes**
 
@@ -798,7 +800,7 @@ POST /api/dev/trigger-scrape
 **Authentication:** dev-bypass token (`Authorization: Bearer <DEV_BYPASS_TOKEN>`)
 **Origin check:** exempt
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -806,7 +808,7 @@ POST /api/dev/trigger-scrape
 | `404` | Token unset, token mismatch, or `IS_PRODUCTION=true` | Empty |
 | `500` | Run insert or enqueue failed | `{ ok: false, error: "start_run_failed" \| "enqueue_failed" }` |
 
-**Implements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-AUTH-001 AC 10](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-PIPE-001](../../sdd/spec/generation.md#req-pipe-001-global-scrape-and-summarise-pipeline-on-a-fixed-cadence), [REQ-AUTH-010](../../sdd/spec/authentication.md#req-auth-010-dev-bypass-production-guard)
 
 **Notes**
 
@@ -827,7 +829,7 @@ GET /sitemap.xml
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -852,7 +854,7 @@ GET /robots.txt
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -873,7 +875,7 @@ GET /llms.txt
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -885,7 +887,7 @@ GET /llms.txt
 
 ### GET /llms-full.txt (Agents policy, extended)
 
-Extended machine-readable agents policy. Superset of `llms.txt` — adds technology stack detail, storage layer, and GDPR basis for withholding per-user content.
+Extended machine-readable agents policy. Superset of `llms.txt` - adds technology stack detail, storage layer, and GDPR basis for withholding per-user content.
 
 ```
 GET /llms-full.txt
@@ -894,7 +896,7 @@ GET /llms-full.txt
 **Authentication:** none
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -923,7 +925,7 @@ GET /api/history
 |---|---|---|---|
 | `date` | string (`YYYY-MM-DD`) | no | Filter to a single local day (used for the "see today" deep-link) |
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|
@@ -969,7 +971,7 @@ GET /api/stats
 **Authentication:** session
 **Origin check:** n/a
 
-**Response**
+**Response:**
 
 | Status | Outcome | Body |
 |---|---|---|

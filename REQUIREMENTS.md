@@ -1,16 +1,16 @@
-# news-digest — requirements (historical)
+# news-digest - requirements (historical)
 
-> **This file is historical context only. Current spec lives at [`sdd/README.md`](sdd/README.md). Current architecture lives at [`documentation/lanes/architecture.md`](documentation/lanes/architecture.md). Requirements drift on this page is expected and not tracked — every product change should land in `sdd/` and `documentation/`, not here.**
+> **This file is historical context only. Current spec lives at [`sdd/README.md`](sdd/README.md). Current architecture lives at [`documentation/lanes/architecture.md`](documentation/lanes/architecture.md). Requirements drift on this page is expected and not tracked - every product change should land in `sdd/` and `documentation/`, not here.**
 
-A personalized daily tech news digest. Sign in with GitHub, pick your interests as hashtags, and get an AI-curated digest once per day at a time you choose. No feeds to manage — hashtags drive what gets scraped.
+A personalized daily tech news digest. Sign in with GitHub, pick your interests as hashtags, and get an AI-curated digest once per day at a time you choose. No feeds to manage - hashtags drive what gets scraped.
 
 ## How it works
 
-1. **Sign in with GitHub** — account is created on first login
-2. **Pick your interests** — tap hashtags from the defaults or type your own
-3. **Set your digest time** — pick exact HH:MM in your timezone; one scheduled generation per day at that moment
-4. **Read** — overview grid with one-line summaries, click any card for the full brief with source link
-5. **Refresh on demand** — manual "refresh now" button any time
+1. **Sign in with GitHub** - account is created on first login
+2. **Pick your interests** - tap hashtags from the defaults or type your own
+3. **Set your digest time** - pick exact HH:MM in your timezone; one scheduled generation per day at that moment
+4. **Read** - overview grid with one-line summaries, click any card for the full brief with source link
+5. **Refresh on demand** - manual "refresh now" button any time
 
 Every digest shows execution time, token count, and estimated cost, so you can see what the LLM actually did.
 
@@ -24,23 +24,23 @@ Every digest shows execution time, token count, and estimated cost, so you can s
 | Database | Cloudflare D1 |
 | Sessions | Stateless JWT in HttpOnly cookie |
 | LLM | Workers AI (user-selectable model) |
-| Scheduling | Cron Trigger every 5 minutes — dispatches per-user generation jobs to a Queue |
-| Queues | `digest-jobs` — cron + manual refresh both enqueue; consumer processes with per-isolate isolation. Natural backpressure under thundering-herd (100 users at 08:00). |
-| Email | Resend — "your daily digest is ready" notification after each scheduled run |
+| Scheduling | Cron Trigger every 5 minutes - dispatches per-user generation jobs to a Queue |
+| Queues | `digest-jobs` - cron + manual refresh both enqueue; consumer processes with per-isolate isolation. Natural backpressure under thundering-herd (100 users at 08:00). |
+| Email | Resend - "your daily digest is ready" notification after each scheduled run |
 | Styling | Tailwind CSS 4 |
-| PWA | `@vite-pwa/astro` — manifest, service worker, install prompt |
+| PWA | `@vite-pwa/astro` - manifest, service worker, install prompt |
 
 ## Content sources
 
 Sources are a combination of **generic search APIs** (query-based, always run) and **dynamically-discovered tag-specific feeds** (authoritative first-party sources for each tag, discovered on first use and cached).
 
-### Generic sources — run for every hashtag
+### Generic sources - run for every hashtag
 
 | Source | Endpoint pattern | Parsing |
 |---|---|---|
 | Hacker News (Algolia) | `hn.algolia.com/api/v1/search_by_date?query={tag}&tags=story&hitsPerPage=30` | `response.json()` |
 | Google News RSS | `news.google.com/rss/search?q={tag}+when:1d&hl=en-US&gl=US&ceid=US:en` | `fast-xml-parser` |
-| Reddit | `reddit.com/search.json?q={tag}&t=day&sort=top&limit=25` | `response.json()` — requires `User-Agent: news-digest/1.0` header |
+| Reddit | `reddit.com/search.json?q={tag}&t=day&sort=top&limit=25` | `response.json()` - requires `User-Agent: news-digest/1.0` header |
 
 ### Dynamic tag-specific source discovery
 
@@ -64,25 +64,25 @@ On every 5-min cron invocation (before generation scheduling):
      ORDER BY MIN(added_at)
      LIMIT 3.
      Picks the 3 oldest distinct tags needing discovery across all users
-     (shared work — each tag discovered once globally, regardless of how
+     (shared work - each tag discovered once globally, regardless of how
      many users queued it).
   2. For each: run LLM + validation, write to `sources:{tag}` KV (no TTL).
      DELETE FROM pending_discoveries WHERE tag = ? (removes from ALL users'
      pending lists at once since discovery is global).
-  3. A stubborn tag (3 consecutive discovery failures — tracked in
+  3. A stubborn tag (3 consecutive discovery failures - tracked in
      `discovery_failures:{tag}` KV) is stored with an empty sources array
      `{ feeds: [], discovered_at: now }` and removed from all pending rows.
 ```
 
-**State machine**: presence of a `(user_id, tag)` row in `pending_discoveries` means "this user is waiting for discovery on this tag". Presence of `sources:{tag}` KV key means "discovered" (the value shape is always `{ feeds: [{name, url, kind}], discovered_at: int }` — empty `feeds` means discovery tried but found nothing). Both stores are strongly consistent.
+**State machine**: presence of a `(user_id, tag)` row in `pending_discoveries` means "this user is waiting for discovery on this tag". Presence of `sources:{tag}` KV key means "discovered" (the value shape is always `{ feeds: [{name, url, kind}], discovered_at: int }` - empty `feeds` means discovery tried but found nothing). Both stores are strongly consistent.
 
-**UI indicator**: `/digest` fetches `/api/discovery/status` which returns `{ pending: [tag, ...] }` — scoped by user via `WHERE user_id = :session_user_id`. While non-empty, a subtle banner shows "Discovering sources for #{tag1}, #{tag2}… Your next digest will include them."
+**UI indicator**: `/digest` fetches `/api/discovery/status` which returns `{ pending: [tag, ...] }` - scoped by user via `WHERE user_id = :session_user_id`. While non-empty, a subtle banner shows "Discovering sources for #{tag1}, #{tag2}… Your next digest will include them."
 
 ### New API
 
 | Method | Path | Response |
 |---|---|---|
-| GET | `/api/discovery/status` | `{ pending: string[] }` — `SELECT tag FROM pending_discoveries WHERE user_id = :session_user_id`; empty array if none |
+| GET | `/api/discovery/status` | `{ pending: string[] }` - `SELECT tag FROM pending_discoveries WHERE user_id = :session_user_id`; empty array if none |
 
 ### First digest after adding a new tag
 
@@ -111,26 +111,26 @@ Discovery procedure:
      stubborn tag.
 ```
 
-### Cache invalidation — validate on failure, not on a timer
+### Cache invalidation - validate on failure, not on a timer
 
 Feed URLs don't rot on a schedule. A blog's RSS feed stays at the same URL for years, then breaks when the site is redesigned or shut down. Time-based TTLs either expire still-working feeds (wasting LLM calls) or keep broken ones too long.
 
 Instead: the digest consumer tracks feed failures inline. If a feed in `sources:{tag}` returns a fetch error or parse error during digest generation, increment an in-memory counter. After 2 consecutive failures across digest runs (tracked in KV `source_health:{url}` with a counter + last_fail_at), the feed is evicted from `sources:{tag}` and the tag is flagged for re-discovery on the next settings save (or via the manual re-discover button).
 
 This approach:
-- Cached sources live as long as they work — zero needless LLM calls
+- Cached sources live as long as they work - zero needless LLM calls
 - Dead feeds get pruned automatically within a few days
 - No time-based cache management code
 
 ### Seed at deploy time (optional)
 
-A one-time `npm run seed-sources` script runs discovery for the default tag set so new users land with rich sources on their first digest. Optional — the system works without seeding.
+A one-time `npm run seed-sources` script runs discovery for the default tag set so new users land with rich sources on their first digest. Optional - the system works without seeding.
 
 ### Generation pipeline consumes both
 
 For each user tag, the digest consumer fetches from both pools in parallel:
 - Generic sources (always)
-- `KV.get('sources:{tag}')` — if present, fan out to those feeds too
+- `KV.get('sources:{tag}')` - if present, fan out to those feeds too
 
 Per-hashtag item cap 30 per source (generics) and 20 per source (tag-specific), canonical-URL dedupe across the combined pool. Total headlines sent to the LLM: capped at **300** (prioritizing tag-specific sources first, then generics).
 
@@ -138,7 +138,7 @@ Per-hashtag item cap 30 per source (generics) and 20 per source (tag-specific), 
 
 | Key | Value | TTL |
 |---|---|---|
-| `sources:{tag}` | `{ feeds: [{ name, url, kind }], discovered_at: int }` — empty `feeds` array means discovered-but-no-results | No TTL (evicted on repeated feed failures) |
+| `sources:{tag}` | `{ feeds: [{ name, url, kind }], discovered_at: int }` - empty `feeds` array means discovered-but-no-results | No TTL (evicted on repeated feed failures) |
 | `source_health:{url}` | `{ consecutive_failures, last_fail_at }` counter per feed URL | 7 days |
 | `discovery_failures:{tag}` | `{ count, last_attempt_at }` | 7 days |
 | `headlines:{source_name}:{tag}` | Cached fetch results from a source for a tag, shared across users | 10 minutes |
@@ -151,7 +151,7 @@ Results are canonicalized and deduplicated (see URL canonicalization below), the
 
 ### URL canonicalization
 
-The consumer never fetches article pages — Workers AI only sees the headline text from search APIs. This eliminates SSRF surface entirely (nothing to redirect-chase).
+The consumer never fetches article pages - Workers AI only sees the headline text from search APIs. This eliminates SSRF surface entirely (nothing to redirect-chase).
 
 URLs from the search APIs are canonicalized **string-only** before dedupe:
 
@@ -160,7 +160,7 @@ URLs from the search APIs are canonicalized **string-only** before dedupe:
 3. Lowercase scheme and host, drop trailing slash on pathname.
 4. Dedupe by canonical URL string. Occasional duplicates across mirror domains are acceptable for a daily digest.
 
-Google News URLs redirect through `news.google.com/articles/...` — the `source_url` stored is the Google News URL itself (the browser handles the redirect to the real publisher when the user clicks). No server-side resolution. Simpler, no SSRF risk.
+Google News URLs redirect through `news.google.com/articles/...` - the `source_url` stored is the Google News URL itself (the browser handles the redirect to the real publisher when the user clicks). No server-side resolution. Simpler, no SSRF risk.
 
 ## Default hashtag proposals
 
@@ -201,12 +201,12 @@ export type ModelOption = {
 export const DEFAULT_MODEL_ID = '@cf/meta/llama-3.1-8b-instruct-fp8-fast';
 
 export const MODELS: ModelOption[] = [
-  // Featured — quality first
+  // Featured - quality first
   { id: '@cf/moonshotai/kimi-k2.6', name: 'Kimi K2.6', description: 'Frontier-scale MoE (1T params, 32B active) from Moonshot AI', inputPricePerMtok: 0, outputPricePerMtok: 0, category: 'featured' },
   { id: '@cf/moonshotai/kimi-k2.5', name: 'Kimi K2.5', description: 'Open-source 256k-context large model', inputPricePerMtok: 0, outputPricePerMtok: 0, category: 'featured' },
   { id: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', name: 'Llama 3.3 70B', description: 'Strongest Meta model, fast FP8 variant', inputPricePerMtok: 0.293, outputPricePerMtok: 2.253, category: 'featured' },
   { id: '@cf/meta/llama-3.1-8b-instruct-fp8-fast', name: 'Llama 3.1 8B Fast', description: 'Default. Good quality at low cost.', inputPricePerMtok: 0.045, outputPricePerMtok: 0.384, category: 'featured' },
-  // Budget — cheapest viable options
+  // Budget - cheapest viable options
   { id: '@cf/meta/llama-3.2-1b-instruct', name: 'Llama 3.2 1B', description: 'Cheapest option. Short summaries only.', inputPricePerMtok: 0.027, outputPricePerMtok: 0.201, category: 'budget' },
   { id: '@cf/mistral/mistral-7b-instruct-v0.1', name: 'Mistral 7B', description: 'Balanced small model', inputPricePerMtok: 0.110, outputPricePerMtok: 0.190, category: 'budget' },
   { id: '@cf/meta/llama-3.2-3b-instruct', name: 'Llama 3.2 3B', description: 'Small Meta model', inputPricePerMtok: 0.051, outputPricePerMtok: 0.335, category: 'budget' },
@@ -222,25 +222,25 @@ Dropdown groups by category: "Featured" at top, "Budget" below. Each option show
 
 ### Validation
 
-Server-side validation: `model_id` submitted by the client must appear in `MODELS` — reject 400 otherwise. No catalog fetch, no cold-start path, no 503. The list IS the source of truth.
+Server-side validation: `model_id` submitted by the client must appear in `MODELS` - reject 400 otherwise. No catalog fetch, no cold-start path, no 503. The list IS the source of truth.
 
 ### Maintenance
 
-To add a model: grab the ID from Cloudflare's Workers AI catalog, check pricing at [the pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/), add an entry to the array, deploy. Kimi K2 prices are not yet published in Cloudflare's per-token table at the time of this spec — set from the changelog / documentation when available.
+To add a model: grab the ID from Cloudflare's Workers AI catalog, check pricing at [the pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/), add an entry to the array, deploy. Kimi K2 prices are not yet published in Cloudflare's per-token table at the time of this spec - set from the changelog / documentation when available.
 
 ## Pages
 
 | Route | Purpose |
 |---|---|
 | `/` | Landing page with "Sign in with GitHub" |
-| `/settings` | Unified onboarding + settings. On `?first_run=1`, shows a "Welcome — let's set up your first digest" hero and the submit button reads "Generate my first digest". Once `hashtags_json` and `digest_hour` are set, `?first_run=1` is ignored and normal edit-mode renders (with logout, account deletion, install-app prompt) |
-| `/digest` | Today's digest — card grid with one-line summaries, "Refresh now" button, execution/cost footer |
-| `/digest/:id/:slug` | Article detail — longer summary with critical points and source link |
+| `/settings` | Unified onboarding + settings. On `?first_run=1`, shows a "Welcome - let's set up your first digest" hero and the submit button reads "Generate my first digest". Once `hashtags_json` and `digest_hour` are set, `?first_run=1` is ignored and normal edit-mode renders (with logout, account deletion, install-app prompt) |
+| `/digest` | Today's digest - card grid with one-line summaries, "Refresh now" button, execution/cost footer |
+| `/digest/:id/:slug` | Article detail - longer summary with critical points and source link |
 | `/history` | Past digests, newest first, 30 per page with a simple "Load more" button |
 
 ## Design system
 
-Swiss-minimal aesthetic. Generous whitespace, restricted palette, no gradients, no drop shadows, one accent color. Content is the UI — chrome fades away.
+Swiss-minimal aesthetic. Generous whitespace, restricted palette, no gradients, no drop shadows, one accent color. Content is the UI - chrome fades away.
 
 - **Typography**: system font stack (`-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif`). Five sizes only: `12, 14, 16, 20, 32px`. Two weights: 400 (body) and 600 (headings, labels).
 - **Palette**: neutral grays + one accent. Defined as CSS custom properties on `:root` and `[data-theme="dark"]`. Tokens: `--bg`, `--surface`, `--text`, `--text-muted`, `--border`, `--accent`.
@@ -310,7 +310,7 @@ In the root layout:
 ### Install prompt
 
 - **Android / desktop Chrome**: listen for `beforeinstallprompt`, stash the event, show an "Install app" button on `/settings`. OS handles repeat-prompt suppression; no per-user state tracking.
-- **iOS Safari**: no programmatic prompt available — show a one-time instructional note ("Tap the share icon, then Add to Home Screen") when the app loads on iOS in a non-standalone context.
+- **iOS Safari**: no programmatic prompt available - show a one-time instructional note ("Tap the share icon, then Add to Home Screen") when the app loads on iOS in a non-standalone context.
 
 ## Mobile & responsive
 
@@ -329,7 +329,7 @@ Mobile-first layout. Looks native on iOS, Android, and desktop without compromis
 
 ## Onboarding flow
 
-No dedicated `/onboarding` route. `/settings` IS the onboarding — the same form component renders in "first-run" or "edit" mode based on whether the user has completed initial setup.
+No dedicated `/onboarding` route. `/settings` IS the onboarding - the same form component renders in "first-run" or "edit" mode based on whether the user has completed initial setup.
 
 ```
 1. GitHub OAuth callback creates the users row (id, email, gh_login, tz='UTC'
@@ -344,14 +344,14 @@ No dedicated `/onboarding` route. `/settings` IS the onboarding — the same for
 4. Client posts tz to /api/auth/set-tz on load (validated server-side against
    Intl.supportedValuesOf('timeZone')).
 5. Form sections (rendered identically in both modes):
-   a. Interests — default hashtag chips, custom text input, min 1 required
-   b. Schedule — HH:MM time picker (native <input type="time">). Timezone
-      shown with a link "detected Europe/Zurich — change" that opens an
+   a. Interests - default hashtag chips, custom text input, min 1 required
+   b. Schedule - HH:MM time picker (native <input type="time">). Timezone
+      shown with a link "detected Europe/Zurich - change" that opens an
       IANA zone dropdown.
-   c. Model — dropdown populated from the `MODELS` constant (grouped
+   c. Model - dropdown populated from the `MODELS` constant (grouped
       "Featured" / "Budget"), default pre-selected, collapsible "Advanced"
       disclosure hides this by default.
-   d. Email notifications — a single toggle "Email me when my daily digest
+   d. Email notifications - a single toggle "Email me when my daily digest
       is ready" (default on), collapsible "Advanced" section along with Model.
 6. On submit: server validates every field (tz in IANA list, model_id in
    MODELS list from src/lib/models.ts, hashtags against regex). UPDATE users. For first-run,
@@ -361,11 +361,11 @@ No dedicated `/onboarding` route. `/settings` IS the onboarding — the same for
 
 ### Middleware gating
 
-Every authenticated request checks: if `hashtags_json IS NULL OR digest_hour IS NULL` AND path is not `/settings` or an auth route → redirect to `/settings?first_run=1`. Gating is based on "settings incomplete", not "first digest not yet generated" — a user whose first digest fails is not trapped.
+Every authenticated request checks: if `hashtags_json IS NULL OR digest_hour IS NULL` AND path is not `/settings` or an auth route → redirect to `/settings?first_run=1`. Gating is based on "settings incomplete", not "first digest not yet generated" - a user whose first digest fails is not trapped.
 
 ### Timezone handling
 
-Captured at first login from the browser via `Intl.DateTimeFormat().resolvedOptions().timeZone` and stored on the users row. Editable in `/settings` (dropdown of common IANA zones + search), because users travel and the app should not require re-login to adjust. On every authenticated page load, the browser's current tz is compared to the stored value; if they differ, a one-time non-blocking banner offers "Detected Europe/Paris — update your setting?".
+Captured at first login from the browser via `Intl.DateTimeFormat().resolvedOptions().timeZone` and stored on the users row. Editable in `/settings` (dropdown of common IANA zones + search), because users travel and the app should not require re-login to adjust. On every authenticated page load, the browser's current tz is compared to the stored value; if they differ, a one-time non-blocking banner offers "Detected Europe/Paris - update your setting?".
 
 All scheduling math uses the stored tz via `Intl.DateTimeFormat` with the `timeZone` option (part of the Workers runtime, no external library needed). DST is handled by computing the next wall-clock hour in the user's tz and converting to UTC via `Intl`.
 
@@ -452,7 +452,7 @@ CREATE INDEX idx_pending_discoveries_tag ON pending_discoveries(tag);
 ### ID and slug generation
 
 - `digests.id` and `articles.id`: **ULID** (26-char Crockford-base32, sortable by creation time). Generated in-process via a small helper.
-- `articles.slug`: derived from `title` — lowercase, replace non-`[a-z0-9]` runs with `-`, trim hyphens, truncate to 60 chars. On the rare collision within the same digest (same two titles slugify to the same string), append `-2`, `-3`, etc. The `UNIQUE(digest_id, slug)` index enforces uniqueness.
+- `articles.slug`: derived from `title` - lowercase, replace non-`[a-z0-9]` runs with `-`, trim hyphens, truncate to 60 chars. On the rare collision within the same digest (same two titles slugify to the same string), append `-2`, `-3`, etc. The `UNIQUE(digest_id, slug)` index enforces uniqueness.
 
 ### Migrations
 
@@ -460,14 +460,14 @@ Schema evolution managed via `wrangler d1 migrations`. Migration files live in `
 
 ## Authentication
 
-Custom implementation, no third-party auth library. Pattern lifted from the codeflare repo — proven, ~250 lines of TypeScript, zero ORM or dependency churn.
+Custom implementation, no third-party auth library. Pattern lifted from the codeflare repo - proven, ~250 lines of TypeScript, zero ORM or dependency churn.
 
 ### Flow
 
 ```
 /api/auth/github/login
   1. Generate 32 random bytes via crypto.getRandomValues(), base64url-encoded
-     (not a UUID — stronger entropy, no structural pattern)
+     (not a UUID - stronger entropy, no structural pattern)
   2. Set oauth_state cookie (HttpOnly, Secure, SameSite=Lax, Path=/, 5 min TTL)
   3. Redirect to github.com/login/oauth/authorize with client_id, redirect_uri,
      scope=user:email, state
@@ -485,12 +485,12 @@ Custom implementation, no third-party auth library. Pattern lifted from the code
      id as TEXT.
   5. Sign HMAC-SHA256 JWT with claims
      { sub: users.id, ghl: gh_login, sv: users.session_version, iat, exp }.
-     sv is the session_version at issue time — validation rejects JWTs whose
+     sv is the session_version at issue time - validation rejects JWTs whose
      sv does not match the current users.session_version.
   6. Set __Host-news_digest_session cookie (HttpOnly, Secure, SameSite=Lax,
      Path=/, no Domain attribute, 1h TTL)
   7. Redirect to /settings?first_run=1 (the app hosts both onboarding and
-     settings on a single /settings route — first_run=1 makes the "Welcome"
+     settings on a single /settings route - first_run=1 makes the "Welcome"
      hero visible and changes the submit button label).
 
 Tz is NOT carried through the OAuth callback URL (keeps it out of access
@@ -501,7 +501,7 @@ validates it against Intl.supportedValuesOf('timeZone') and UPDATEs users.tz.
 /api/auth/github/logout
   1. UPDATE users SET session_version = session_version + 1 WHERE id = :sub
      (invalidates every outstanding JWT for this user, including any stolen
-     one — a single DB write is the revocation mechanism).
+     one - a single DB write is the revocation mechanism).
   2. Clear __Host-news_digest_session cookie (Max-Age=0).
   3. Redirect to /?logged_out=1. The landing page's own script calls
      caches.delete('digest-cache-v1') on load when that query param is
@@ -511,7 +511,7 @@ validates it against Intl.supportedValuesOf('timeZone') and UPDATEs users.tz.
 
 ### Cookie hardening
 
-- Cookie name uses the **`__Host-` prefix** — browser enforces `Secure`, `Path=/`, and no `Domain` attribute. This blocks entire classes of cookie-injection attacks (e.g., a subdomain setting a cookie that shadows ours).
+- Cookie name uses the **`__Host-` prefix** - browser enforces `Secure`, `Path=/`, and no `Domain` attribute. This blocks entire classes of cookie-injection attacks (e.g., a subdomain setting a cookie that shadows ours).
 - Full attribute set: `__Host-news_digest_session=<jwt>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=3600`.
 - `SameSite=Lax` (not `Strict`) because we need the cookie to accompany the redirect back from GitHub OAuth.
 
@@ -529,13 +529,13 @@ Every protected Astro route and API endpoint calls a shared helper that:
 2. Verifies the HMAC signature with `OAUTH_JWT_SECRET` (constant-time compare).
 3. Checks `exp` is in the future.
 4. Loads the user row from D1 via `users.id = jwt.sub`.
-5. Checks `jwt.sv === users.session_version` — rejects otherwise (revoked token).
+5. Checks `jwt.sv === users.session_version` - rejects otherwise (revoked token).
 
 Unauthenticated requests redirect to `/`.
 
 ### Rate limiting on authentication endpoints
 
-`/api/auth/github/login` and `/api/auth/github/callback` are protected by a Cloudflare WAF rate-limiting rule (configured out-of-band, not in application code): 10 requests/minute per source IP. Prevents account-creation loops and state-cookie flooding. Application-level rate limiting on Workers requires a KV counter per IP, which is noisy — platform WAF is the right layer.
+`/api/auth/github/login` and `/api/auth/github/callback` are protected by a Cloudflare WAF rate-limiting rule (configured out-of-band, not in application code): 10 requests/minute per source IP. Prevents account-creation loops and state-cookie flooding. Application-level rate limiting on Workers requires a KV counter per IP, which is noisy - platform WAF is the right layer.
 
 ### Session auto-refresh
 
@@ -550,7 +550,7 @@ Failures redirect to `/?error={code}` with one of these allowlisted codes; the l
 | `access_denied` | User clicked "Cancel" on GitHub's consent screen |
 | `no_verified_email` | User has no primary + verified email on GitHub |
 | `invalid_state` | CSRF state mismatch (possible forgery or expired flow) |
-| `oauth_error` | Any other GitHub error — details logged server-side, user sees generic message |
+| `oauth_error` | Any other GitHub error - details logged server-side, user sees generic message |
 
 ### Account deletion
 
@@ -566,21 +566,21 @@ Deployed via `wrangler secret put`:
 | `OAUTH_CLIENT_SECRET` | GitHub OAuth App client secret |
 | `OAUTH_JWT_SECRET` | Random 32+ char string for HMAC signing |
 | `RESEND_API_KEY` | Resend API key (starts with `re_`) for sending digest-ready notification emails |
-| `RESEND_FROM` | Sender address for Resend, e.g., `News Digest <digest@yourdomain.com>` — must match a verified domain |
-| `APP_URL` | Canonical app URL (e.g., `https://digest.yourdomain.com`) — used in email CTAs |
+| `RESEND_FROM` | Sender address for Resend, e.g., `News Digest <digest@yourdomain.com>` - must match a verified domain |
+| `APP_URL` | Canonical app URL (e.g., `https://digest.yourdomain.com`) - used in email CTAs |
 
 ### Why no auth library
 
-- Single provider (GitHub), no passwords, no 2FA, no passkeys, no teams — library features we'd never use
+- Single provider (GitHub), no passwords, no 2FA, no passkeys, no teams - library features we'd never use
 - Stateless JWT + 1h TTL means a stolen token dies quickly even without a revocation list
 - No ORM dependency pulled in by Better Auth / Auth.js adapters
-- If scope later demands multi-provider, passkeys, or session management UI, a one-day migration to Better Auth is bounded — not worth paying that cost up front
+- If scope later demands multi-provider, passkeys, or session management UI, a one-day migration to Better Auth is bounded - not worth paying that cost up front
 
 ## Generation pipeline
 
 Producer/consumer architecture. Cron and the refresh API both **enqueue** messages to `digest-jobs`; the **consumer** processes them with Cloudflare Queues' built-in concurrency and backpressure. Handles the 100-users-at-08:00 thundering herd naturally.
 
-### Cron (every 5 minutes) — dispatcher only
+### Cron (every 5 minutes) - dispatcher only
 
 ```
 1. Cron fires at HH:MM where MM % 5 == 0.
@@ -595,7 +595,7 @@ Producer/consumer architecture. Cron and the refresh API both **enqueue** messag
       users' pending lists since discovery is global).
 3. Scheduling pass: for each distinct tz in users:
    a. Compute local_time = now_utc in this tz.
-   b. Window = [floor(minute/5)*5, +5) — half-open, non-overlapping.
+   b. Window = [floor(minute/5)*5, +5) - half-open, non-overlapping.
    c. Query:
       SELECT id FROM users
       WHERE hashtags_json IS NOT NULL
@@ -606,12 +606,12 @@ Producer/consumer architecture. Cron and the refresh API both **enqueue** messag
              OR last_generated_local_date != ?)
    d. For each matched user, enqueue { trigger: 'scheduled', user_id,
       local_date } to `digest-jobs`. Use sendBatch for efficiency.
-4. Cron returns quickly for the dispatch step itself (scheduling pass is <1s — it only runs SELECTs and sendBatch). Maintenance passes (step 2) can take longer: the stuck-digest sweeper is fast (<100ms), but the discovery processor can take up to ~45s when 3 tags are pending (one LLM call + up to 5 validation GETs each). Total cron wall time is bounded at ~1 min on a busy invocation, well within the 15-min budget.
+4. Cron returns quickly for the dispatch step itself (scheduling pass is <1s - it only runs SELECTs and sendBatch). Maintenance passes (step 2) can take longer: the stuck-digest sweeper is fast (<100ms), but the discovery processor can take up to ~45s when 3 tags are pending (one LLM call + up to 5 validation GETs each). Total cron wall time is bounded at ~1 min on a busy invocation, well within the 15-min budget.
 ```
 
 ### Consumer (`digest-jobs` handler)
 
-Runs with Cloudflare Queues' default concurrency (10 concurrent messages). Each message runs in its own isolate — no shared-memory OOM risk. Backpressure is automatic: 100 messages enqueued at 08:00 process over ~10 minutes naturally.
+Runs with Cloudflare Queues' default concurrency (10 concurrent messages). Each message runs in its own isolate - no shared-memory OOM risk. Backpressure is automatic: 100 messages enqueued at 08:00 process over ~10 minutes naturally.
 
 ```
 For each message { trigger, user_id, local_date, digest_id? }:
@@ -645,7 +645,7 @@ Handler enqueues and returns immediately. Same consumer handles it.
 Client polls /api/digest/:id as before.
 ```
 
-### `generateDigest(user, trigger, digestId?)` — the one function
+### `generateDigest(user, trigger, digestId?)` - the one function
 
 ```
 1. If called from cron (no digestId passed):
@@ -659,10 +659,10 @@ Client polls /api/digest/:id as before.
    - Feeds cached under KV key `sources:{tag}`
    Per-source 5s timeout, 1MB body cap, 30 items (generic) / 20 items
    (tag-specific) per feed. Global concurrency cap 10 across all fetches.
-   **Before each fetch**, check KV `headlines:{source_name}:{tag}` — if
+   **Before each fetch**, check KV `headlines:{source_name}:{tag}` - if
    present, use cached results and skip the fetch. Cache TTL 10 minutes.
    At 100 users sharing common tags, cache hit rate is high during hot
-   windows (08:00 etc.) — cuts redundant fetches by ~10-20x.
+   windows (08:00 etc.) - cuts redundant fetches by ~10-20x.
 3. Canonicalize + dedupe URLs. Cap pool at 300 headlines, tag-specific first.
 4. Single Workers AI call using the prompts from src/lib/prompts.ts
    (see "LLM prompts" section below).
@@ -671,8 +671,8 @@ Client polls /api/digest/:id as before.
 6. For each article in the response: strip HTML tags, strip control chars,
    collapse whitespace on title, one_liner, and each bullet in details.
    Store bullets as JSON array in articles.details_json. Client renders
-   as <ul><li>{bullet}</li></ul> with textContent — XSS-safe by construction.
-7-9. Atomic final write via `db.batch([...])` — D1 runs all statements
+   as <ul><li>{bullet}</li></ul> with textContent - XSS-safe by construction.
+7-9. Atomic final write via `db.batch([...])` - D1 runs all statements
    in a single transaction. One call, all-or-nothing:
    - INSERT articles (one statement per article, prepared in bulk)
    - UPDATE digests SET status='ready', execution_ms, tokens_in, tokens_out,
@@ -683,12 +683,12 @@ Client polls /api/digest/:id as before.
 10. If trigger='scheduled' AND user.email_enabled: send Resend email.
 11. All steps wrapped in try/catch. On exception: UPDATE digests
     SET status='failed', error_code=<sanitized> WHERE id=?. Log full error
-    to console.log JSON. No automatic retry — user can click Refresh.
+    to console.log JSON. No automatic retry - user can click Refresh.
 ```
 
 ### Manual refresh rate limits
 
-Triggered from the UI "Refresh now" button. Rate limits are enforced atomically in a single conditional UPDATE on the users row. Concurrent requests from the same user cannot both pass — the UPDATE returns 0 affected rows when the limit is hit:
+Triggered from the UI "Refresh now" button. Rate limits are enforced atomically in a single conditional UPDATE on the users row. Concurrent requests from the same user cannot both pass - the UPDATE returns 0 affected rows when the limit is hit:
 
 ```sql
 UPDATE users SET
@@ -707,12 +707,12 @@ Zero rows returned → rate-limited (return 429 with `retry_after_seconds`). One
 
 ### Rate-limit UX
 
-When rejected, the API returns `429` with a JSON body `{ error, retry_after_seconds, reason }`. The UI shows a non-blocking toast: "You've hit today's refresh limit — try again in 4h 12m" or "Hold on — you can refresh again in 2:30". The refresh button disables with a live countdown until the cooldown expires.
+When rejected, the API returns `429` with a JSON body `{ error, retry_after_seconds, reason }`. The UI shows a non-blocking toast: "You've hit today's refresh limit - try again in 4h 12m" or "Hold on - you can refresh again in 2:30". The refresh button disables with a live countdown until the cooldown expires.
 
 ### Retry strategy
 
 - **Per-source fetch failures**: skip the failing source, proceed with whatever succeeded. Only if ALL sources fail for ALL hashtags → digest status='failed' with error_code='all_sources_failed'.
-- **LLM failures**: mark digest failed with error_code='llm_failed'. No automatic retry — the user can click Refresh to try again.
+- **LLM failures**: mark digest failed with error_code='llm_failed'. No automatic retry - the user can click Refresh to try again.
 - **No durable retry**. We accept this tradeoff for simplicity: the failure window is narrow (transient LLM hiccups are rare), and users get immediate visual feedback + a Refresh button. No Queue retry machinery.
 
 ### Stuck `in_progress` sweeper
@@ -725,7 +725,7 @@ SET status = 'failed', error_code = 'generation_stalled'
 WHERE status = 'in_progress' AND generated_at < :now - 600;
 ```
 
-10-minute staleness threshold — longer than any legitimate generation, short enough that users see a failure and can retry within 10 minutes of the crash.
+10-minute staleness threshold - longer than any legitimate generation, short enough that users see a failure and can retry within 10 minutes of the crash.
 
 ### Cron/queue race prevention
 
@@ -746,20 +746,20 @@ The `error_code` column stores only sanitized short codes (e.g., `llm_timeout`, 
 
 ### Loading and error states
 
-These are first-class design surfaces, not afterthoughts. Generation takes 2–10 seconds typically, longer on large models — the user should never stare at a blank screen.
+These are first-class design surfaces, not afterthoughts. Generation takes 2–10 seconds typically, longer on large models - the user should never stare at a blank screen.
 
 **Live generation indicator** (while a digest is being built, whether first-run, scheduled, or manual refresh):
 
 - Full-width indeterminate progress bar at the top of `/digest` with the label "Generating your digest…".
 - 10 card skeletons matching real card dimensions (no layout shift when real cards arrive). Shimmer sweep at 1.4s linear gradient, disabled under reduced-motion.
-- Footer shows a running clock: "Generating — 3.2s elapsed". Snaps to final execution_ms + token count + cost on completion.
+- Footer shows a running clock: "Generating - 3.2s elapsed". Snaps to final execution_ms + token count + cost on completion.
 - Client polls `GET /api/digest/:id` every 5 seconds until `status='ready'` (render cards with a staggered fade-in) or `status='failed'` (render the error page layout). Polling stops immediately on status change.
 
-**First-run loading**: identical to above but with a welcome message above the rail — "Welcome, @gh_login. Your first digest is on the way."
+**First-run loading**: identical to above but with a welcome message above the rail - "Welcome, @gh_login. Your first digest is on the way."
 
-**Pending-today state** (user opens `/digest` before today's scheduled time, no live generation in progress): page shows the most recent completed digest (usually yesterday's) with a subtle banner at top: "Next digest scheduled at 08:00 — in 3h 12m. You can also [refresh now]." Banner derives from `/api/digest/today` `next_scheduled_at`. This avoids the silently-bad UX of showing yesterday's content with no indication that today's is coming.
+**Pending-today state** (user opens `/digest` before today's scheduled time, no live generation in progress): page shows the most recent completed digest (usually yesterday's) with a subtle banner at top: "Next digest scheduled at 08:00 - in 3h 12m. You can also [refresh now]." Banner derives from `/api/digest/today` `next_scheduled_at`. This avoids the silently-bad UX of showing yesterday's content with no indication that today's is coming.
 
-**No stories today**: defined as the LLM returning fewer than 3 articles (post-parsing, post-sanitization). Triggers the "No stories today — try broader hashtags" error page. 3 articles is the minimum threshold because a digest with 1–2 articles looks broken.
+**No stories today**: defined as the LLM returning fewer than 3 articles (post-parsing, post-sanitization). Triggers the "No stories today - try broader hashtags" error page. 3 articles is the minimum threshold because a digest with 1–2 articles looks broken.
 
 **Error pages**: dedicated Astro route components, not inline banners. Every error state uses the same layout (centered content, one-line headline, short explanation, one primary action, one secondary action) for consistency.
 
@@ -768,13 +768,13 @@ These are first-class design surfaces, not afterthoughts. Generation takes 2–1
 | `status='failed'` (generation error) | "We couldn't build your digest" | "Something went wrong on our side. Your settings are safe." | "Try again" (re-triggers pipeline) | "Go to settings" |
 | All sources returned zero results | "No stories today" | "None of your hashtags matched fresh articles in the last 24 hours. Try broader tags." | "Edit hashtags" | "Refresh anyway" |
 | Rate-limited manual refresh | "Slow down a little" | "You've already refreshed X times today. Next refresh available in Yh Zm." | (disabled until cooldown, live countdown) | "Go to today's digest" |
-| Offline | "You're offline" | "Showing the last digest you viewed. We'll reconnect when you're back." | (none — banner is non-modal) | "Retry now" |
+| Offline | "You're offline" | "Showing the last digest you viewed. We'll reconnect when you're back." | (none - banner is non-modal) | "Retry now" |
 | 404 (missing digest) | "Digest not found" | "This digest doesn't exist or has been deleted." | "Today's digest" | "History" |
 | 500 (unhandled server error) | "Something broke" | "We've logged it. Try again in a moment." | "Retry" | "Go home" |
 | Auth failure (expired/revoked session) | "You've been signed out" | "Sign back in to continue." | "Sign in with GitHub" | (none) |
 | OAuth error (`access_denied`, `no_verified_email`, etc.) | Mapped from error code | Human-readable match for the code | "Try again" | "Help" |
 
-**Visual treatment** of error pages: no illustrations, no emoji, no exclamation marks. A single icon (16–20px) in the accent color next to the headline, generous whitespace, monospace for any error code shown in a muted footer. The tone is calm and matter-of-fact — errors happen, the app handles them.
+**Visual treatment** of error pages: no illustrations, no emoji, no exclamation marks. A single icon (16–20px) in the accent color next to the headline, generous whitespace, monospace for any error code shown in a muted footer. The tone is calm and matter-of-fact - errors happen, the app handles them.
 
 ## LLM prompts
 
@@ -784,13 +784,13 @@ All prompts live in `src/lib/prompts.ts`. Kept in one file so iteration is easy 
 
 ```ts
 export const LLM_PARAMS = {
-  temperature: 0.2,          // low — summaries should be consistent, not creative
+  temperature: 0.2,          // low - summaries should be consistent, not creative
   max_tokens: 4096,          // hard cap to prevent runaway generation
   response_format: { type: 'json_object' },  // force JSON on models that support it
 };
 ```
 
-Workers AI returns the response body directly; we parse as JSON with `JSON.parse`. On parse failure, the digest is marked `status='failed', error_code='llm_invalid_json'` — no retry.
+Workers AI returns the response body directly; we parse as JSON with `JSON.parse`. On parse failure, the digest is marked `status='failed', error_code='llm_invalid_json'` - no retry.
 
 ### Digest generation prompt
 
@@ -802,7 +802,7 @@ Rules:
 - All strings are PLAINTEXT. No HTML, no Markdown syntax, no inline links.
 - Rank by relevance to the user's interests, then by recency.
 - Skip duplicates, press releases with no substance, and pure advertising.
-- If fewer than 10 good matches exist, return fewer — do not pad with weak results.`;
+- If fewer than 10 good matches exist, return fewer - do not pad with weak results.`;
 
 export function digestUserPrompt(hashtags: string[], headlines: Headline[]) {
   return `User interests (hashtags):
@@ -831,7 +831,7 @@ Each bullet is a complete plaintext sentence covering a critical point. Exactly 
 }
 ```
 
-Fencing (triple backticks) around user-controlled data (hashtags, headlines) limits prompt-injection blast radius — instructions from a hostile article title get read as data, not instructions.
+Fencing (triple backticks) around user-controlled data (hashtags, headlines) limits prompt-injection blast radius - instructions from a hostile article title get read as data, not instructions.
 
 ### Source discovery prompt
 
@@ -842,7 +842,7 @@ Rules:
 - Return strict JSON only.
 - Only suggest feeds you are highly confident exist at the given URL. Do NOT guess.
 - Prefer official blogs, release notes, and changelogs over third-party news sites.
-- If you are unsure about a feed, omit it — returning fewer correct URLs is better than more guessed URLs.`;
+- If you are unsure about a feed, omit it - returning fewer correct URLs is better than more guessed URLs.`;
 
 export function discoveryUserPrompt(tag: string) {
   return `Topic: #${tag}
@@ -862,18 +862,18 @@ Return up to 5 authoritative feed URLs as:
 
 - Easy to audit for prompt injection handling (all fencing in one place)
 - Easy to iterate when tuning quality
-- Easy to version — changing a prompt is a commit; each revision is a rollback point
-- No per-user prompt customization in MVP — that's a product-level feature decision, not user-tunable
+- Easy to version - changing a prompt is a commit; each revision is a rollback point
+- No per-user prompt customization in MVP - that's a product-level feature decision, not user-tunable
 
 ## Email notifications (Resend)
 
-After every successful scheduled digest (not manual refreshes — the user already saw the result when they clicked), send a "your daily digest is ready" email via Resend. One email per user per day.
+After every successful scheduled digest (not manual refreshes - the user already saw the result when they clicked), send a "your daily digest is ready" email via Resend. One email per user per day.
 
 ### When it fires
 
 Immediately after the consumer commits `status='ready'` for a `trigger='scheduled'` digest AND `users.email_enabled=1`. Manual refreshes do not trigger email. Failed digests do not trigger email. Users who toggle email off in settings never receive one.
 
-Email sending is best-effort: if the Resend API call fails, log the error and continue. The digest itself is still available in the app — email is convenience, not core functionality.
+Email sending is best-effort: if the Resend API call fails, log the error and continue. The digest itself is still available in the app - email is convenience, not core functionality.
 
 ### Email template
 
@@ -960,7 +960,7 @@ The deploy GitHub Actions workflow syncs both into the Worker:
     CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 ```
 
-File-redirect form (not pipe) per the standard secret-injection pattern — pipes can silently store empty values in some CI environments.
+File-redirect form (not pipe) per the standard secret-injection pattern - pipes can silently store empty values in some CI environments.
 
 ### Sender domain
 
@@ -978,13 +978,13 @@ Values come from the `execution_ms`, `tokens_in + tokens_out`, and `model_id` co
 
 ## Motion & polish
 
-High-class polish is part of the MVP, not a later pass. Every transition has a purpose — orient the user, mask latency, or reward an action. All motion respects `prefers-reduced-motion: reduce` and collapses to instant state changes.
+High-class polish is part of the MVP, not a later pass. Every transition has a purpose - orient the user, mask latency, or reward an action. All motion respects `prefers-reduced-motion: reduce` and collapses to instant state changes.
 
 ### Foundations
 
 - **Easing**: one curve everywhere, `cubic-bezier(0.22, 1, 0.36, 1)` (sharp start, soft finish). Durations: 150ms (micro), 250ms (component), 400ms (page).
 - **Astro View Transitions API**: enabled globally. Route changes cross-fade by default; specific elements use `transition:name` for shared-element morphs (digest card → article detail view).
-- **No motion library**: pure CSS + Astro's built-in transitions. If a specific interaction needs more (spring physics, FLIP), add `motion` (Motion One, ~3KB) — not Framer Motion.
+- **No motion library**: pure CSS + Astro's built-in transitions. If a specific interaction needs more (spring physics, FLIP), add `motion` (Motion One, ~3KB) - not Framer Motion.
 
 ### Cascading content reveals
 
@@ -1002,7 +1002,7 @@ High-class polish is part of the MVP, not a later pass. Every transition has a p
 
 - **Buttons**: `transform: scale(0.97)` on `:active`, 100ms.
 - **Hashtag chips**: selecting scales from 1 → 1.1 → 1, with accent color fill sweeping in from left to right (150ms).
-- **Theme toggle**: instant swap of the `data-theme` attribute with a 150ms cross-fade on the `color` and `background-color` properties. No circular wipe — View Transitions API for this single element adds complexity without proportionate value.
+- **Theme toggle**: instant swap of the `data-theme` attribute with a 150ms cross-fade on the `color` and `background-color` properties. No circular wipe - View Transitions API for this single element adds complexity without proportionate value.
 - **Card hover (desktop)**: lift 2px + border shifts to accent color, 200ms.
 - **Link underlines**: animate stroke from 0 to 100% width on hover, 200ms.
 
@@ -1014,7 +1014,7 @@ High-class polish is part of the MVP, not a later pass. Every transition has a p
 ### Page transitions
 
 - **Route changes**: Astro View Transitions cross-fade at 250ms.
-- **Digest card → Article detail**: shared-element morph — the card expands into the detail view's hero block using View Transitions' `transition:name`. Back button reverses it.
+- **Digest card → Article detail**: shared-element morph - the card expands into the detail view's hero block using View Transitions' `transition:name`. Back button reverses it.
 - **Route failures**: full-screen fade to a minimal error state with a "return home" action.
 
 ### Cut from scope (previously specified, removed as decorative)
@@ -1041,9 +1041,9 @@ All mutating endpoints require an authenticated session (valid `__Host-news_dige
 
 | Method | Path | Request | Response | Errors |
 |---|---|---|---|---|
-| GET | `/api/auth/github/login` | — | 302 to github.com; sets `oauth_state` cookie | — |
-| GET | `/api/auth/github/callback?code&state` | — | 302 to `/settings?first_run=1` or `/digest`; sets session cookie | 403 `invalid_state`; 302 `/?error=<code>` |
-| POST | `/api/auth/github/logout` | — | 200 HTML page that clears SW cache and redirects | 401 if not authenticated |
+| GET | `/api/auth/github/login` | - | 302 to github.com; sets `oauth_state` cookie | - |
+| GET | `/api/auth/github/callback?code&state` | - | 302 to `/settings?first_run=1` or `/digest`; sets session cookie | 403 `invalid_state`; 302 `/?error=<code>` |
+| POST | `/api/auth/github/logout` | - | 200 HTML page that clears SW cache and redirects | 401 if not authenticated |
 | POST | `/api/auth/set-tz` | `{ tz: string }` | `200 { ok: true }` | 400 `invalid_tz`; 401 |
 | DELETE | `/api/auth/account` | `{ confirm: "DELETE" }` | `200 { ok: true }` (also clears cookie, bumps session_version) | 400 `confirm_required`; 401 |
 
@@ -1051,31 +1051,31 @@ All mutating endpoints require an authenticated session (valid `__Host-news_dige
 
 | Method | Path | Request | Response | Errors |
 |---|---|---|---|---|
-| GET | `/api/settings` | — | `{ hashtags: string[], digest_hour: int, digest_minute: int, tz: string, model_id: string, email_enabled: bool, first_run: bool }` | 401 |
-| PUT | `/api/settings` | `{ hashtags, digest_hour, digest_minute, model_id, email_enabled }` | `{ ok: true, discovering: string[] }` — `discovering` lists any newly-added tags awaiting discovery | 400 `invalid_hashtags` \| `invalid_time` \| `invalid_model_id` \| `invalid_email_enabled`; 401 |
-| GET | `/api/discovery/status` | — | `{ pending: string[] }` — `SELECT tag FROM pending_discoveries WHERE user_id = :session_user_id` | 401 |
-| POST | `/api/discovery/retry` | `{ tag: string }` | `{ ok: true }` — verifies tag is in the user's hashtags_json, DELETEs `discovery_failures:{tag}` and `sources:{tag}` KV entries, INSERTs a fresh `pending_discoveries` row. Next cron picks it up. | 400 `unknown_tag` (tag not in user's hashtags_json); 401 |
+| GET | `/api/settings` | - | `{ hashtags: string[], digest_hour: int, digest_minute: int, tz: string, model_id: string, email_enabled: bool, first_run: bool }` | 401 |
+| PUT | `/api/settings` | `{ hashtags, digest_hour, digest_minute, model_id, email_enabled }` | `{ ok: true, discovering: string[] }` - `discovering` lists any newly-added tags awaiting discovery | 400 `invalid_hashtags` \| `invalid_time` \| `invalid_model_id` \| `invalid_email_enabled`; 401 |
+| GET | `/api/discovery/status` | - | `{ pending: string[] }` - `SELECT tag FROM pending_discoveries WHERE user_id = :session_user_id` | 401 |
+| POST | `/api/discovery/retry` | `{ tag: string }` | `{ ok: true }` - verifies tag is in the user's hashtags_json, DELETEs `discovery_failures:{tag}` and `sources:{tag}` KV entries, INSERTs a fresh `pending_discoveries` row. Next cron picks it up. | 400 `unknown_tag` (tag not in user's hashtags_json); 401 |
 
 ### Digest and refresh
 
 | Method | Path | Request | Response | Errors |
 |---|---|---|---|---|
-| GET | `/api/digest/today` | — | `{ digest: {...} \| null, articles: [...], live: bool, next_scheduled_at: int \| null }`. Query: `SELECT * FROM digests WHERE user_id = :session_user_id ORDER BY generated_at DESC LIMIT 1`. `live=true` if that row has `status='in_progress'`. If `local_date != today_in_user_tz`, compute `next_scheduled_at` from user's `digest_hour:digest_minute` in their tz. | 401 |
-| GET | `/api/digest/:id` | — | Same shape as `/today`, for a specific digest | 401; 403 `not_yours` (shouldn't happen — filtered by query); 404 |
-| POST | `/api/digest/refresh` | — | `202 { digest_id, status: 'in_progress' }` — handler does a conditional INSERT (0 rows → 409), enqueues `{ trigger: 'manual', user_id, local_date, digest_id }` to the `digest-jobs` queue, returns 202. Consumer runs `generateDigest(message)`. | 401; 429 `rate_limited` `{ retry_after_seconds, reason: 'cooldown' \| 'daily_cap' }`; 409 `already_in_progress` — returned when the conditional INSERT matches 0 rows because an in-progress digest already exists for this user's local_date today |
+| GET | `/api/digest/today` | - | `{ digest: {...} \| null, articles: [...], live: bool, next_scheduled_at: int \| null }`. Query: `SELECT * FROM digests WHERE user_id = :session_user_id ORDER BY generated_at DESC LIMIT 1`. `live=true` if that row has `status='in_progress'`. If `local_date != today_in_user_tz`, compute `next_scheduled_at` from user's `digest_hour:digest_minute` in their tz. | 401 |
+| GET | `/api/digest/:id` | - | Same shape as `/today`, for a specific digest | 401; 403 `not_yours` (shouldn't happen - filtered by query); 404 |
+| POST | `/api/digest/refresh` | - | `202 { digest_id, status: 'in_progress' }` - handler does a conditional INSERT (0 rows → 409), enqueues `{ trigger: 'manual', user_id, local_date, digest_id }` to the `digest-jobs` queue, returns 202. Consumer runs `generateDigest(message)`. | 401; 429 `rate_limited` `{ retry_after_seconds, reason: 'cooldown' \| 'daily_cap' }`; 409 `already_in_progress` - returned when the conditional INSERT matches 0 rows because an in-progress digest already exists for this user's local_date today |
 
 ### History and stats
 
 | Method | Path | Request | Response | Errors |
 |---|---|---|---|---|
 | GET | `/api/history?offset=0` | query: `offset` (default 0) | `{ digests: [{ id, generated_at, status, execution_ms, tokens_in, tokens_out, estimated_cost_usd, model_id, article_count }], has_more: bool }` (30 per page; `article_count` via `(SELECT COUNT(*) FROM articles WHERE digest_id=d.id)` subquery in the SELECT) | 401 |
-| GET | `/api/stats` | — | `{ digests_generated, articles_read, articles_total, tokens_consumed, cost_usd }` | 401 |
+| GET | `/api/stats` | - | `{ digests_generated, articles_read, articles_total, tokens_consumed, cost_usd }` | 401 |
 
 ### Client-side polling during generation
 
 No SSE, no WebSocket, no cancel endpoint. While a digest is `status='in_progress'`, the client polls `GET /api/digest/:id` every 5 seconds until it returns `status='ready'` or `'failed'`. Typical wait is ~60 seconds. The loading UI shows a skeleton grid + an indeterminate progress bar; on status change, real cards render with staggered fade-in.
 
-**Why polling is enough**: the primary completion signal for scheduled digests is the email — users get "your digest is ready" and open the app when it's already done. Polling only matters for the rare case where the user clicks Refresh and waits on the page. 5-second interval × 60s = 12 tiny requests, negligible overhead and no architectural plumbing.
+**Why polling is enough**: the primary completion signal for scheduled digests is the email - users get "your digest is ready" and open the app when it's already done. Polling only matters for the rare case where the user clicks Refresh and waits on the page. 5-second interval × 60s = 12 tiny requests, negligible overhead and no architectural plumbing.
 
 ## User stats widget
 
@@ -1092,19 +1092,19 @@ All stats queries are returned by a single `GET /api/stats` that runs these quer
 
 ### Tracking "read"
 
-Add `read_at INTEGER` (nullable) to the articles table. The `/digest/:id/:slug` Astro page loader marks read directly in its server-side fetch: the same query that loads the article also runs `UPDATE articles SET read_at = :now WHERE id = :id AND digest_id IN (SELECT id FROM digests WHERE user_id = :session_user_id) AND read_at IS NULL`. No separate API endpoint. The scoped subquery enforces user_id — IDOR-safe.
+Add `read_at INTEGER` (nullable) to the articles table. The `/digest/:id/:slug` Astro page loader marks read directly in its server-side fetch: the same query that loads the article also runs `UPDATE articles SET read_at = :now WHERE id = :id AND digest_id IN (SELECT id FROM digests WHERE user_id = :session_user_id) AND read_at IS NULL`. No separate API endpoint. The scoped subquery enforces user_id - IDOR-safe.
 
-Clicking the source link does NOT mark read — only opening the detail view counts as engagement.
+Clicking the source link does NOT mark read - only opening the detail view counts as engagement.
 
 ### Widget implementation
 
 No third-party charting/dashboard library. The widget is a single Astro component (~40 lines) rendering four tiles in a CSS grid. For a solo tool, pulling in `recharts`, `nivo`, `apexcharts`, or `shadcn/ui` is unjustified weight. Tailwind utility classes handle the styling; the "big number + small label" pattern is trivial to build and looks better hand-tuned than any library default.
 
-Optional v1.1: a sparkline next to each tile showing the last 30 days. Pure SVG, ~20 lines — not a library. Skip for MVP.
+Optional v1.1: a sparkline next to each tile showing the last 30 days. Pure SVG, ~20 lines - not a library. Skip for MVP.
 
 ### My take on this requirement
 
-**Worth it.** Stats add personal value, make the app feel like yours, and cost very little to implement (one SQL query, one component, one new column). The "articles read" tile is the most valuable because it's the only stat that measures engagement rather than volume — it tells you whether the digests are actually useful. Keep it to four tiles; resist the urge to add charts, streaks, leaderboards, or "top hashtag this week" — those are v2 decisions.
+**Worth it.** Stats add personal value, make the app feel like yours, and cost very little to implement (one SQL query, one component, one new column). The "articles read" tile is the most valuable because it's the only stat that measures engagement rather than volume - it tells you whether the digests are actually useful. Keep it to four tiles; resist the urge to add charts, streaks, leaderboards, or "top hashtag this week" - those are v2 decisions.
 
 ## Security headers
 
@@ -1120,13 +1120,13 @@ Every response includes these headers, set by a Cloudflare Worker response middl
 
 **No inline scripts**: the theme-init script is served as an external file `/theme-init.js` with `defer` in the `<head>`. A small flash of the wrong theme is possible on first paint; it's a ~50ms visual blip, acceptable in exchange for a strict no-inline-scripts CSP. All client code lives in external modules served from `'self'`. `'unsafe-inline'` remains on `style-src` because Astro's scoped component styles require it; CSS injection is low-severity and there is no client-side HTML rendering to amplify it.
 
-**CSP works end-to-end** because the app makes NO off-origin browser-side fetches. All external APIs (GitHub, Resend, Cloudflare, search APIs) are called only from the Worker. The service worker is registered from the same origin (`navigator.serviceWorker.register('/sw.js')`), which `connect-src 'self'` permits. GitHub OAuth uses a top-level navigation (not a fetch), which CSP does not restrict — `form-action 'self' https://github.com` covers the POST from the OAuth consent screen.
+**CSP works end-to-end** because the app makes NO off-origin browser-side fetches. All external APIs (GitHub, Resend, Cloudflare, search APIs) are called only from the Worker. The service worker is registered from the same origin (`navigator.serviceWorker.register('/sw.js')`), which `connect-src 'self'` permits. GitHub OAuth uses a top-level navigation (not a fetch), which CSP does not restrict - `form-action 'self' https://github.com` covers the POST from the OAuth consent screen.
 
 `X-Frame-Options: DENY` is not emitted; CSP `frame-ancestors 'none'` supersedes it in all modern browsers.
 
 ## Observability
 
-Structured JSON logs only. No Analytics Engine, no Logpush, no separate metrics pipeline — Cloudflare Logs surface `console.log` output as queryable fields, which is sufficient for a solo tool.
+Structured JSON logs only. No Analytics Engine, no Logpush, no separate metrics pipeline - Cloudflare Logs surface `console.log` output as queryable fields, which is sufficient for a solo tool.
 
 Every log line emits `console.log(JSON.stringify({ ts, level, event, user_id?, ...fields }))`. The events worth logging:
 
@@ -1137,11 +1137,11 @@ Every log line emits `console.log(JSON.stringify({ ts, level, event, user_id?, .
 | `source.fetch.failed` | `{ source_name, hashtag, http_status?, error_code }` |
 | `refresh.rejected` | `{ user_id, reason: 'cooldown'\|'daily_cap', retry_after_seconds }` |
 
-Internal error details (exception messages, response bodies) are logged at `level: 'error'` but never stored in D1 and never returned to clients. Adding an aggregation layer later is a one-commit change — not needed up front.
+Internal error details (exception messages, response bodies) are logged at `level: 'error'` but never stored in D1 and never returned to clients. Adding an aggregation layer later is a one-commit change - not needed up front.
 
 ## History pagination
 
-`/history` renders the 30 most recent digests newest first with a "Load more" button that extends the list by 30. Query: `SELECT ... FROM digests WHERE user_id = :session_user_id ORDER BY generated_at DESC LIMIT 30 OFFSET :offset`. Simple offset pagination — a solo user will accumulate at most ~365 digests per year, so the duplicate-risk scenarios that justify cursor pagination do not apply.
+`/history` renders the 30 most recent digests newest first with a "Load more" button that extends the list by 30. Query: `SELECT ... FROM digests WHERE user_id = :session_user_id ORDER BY generated_at DESC LIMIT 30 OFFSET :offset`. Simple offset pagination - a solo user will accumulate at most ~365 digests per year, so the duplicate-risk scenarios that justify cursor pagination do not apply.
 
 ## Deployment
 
@@ -1160,7 +1160,7 @@ Cloudflare Workers. Cron Trigger every 5 minutes in `wrangler.toml` (`crons = ["
 | `headlines:{source}:{tag}` cache | 10-min TTL | In a hot window, 30 users with `#cloudflare` produce 1 cache write + 29 reads, not 30 full fetches. |
 | Consumer isolate memory | ~5MB per digest, each in own isolate | No shared-memory OOM from batching. |
 | Workers AI | Paid plan required at 100 users/day (~$16/month Neurons) | Free tier (10K Neurons/day) only covers ~20 digests. |
-| Resend | Paid plan (~$20/month) | Free tier is 100/day — borderline; Pro gives deliverability + monitoring. |
+| Resend | Paid plan (~$20/month) | Free tier is 100/day - borderline; Pro gives deliverability + monitoring. |
 
 ### Known tradeoffs (accepted)
 
@@ -1173,24 +1173,24 @@ Cloudflare Workers. Cron Trigger every 5 minutes in `wrangler.toml` (`crons = ["
 
 ## Scaffolding order
 
-When implementation starts, build in this order — each layer unblocks the next:
+When implementation starts, build in this order - each layer unblocks the next:
 
-1. `migrations/0001_initial.sql` — the D1 schema from the Data model section
-2. `src/lib/db.ts` — D1 wrapper with `PRAGMA foreign_keys=ON`, prepared statements, a `batch()` helper for atomic multi-statement writes (D1 does NOT support interactive transactions — use `db.batch([stmt1, stmt2])` for atomicity)
-3. `src/lib/models.ts` — MODELS constant + DEFAULT_MODEL_ID
-4. `src/lib/prompts.ts` — DIGEST_SYSTEM, DISCOVERY_SYSTEM, helper functions, LLM_PARAMS
-5. `src/lib/session-jwt.ts` — HMAC-SHA256 sign/verify (lift from codeflare)
-6. `src/pages/api/auth/github/{login,callback,logout}.ts` — OAuth flow
-7. `src/middleware/auth.ts` — session validation with session_version check
-8. `src/pages/settings.astro` + `PUT /api/settings` — form component that handles both onboarding and edit
-9. `src/lib/sources.ts` — generic sources + discovery logic
-10. `src/lib/generate.ts` — `generateDigest(user, trigger, digestId?)`
-11. `src/pages/api/digest/refresh.ts` — POST handler with rate limit + enqueue to `digest-jobs`
-11b. `src/queue/digest-consumer.ts` — Queue consumer that calls `generateDigest(message)`
-12. `src/pages/digest.astro` — overview grid with polling
-13. `src/pages/digest/[id]/[slug].astro` — detail view (marks read)
+1. `migrations/0001_initial.sql` - the D1 schema from the Data model section
+2. `src/lib/db.ts` - D1 wrapper with `PRAGMA foreign_keys=ON`, prepared statements, a `batch()` helper for atomic multi-statement writes (D1 does NOT support interactive transactions - use `db.batch([stmt1, stmt2])` for atomicity)
+3. `src/lib/models.ts` - MODELS constant + DEFAULT_MODEL_ID
+4. `src/lib/prompts.ts` - DIGEST_SYSTEM, DISCOVERY_SYSTEM, helper functions, LLM_PARAMS
+5. `src/lib/session-jwt.ts` - HMAC-SHA256 sign/verify (lift from codeflare)
+6. `src/pages/api/auth/github/{login,callback,logout}.ts` - OAuth flow
+7. `src/middleware/auth.ts` - session validation with session_version check
+8. `src/pages/settings.astro` + `PUT /api/settings` - form component that handles both onboarding and edit
+9. `src/lib/sources.ts` - generic sources + discovery logic
+10. `src/lib/generate.ts` - `generateDigest(user, trigger, digestId?)`
+11. `src/pages/api/digest/refresh.ts` - POST handler with rate limit + enqueue to `digest-jobs`
+11b. `src/queue/digest-consumer.ts` - Queue consumer that calls `generateDigest(message)`
+12. `src/pages/digest.astro` - overview grid with polling
+13. `src/pages/digest/[id]/[slug].astro` - detail view (marks read)
 14. `src/pages/history.astro` + `GET /api/history`
-15. `src/worker.ts` cron handler — sweeper + discovery processor + dispatcher (enqueues to `digest-jobs`; does NOT generate inline)
+15. `src/worker.ts` cron handler - sweeper + discovery processor + dispatcher (enqueues to `digest-jobs`; does NOT generate inline)
 16. `src/lib/email.ts` + Resend integration
 17. PWA manifest + service worker + icons
 18. Polish (animations, stats widget, install prompt)

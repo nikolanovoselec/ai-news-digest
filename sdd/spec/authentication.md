@@ -22,13 +22,13 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 6. A brand-new account is seeded with a curated default hashtag list (covering cloud platforms, AI/LLM, security, identity, and infrastructure) where every default tag has at least one curated source, so the first digest has meaningful input before the user touches the strip. <!-- @impl: src/lib/default-hashtags.ts::DEFAULT_HASHTAGS -->
 7. New accounts are seeded with digest time 08:00, UTC timezone until browser correction, and email notifications enabled, so first sign-in can land on populated reading without forced onboarding. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::step6UpsertUserRow -->
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt)
 
 **Priority:** P0
 
-**Dependencies:** None
+**Dependencies:** None.
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -36,7 +36,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 ### REQ-AUTH-002: Access token + refresh token, instant revocation
 
-**Intent:** Users stay signed in for at least 30 days of inactivity without re-authenticating, while logout or account deletion invalidates every outstanding session instantly. Sessions feel like every consumer-grade webapp — closing the tab and coming back next month does not log the user out.
+**Intent:** Users stay signed in for at least 30 days of inactivity without re-authenticating, while logout or account deletion invalidates every outstanding session instantly. Sessions feel like every consumer-grade webapp - closing the tab and coming back next month does not log the user out.
 
 **Applies To:** User
 
@@ -50,7 +50,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Notes:** Cookie attribute set (`__Host-` prefix, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`) and the signing algorithm are documented in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#auth-cookie-policy).
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P0
 
@@ -83,7 +83,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -108,7 +108,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -128,13 +128,13 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 4. Both session cookies are cleared and the user is redirected to the landing page with a one-time confirmation banner. <!-- @impl: src/pages/api/auth/account.ts::DELETE -->
 5. Any KV entries keyed by the user's id are deleted in the same handler. <!-- @impl: src/pages/api/auth/account.ts::deleteUserKvEntries -->
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt)
 
 **Priority:** P1
 
 **Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -155,13 +155,13 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Notes:** Layered-defense mechanism is documented in [`documentation/lanes/security.md`](../../documentation/lanes/security.md#admin-gate-and-jwt-exp-validation).
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P0
 
 **Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider), [REQ-AUTH-003](#req-auth-003-csrf-defense-for-state-changing-endpoints)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
 
@@ -169,7 +169,7 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 ### REQ-AUTH-007: Cross-provider account dedup
 
-**Intent:** A person who signs in via two providers with the same verified email lands in one account, not two — the daily digest goes out once and starred articles, read marks, and interests are shared across both sign-in paths.
+**Intent:** A person who signs in via two providers with the same verified email lands in one account, not two - the daily digest goes out once and starred articles, read marks, and interests are shared across both sign-in paths.
 
 **Applies To:** User
 
@@ -178,15 +178,15 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 1. The first sign-in via any provider creates an account and records the (provider, provider-id) pair so subsequent sign-ins via the same provider land in the same account. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::errorRedirect -->
 2. A sign-in via a provider not yet linked to any account, but with a verified email matching an existing account, links the new (provider, provider-id) pair to that account instead of creating a duplicate row. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::errorRedirect -->
 3. The daily digest is sent once per real person. Duplicate-email accounts that pre-date this requirement are merged in a one-time pass; their stars, read marks, and pending discoveries re-point to the surviving account so no user-visible state is lost. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::errorRedirect -->
-4. Removing one sign-in path at the OAuth provider does not delete the account or other linked sign-in paths — the account remains reachable via the other provider. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::errorRedirect -->
+4. Removing one sign-in path at the OAuth provider does not delete the account or other linked sign-in paths - the account remains reachable via the other provider. <!-- @impl: src/pages/api/auth/[provider]/callback.ts::errorRedirect -->
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt)
 
 **Priority:** P1
 
 **Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Implemented
 
@@ -205,11 +205,11 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Notes:** Grace-window length and the parent-link pointer are documented at [`documentation/lanes/security.md`](../../documentation/lanes/security.md#auth-cookie-policy).
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P0
 
-**Dependencies:** [REQ-AUTH-002](#req-auth-002-access-token-refresh-token-instant-revocation)
+**Dependencies:** [REQ-AUTH-002](#req-auth-002-access-token--refresh-token-instant-revocation)
 
 **Verification:** Automated test
 
@@ -225,15 +225,15 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Acceptance Criteria:**
 
-1. Presenting an already-revoked refresh cookie within the concurrent-rotation grace window is treated as a benign race: a fresh access token is served off the surviving rotated row without rotating again, and the client's stale cookie remains valid for the rest of the window. <!-- @impl: src/lib/refresh-tokens.ts::rotateRefreshToken -->
-2. Presenting an already-revoked refresh cookie outside the grace window is treated as theft: every refresh-token row for the user is revoked and the per-user session-version is incremented, forcing the user through OAuth on every device. <!-- @impl: src/lib/refresh-tokens.ts::rotateRefreshToken -->
-3. Each refresh-token row records the User-Agent and country at issuance as forensic metadata. <!-- @impl: src/lib/refresh-tokens.ts::rotateRefreshToken -->
+1. Presenting an already-revoked refresh cookie within the concurrent-rotation grace window is treated as a benign race: a fresh access token is served off the surviving rotated row without rotating again, and the client's stale cookie remains valid for the rest of the window. <!-- @impl: src/lib/refresh-tokens.ts::rotateRefreshToken --> <!-- @test: tests/auth/refresh-tokens.test.ts (REQ-AUTH-008: concurrent-rotation collision within grace window serves access JWT only, no theft fallout) -->
+2. Presenting an already-revoked refresh cookie outside the grace window is treated as theft: every refresh-token row for the user is revoked and the per-user session-version is incremented, forcing the user through OAuth on every device. <!-- @impl: src/lib/refresh-tokens.ts::rotateRefreshToken --> <!-- @test: tests/auth/refresh-tokens.test.ts (REQ-AUTH-008 AC 4: reuse-detected token outside grace window revokes ALL refresh rows for the user) -->
+3. Each refresh-token row records the User-Agent and country at issuance as forensic metadata. <!-- @impl: src/lib/refresh-tokens.ts::rotateRefreshToken --> <!-- @test: tests/auth/refresh-tokens.test.ts (REQ-AUTH-008 AC 1: deviceFingerprint records UA + country as forensic metadata) --> <!-- @test: tests/auth/refresh-tokens.test.ts (REQ-AUTH-008 AC 1: issueRefreshToken stores fingerprint hash, not raw value) -->
 4. The steady-state refresh path logs but does not block on a fingerprint change between issuance and refresh, because legitimate UA strings drift on browser auto-updates. <!-- @impl: src/lib/refresh-tokens.ts::rotateRefreshToken -->
-5. A fingerprint mismatch within the concurrent-rotation grace window IS enforced as theft, because the only legitimate cause of a grace-window replay is the same client racing itself. <!-- @impl: src/lib/refresh-tokens.ts::rotateRefreshToken -->
+5. A fingerprint mismatch within the concurrent-rotation grace window IS enforced as theft, because the only legitimate cause of a grace-window replay is the same client racing itself. <!-- @impl: src/lib/refresh-tokens.ts::rotateRefreshToken --> <!-- @test: tests/auth/refresh-tokens.test.ts (REQ-AUTH-008 AC 1: grace-window fingerprint mismatch is treated as theft (gate retained)) -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Behavioral evidence is incomplete for some acceptance criteria.
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt), [CON-SEC-001](constraints.md#con-sec-001-strict-content-security-policy)
 
 **Priority:** P0
 
@@ -255,9 +255,9 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 1. Expired and old-revoked refresh-token rows are pruned by the daily retention sweep with a retention floor long enough that the reuse-detection branch can still observe `revoked_at` on a stolen-then-rotated cookie. <!-- @impl: src/queue/cleanup.ts::runCleanup -->
 
-**Notes:** Automated verification does not currently cite this REQ ID, so the shipped behavior stays Partial until a test is renamed or added to reference it.
+**Notes:** Behavioral evidence is incomplete for the retention guarantee.
 
-**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc-hmac-sha256-jwt)
+**Constraints:** [CON-AUTH-001](constraints.md#con-auth-001-custom-federated-oauthoidc--hmac-sha256-jwt)
 
 **Priority:** P1
 
@@ -287,6 +287,8 @@ Mechanism detail (cookie attributes, rate-limit matrix, admin layered defense, J
 
 **Dependencies:** [REQ-AUTH-001](#req-auth-001-sign-in-with-a-federated-identity-provider)
 
-**Verification:** Integration test
+**Verification:** Automated test
 
 **Status:** Partial
+
+---
