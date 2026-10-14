@@ -98,7 +98,7 @@ The tables below identify current source ownership. `// Implements REQ-X-NNN` co
 | `src/middleware/auth.ts` | `loadSession` - access JWT verify and refresh-token rotation; cookie helpers | [REQ-AUTH-002](../../sdd/spec/authentication.md#req-auth-002-access-token--refresh-token-instant-revocation), [REQ-AUTH-008](../../sdd/spec/authentication.md#req-auth-008-refresh-token-rotation-and-per-device-logout) |
 | `src/middleware/origin-check.ts` | Rejects state-changing requests whose `Origin` does not match `APP_URL` | [REQ-AUTH-003](../../sdd/spec/authentication.md#req-auth-003-csrf-defense-for-state-changing-endpoints) |
 | `src/middleware/security-headers.ts` | Stamps CSP, HSTS, and related headers on every response | [REQ-OPS-003](../../sdd/spec/observability.md#req-ops-003-content-security-policy-on-every-response) |
-| `src/middleware/admin-auth.ts` | Admin gate for `/api/admin/*`: valid session cookie + `ADMIN_EMAIL`, with optional CF Access `aud`/`exp` checks when `CF_ACCESS_AUD` is set (AD29, AD44). | [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating), AC 8a |
+| `src/middleware/admin-auth.ts` | Admin gate for `/api/admin/*`: valid session cookie + `ADMIN_EMAIL`, with optional CF Access `aud`/`exp` checks when `CF_ACCESS_AUD` is set (AD29, AD44). | [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating) |
 
 ### 4.2 Libraries (`src/lib/`)
 
@@ -389,7 +389,7 @@ Articles are the central entity in the article pool. Each article belongs to a `
 | Security headers | CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `X-Frame-Options` | [REQ-OPS-003](../../sdd/spec/observability.md#req-ops-003-content-security-policy-on-every-response) |
 | Observability | Structured JSON logs via closed `LogEvent` enum | [REQ-OPS-001](../../sdd/spec/observability.md#req-ops-001-structured-json-logging) |
 | Error surfaces | Closed `ErrorCode` enum, sanitised user-facing messages | [REQ-OPS-002](../../sdd/spec/observability.md#req-ops-002-sanitized-error-surfaces) |
-| Admin gate | Worker-side baseline: signed-in session + `ADMIN_EMAIL` match. Optional perimeter when `CF_ACCESS_AUD` is set: Cloudflare Access assertion + `aud` claim match (AD29 + AD30); `exp` claim validated server-side (AD44). | [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating), AC 8a |
+| Admin gate | Worker-side baseline: signed-in session + `ADMIN_EMAIL` match. Optional perimeter when `CF_ACCESS_AUD` is set: Cloudflare Access assertion + `aud` claim match (AD29 + AD30); `exp` claim validated server-side (AD44). | [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating) |
 
 ## 8. Build and Deploy
 

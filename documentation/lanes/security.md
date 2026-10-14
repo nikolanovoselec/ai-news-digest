@@ -106,7 +106,7 @@ The admin gate in `src/middleware/admin-auth.ts` checks an optional perimeter fo
 **Threat:** Privileged action by a non-operator - either a stolen Access assertion that has since expired, a synthetic non-Access payload spoofing the header, or an authenticated non-admin user reaching an admin route.
 **Mitigation:** Layer 0 rejects assertions whose `aud` does not match or whose `exp` is missing/past; baseline rejects any session cookie whose user email differs from `ADMIN_EMAIL`. A request that fails either layer is rejected before any side effect.
 **Verification:** `tests/auth/middleware.test.ts` (baseline gate + email match), `tests/admin/*` (per-endpoint admin gate enforcement).
-**Implements:** [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating), [AC 8a](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating)
 
 ---
 
@@ -143,7 +143,7 @@ The GET `/api/admin/force-refresh` endpoint additionally enforces a `Sec-Fetch-S
 **Threat:** Same-browser CSRF where an authenticated operator opens an attacker-controlled page that issues a state-changing fetch (POST embed-backfill, GET force-refresh) using ambient cookies.
 **Mitigation:** POST endpoints reject any browser-driven request whose `Origin` does not match `APP_URL` (Bearer callers bypass since they carry no cookies); admin GETs additionally reject `Sec-Fetch-Site` values outside `same-origin` and `none`. AD38 preserves the top-level-navigation case so SSO callbacks and operator bookmarks still work.
 **Verification:** `tests/pipeline/force-refresh.test.ts` (POST Origin gate, GET Sec-Fetch-Site matrix including the AD38 `none` case), plus the admin-route tests for each endpoint.
-**Implements:** [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating), [AC 8e](../../sdd/spec/authentication.md#req-auth-001-sign-in-with-a-federated-identity-provider)
+**Implements:** [REQ-AUTH-006](../../sdd/spec/authentication.md#req-auth-006-admin-surface-gating)
 
 ---
 
