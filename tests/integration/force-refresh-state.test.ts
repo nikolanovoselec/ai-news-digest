@@ -182,7 +182,7 @@ describe('REQ-OPS-005: force-refresh persistence and authorization', () => {
     expect(messages).toEqual([]);
   });
 
-  it.each<Method>(['GET', 'POST'])('AC5: %s requires the configured Access audience before side effects', async (method) => {
+  it.each<Method>(['GET', 'POST'])('AC6: %s requires the configured Access audience before side effects', async (method) => {
     expect((await request(method, { accessAud: 'expected' })).status).toBe(401);
     expect((await request(method, { accessAud: 'expected', assertionAud: 'wrong' })).status).toBe(401);
     expect(await runs()).toEqual([]);

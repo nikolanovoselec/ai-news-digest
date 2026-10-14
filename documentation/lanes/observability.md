@@ -105,7 +105,7 @@ The KV-backed rate limiter in `src/lib/rate-limit.ts` does a non-atomic `get`-th
 
 For fail-open routes (rules without `failClosed: true`) the non-atomicity is acceptable - the limiter is defence-in-depth, not the contract. The contract is that ordinary clients see the documented limit; an attacker stretching the propagation window does not change the security shape.
 
-For the fail-closed refresh rules (`AUTH_REFRESH_IP`, `AUTH_REFRESH_USER`) protecting refresh-token spray attacks, the in-Worker limiter is still defence-in-depth, not the primary gate. The primary gate for production deployments is Cloudflare zone-level Rate Limiting (WAF), which is atomic. Without WAF in front of `/api/auth/refresh`, a coordinated burst above approximately `2 × limit` can succeed during the propagation window. This is tracked as CF-034 and is the reason fail-closed alone is insufficient for refresh-token spray.
+The fail-closed refresh rules (`AUTH_REFRESH_IP`, `AUTH_REFRESH_USER`) deny requests on KV errors, but healthy concurrent requests can still race the non-atomic counter. Fail-closed behavior does not make these limits atomic. A zone-level WAF rule could provide an additional enforcement layer; [AD23](../decisions/README.md#ad23-auth-rate-limit-fail-closed-without-waf-backstop) leaves that backstop out of scope, so this documentation does not claim it is deployed. CF-034 tracks the residual refresh-token-spray risk.
 
 **Implements:** [REQ-RATE-001](../../sdd/spec/rate-limits.md#req-rate-001-application-layer-rate-limits-on-the-auth-and-mutation-surface)
 
