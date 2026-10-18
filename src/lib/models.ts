@@ -52,9 +52,10 @@ export const MODELS: ModelOption[] = [
     id: 'openai/gpt-6-luna',
     name: 'GPT-6 Luna',
     description:
-      'OpenAI provider canary via Cloudflare AI Gateway BYOK. Pricing is set to zero until published rates are confirmed, so cost reporting should be updated after the canary.',
-    inputPricePerMtok: 0,
-    outputPricePerMtok: 0,
+      'OpenAI provider via Cloudflare AI Gateway BYOK. Cost estimates use published standard token rates, without provider cache discounts.',
+    // https://developers.openai.com/api/docs/models/gpt-6-luna#pricing
+    inputPricePerMtok: 0.10,
+    outputPricePerMtok: 0.50,
     contextTokens: 128_000,
     category: 'featured',
   },
