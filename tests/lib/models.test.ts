@@ -87,8 +87,14 @@ describe('estimateCost', () => {
     expect(estimateCost(model, 4_000, 2_000)).toBeCloseTo(0.0012, 9);
   });
 
-  it('REQ-SET-004: Luna returns the disclosed zero estimate while pricing is provisional', () => {
-    expect(estimateCost('openai/gpt-6-luna', 2_000, 1_000)).toBe(0);
+  it.each([
+    [1_000_000, 0, 0.10],
+    [0, 1_000_000, 0.50],
+    [2_000, 1_000, 0.0007],
+    [0, 0, 0],
+  ])('REQ-SET-004 AC7: Luna estimates %i input and %i output tokens as $%s', (tokensIn, tokensOut, usd) => {
+    // Published standard rates: $0.10 input / $0.50 output per million tokens.
+    expect(estimateCost('openai/gpt-6-luna', tokensIn, tokensOut)).toBeCloseTo(usd, 10);
   });
 
   it('REQ-SET-004: estimateCost is non-zero for Kimi K2.5 (published pricing)', () => {

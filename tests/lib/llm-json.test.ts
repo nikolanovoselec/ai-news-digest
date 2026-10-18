@@ -142,6 +142,8 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003 / REQ-SET-004', () => {
     if (!result.ok) return;
     expect(result.tokensIn).toBe(11);
     expect(result.tokensOut).toBe(29);
+    // REQ-SET-004 AC7: include all accounted output, including reasoning.
+    expect(result.costUsd).toBeCloseTo(0.0000156, 10);
   });
 
   it('REQ-SET-004 AC6: direct Gemini Gateway models disable hidden thinking tokens', async () => {
