@@ -34,6 +34,22 @@ live here.
 | 0009 | `0009_refresh_tokens.sql` | Refresh-token rotation table for REQ-AUTH-008 |
 | 0010 | `0010_scrape_runs_finalize_recorded.sql` | `scrape_runs.finalize_recorded` once-per-run cost gate (REQ-PIPE-003 AC 7 - record cost on the first LLM pass regardless of redelivery) |
 
+## Luna cost repair (0022)
+
+`0022_luna_cost_backfill.sql` restores zero-valued estimates for completed
+(`ready` or `failed`) `openai/gpt-6-luna` runs with recorded usage. It uses
+[OpenAI's standard rates](https://developers.openai.com/api/docs/models/gpt-6-luna#pricing):
+$0.10 per million input tokens and $0.50 per million output tokens, matching
+the model catalog used for future inference. These are estimates, not an
+invoice reconciliation; provider cache discounts are not retained in the totals.
+
+The repair preserves existing nonzero estimates, other models, active runs,
+and all token counts. Reapplying it does not double-count costs. Normal D1
+migration application runs it on deployment; a targeted operational replay
+may execute this file directly without replaying older schema migrations.
+The catalog correction must also be deployed for future production runs to
+record nonzero estimates.
+
 ## Adding a new migration
 
 1. Number sequentially (`migrations/00NN_short_purpose.sql`).

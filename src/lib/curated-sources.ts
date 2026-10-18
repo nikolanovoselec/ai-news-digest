@@ -582,7 +582,7 @@ export const CURATED_SOURCES: readonly CuratedSource[] = [
   {
     slug: 'graymatter-blog',
     name: 'Gray Matter',
-    feed_url: 'https://graymatter.ch/rss-en.xml',
+    feed_url: 'https://graymatter.ch/rss.xml',
     kind: 'rss',
     tags: ['graymatter', 'zero-trust', 'ai-agents'],
   },
