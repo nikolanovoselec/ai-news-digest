@@ -12,7 +12,10 @@ printf '%s  %s\n' \
   "$archive" | sha512sum --check --strict
 
 tar -xzf "$archive" -C "$npm_dir"
-version=$("$npm_dir/package/bin/npm" --version)
+mkdir "$npm_dir/bin"
+ln -s "$npm_dir/package/bin/npm-cli.js" "$npm_dir/bin/npm"
+ln -s "$npm_dir/package/bin/npx-cli.js" "$npm_dir/bin/npx"
+version=$("$npm_dir/bin/npm" --version)
 test "$version" = '12.2.2'
 printf 'npm %s\n' "$version"
-printf '%s\n' "$npm_dir/package/bin" >> "${GITHUB_PATH:?}"
+printf '%s\n' "$npm_dir/bin" >> "${GITHUB_PATH:?}"
