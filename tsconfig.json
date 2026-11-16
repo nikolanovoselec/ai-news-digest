@@ -1,9 +1,8 @@
 {
   "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
-      "~/*": ["src/*"]
+      "~/*": ["./src/*"]
     },
     "types": ["@cloudflare/workers-types", "@astrojs/cloudflare", "vitest/globals", "@cloudflare/vitest-plugin"],
     "module": "ESNext",

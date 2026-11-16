@@ -24,7 +24,7 @@ Local development setup and production deployment steps.
 
 ## Prerequisites
 
-- Node.js 22.22.2+ on the Node 22 line ([npm 12.2.0 engine requirement](https://registry.npmjs.org/npm/12.2.0)); production runs on Cloudflare Workers
+- Node.js 22.23.5 on the Node 22 line ([Astro engine requirement](https://registry.npmjs.org/astro/7.4.12)); CI uses [npm 12.2.2](https://registry.npmjs.org/npm/12.2.2); production runs on Cloudflare Workers
 - Cloudflare account with Workers Paid plan enabled
 - Cloudflare AI Gateway with an OpenAI provider key that can call `gpt-6.1-terra` (the previous `dynamic/news_digest` route may be kept for rollback)
 - At least one OAuth provider configured: GitHub (Settings → Developer Settings → OAuth Apps) and/or Google (console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client IDs)
