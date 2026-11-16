@@ -1,0 +1,7 @@
+{
+  "name": "ai-news-digest-npm-bootstrap",
+  "private": true,
+  "dependencies": {
+    "npm": "12.2.2"
+  }
+}
