@@ -38,5 +38,10 @@
     "typescript": "^6.0.3",
     "vitest": "^5.1.0",
     "wrangler": "^4.163.0"
+  },
+  "overrides": {
+    "workbox-build": {
+      "glob": "14.0.6"
+    }
   }
 }
