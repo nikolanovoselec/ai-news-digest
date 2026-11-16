@@ -62,14 +62,11 @@ jobs:
         with:
           node-version: '22.23.5'
 
-      # Keep the installer aligned with PR Checks' fixed peer resolver.
-      - name: Use fixed npm resolver
-        run: |
-          npm install --global npm@12.2.2 --no-fund --no-audit
-          npm --version
+      - name: Use integrity-pinned npm resolver
+        run: bash .github/scripts/setup-npm.sh
 
       - name: Install dependencies
-        run: npm install --no-fund --no-audit
+        run: npm ci --no-fund --no-audit
 
       # Defence-in-depth: re-run the same audit gate that PR Checks
       # used. Catches CRITICAL CVEs introduced between the merge and

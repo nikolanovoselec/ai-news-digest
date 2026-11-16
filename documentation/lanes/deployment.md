@@ -36,7 +36,7 @@ Local development setup and production deployment steps.
 **When:** Initial setup or after pulling new migrations.
 **Action:**
 ```bash
-npm install
+npm ci
 npx wrangler d1 migrations apply DB --local
 npm run dev
 ```
@@ -240,13 +240,17 @@ Dependabot is configured (`.github/dependabot.yml`) to open weekly PRs every Mon
 - **npm** - runtime deps get individual PRs; dev deps are grouped into one PR per week to keep review surface manageable.
 - **GitHub Actions** - action pin bumps are PRed automatically, preventing slow-drip deprecation warnings (e.g., Node.js 20 → 22 runner transitions, CodeQL v3 → v4 upgrades).
 
+Commit `package-lock.json` with dependency changes. CI and both deployments use `npm ci` so resolved versions and archive integrity come from that lockfile. Update dependencies with npm 12.2.2 and commit the manifest and generated lockfile together. The shared [npm bootstrap](../../.github/scripts/setup-npm.sh) verifies npm 12.2.2's registry-published SHA-512 before extracting or executing its bundled CLI.
+
+CodeQL runs independently alongside PR Checks on pushes to both `develop` and `main`, as well as PRs targeting either branch. Its historical coverage warning is based on recent commits' associated PR heads, not just the current branch's scan.
+
 ### PR Checks - CI gates (`test.yml`)
 
 Every push to `develop` (and every PR targeting `main`) runs the following gates in order. All must pass before the deploy workflow fires:
 
 | Step | Command | What it enforces |
 |---|---|---|
-| Install | `npm install --no-fund --no-audit` | Dependency resolution |
+| Install | `npm ci --no-fund --no-audit` | Lockfile-consistent dependency versions and archive integrity |
 | Security audit (advisory) | `npm audit --omit=dev --audit-level=high` (continue-on-error) | HIGH+ advisories surface in the CI log for operator triage via Dependabot but never block the build - the Worker runtime is `workerd`, not Node.js, so most HIGH findings live in build tooling that never reaches the deployed bundle. |
 | Security audit (blocking) | `npm audit --omit=dev --audit-level=critical` | Blocks on CRITICAL CVEs in the production-dep tree. |
 | Full-tree audit (advisory) | `npm audit` (continue-on-error) | Reports vulnerabilities in runtime and development dependencies without changing the production blocking gate. |
