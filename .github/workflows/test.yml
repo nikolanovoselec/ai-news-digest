@@ -40,6 +40,16 @@ jobs:
       - name: Install dependencies
         run: npm install --no-fund --no-audit
 
+      # Temporary capture of npm's generated integrity lock for this remediation.
+      - name: Capture dependency lockfile
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dependency-lock
+          path: package-lock.json
+          retention-days: 1
+          if-no-files-found: error
+
       # CF-048 / AD28 — audit the production-dep tree at TWO levels:
       #   - HIGH+: visible in CI logs (continue-on-error) so operators
       #     see Dependabot triage candidates on every push without
