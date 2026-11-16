@@ -81,7 +81,8 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | ID | Decision | Summary | Category | State |
 |---|---|---|---|---|
 | [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) | AI Gateway dynamic-route model control | Dynamic-route support and tag guardrails remain; [AD61](#ad61-direct-openai-luna-provider-with-low-reasoning) replaces the dashboard-controlled default. | Architecture | Partially superseded |
-| [AD61](#ad61-direct-openai-luna-provider-with-low-reasoning) | Direct OpenAI with low reasoning | Pipeline inference uses direct OpenAI with explicit low reasoning, now targeting Terra while retaining Luna and the dynamic route for rollback. | Architecture | Active |
+| [AD61](#ad61-direct-openai-luna-provider-with-low-reasoning) | Direct OpenAI Luna with low reasoning | Direct-provider transport, low reasoning and Luna accounting remain; [AD63](#ad63-terra-default-with-low-reasoning) replaces the default and preflight model selection. | Architecture | Partially superseded |
+| [AD63](#ad63-terra-default-with-low-reasoning) | Terra default with low reasoning | Select Terra with published standard-rate estimates, retaining Luna compatibility and unchanged pipeline budgets. | Architecture | Active |
 
 ### Platform migration
 
@@ -1806,9 +1807,7 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 
 ### AD61: Direct OpenAI Luna provider with low reasoning
 
-**Status:** Accepted for the develop canary (2026-10-13); production promotion requires separate authorization.
-
-**Terra update (2026-11-16):** The operator selected `openai/gpt-6.1-terra` with low reasoning for the next release. The original Luna decision below is historical. The [shared adapter](../../src/lib/llm-json.ts) applies the same completion-token translation and provider-default temperature to Terra; both deploy preflights now target Terra. The [catalog](../../src/lib/models.ts) retains Luna and estimates Terra at [published standard rates](https://developers.openai.com/api/docs/models/gpt-6.1-terra#pricing): $1 input / $5 output per million tokens, including accounted reasoning output. Terra has a 1,050,000-token context window; existing pipeline budgets remain unchanged and below the 272K-input long-context pricing threshold. Historical Luna costs are not repriced. Review, CI and integration verification must precede production promotion.
+**Status:** Partially superseded by [AD63](#ad63-terra-default-with-low-reasoning) (2026-11-16): its default and preflight model selection is replaced. Direct-provider transport, low reasoning and Luna accounting remain applicable. The original develop-canary decision (2026-10-13) is preserved below as history.
 
 **Supersedes:** The default-model-control portion of [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control). Its tag guardrails and dynamic-route support remain unchanged.
 
@@ -1849,6 +1848,26 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 - Release acceptance still requires green review/CI and deployed integration tests before promotion ([PR #293](https://github.com/nikolanovoselec/ai-news-digest/pull/293)); a dependency bump alone is not functional acceptance.
 
 **Related requirements:** [REQ-OPS-003](../../sdd/spec/observability.md#req-ops-003-content-security-policy-on-every-response), [REQ-OPS-006](../../sdd/spec/observability.md#req-ops-006-integration-deployment-target), [REQ-PWA-001](../../sdd/spec/pwa.md#req-pwa-001-installable-pwa-manifest), [CON-TECH-001](../../sdd/spec/constraints.md#con-tech-001-cloudflare-workers-runtime).
+
+---
+
+### AD63: Terra default with low reasoning
+
+**Status:** Accepted (2026-11-16); production promotion follows green review/CI and verified integration deployment.
+
+**Supersedes:** The default and preflight model-selection portion of [AD61](#ad61-direct-openai-luna-provider-with-low-reasoning). Its direct-provider transport, low reasoning, rollback support and Luna accounting remain unchanged.
+
+**Context:** The operator selected GPT-6.1 Terra for the next release without changing pipeline sizing, prompts, tag guardrails or embeddings.
+
+**Decision:** Set the shared default to `openai/gpt-6.1-terra` through Cloudflare AI Gateway with `reasoning_effort: 'low'`. The [shared adapter](../../src/lib/llm-json.ts) uses completion-token budgets and provider-default temperature for both Terra and Luna. Both [production](../../.github/workflows/deploy.yml) and [integration](../../.github/workflows/deploy-integration.yml) preflights target Terra with low reasoning and the existing 50-completion-token cap. <!-- @impl: src/lib/models.ts::DEFAULT_MODEL_ID --> <!-- @impl: src/lib/llm-json.ts::gatewayModelParams --> <!-- @impl: src/lib/llm-json.ts::gatewayRequestParams -->
+
+**Consequences:**
+
+- The [catalog](../../src/lib/models.ts) estimates Terra at [published standard rates](https://developers.openai.com/api/docs/models/gpt-6.1-terra#pricing): $1 input / $5 output per million tokens, including accounted reasoning output. Cache discounts are excluded. Luna entries, explicit overrides, saved preferences and historical costs are preserved. <!-- @impl: src/lib/models.ts::MODELS -->
+- Terra has a 1,050,000-token context window; unchanged pipeline budgets remain below the 272K-input long-context pricing threshold. Rollback requires restoring the shared default and both preflight model IDs, then redeploying. No automatic fallback is added.
+- Production authorization does not waive review, exact-head CI or integration verification. No historical repricing or user-data migration is introduced.
+
+**Related requirements:** [REQ-SET-004](../../sdd/spec/settings.md#req-set-004-model-selection), [REQ-PIPE-002](../../sdd/spec/generation.md#req-pipe-002-chunked-llm-output-content-contract).
 
 ---
 
