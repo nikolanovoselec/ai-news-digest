@@ -144,7 +144,8 @@ Operator endpoints under `/api/admin/*` (force-refresh, pipeline-run, embed-back
 ## Local dev
 
 ```bash
-npm ci
+npm ci --prefix .github/npm --ignore-scripts
+.github/npm/node_modules/.bin/npm ci
 npx wrangler d1 migrations apply DB --local
 npm run dev
 ```

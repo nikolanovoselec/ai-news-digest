@@ -24,7 +24,7 @@ Local development setup and production deployment steps.
 
 ## Prerequisites
 
-- Node.js 22.23.5 on the Node 22 line ([Astro engine requirement](https://registry.npmjs.org/astro/7.4.12)); CI uses [npm 12.2.2](https://registry.npmjs.org/npm/12.2.2); production runs on Cloudflare Workers
+- Node.js 22.23.5 on the Node 22 line ([Astro engine requirement](https://registry.npmjs.org/astro/7.4.12)); CI uses the [lockfile-managed npm bootstrap](../../.github/npm/package.json); production runs on Cloudflare Workers
 - Cloudflare account with Workers Paid plan enabled
 - Cloudflare AI Gateway with an OpenAI provider key that can call `gpt-6.1-terra` (the previous `dynamic/news_digest` route may be kept for rollback)
 - At least one OAuth provider configured: GitHub (Settings → Developer Settings → OAuth Apps) and/or Google (console.cloud.google.com → APIs & Services → Credentials → OAuth 2.0 Client IDs)
@@ -36,7 +36,8 @@ Local development setup and production deployment steps.
 **When:** Initial setup or after pulling new migrations.
 **Action:**
 ```bash
-npm ci
+npm ci --prefix .github/npm --ignore-scripts
+.github/npm/node_modules/.bin/npm ci
 npx wrangler d1 migrations apply DB --local
 npm run dev
 ```
@@ -237,10 +238,10 @@ curl -i ${APP_URL}/api/admin/force-refresh
 
 Dependabot is configured (`.github/dependabot.yml`) to open weekly PRs every Monday at 06:00 UTC. It covers:
 
-- **npm** - runtime deps get individual PRs; dev deps are grouped into one PR per week to keep review surface manageable.
+- **npm** - the application and `.github/npm` bootstrap manifests/lockfiles are updated against `develop`; runtime deps get individual PRs and dev deps are grouped.
 - **GitHub Actions** - action pin bumps are PRed automatically, preventing slow-drip deprecation warnings (e.g., Node.js 20 → 22 runner transitions, CodeQL v3 → v4 upgrades).
 
-Commit `package-lock.json` with dependency changes. CI and both deployments use `npm ci` so resolved versions and archive integrity come from that lockfile. Update dependencies with npm 12.2.2 and commit the manifest and generated lockfile together. The shared [npm bootstrap](../../.github/scripts/setup-npm.sh) verifies npm 12.2.2's registry-published SHA-512 before extracting or executing its bundled CLI.
+Commit each manifest with its generated lockfile. CI and both deployments first use the runner's bundled npm to install the isolated [npm bootstrap](../../.github/npm/package.json) with `npm ci --ignore-scripts`, then use that locked CLI for the application's `npm ci`. Both dependency trees use lockfile archive integrity; Dependabot can update their versions and integrity together. The shared [setup script](../../.github/scripts/setup-npm.sh) contains no manually maintained version or checksum.
 
 CodeQL runs independently alongside PR Checks on pushes to both `develop` and `main`, as well as PRs targeting either branch. Its historical coverage warning is based on recent commits' associated PR heads, not just the current branch's scan.
 

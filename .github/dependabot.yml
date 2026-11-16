@@ -1,7 +1,7 @@
 # Dependabot configuration — auto-PR for npm + GitHub Actions updates.
 #
 # Scope:
-#   - npm  root package.json (the whole project's runtime + tooling)
+#   - npm  root application and .github/npm bootstrap manifests/lockfiles
 #   - github-actions in .github/workflows (keeps action pins current
 #     so Node.js 20 / CodeQL v3 style deprecations never silently pile
 #     up again; Dependabot will PR the version bumps automatically).
@@ -12,7 +12,9 @@
 version: 2
 updates:
   - package-ecosystem: npm
-    directory: /
+    directories:
+      - /
+      - /.github/npm
     # main is PR-only (protected). develop is the working branch,
     # and all merges to main go through a PR develop -> main. Point
     # Dependabot at develop so its PRs land in the same review +
