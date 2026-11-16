@@ -245,6 +245,12 @@ Commit each manifest with its generated lockfile. CI and both deployments first 
 
 CodeQL runs independently alongside PR Checks on pushes to both `develop` and `main`, as well as PRs targeting either branch. Its historical coverage warning is based on recent commits' associated PR heads, not just the current branch's scan.
 
+### Dependency security exceptions
+
+The Workbox-scoped `glob` override in `package.json` moves glob and its coupled minimatch dependency to patched releases. Do not force minimatch 11 beneath glob 11: that combination can silently empty precache manifests ([upstream compatibility issue](https://github.com/GoogleChrome/workbox/issues/3594)). Reassess the override when Workbox publishes a compatible patched dependency range.
+
+The operator accepted temporary CI-bootstrap risk on 2026-11-16 for [glob alert 13](https://github.com/nikolanovoselec/ai-news-digest/security/dependabot/13) and [minimatch alert 14](https://github.com/nikolanovoselec/ai-news-digest/security/dependabot/14). npm 12.2.2 still bundles affected versions ([upstream fix pending](https://github.com/npm/cli/issues/10299)); [consumer overrides do not replace bundled dependencies](https://github.com/npm/cli/issues/10120). Keep these alerts open without dismissal until a supported npm release fixes them. This exception does not waive other findings or alter audit gates.
+
 ### PR Checks - CI gates (`test.yml`)
 
 Every push to `develop` (and every PR targeting `main`) runs the following gates in order. All must pass before the deploy workflow fires:
