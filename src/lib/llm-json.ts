@@ -192,7 +192,7 @@ function gatewayModelParams(model: string): Record<string, unknown> {
   if (model.startsWith('google-ai-studio/gemini-2.5-')) {
     return { reasoning_effort: 'none' };
   }
-  if (model === 'openai/gpt-6-luna') {
+  if (model === 'openai/gpt-6-luna' || model === 'openai/gpt-6.1-terra') {
     return { reasoning_effort: 'low' };
   }
   return {};
@@ -204,13 +204,13 @@ function gatewayRequestParams(
 ): Record<string, unknown> {
   const requestParams = { ...params };
 
-  if (model === 'openai/gpt-6-luna') {
+  if (model === 'openai/gpt-6-luna' || model === 'openai/gpt-6.1-terra') {
     const maxTokens = requestParams.max_tokens;
     if (typeof maxTokens === 'number') {
       requestParams.max_completion_tokens = maxTokens;
       delete requestParams.max_tokens;
     }
-    // gpt-6-luna currently accepts only the provider default temperature.
+    // Keep the provider default temperature for these reasoning models.
     delete requestParams.temperature;
   }
 

@@ -81,7 +81,7 @@ Each ADR documents a non-obvious design choice and the trade-offs considered. De
 | ID | Decision | Summary | Category | State |
 |---|---|---|---|---|
 | [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control) | AI Gateway dynamic-route model control | Dynamic-route support and tag guardrails remain; [AD61](#ad61-direct-openai-luna-provider-with-low-reasoning) replaces the dashboard-controlled default. | Architecture | Partially superseded |
-| [AD61](#ad61-direct-openai-luna-provider-with-low-reasoning) | Direct OpenAI Luna with low reasoning | Pipeline inference uses direct OpenAI with explicit low reasoning for the develop canary, retaining the dynamic route for rollback. | Architecture | Active |
+| [AD61](#ad61-direct-openai-luna-provider-with-low-reasoning) | Direct OpenAI with low reasoning | Pipeline inference uses direct OpenAI with explicit low reasoning, now targeting Terra while retaining Luna and the dynamic route for rollback. | Architecture | Active |
 
 ### Platform migration
 
@@ -1807,6 +1807,8 @@ The corrected Flash-Lite integration run completed 10/10 chunks, inserted 44 row
 ### AD61: Direct OpenAI Luna provider with low reasoning
 
 **Status:** Accepted for the develop canary (2026-10-13); production promotion requires separate authorization.
+
+**Terra update (2026-10-19):** The operator selected `openai/gpt-6.1-terra` with low reasoning for the next release. The original Luna decision below is historical. The [shared adapter](../../src/lib/llm-json.ts) applies the same completion-token translation and provider-default temperature to Terra; both deploy preflights now target Terra. The [catalog](../../src/lib/models.ts) retains Luna and estimates Terra at [published standard rates](https://developers.openai.com/api/docs/models/gpt-6.1-terra#pricing): $1 input / $5 output per million tokens, including accounted reasoning output. Terra has a 1,050,000-token context window; existing pipeline budgets remain unchanged and below the 272K-input long-context pricing threshold. Historical Luna costs are not repriced. Review, CI and integration verification must precede production promotion.
 
 **Supersedes:** The default-model-control portion of [AD57](#ad57-ai-gateway-dynamic-route-for-pipeline-model-control). Its tag guardrails and dynamic-route support remain unchanged.
 

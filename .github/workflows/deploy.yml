@@ -309,7 +309,7 @@ jobs:
           # this JSON preflight (capped at 50 completion tokens) would fail
           # every summary/discovery/rerank call after release.
           # Previous route retained for rollback: dynamic/news_digest
-          AI_GATEWAY_PREFLIGHT_MODEL='openai/gpt-6-luna'
+          AI_GATEWAY_PREFLIGHT_MODEL='openai/gpt-6.1-terra'
           AI_GATEWAY_PREFLIGHT_BODY=$(mktemp)
           AI_GATEWAY_PREFLIGHT_STATUS=$(curl -sS --max-time 20 \
             -o "$AI_GATEWAY_PREFLIGHT_BODY" \
@@ -324,7 +324,7 @@ jobs:
             exit 1
           }
           if [ "$AI_GATEWAY_PREFLIGHT_STATUS" -lt 200 ] || [ "$AI_GATEWAY_PREFLIGHT_STATUS" -ge 300 ]; then
-            echo "::error::AI Gateway preflight failed with HTTP ${AI_GATEWAY_PREFLIGHT_STATUS}. Verify the Gateway exists, OpenAI provider key is configured, and gpt-6-luna is available."
+            echo "::error::AI Gateway preflight failed with HTTP ${AI_GATEWAY_PREFLIGHT_STATUS}. Verify the Gateway exists, OpenAI provider key is configured, and gpt-6.1-terra is available."
             head -c 500 "$AI_GATEWAY_PREFLIGHT_BODY" || true
             echo
             rm -f "$AI_GATEWAY_PREFLIGHT_BODY"
