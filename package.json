@@ -30,12 +30,12 @@
     "@cloudflare/vitest-plugin": "^1.8.3",
     "@cloudflare/workers-types": "^5.20261116.1",
     "@resvg/resvg-js": "^2.6.2",
-    "@types/node": "^22.20.5",
+    "@types/node": "^26.6.6",
     "vite-plugin-pwa": "^2.0.0",
     "esbuild": "^0.28.2",
     "knip": "^6.45.1",
     "oxlint": "^1.94.0",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^5.1.0",
     "wrangler": "^4.163.0"
   }
