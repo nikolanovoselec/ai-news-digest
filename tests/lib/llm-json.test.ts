@@ -134,7 +134,7 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003 / REQ-SET-004', () => {
       model: DEFAULT_MODEL_ID,
       max_completion_tokens: 123,
     });
-    expect(body.model).toBe('openai/gpt-6-luna');
+    expect(body.model).toBe('openai/gpt-6.1-terra');
     expect(body.max_tokens).toBeUndefined();
     expect(body.temperature).toBeUndefined();
     expect(body.reasoning_effort).toBe('low');
@@ -143,6 +143,35 @@ describe('runJson — REQ-PIPE-002 / REQ-PIPE-003 / REQ-SET-004', () => {
     expect(result.tokensIn).toBe(11);
     expect(result.tokensOut).toBe(29);
     // REQ-SET-004 AC7: include all accounted output, including reasoning.
+    expect(result.costUsd).toBeCloseTo(0.000156, 10);
+  });
+
+  it('REQ-SET-004: explicit Luna overrides retain low reasoning and original pricing', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '{"articles": []}' } }],
+      usage: { prompt_tokens: 11, completion_tokens: 13, total_tokens: 40 },
+    }), { status: 200 }));
+    const result = await runJson({
+      ai: makeAi([]),
+      model: 'openai/gpt-6-luna',
+      aiGatewayApiToken: 'gateway-test-token',
+      aiGatewayUrl: 'https://gateway.ai.cloudflare.com/v1/test-account/test-gateway/compat/chat/completions',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      params: { messages: [{ role: 'user', content: 'json' }], temperature: 0.6, max_tokens: 123 },
+      narrow: (raw) => typeof raw === 'string' ? JSON.parse(raw) as { articles: unknown[] } : null,
+    });
+    const [, init] = fetchImpl.mock.calls[0] ?? [];
+    const body = JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      model: 'openai/gpt-6-luna',
+      max_completion_tokens: 123,
+      reasoning_effort: 'low',
+    });
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.temperature).toBeUndefined();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.modelUsed).toBe('openai/gpt-6-luna');
     expect(result.costUsd).toBeCloseTo(0.0000156, 10);
   });
 

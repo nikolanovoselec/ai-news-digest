@@ -45,8 +45,8 @@ describe('MODELS catalog', () => {
 });
 
 describe('DEFAULT_MODEL_ID', () => {
-  it('REQ-SET-004: DEFAULT_MODEL_ID is the OpenAI Gateway model', () => {
-    expect(DEFAULT_MODEL_ID).toBe('openai/gpt-6-luna');
+  it('REQ-SET-004: DEFAULT_MODEL_ID is the Terra OpenAI Gateway model', () => {
+    expect(DEFAULT_MODEL_ID).toBe('openai/gpt-6.1-terra');
   });
 
   it('REQ-SET-004: DEFAULT_MODEL_ID is present in MODELS', () => {
@@ -95,6 +95,16 @@ describe('estimateCost', () => {
   ])('REQ-SET-004 AC7: Luna estimates %i input and %i output tokens as $%s', (tokensIn, tokensOut, usd) => {
     // Published standard rates: $0.10 input / $0.50 output per million tokens.
     expect(estimateCost('openai/gpt-6-luna', tokensIn, tokensOut)).toBeCloseTo(usd, 10);
+  });
+
+  it.each([
+    [1_000_000, 0, 1],
+    [0, 1_000_000, 5],
+    [2_000, 1_000, 0.007],
+    [0, 0, 0],
+  ])('REQ-SET-004 AC7: Terra estimates %i input and %i output tokens as $%s', (tokensIn, tokensOut, usd) => {
+    // Published standard rates: $1 input / $5 output per million tokens.
+    expect(estimateCost('openai/gpt-6.1-terra', tokensIn, tokensOut)).toBeCloseTo(usd, 10);
   });
 
   it('REQ-SET-004: estimateCost is non-zero for Kimi K2.5 (published pricing)', () => {

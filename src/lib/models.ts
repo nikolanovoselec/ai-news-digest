@@ -3,10 +3,9 @@
 // Hardcoded inference model catalog. The list is the source of truth —
 // server-side validation (`model_id` must appear in `MODELS`) keys off it,
 // the settings dropdown is rendered from it, and per-digest cost is computed
-// from its per-million-token prices. The default is an AI Gateway Dynamic
-// Routing route so operators can change the underlying provider/model in the
-// Cloudflare dashboard without redeploying. Gateway-backed entries use a
-// dedicated AI_GATEWAY_API_TOKEN runtime secret plus AI_GATEWAY_URL.
+// from its per-million-token prices. The default uses the OpenAI provider
+// through Cloudflare AI Gateway. Gateway-backed entries use a dedicated
+// AI_GATEWAY_API_TOKEN runtime secret plus AI_GATEWAY_URL.
 // See /sdd/spec/settings.md REQ-SET-004 and REQUIREMENTS.md "Model selection".
 //
 // Single-model architecture (2026-05-06): the chunk/finalize/discovery
@@ -44,10 +43,21 @@ export interface ModelOption {
 // id (chunk summarisation, rerank, discovery all flow through
 // DEFAULT_MODEL_ID).
 // export const DEFAULT_MODEL_ID = 'dynamic/news_digest';
-export const DEFAULT_MODEL_ID = 'openai/gpt-6-luna';
+export const DEFAULT_MODEL_ID = 'openai/gpt-6.1-terra';
 
 export const MODELS: ModelOption[] = [
   // Featured — headline choices users see at the top of the dropdown.
+  {
+    id: 'openai/gpt-6.1-terra',
+    name: 'GPT-6.1 Terra',
+    description:
+      'OpenAI provider via Cloudflare AI Gateway BYOK with low reasoning. Standard-rate cost estimates exclude cache discounts and long-context premiums; pipeline budgets remain below 272K input tokens.',
+    // https://developers.openai.com/api/docs/models/gpt-6.1-terra#pricing
+    inputPricePerMtok: 1.00,
+    outputPricePerMtok: 5.00,
+    contextTokens: 1_050_000,
+    category: 'featured',
+  },
   {
     id: 'openai/gpt-6-luna',
     name: 'GPT-6 Luna',

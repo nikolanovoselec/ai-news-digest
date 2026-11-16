@@ -59,12 +59,12 @@ jobs:
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '22'
+          node-version: '22.23.5'
 
       # Keep the installer aligned with PR Checks' fixed peer resolver.
       - name: Use fixed npm resolver
         run: |
-          npm install --global npm@12.2.0 --no-fund --no-audit
+          npm install --global npm@12.2.2 --no-fund --no-audit
           npm --version
 
       - name: Install dependencies
@@ -304,7 +304,7 @@ jobs:
           # this JSON preflight (capped at 50 completion tokens) would fail
           # every summary/discovery/rerank call after release.
           # Previous route retained for rollback: dynamic/news_digest
-          AI_GATEWAY_PREFLIGHT_MODEL='openai/gpt-6-luna'
+          AI_GATEWAY_PREFLIGHT_MODEL='openai/gpt-6.1-terra'
           AI_GATEWAY_PREFLIGHT_BODY=$(mktemp)
           AI_GATEWAY_PREFLIGHT_STATUS=$(curl -sS --max-time 20 \
             -o "$AI_GATEWAY_PREFLIGHT_BODY" \
@@ -319,7 +319,7 @@ jobs:
             exit 1
           }
           if [ "$AI_GATEWAY_PREFLIGHT_STATUS" -lt 200 ] || [ "$AI_GATEWAY_PREFLIGHT_STATUS" -ge 300 ]; then
-            echo "::error::AI Gateway preflight failed with HTTP ${AI_GATEWAY_PREFLIGHT_STATUS}. Verify the Gateway exists, OpenAI provider key is configured, and gpt-6-luna is available."
+            echo "::error::AI Gateway preflight failed with HTTP ${AI_GATEWAY_PREFLIGHT_STATUS}. Verify the Gateway exists, OpenAI provider key is configured, and gpt-6.1-terra is available."
             head -c 500 "$AI_GATEWAY_PREFLIGHT_BODY" || true
             echo
             rm -f "$AI_GATEWAY_PREFLIGHT_BODY"
