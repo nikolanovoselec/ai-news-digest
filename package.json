@@ -20,7 +20,7 @@
   "dependencies": {
     "@astrojs/cloudflare": "^14.4.8",
     "@tailwindcss/vite": "^4.3.5",
-    "astro": "^7.4.12",
+    "astro": "^7.4.13",
     "fast-xml-parser": "^5.12.1",
     "tailwindcss": "^4.3.5",
     "zod": "^4.6.7"
